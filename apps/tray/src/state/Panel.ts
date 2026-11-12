@@ -1,4 +1,4 @@
-import type { Alert, Plugin, Subscription } from "@exangelos/domain"
+import type { Alert, Plugin, Session, Subscription } from "@exangelos/domain"
 import { Context, Data, type Duration, Effect, Layer, Option, Ref, Result, Schedule, type Scope, Semaphore, Stream, SubscriptionRef } from "effect"
 import { DaemonClient, type DaemonNotRunning, type Section, type Snapshot, snapshot } from "../daemon/DaemonClient.ts"
 import { Host, type HostCommandFailed } from "../host/Host.ts"
@@ -26,6 +26,58 @@ export const needsYou = (
       : [])
   ])
 ]
+
+export interface SessionGroup {
+  readonly wakeTarget: Option.Option<Session.Session>
+  readonly subscriptions: ReadonlyArray<Subscription.Subscription>
+}
+
+/** Groups subscriptions by the session they wake, in first-seen order, with pull-only subscriptions last. */
+export const bySession = (subscriptions: ReadonlyArray<Subscription.Subscription>): ReadonlyArray<SessionGroup> => {
+  const groups = new Map<string, { wakeTarget: Option.Option<Session.Session>; subscriptions: Array<Subscription.Subscription> }>()
+  const pullOnly: Array<Subscription.Subscription> = []
+  for (const subscription of subscriptions) {
+    const target = subscription.wakeTarget
+    if (target === undefined) {
+      pullOnly.push(subscription)
+      continue
+    }
+    const key = `${target.harness}\u0000${target.sessionId}`
+    const group = groups.get(key) ?? { wakeTarget: Option.some(target), subscriptions: [] }
+    group.subscriptions.push(subscription)
+    groups.set(key, group)
+  }
+  const ordered: Array<SessionGroup> = [...groups.values()]
+  if (pullOnly.length > 0) ordered.push({ wakeTarget: Option.none(), subscriptions: pullOnly })
+  return ordered
+}
+
+const actorName = (actor: Session.Actor) => actor._tag === "You" ? "you" : `${actor.session.harness} session`
+
+/** The subscription's state in a few words, with its pending count while it is active or paused. */
+export const stateFact = (subscription: Subscription.Subscription): string => {
+  const pending = subscription.lastNumber - subscription.ackedThrough
+  const { state } = subscription
+  switch (state._tag) {
+    case "Active":
+      return pending > 0 ? `${pending} pending` : "Active"
+    case "Paused":
+      switch (state.reason._tag) {
+        case "BacklogCount":
+          return `Paused: backlog reached ${state.reason.limit} pending events`
+        case "BacklogAge":
+          return `Paused: oldest pending event too old (${pending} pending)`
+        case "Actor":
+          return `Paused by ${actorName(state.reason.actor)} (${pending} pending)`
+      }
+    case "Expired":
+      return "Expired"
+    case "Ended":
+      return state.reason._tag === "MaxEvents" ? "Ended after its last event" : `Ended: ${state.reason.reason}`
+    case "Cancelled":
+      return `Cancelled by ${actorName(state.actor)}`
+  }
+}
 
 export const fromLoad = <R>(
   load: Effect.Effect<Snapshot, DaemonNotRunning, R>

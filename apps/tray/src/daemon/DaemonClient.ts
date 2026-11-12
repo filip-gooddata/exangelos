@@ -69,13 +69,13 @@ const section = <A>(
     Effect.catchDefect((defect) => Effect.succeed(Result.fail(`${operation}: ${describeDefect(defect)}`)))
   )
 
-/** The trust alert of each plugin. Until the daemon serves `ListPluginAlerts` this derives them from `ListPlugins` without the official checksums, so an inert official plugin raises no alert. */
+/** The trust alert of each plugin. Until the daemon serves `ListPluginAlerts` this derives them from `ListPlugins` without the official checksums, so every inert official plugin shows as a checksum mismatch, a disabled one included. */
 export const trustAlerts = (
   client: DaemonClient["Service"]
 ): Effect.Effect<ReadonlyArray<Alert.Alert>, RpcClientError> =>
   Effect.map(
     client.ListPlugins(),
-    (plugins) => plugins.flatMap((plugin) => Option.toArray(PluginRules.trustAlert(plugin, Option.some(plugin.digest))))
+    (plugins) => plugins.flatMap((plugin) => Option.toArray(PluginRules.trustAlert(plugin, Option.none())))
   )
 
 /** Loads the active subscriptions and every plugin with their trust alerts. A call that fails or that the daemon answers with a defect fails only its own section. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */

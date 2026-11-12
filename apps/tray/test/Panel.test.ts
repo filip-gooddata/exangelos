@@ -43,6 +43,12 @@ const start = (first: Answer, refusals = 0) =>
   })
 
 describe("panel state", () => {
+  it.effect("shows loading until the first load answers", () =>
+    Effect.gen(function*() {
+      const { panel } = yield* start(Effect.never)
+      expect((yield* panel.current)._tag).toBe("Loading")
+    }).pipe(Effect.scoped))
+
   it.effect("loads subscriptions and plugins and lists what needs you", () =>
     Effect.gen(function*() {
       const { panel, sent } = yield* start(loaded(
@@ -109,4 +115,24 @@ describe("panel state", () => {
       expect(Result.getOrThrow(state.plugins)).toHaveLength(1)
       expect(sent).toEqual([true])
     }).pipe(Effect.scoped))
+})
+
+describe("subscriptions by session", () => {
+  it("groups by wake target with pull-only last and states each fact", () => {
+    const other = { harness: "codex", sessionId: "docs" } as const
+    const groups = Panel.bySession([
+      subscription({ id: Ids.SubscriptionId.make("sub_a"), lastNumber: 3, ackedThrough: 1 }),
+      subscription({ id: Ids.SubscriptionId.make("sub_b"), wakeTarget: other, state: { _tag: "Expired" } }),
+      subscription({
+        id: Ids.SubscriptionId.make("sub_c"),
+        state: { _tag: "Paused", reason: { _tag: "BacklogCount", limit: 20 } }
+      }),
+      { ...subscription({ id: Ids.SubscriptionId.make("sub_d") }), wakeTarget: undefined }
+    ].map(({ wakeTarget, ...rest }) => wakeTarget === undefined ? rest : { ...rest, wakeTarget }))
+    expect(groups.map((g) => [Option.getOrUndefined(g.wakeTarget)?.sessionId, g.subscriptions.map(Panel.stateFact)])).toEqual([
+      ["thread-alice", ["2 pending", "Paused: backlog reached 20 pending events"]],
+      ["docs", ["Expired"]],
+      [undefined, ["Active"]]
+    ])
+  })
 })

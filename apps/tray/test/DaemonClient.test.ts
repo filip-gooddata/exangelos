@@ -1,6 +1,7 @@
 import { BunSocket } from "@effect/platform-bun"
 import { describe, expect, it } from "@effect/vitest"
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
+import { Ids } from "@exangelos/domain"
 import { DaemonServer } from "@exangelos/daemon-client"
 import { Effect, Layer, Option, Result, Schedule } from "effect"
 import { RpcServer } from "effect/rpc"
@@ -11,13 +12,13 @@ import { plugin, subscription } from "./fixtures.ts"
 
 const unused = () => Effect.die("not served in this test")
 
-const handlers = (listDies: boolean) => DaemonContract.DaemonContract.toLayer({
+const handlers = (listDies: boolean, plugins: ReadonlyArray<ReturnType<typeof plugin>>) => DaemonContract.DaemonContract.toLayer({
   ServiceStatus: (_, { headers }) =>
     Effect.succeed({
       version: Option.isSome(SessionHeaders.fromHeaders(headers)) ? "agent" : "you",
       startMethod: "foreground"
     }),
-  ListPlugins: () => Effect.succeed([plugin()]),
+  ListPlugins: () => Effect.succeed(plugins),
   List: () => listDies ? Effect.die("NotImplemented: List") : Effect.succeed([subscription()]),
   Subscribe: unused,
   Update: unused,
@@ -40,8 +41,8 @@ const handlers = (listDies: boolean) => DaemonContract.DaemonContract.toLayer({
   SetSettings: unused
 })
 
-const daemon = (path: string, listDies = false) =>
-  RpcServer.layer(DaemonContract.DaemonContract, { disableFatalDefects: true }).pipe(Layer.provide(handlers(listDies)), Layer.provide(DaemonServer.layer(path)))
+const daemon = (path: string, listDies = false, plugins = [plugin()]) =>
+  RpcServer.layer(DaemonContract.DaemonContract, { disableFatalDefects: true }).pipe(Layer.provide(handlers(listDies, plugins)), Layer.provide(DaemonServer.layer(path)))
 
 const client = (path: string) =>
   DaemonClient.layer.pipe(Layer.provide(Layer.effect(Socket.Socket, BunSocket.makeNet({ path }))))
@@ -79,7 +80,11 @@ describe("daemon client over a unix socket", () => {
       Effect.gen(function*() {
         const loaded = yield* DaemonClient.snapshot
         expect(Result.isFailure(loaded.subscriptions)).toBe(true)
-        expect(Result.getOrThrow(loaded.plugins)).toHaveLength(1)
-      }).pipe(Effect.provide(client(path).pipe(Layer.provideMerge(daemon(path, true)))))
+        expect(Result.getOrThrow(loaded.plugins)).toHaveLength(2)
+        expect(Result.getOrThrow(loaded.trustAlerts).map((alert) => alert._tag)).toEqual(["WaitsForEnable", "DigestMismatch"])
+      }).pipe(Effect.provide(client(path).pipe(Layer.provideMerge(daemon(path, true, [
+        plugin({ name: Ids.PluginName.make("new"), trust: "inert" }),
+        plugin({ name: Ids.PluginName.make("official"), trust: "inert", origin: { _tag: "Official", version: "1" } })
+      ])))))
     ))
 })
