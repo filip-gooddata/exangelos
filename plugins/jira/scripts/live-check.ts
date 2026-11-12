@@ -119,7 +119,7 @@ const issuePath = `/rest/api/3/issue/${encodeURIComponent(key)}`
 const results: Array<boolean> = []
 
 const serverInfo = await get(site.url, "/rest/api/3/serverInfo")
-report("1. serverInfo", serverInfo, (body) => ({ deploymentType: field(body, "deploymentType") ?? "(absent)" }))
+report("1. serverInfo", serverInfo)
 results.push(ok(serverInfo))
 
 const statusOf = (got: Got) => "response" in got ? got.response.status : got.failure

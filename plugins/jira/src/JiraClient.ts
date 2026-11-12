@@ -250,6 +250,10 @@ export const layer = Layer.effect(
       Effect.gen(function*() {
         const request = HttpClientRequest.get(`${site.url}/_edge/tenant_info`).pipe(HttpClientRequest.acceptJson)
         const response = yield* http.execute(request).pipe(Effect.mapError(transportFailure))
+        if (response.status === 429) {
+          const seconds = retryAfterSeconds(response)
+          return yield* new RateLimited(seconds === undefined ? {} : { retryAfterSeconds: seconds })
+        }
         if (response.status !== 200) {
           return yield* new HttpFailure({ status: response.status, reason: "The site did not tell its cloud id." })
         }
@@ -262,13 +266,18 @@ export const layer = Layer.effect(
         return info.cloudId
       })
 
+    /** The site gave a definite answer without a cloud id, so the gateway is out of reach for this credential. */
+    const isAnswer = (error: JiraError) =>
+      error._tag === "DecodeFailure" ||
+      (error._tag === "HttpFailure" && error.status !== undefined && error.status < 500)
+
     const resolveRoute = (site: JiraSite): Effect.Effect<JiraSite, JiraError> => {
       const direct = { ...site, api: site.url }
       return get(direct, "/rest/api/3/myself", {}, MyselfWire).pipe(
         Effect.as(direct),
         Effect.catchTag("CredentialRejected", (rejected) =>
           cloudId(site).pipe(
-            Effect.mapError(() => rejected),
+            Effect.catchIf(isAnswer, () => Effect.fail(rejected)),
             Effect.map((id) => ({ ...site, api: gatewayApi(id) })),
             Effect.tap((gateway) => get(gateway, "/rest/api/3/myself", {}, MyselfWire))
           ))

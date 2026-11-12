@@ -165,6 +165,24 @@ describe("Jira plugin", () => {
       expect(items).toEqual([{ _tag: "End", reason: "The issue GONE-1 no longer exists or this account cannot see it." }])
     }).pipe(Effect.scoped))
 
+  it.effect("does not call a credential rejected when the site cannot tell its cloud id", () =>
+    Effect.gen(function*() {
+      const client = yield* jira((call) => call.path === "/_edge/tenant_info" ? { status: 503 } : scoped(call))
+      const result = yield* client.Configure({ values })
+      expect(result).toMatchObject({ _tag: "Rejected", reason: expect.stringContaining("HTTP 503") })
+    }).pipe(Effect.scoped))
+
+  it.effect("ends when Jira refuses the JQL query", () =>
+    Effect.gen(function*() {
+      const client = yield* jira((call) =>
+        call.path.startsWith("/rest/api/3/search") ? { status: 400, body: { errorMessages: ["Error in JQL"] } } : site(call)
+      )
+      yield* client.Configure({ values })
+      const items = yield* client.Watch({ parameters: { target: "project =", kind: "jql" }, eventTypes: [] })
+        .pipe(Stream.runCollect)
+      expect(items).toEqual([{ _tag: "End", reason: "Jira refused the JQL query (HTTP 400). Check the query and subscribe again." }])
+    }).pipe(Effect.scoped))
+
   it.effect("starts from the current state when the cursor is unreadable", () =>
     Effect.gen(function*() {
       const client = yield* jira(site)

@@ -85,7 +85,9 @@ const poll = (client: JiraClient["Service"], site: JiraSite, target: Target, sta
         Effect.fail(new Plugin.CredentialsRejected({ reason: `Jira rejected the email and API token (HTTP ${status}).` })),
       UnsupportedSite: ({ reason }) => Effect.fail(new Plugin.SourceFailed({ reason })),
       HttpFailure: ({ reason, status }) =>
-        Effect.fail(new Plugin.SourceFailed({ reason: status === undefined ? reason : `HTTP ${status}: ${reason}` })),
+        target.kind === "jql" && status === 400
+          ? Effect.succeed(ended(state, "Jira refused the JQL query (HTTP 400). Check the query and subscribe again."))
+          : Effect.fail(new Plugin.SourceFailed({ reason: status === undefined ? reason : `HTTP ${status}: ${reason}` })),
       DecodeFailure: ({ reason }) => Effect.fail(new Plugin.SourceFailed({ reason: `Unexpected Jira response: ${reason}` }))
     })
   )
