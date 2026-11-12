@@ -3,6 +3,7 @@ import { DateTime, Effect, Exit, Fiber, Option, Stream } from "effect"
 import { Event, Ids, Session, Subscription, Wake } from "@exangelos/domain"
 import {
   EventRepository,
+  OfficialPluginSource,
   PluginAccess,
   PluginDirectory,
   PluginImportSource,
@@ -156,18 +157,29 @@ describe("PluginFilesFake", () => {
 })
 
 describe("PluginAccessFake", () => {
-  it.effect("joins the positional main parameter and refuses a conflicting one", () =>
+  it.effect("joins the positional main parameter after the plugin is ready", () =>
     Effect.gen(function*() {
       const access = yield* PluginAccess.PluginAccess
       const fake = yield* PluginAccessFake
-      yield* fake.define(name, catalogue, (parameters) =>
-        Effect.succeed({ catalogue, parameters, subject: String(parameters["name"]), label: "x" }))
+      const official = Ids.PluginName.make("official")
+      yield* fake.define(name, {
+        catalogue,
+        describe: (parameters) => Effect.succeed({ catalogue, parameters, subject: String(parameters["name"]), label: "x" })
+      })
+      yield* fake.define(official, {
+        catalogue,
+        ready: Effect.fail(new OfficialPluginSource.OfficialFetchFailed({ plugin: official, reason: "offline" })),
+        describe: () => Effect.die("not ready")
+      })
       const you = { _tag: "You" } as const
+      const conflicting = { parameters: { name: "y" }, main: Option.some("x") }
 
       const described = yield* access.describe(you, name, { parameters: {}, main: Option.some("x") })
-      const refused = yield* Effect.flip(access.describe(you, name, { parameters: { name: "y" }, main: Option.some("x") }))
+      const refused = yield* Effect.flip(access.describe(you, name, conflicting))
+      const unready = yield* Effect.flip(access.describe(you, official, conflicting))
 
       expect(described.subject).toBe("x")
       expect(refused._tag).toBe("ParametersInvalid")
+      expect(unready._tag).toBe("OfficialFetchFailed")
     }).pipe(Effect.provide(layerPluginAccess)))
 })
