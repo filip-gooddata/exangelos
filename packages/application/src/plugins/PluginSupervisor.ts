@@ -397,7 +397,7 @@ export const layerPluginSupervisor: Layer.Layer<
 
   const pluginPath = (plugin: Plugin.Plugin) =>
     plugin.origin._tag === "DevLink"
-      ? Effect.succeed(Option.some(plugin.origin.path))
+      ? Effect.succeedSome(plugin.origin.path)
       : Effect.map(
         Effect.orElseSucceed(directory.list, () => []),
         (all) => Option.map(Option.fromNullishOr(all.find((i) => i.name === plugin.name)), (i) => i.directory)
