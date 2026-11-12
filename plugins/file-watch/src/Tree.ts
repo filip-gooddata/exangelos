@@ -1,4 +1,5 @@
 import { Effect, FileSystem, Option } from "effect"
+import type { PlatformError } from "effect/PlatformError"
 import type { FileGlob } from "./FileGlob.ts"
 
 /** What the plugin remembers of a file to tell a change. */
@@ -25,17 +26,20 @@ const join = (directory: string, name: string) => directory === "" ? name : `${d
 const absolute = (glob: FileGlob, relative: string) =>
   relative === "" ? glob.base : glob.base === "/" ? `/${relative}` : `${glob.base}/${relative}`
 
+const ifMissing = <A>(fallback: A) => (error: PlatformError) =>
+  error.reason._tag === "NotFound" ? Effect.succeed(fallback) : Effect.fail(error)
+
 const lstat = (fs: FileSystem.FileSystem, path: string) =>
-  fs.lstat(path).pipe(Effect.option)
+  fs.lstat(path).pipe(Effect.asSome, Effect.catch(ifMissing(Option.none<FileSystem.File.Info>())))
 
 const walk = (
   fs: FileSystem.FileSystem,
   glob: FileGlob,
   relative: string,
   into: Map<string, Fingerprint>
-): Effect.Effect<void> =>
+): Effect.Effect<void, PlatformError> =>
   Effect.gen(function*() {
-    const names = yield* fs.readDirectory(absolute(glob, relative)).pipe(Effect.orElseSucceed(() => []))
+    const names = yield* fs.readDirectory(absolute(glob, relative)).pipe(Effect.catch(ifMissing<Array<string>>([])))
     const depth = relative === "" ? 0 : relative.split("/").length
     for (const name of names) {
       const path = join(relative, name)
@@ -47,13 +51,20 @@ const walk = (
     }
   })
 
-/** Whether the base directory exists as a directory. */
+/**
+ * Whether the base directory exists as a directory. The base itself may be a
+ * symbolic link, since the user named it; nothing below it is followed.
+ * Errors other than a missing path fail, so they never read as deletions.
+ */
 export const baseExists = (glob: FileGlob) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const info = yield* lstat(fs, glob.base)
     if (Option.isSome(info) && info.value.type === "Directory") return true
-    const followed = yield* fs.stat(glob.base).pipe(Effect.option)
+    const followed = yield* fs.stat(glob.base).pipe(
+      Effect.asSome,
+      Effect.catch(ifMissing(Option.none<FileSystem.File.Info>()))
+    )
     return Option.isSome(followed) && followed.value.type === "Directory"
   })
 

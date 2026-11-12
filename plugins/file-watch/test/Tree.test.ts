@@ -52,4 +52,16 @@ describe("Tree", () => {
         ["file.deleted", "deleted.js"]
       ])
     }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
+
+  it.effect("fails rather than reading an unreadable directory as empty", () =>
+    Effect.gen(function*() {
+      const { fs, root, write } = yield* fixture
+      yield* write("dist/locked/app.js", "a")
+      const glob = Result.getOrThrow(FileGlob.parse({ path: `${root}/dist/**` }, "/home/ada"))
+      yield* fs.chmod(`${root}/dist/locked`, 0o000)
+      const error = yield* Tree.scan(glob).pipe(Effect.flip)
+      yield* fs.chmod(`${root}/dist/locked`, 0o755)
+
+      expect(error.reason._tag).toBe("PermissionDenied")
+    }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
 })

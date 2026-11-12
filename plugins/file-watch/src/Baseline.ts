@@ -7,11 +7,12 @@ export const cursorCap = 2000
 /**
  * What the plugin last knew. A live run knows a fingerprint per file. A
  * cursor knows, as of `at`, the first `cursorCap` matching paths in sorted
- * order, and `complete` says whether those were all of them.
+ * order, whether those were all of them, and the fingerprints of the listed
+ * files modified after `at`, which were already reported.
  */
 export type Baseline =
   | { readonly _tag: "Known"; readonly files: Snapshot }
-  | { readonly _tag: "Remembered"; readonly at: number; readonly paths: ReadonlySet<string>; readonly last: string | undefined; readonly complete: boolean }
+  | { readonly _tag: "Remembered"; readonly at: number; readonly paths: ReadonlySet<string>; readonly last: string | undefined; readonly complete: boolean; readonly recent: ReadonlyMap<string, readonly [number, number]> }
 
 export const empty: Baseline = { _tag: "Known", files: new Map() }
 
@@ -35,6 +36,8 @@ const appeared = (baseline: Baseline, path: string, file: Fingerprint): Change |
   const remembered = baseline.paths.has(path)
   const covered = remembered || baseline.complete || (baseline.last !== undefined && path <= baseline.last)
   if (file.modifiedAt <= baseline.at) return covered && !remembered ? { type: "file.created", path, file } : undefined
+  const seen = baseline.recent.get(path)
+  if (seen !== undefined && seen[0] === file.modifiedAt && seen[1] === file.size) return undefined
   if (covered) return { type: remembered ? "file.changed" : "file.created", path, file }
   return { type: file.bornAt !== undefined && file.bornAt > baseline.at ? "file.created" : "file.changed", path, file }
 }
@@ -69,7 +72,8 @@ const CursorJson = Schema.fromJsonString(Schema.Struct({
   v: Schema.Literal(1),
   at: Schema.Finite,
   paths: Schema.Array(Schema.String),
-  complete: Schema.Boolean
+  complete: Schema.Boolean,
+  recent: Schema.Record(Schema.String, Schema.Tuple([Schema.Finite, Schema.Finite]))
 }))
 
 /**
@@ -78,20 +82,28 @@ const CursorJson = Schema.fromJsonString(Schema.Struct({
  */
 export const encodeCursor = (files: Snapshot, at: number): string => {
   const paths = [...files.keys()].sort()
-  return Schema.encodeSync(CursorJson)({
-    v: 1,
-    at,
-    paths: paths.slice(0, cursorCap),
-    complete: paths.length <= cursorCap
-  })
+  const kept = paths.slice(0, cursorCap)
+  const recent: Record<string, readonly [number, number]> = {}
+  for (const path of kept) {
+    const file = files.get(path)!
+    if (file.modifiedAt > at) recent[path] = [file.modifiedAt, file.size]
+  }
+  return Schema.encodeSync(CursorJson)({ v: 1, at, paths: kept, complete: paths.length <= cursorCap, recent })
 }
 
 /** Reads a cursor. An unreadable cursor counts as none, so the run starts fresh. */
 export const decodeCursor = (cursor: string | undefined): Baseline | undefined => {
   if (cursor === undefined) return undefined
   try {
-    const { at, paths, complete } = Schema.decodeSync(CursorJson)(cursor)
-    return { _tag: "Remembered", at, paths: new Set(paths), last: paths.at(-1), complete }
+    const { at, paths, complete, recent } = Schema.decodeSync(CursorJson)(cursor)
+    return {
+      _tag: "Remembered",
+      at,
+      paths: new Set(paths),
+      last: paths.at(-1),
+      complete,
+      recent: new Map(Object.entries(recent))
+    }
   } catch {
     return undefined
   }

@@ -1,4 +1,4 @@
-import { Clock, Deferred, Duration, Effect, Exit, FileSystem, Ref, Stream } from "effect"
+import { Clock, Deferred, Duration, Effect, Exit, FileSystem, Option, Ref, Schedule, Stream } from "effect"
 import * as Baseline from "./Baseline.ts"
 import { type FileGlob, relativeTo } from "./FileGlob.ts"
 import * as Settle from "./Settle.ts"
@@ -26,7 +26,7 @@ const restart: Step = { _tag: "Restart" }
 
 const waitForBase = (glob: FileGlob, poll: Duration.Duration) =>
   Effect.gen(function*() {
-    while (!(yield* Tree.baseExists(glob))) yield* Effect.sleep(poll)
+    while (!(yield* Tree.baseExists(glob).pipe(Effect.orElseSucceed(() => false)))) yield* Effect.sleep(poll)
   })
 
 /**
@@ -40,7 +40,9 @@ const run = (
   options: Options
 ): Stream.Stream<Batch, never, FileSystem.FileSystem> =>
   Stream.unwrap(Effect.gen(function*() {
-    if (yield* Tree.baseExists(glob)) return live(glob, baseline, options)
+    if (yield* Tree.baseExists(glob).pipe(Effect.retry(Schedule.spaced(options.settle)), Effect.orDie)) {
+      return live(glob, baseline, options)
+    }
     const started = yield* Clock.currentTimeMillis
     const deleted = baseline === undefined ? [] : Baseline.diff(baseline, new Map())
     const missing = Stream.make<[Batch]>({ changes: deleted, cursor: Baseline.encodeCursor(new Map(), started - slack) })
@@ -75,26 +77,34 @@ const live = (
     const start: Effect.Effect<ReadonlyArray<Step>, never, FileSystem.FileSystem> = Effect.gen(function*() {
       yield* Deferred.await(ready)
       const started = yield* Clock.currentTimeMillis
-      const files = yield* Tree.scan(glob)
+      const files = yield* Tree.scan(glob).pipe(Effect.retry(Schedule.spaced(options.settle)), Effect.orDie)
       yield* Ref.update(state, (current) => ({ ...current, files }))
       const changes = baseline === undefined ? [] : Baseline.diff(baseline, files)
       return [{ _tag: "Batch", batch: { changes, cursor: Baseline.encodeCursor(files, started - slack) } }]
     })
 
     const tick: Effect.Effect<ReadonlyArray<Step>, never, FileSystem.FileSystem> = Effect.gen(function*() {
-      if (!(yield* Tree.baseExists(glob))) return [restart]
+      const exists = yield* Tree.baseExists(glob).pipe(Effect.option)
+      if (Option.isNone(exists)) return []
+      if (!exists.value) return [restart]
       const now = yield* Clock.currentTimeMillis
-      const current = yield* Ref.get(state)
-      const { due, pending } = Settle.settled(current.pending, now, window)
+      const due = yield* Ref.modify(state, (current) => {
+        const { due, pending } = Settle.settled(current.pending, now, window)
+        return [due, { ...current, pending }] as const
+      })
       if (due.length === 0) return []
-      let known = current.files
+      let known = (yield* Ref.get(state)).files
       const changes: Array<Baseline.Change> = []
       for (const path of due) {
-        const observed = yield* Tree.observe(glob, path)
-        changes.push(...Baseline.diff({ _tag: "Known", files: known }, observed, path))
-        known = Baseline.update(known, observed, path)
+        const observed = yield* Tree.observe(glob, path).pipe(Effect.option)
+        if (Option.isNone(observed)) {
+          yield* Ref.update(state, (current) => ({ ...current, pending: Settle.notice(current.pending, path, now) }))
+          continue
+        }
+        changes.push(...Baseline.diff({ _tag: "Known", files: known }, observed.value, path))
+        known = Baseline.update(known, observed.value, path)
       }
-      yield* Ref.set(state, { files: known, pending })
+      const { pending } = yield* Ref.updateAndGet(state, (current) => ({ ...current, files: known }))
       if (changes.length === 0) return []
       const from = Math.min(now, Settle.earliest(pending) ?? now) - slack
       return [{ _tag: "Batch", batch: { changes, cursor: Baseline.encodeCursor(known, from) } }]
