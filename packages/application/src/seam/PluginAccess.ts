@@ -40,4 +40,10 @@ export class PluginAccess extends Context.Service<PluginAccess, {
   readonly watch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   /** Stops the subscription's Watch stream. Its cursor stays stored. */
   readonly unwatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
+  /**
+   * Stops the subscription's Watch stream, waits until it has stopped, then opens it again from the
+   * stored cursor with the stored parameters and event types, as `watch` would. Stopping waits for
+   * an item being ingested, so never call it while holding the subscription's lock.
+   */
+  readonly rewatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
 }>()("@exangelos/application/PluginAccess") {}

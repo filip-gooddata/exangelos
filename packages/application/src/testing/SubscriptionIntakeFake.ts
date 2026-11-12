@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Ref } from "effect"
+import { Context, type DateTime, Effect, Layer, Ref } from "effect"
 import type { Event, Ids, Plugin } from "@exangelos/domain"
 import { SubscriptionIntake, type Verdict } from "../seam/SubscriptionIntake.ts"
 
@@ -9,7 +9,15 @@ export class SubscriptionIntakeFake extends Context.Service<SubscriptionIntakeFa
   readonly stop: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   /** Plugin records passed to `pluginChanged`, in order. */
   readonly pluginChanges: Effect.Effect<ReadonlyArray<Plugin.Plugin>>
+  /** Calls to `pluginRemoved`, in order. */
+  readonly pluginRemovals: Effect.Effect<ReadonlyArray<Removal>>
 }>()("@exangelos/application/testing/SubscriptionIntakeFake") {}
+
+export interface Removal {
+  readonly plugin: Ids.PluginName
+  readonly since: DateTime.Utc
+  readonly problem: string
+}
 
 /** `ingest` answers "stop" for an End item or a stopped subscription, "continue" otherwise. */
 export const layerSubscriptionIntake: Layer.Layer<SubscriptionIntake | SubscriptionIntakeFake> = Layer.unwrap(
@@ -17,6 +25,7 @@ export const layerSubscriptionIntake: Layer.Layer<SubscriptionIntake | Subscript
     const items = yield* Ref.make<ReadonlyArray<{ readonly subscription: Ids.SubscriptionId; readonly item: Event.WatchItem }>>([])
     const stopped = yield* Ref.make<ReadonlySet<Ids.SubscriptionId>>(new Set())
     const pluginChanges = yield* Ref.make<ReadonlyArray<Plugin.Plugin>>([])
+    const removals = yield* Ref.make<ReadonlyArray<Removal>>([])
     return Layer.merge(
       Layer.succeed(SubscriptionIntake, {
         ingest: (subscription, item) =>
@@ -26,13 +35,15 @@ export const layerSubscriptionIntake: Layer.Layer<SubscriptionIntake | Subscript
             const verdict: Verdict = isStopped || item._tag === "End" ? "stop" : "continue"
             return verdict
           }),
-        pluginChanged: (plugin) => Ref.update(pluginChanges, (all) => [...all, plugin])
+        pluginChanged: (plugin) => Ref.update(pluginChanges, (all) => [...all, plugin]),
+        pluginRemoved: (plugin, since, problem) => Ref.update(removals, (all) => [...all, { plugin, since, problem }])
       }),
       Layer.succeed(SubscriptionIntakeFake, {
         ingested: (subscription) =>
           Effect.map(Ref.get(items), (all) => all.filter((entry) => entry.subscription === subscription).map((entry) => entry.item)),
         stop: (subscription) => Ref.update(stopped, (all) => new Set(all).add(subscription)),
-        pluginChanges: Ref.get(pluginChanges)
+        pluginChanges: Ref.get(pluginChanges),
+        pluginRemovals: Ref.get(removals)
       })
     )
   })

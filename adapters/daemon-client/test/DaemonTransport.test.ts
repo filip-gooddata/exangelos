@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import { ServiceManager } from "@exangelos/application"
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import type { Session } from "@exangelos/domain"
 import { Context, Effect, Exit, Layer, Option } from "effect"
@@ -57,6 +58,28 @@ const connected = (path: string, session: Option.Option<Session.Session>) =>
   DaemonClient.layer({ path, session }).pipe(Layer.provide(daemon(path)))
 
 const session: Session.Session = { harness: "codex", sessionId: "thread-7" }
+
+const stopped: ServiceManager.Status = { method: "launch-agent", installed: false, running: false }
+
+const serviceServing = (path: string, calls: Array<string>) =>
+  Layer.effect(
+    ServiceManager.ServiceManager,
+    Effect.map(Effect.scope, (scope) => ({
+      status: Effect.succeed(stopped),
+      install: Effect.sync(() => void calls.push("install")),
+      start: Effect.sync(() => void calls.push("start")).pipe(
+        Effect.andThen(Layer.buildWithScope(daemon(path), scope)),
+        Effect.orDie,
+        Effect.asVoid
+      )
+    }))
+  )
+
+const serviceFailing = Layer.succeed(ServiceManager.ServiceManager, {
+  status: Effect.succeed({ ...stopped, installed: true }),
+  install: Effect.void,
+  start: Effect.fail(new ServiceManager.ServiceFailed({ method: "launch-agent", reason: "launchctl bootstrap exited 5" }))
+})
 
 describe("daemon transport", () => {
   it.live("carries the session on every call", () =>
@@ -168,7 +191,35 @@ describe("daemon transport", () => {
     withSocket((path) =>
       Effect.gen(function*() {
         const exit = yield* Layer.build(DaemonClient.layer({ path, session: Option.none() })).pipe(Effect.scoped, Effect.exit)
-        expect(exit).toEqual(Exit.fail(new DaemonClient.DaemonNotRunning({ path })))
+        expect(exit).toEqual(Exit.fail(new DaemonClient.DaemonNotRunning({ path, reason: `nothing answers on ${path}` })))
+      })
+    ))
+
+  it.live("starts the service when no daemon runs, then connects", () =>
+    withSocket((path) => {
+      const calls: Array<string> = []
+      return Effect.gen(function*() {
+        const client = yield* DaemonClient.DaemonClient
+        expect((yield* client.ServiceStatus()).startMethod).toBe("foreground")
+        expect(calls).toEqual(["install", "start"])
+      }).pipe(
+        Effect.provide(DaemonClient.layerStarting({ path, session: Option.none() }).pipe(
+          Layer.provide(serviceServing(path, calls))
+        ))
+      )
+    }))
+
+  it.live("reports why starting the service failed", () =>
+    withSocket((path) =>
+      Effect.gen(function*() {
+        const exit = yield* Layer.build(DaemonClient.layerStarting({ path, session: Option.none() })).pipe(
+          Effect.provide(serviceFailing),
+          Effect.scoped,
+          Effect.exit
+        )
+        expect(exit).toEqual(
+          Exit.fail(new DaemonClient.DaemonNotRunning({ path, reason: "launchctl bootstrap exited 5" }))
+        )
       })
     ))
 })
