@@ -1,0 +1,29 @@
+{
+  "name": "@exangelos/daemon",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@exangelos/application": "workspace:*",
+    "@exangelos/domain": "workspace:*",
+    "@exangelos/contracts": "workspace:*",
+    "@exangelos/paths": "workspace:*",
+    "@exangelos/sqlite": "workspace:*",
+    "@exangelos/secrets": "workspace:*",
+    "@exangelos/plugin-runtime": "workspace:*",
+    "@exangelos/plugin-directory": "workspace:*",
+    "@exangelos/plugin-import": "workspace:*",
+    "@exangelos/official-plugins": "workspace:*",
+    "@exangelos/wake-targets": "workspace:*",
+    "@exangelos/alerts": "workspace:*",
+    "@exangelos/service": "workspace:*",
+    "@exangelos/settings": "workspace:*",
+    "effect": "catalog:",
+    "@effect/platform-bun": "catalog:"
+  }
+}

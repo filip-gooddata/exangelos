@@ -1,0 +1,18 @@
+{
+  "name": "@exangelos/mcp",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@exangelos/contracts": "workspace:*",
+    "@exangelos/domain": "workspace:*",
+    "@exangelos/daemon-client": "workspace:*",
+    "effect": "catalog:",
+    "@effect/platform-bun": "catalog:"
+  }
+}

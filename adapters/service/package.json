@@ -1,0 +1,17 @@
+{
+  "name": "@exangelos/service",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@exangelos/application": "workspace:*",
+    "@exangelos/domain": "workspace:*",
+    "@exangelos/service-manager": "workspace:*",
+    "effect": "catalog:"
+  }
+}

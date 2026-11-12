@@ -1,0 +1,38 @@
+packages:
+  - packages/*
+  - adapters/*
+  - gap/*
+  - plugins/*
+  - apps/*
+
+catalog:
+  effect: 4.1.4
+  "@effect/platform-bun": 4.1.4
+  "@effect/platform-browser": 4.1.4
+  "@effect/sql-sqlite-bun": 4.1.4
+  "@effect/vitest": 4.1.4
+  "@effect/tsgo": 0.68.1
+  "@foldkit/vite-plugin": 0.29.0
+  "@types/bun": 1.4.2
+  foldkit: 0.170.0
+  turbo: 2.11.11
+  typescript: 7.0.2
+  vite: 8.3.8
+  vitest: 5.1.0
+
+minimumReleaseAgeExclude:
+  - "@effect/tsgo-darwin-arm64@0.68.1"
+  - "@effect/tsgo-darwin-x64@0.68.1"
+  - "@effect/tsgo-linux-arm64@0.68.1"
+  - "@effect/tsgo-linux-arm@0.68.1"
+  - "@effect/tsgo-linux-x64@0.68.1"
+  - "@effect/tsgo-win32-arm64@0.68.1"
+  - "@effect/tsgo-win32-x64@0.68.1"
+  - "@effect/tsgo@0.68.1"
+  - "@turbo/darwin-64@2.11.11"
+  - "@turbo/darwin-arm64@2.11.11"
+  - "@turbo/linux-64@2.11.11"
+  - "@turbo/linux-arm64@2.11.11"
+  - "@turbo/windows-64@2.11.11"
+  - "@turbo/windows-arm64@2.11.11"
+  - turbo@2.11.11

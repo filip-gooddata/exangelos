@@ -1,0 +1,17 @@
+{
+  "name": "@exangelos/sqlite",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@exangelos/application": "workspace:*",
+    "@exangelos/domain": "workspace:*",
+    "effect": "catalog:",
+    "@effect/sql-sqlite-bun": "catalog:"
+  }
+}

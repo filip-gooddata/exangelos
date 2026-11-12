@@ -1,0 +1,16 @@
+{
+  "name": "@exangelos/contracts",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@exangelos/domain": "workspace:*",
+    "effect": "catalog:"
+  }
+}

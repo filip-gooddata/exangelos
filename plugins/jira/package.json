@@ -1,0 +1,15 @@
+{
+  "name": "@exangelos/plugin-jira",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@exangelos/plugin-sdk": "workspace:*",
+    "effect": "catalog:"
+  }
+}
