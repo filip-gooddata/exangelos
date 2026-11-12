@@ -2,10 +2,9 @@ import { DateTime, Effect, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
 import { Catalogue, Event, Ids, Plugin, Session, Subscription, Wake } from "@exangelos/domain"
-import { AgentClient } from "./AgentClient.ts"
+import * as AgentClient from "./AgentClient.ts"
 import { type AgentFailure, failureMessage } from "./Messages.ts"
 
-/** A refused or failed call. Its message reaches the agent as the text of an `isError` result. */
 export class ToolFailure extends Schema.TaggedError<ToolFailure>()("ToolFailure", {
   message: Schema.String
 }) {}
@@ -146,57 +145,31 @@ const untilTime = (until: string | undefined): Effect.Effect<{ readonly until?: 
       onSome: (time) => Effect.succeed({ until: DateTime.toUtc(time) })
     })
 
-/** The tool handlers. Each forwards to the daemon and turns its refusals into messages for the agent. */
 export const handlers = toolkit.toLayer(Effect.gen(function*() {
-  const client = yield* AgentClient
+  const { connect } = yield* AgentClient.AgentClient
+  const call = <A>(use: (client: AgentClient.AgentRpcs) => Effect.Effect<A, AgentFailure>) =>
+    Effect.scoped(Effect.flatMap(connect, use)).pipe(Effect.mapError(fail))
   return {
-    list_plugins: () =>
-      client.ListPlugins().pipe(Effect.map((plugins) => ({ plugins })), Effect.mapError(fail)),
+    list_plugins: () => call((client) => client.ListPlugins()).pipe(Effect.map((plugins) => ({ plugins }))),
     subscribe: ({ target, pullOnly, until, similarOk, ...rest }) =>
-      Effect.all([targetChoice({ target, pullOnly }), untilTime(until)])
-        .pipe(
-          Effect.flatMap(([choice, time]) =>
-            client.Subscribe({ ...rest, ...time, target: choice, similarOk: similarOk ?? [] }).pipe(
-              Effect.mapError(fail)
-            )
-          )
-        ),
+      Effect.all([targetChoice({ target, pullOnly }), untilTime(until)]).pipe(
+        Effect.flatMap(([choice, time]) =>
+          call((client) => client.Subscribe({ ...rest, ...time, target: choice, similarOk: similarOk ?? [] }))
+        )
+      ),
     update: ({ until, ...rest }) =>
-      untilTime(until).pipe(
-        Effect.flatMap((time) =>
-          client.Update({ ...rest, ...time }).pipe(
-            Effect.mapError(fail)
-          )
-        )
-      ),
+      untilTime(until).pipe(Effect.flatMap((time) => call((client) => client.Update({ ...rest, ...time })))),
     list: ({ all }) =>
-      client.List({ all: all === true }).pipe(
-        Effect.map((subscriptions) => ({ subscriptions })),
-        Effect.mapError(fail)
-      ),
-    show: (input) => client.Show(input).pipe(Effect.mapError(fail)),
-    events: (input) =>
-      client.Events(input).pipe(Effect.map((events) => ({ events })), Effect.mapError(fail)),
-    ack: (input) =>
-      client.Ack(input).pipe(Effect.mapError(fail)),
+      call((client) => client.List({ all: all === true })).pipe(Effect.map((subscriptions) => ({ subscriptions }))),
+    show: (input) => call((client) => client.Show(input)),
+    events: (input) => call((client) => client.Events(input)).pipe(Effect.map((events) => ({ events }))),
+    ack: (input) => call((client) => client.Ack(input)),
     wait: (input) =>
-      client.Wait(input).pipe(
-        Effect.map((wake) => ({ text: WakeText.render(wake), wake })),
-        Effect.mapError(fail)
-      ),
-    pause: (input) =>
-      client.Pause(input).pipe(Effect.mapError(fail)),
-    resume: (input) =>
-      client.Resume(input).pipe(Effect.mapError(fail)),
+      call((client) => client.Wait(input)).pipe(Effect.map((wake) => ({ text: WakeText.render(wake), wake }))),
+    pause: (input) => call((client) => client.Pause(input)),
+    resume: (input) => call((client) => client.Resume(input)),
     retarget: ({ id, ...choice }) =>
-      targetChoice(choice).pipe(
-        Effect.flatMap((target) =>
-          client.Retarget({ id, target }).pipe(
-            Effect.mapError(fail)
-          )
-        )
-      ),
-    cancel: (input) =>
-      client.Cancel(input).pipe(Effect.mapError(fail))
+      targetChoice(choice).pipe(Effect.flatMap((target) => call((client) => client.Retarget({ id, target })))),
+    cancel: (input) => call((client) => client.Cancel(input))
   }
 }))

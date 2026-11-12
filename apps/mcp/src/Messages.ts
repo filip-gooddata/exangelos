@@ -1,6 +1,7 @@
 import { Array as Arr } from "effect"
 import type { RpcClientError } from "effect/rpc"
 import type { DaemonContract } from "@exangelos/contracts"
+import type { DaemonClient } from "@exangelos/daemon-client"
 import { Refusal } from "@exangelos/domain"
 
 export type AnyRefusal =
@@ -26,19 +27,18 @@ export type AgentFailure =
   | DaemonContract.TransitionRefused
   | DaemonContract.BacklogOverLimit
   | RpcClientError.RpcClientError
+  | DaemonClient.DaemonNotRunning
 
 export const noDaemonMessage = (reason: string): string =>
   `No Exangelos daemon is running, and starting it failed: ${reason}. Run \`exangelos daemon\` in a terminal to start it in the foreground, then retry this call.`
 
 const parameterValue = (value: unknown): string => typeof value === "string" ? value : JSON.stringify(value)
 
-/** One line per similar subscription, the same line the CLI prints. */
 export const similarLine = (match: Refusal.SimilarMatch): string =>
   `  ${match.id}  parameters: ${
     Object.entries(match.parameters).map(([key, value]) => `${key}=${parameterValue(value)}`).join(", ")
   }`
 
-/** What the daemon refused and what the agent can do next. */
 export const refusalMessage = (refusal: AnyRefusal): string => {
   switch (refusal._tag) {
     case "IntentRequired":
@@ -66,7 +66,6 @@ export const refusalMessage = (refusal: AnyRefusal): string => {
   }
 }
 
-/** Maps a draft contract failure to its message, through the domain refusal where the shapes agree. */
 export const failureMessage = (failure: AgentFailure): string => {
   switch (failure._tag) {
     case "PluginNotFound":
@@ -97,5 +96,7 @@ export const failureMessage = (failure: AgentFailure): string => {
       return `Not resumed: ${failure.pending} events are pending, over the limit of ${failure.limit}. Call events to find the last number, acknowledge through it with ack, then call resume.`
     case "RpcClientError":
       return noDaemonMessage(failure.message)
+    case "DaemonNotRunning":
+      return noDaemonMessage(`nothing answers on ${failure.path}`)
   }
 }
