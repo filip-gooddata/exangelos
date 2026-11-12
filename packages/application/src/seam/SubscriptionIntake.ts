@@ -1,5 +1,5 @@
 import { Context } from "effect"
-import type { Effect } from "effect"
+import type { DateTime, Effect } from "effect"
 import type { Event, Ids, Plugin } from "@exangelos/domain"
 
 export type Verdict = "continue" | "stop"
@@ -20,4 +20,11 @@ export class SubscriptionIntake extends Context.Service<SubscriptionIntake, {
    * dropped once `Delivery.hasSomethingToSay` no longer holds.
    */
   readonly pluginChanged: (plugin: Plugin.Plugin) => Effect.Effect<void>
+  /**
+   * A plugin whose record was removed, by a removal or a dev unlink. It counts as unavailable from
+   * `since`: the plugin's `unavailableSince` when it was already unavailable, the removal time
+   * otherwise. Called once on removal and again once `since` plus `limits.unavailableBeforeWake`
+   * has passed, also after a daemon restart, so a repeat with the same `since` must store nothing new.
+   */
+  readonly pluginRemoved: (plugin: Ids.PluginName, since: DateTime.Utc, problem: string) => Effect.Effect<void>
 }>()("@exangelos/application/SubscriptionIntake") {}

@@ -7,20 +7,24 @@
   },
   "scripts": {
     "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "bun run --bun vitest run --dir test",
     "build": "bun build.ts",
     "e2e": "bun run --bun vitest run e2e"
   },
   "dependencies": {
+    "@exangelos/application": "workspace:*",
     "@exangelos/contracts": "workspace:*",
     "@exangelos/domain": "workspace:*",
     "@exangelos/daemon-client": "workspace:*",
     "@exangelos/daemon": "workspace:*",
     "@exangelos/mcp": "workspace:*",
     "@exangelos/paths": "workspace:*",
+    "@exangelos/service": "workspace:*",
     "effect": "catalog:",
     "@effect/platform-bun": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "@types/bun": "catalog:",
     "vitest": "catalog:"
   }
