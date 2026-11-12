@@ -843,12 +843,19 @@ importers:
 
   plugins/jira:
     dependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
       '@exangelos/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
 
   plugins/template:
     dependencies:
