@@ -9,7 +9,9 @@ packages:
 catalog:
   effect: 4.1.4
   "@effect/platform-bun": 4.1.4
+  "@effect/platform-node-shared": 4.1.4
   "@effect/platform-browser": 4.1.4
+  "@effect/platform-node-shared": 4.1.4
   "@effect/sql-sqlite-bun": 4.1.4
   "@effect/vitest": 4.1.4
   "@effect/tsgo": 0.68.1

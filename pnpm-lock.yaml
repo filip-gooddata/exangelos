@@ -170,6 +170,9 @@ catalogs:
     '@effect/platform-bun':
       specifier: 4.1.4
       version: 4.1.4
+    '@effect/platform-node-shared':
+      specifier: 4.1.4
+      version: 4.1.4
     '@effect/sql-sqlite-bun':
       specifier: 4.1.4
       version: 4.1.4
@@ -442,9 +445,22 @@ importers:
       '@exangelos/keychain':
         specifier: workspace:*
         version: link:../../gap/keychain
+      '@exangelos/paths':
+        specifier: workspace:*
+        version: link:../paths
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@effect/platform-node-shared':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
+      vitest:
+        specifier: 'catalog:'
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
 
   adapters/service:
     dependencies:
@@ -454,12 +470,19 @@ importers:
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@exangelos/paths':
+        specifier: workspace:*
+        version: link:../paths
       '@exangelos/service-manager':
         specifier: workspace:*
         version: link:../../gap/service-manager
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@effect/platform-node-shared':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
 
   adapters/settings:
     dependencies:
@@ -469,9 +492,22 @@ importers:
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@exangelos/paths':
+        specifier: workspace:*
+        version: link:../paths
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@effect/platform-node-shared':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
+      vitest:
+        specifier: 'catalog:'
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
 
   adapters/sqlite:
     dependencies:
@@ -503,12 +539,25 @@ importers:
       '@exangelos/application':
         specifier: workspace:*
         version: link:../../packages/application
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
+      vitest:
+        specifier: 'catalog:'
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
 
   apps/cli:
     dependencies:
@@ -656,6 +705,13 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
+      vitest:
+        specifier: 'catalog:'
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
 
   gap/notifications:
     dependencies:
@@ -684,6 +740,10 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@effect/platform-node-shared':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
 
   packages/application:
     dependencies:
@@ -693,6 +753,13 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/contracts:
     dependencies:
