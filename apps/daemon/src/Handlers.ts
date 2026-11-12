@@ -28,7 +28,6 @@ const actor = ({ headers }: Caller) => SessionHeaders.actorFromHeaders(headers)
 const detected = ({ headers }: Caller) => Option.toArray(SessionHeaders.fromHeaders(headers))
 
 const lookup = { SubscriptionNotFound: Errors.subscriptionNotFound } as const
-const vanished = { NoSuchElementError: Errors.vanished } as const
 
 /**
  * Serves every DaemonContract call through its use case. It requires application services only:
@@ -92,31 +91,38 @@ export const layer = DaemonContract.DaemonContract.toLayer({
       Effect.catchTags({ ...lookup, NotAllowed: Errors.transitionRefused(payload.id) })
     ),
   ImportPlugin: ({ source }, caller) =>
-    importPlugin(actor(caller), source).pipe(Effect.catchTags({ ...vanished, ImportFailed: Errors.importFailed })),
+    importPlugin(actor(caller), source).pipe(
+      Effect.catchTags({ NoSuchElementError: Errors.removedDuringImport, ImportFailed: Errors.importFailed })
+    ),
   EnablePlugin: ({ name, digest }, caller) =>
     enablePlugin(actor(caller), name, digest).pipe(
       Effect.catchTags({
-        ...vanished,
+        NoSuchElementError: Errors.removedDuringCall(name),
         PluginNotFound: Errors.pluginNotFound,
         DigestMismatch: Errors.digestMismatch,
         HumanRequired: Errors.humanRequired
       })
     ),
   DisablePlugin: ({ name }, caller) =>
-    disablePlugin(actor(caller), name).pipe(Effect.catchTags({ ...vanished, PluginNotFound: Errors.pluginNotFound })),
+    disablePlugin(actor(caller), name).pipe(
+      Effect.catchTags({ NoSuchElementError: Errors.removedDuringCall(name), PluginNotFound: Errors.pluginNotFound })
+    ),
   RemovePlugin: ({ name }, caller) =>
     removePlugin(actor(caller), name).pipe(Effect.catchTags({ PluginNotFound: Errors.pluginNotFound })),
   ConfigurePlugin: ({ name, values }, caller) =>
     configurePlugin(actor(caller), name, values).pipe(
       Effect.catchTags({
-        ...vanished,
+        NoSuchElementError: Errors.removedDuringCall(name),
         PluginNotFound: Errors.pluginNotFound,
         PluginUnavailable: Errors.pluginUnavailable,
         ConfigurationInvalid: Errors.configurationInvalid,
         ConfigurationRejected: Errors.configurationRejected
       })
     ),
-  DevLink: ({ path }, caller) => devLink(actor(caller), path).pipe(Effect.catchTags({ ...vanished, ImportFailed: Errors.importFailed })),
+  DevLink: ({ path }, caller) =>
+    devLink(actor(caller), path).pipe(
+      Effect.catchTags({ NoSuchElementError: Errors.removedDuringImport, ImportFailed: Errors.importFailed })
+    ),
   DevUnlink: ({ name }, caller) =>
     devUnlink(actor(caller), name).pipe(Effect.catchTags({ PluginNotFound: Errors.pluginNotFound })),
   ListPluginAlerts: () => listPluginAlerts,
@@ -125,7 +131,8 @@ export const layer = DaemonContract.DaemonContract.toLayer({
   ServiceStatus: () =>
     serviceStatus.pipe(
       Effect.map((status) => status.method),
-      Effect.catchTag("ServiceFailed", (e) => Effect.succeed(e.method)),
+      Effect.catchTag("ServiceFailed", (e) =>
+        Effect.as(Effect.logWarning("Service status unavailable", e.reason), e.method)),
       Effect.map((startMethod) => ({ version, startMethod }))
     )
 })

@@ -51,10 +51,14 @@ export const subjectChanged = (e: Refusal.SubjectChanged) =>
 export const importFailed = (e: PluginImportSource.ImportFailed) => Effect.fail(new Contract.ImportFailed({ reason: e.reason }))
 
 /**
- * Another call removed the plugin record between a use case's write and its read back. The
- * contract has no error for that race, so it is a defect.
+ * Another call removed the plugin record between a use case's write and its read back. Calls that
+ * name a plugin report it as not found; an import or link reports a failed import.
  */
-export const vanished = (e: Cause.NoSuchElementError) => Effect.die(e)
+export const removedDuringCall = (plugin: Ids.PluginName) => (_: Cause.NoSuchElementError) =>
+  Effect.fail(new Contract.PluginNotFound({ plugin }))
+
+export const removedDuringImport = (_: Cause.NoSuchElementError) =>
+  Effect.fail(new Contract.ImportFailed({ reason: "Another call removed the plugin while it was being imported." }))
 
 /**
  * Only the owner enables a plugin, so a call from an agent session is refused. The contract has no
@@ -84,18 +88,24 @@ export const similarSubscriptions = (e: Refusal.SimilarSubscriptions) =>
     return yield* new Contract.SimilarSubscriptions({ similar: [first, ...rest] })
   })
 
-/** The domain refusal names the state by tag; the contract carries the subscription's whole state. */
+/**
+ * The contract carries the subscription's whole state, so it is reloaded after the lock is
+ * released. The message names that reloaded state, so the two always agree.
+ */
 export const transitionRefused = (id: Ids.SubscriptionId) => (e: Refusal.NotAllowed) =>
   Effect.gen(function*() {
     const subscription = yield* (yield* SubscriptionRepository.SubscriptionRepository).find(id)
     if (Option.isNone(subscription)) return yield* new Contract.SubscriptionNotFound({ id })
     return yield* new Contract.TransitionRefused({
       state: subscription.value.state,
-      message: `Cannot ${e.action} a subscription that is ${e.state.toLowerCase()}.`
+      message: `Cannot ${e.action} a subscription that is ${subscription.value.state._tag.toLowerCase()}.`
     })
   })
 
-/** The limit is the backlog count from the settings that resume checked against. */
+/**
+ * The limit is the backlog count in the current settings, read again after resume refused. Resume
+ * also refuses when the oldest pending event is too old; then pending can be below the limit.
+ */
 export const backlogOverLimit = (e: Refusal.BacklogOverLimit) =>
   Effect.gen(function*() {
     const limits = yield* currentLimits
