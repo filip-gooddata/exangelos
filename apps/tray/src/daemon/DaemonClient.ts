@@ -1,6 +1,6 @@
 import { DaemonContract } from "@exangelos/contracts"
 import type { Plugin, Subscription } from "@exangelos/domain"
-import { Context, Effect, Layer, Schema } from "effect"
+import { Cause, Context, Effect, Layer, Result, Schema } from "effect"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
 import type { Socket } from "effect/socket"
@@ -19,9 +19,11 @@ export const layer: Layer.Layer<DaemonClient, never, Socket.Socket> = Layer.effe
   Layer.provide(RpcSerialization.layerNdjson)
 )
 
+export type Section<A> = Result.Result<A, string>
+
 export interface Snapshot {
-  readonly subscriptions: ReadonlyArray<Subscription.Subscription>
-  readonly plugins: ReadonlyArray<Plugin.Plugin>
+  readonly subscriptions: Section<ReadonlyArray<Subscription.Subscription>>
+  readonly plugins: Section<ReadonlyArray<Plugin.Plugin>>
 }
 
 export class DaemonNotRunning extends Schema.TaggedError<DaemonNotRunning>()("DaemonNotRunning", {
@@ -32,19 +34,25 @@ export class DaemonUnreachable extends Schema.TaggedError<DaemonUnreachable>()("
   message: Schema.String
 }) {}
 
-/** Loads the active subscriptions and every plugin. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */
+const section = <A>(
+  call: Effect.Effect<A, RpcClientError>
+): Effect.Effect<Section<A>, DaemonNotRunning | DaemonUnreachable> =>
+  call.pipe(
+    Effect.map(Result.succeed),
+    Effect.mapError((error): DaemonNotRunning | DaemonUnreachable =>
+      error.reason._tag === "SocketOpenError"
+        ? new DaemonNotRunning({ message: error.message })
+        : new DaemonUnreachable({ message: error.message })
+    ),
+    Effect.catchDefect((defect) => Effect.succeed(Result.fail(Cause.pretty(Cause.die(defect)).split("\n")[0] ?? "")))
+  )
+
+/** Loads the active subscriptions and every plugin. A call the daemon answers with a defect fails only its own section. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */
 export const snapshot: Effect.Effect<Snapshot, DaemonNotRunning | DaemonUnreachable, DaemonClient> = Effect.gen(
   function*() {
     const client = yield* DaemonClient
-    const [subscriptions, plugins] = yield* Effect.all([client.List({ all: false }), client.ListPlugins()], {
-      concurrency: 2
-    })
+    const subscriptions = yield* section(client.List({ all: false }))
+    const plugins = yield* section(client.ListPlugins())
     return { subscriptions, plugins }
   }
-).pipe(
-  Effect.mapError((error): DaemonNotRunning | DaemonUnreachable =>
-    error.reason._tag === "SocketOpenError"
-      ? new DaemonNotRunning({ message: error.message })
-      : new DaemonUnreachable({ message: error.message })
-  )
 )

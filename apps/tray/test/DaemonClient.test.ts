@@ -2,7 +2,7 @@ import { BunSocket } from "@effect/platform-bun"
 import { describe, expect, it } from "@effect/vitest"
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import { DaemonServer } from "@exangelos/daemon-client"
-import { Effect, Layer, Option, Schedule } from "effect"
+import { Effect, Layer, Option, Result, Schedule } from "effect"
 import { RpcServer } from "effect/rpc"
 import { Socket } from "effect/socket"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -11,14 +11,14 @@ import { plugin, subscription } from "./fixtures.ts"
 
 const unused = () => Effect.die("not served in this test")
 
-const handlers = DaemonContract.DaemonContract.toLayer({
+const handlers = (listDies: boolean) => DaemonContract.DaemonContract.toLayer({
   ServiceStatus: (_, { headers }) =>
     Effect.succeed({
       version: Option.isSome(SessionHeaders.fromHeaders(headers)) ? "agent" : "you",
       startMethod: "foreground"
     }),
   ListPlugins: () => Effect.succeed([plugin()]),
-  List: () => Effect.succeed([subscription()]),
+  List: () => listDies ? Effect.die("NotImplemented: List") : Effect.succeed([subscription()]),
   Subscribe: unused,
   Update: unused,
   Show: unused,
@@ -40,8 +40,8 @@ const handlers = DaemonContract.DaemonContract.toLayer({
   SetSettings: unused
 })
 
-const daemon = (path: string) =>
-  RpcServer.layer(DaemonContract.DaemonContract).pipe(Layer.provide(handlers), Layer.provide(DaemonServer.layer(path)))
+const daemon = (path: string, listDies = false) =>
+  RpcServer.layer(DaemonContract.DaemonContract).pipe(Layer.provide(handlers(listDies)), Layer.provide(DaemonServer.layer(path)))
 
 const client = (path: string) =>
   DaemonClient.layer.pipe(Layer.provide(Layer.effect(Socket.Socket, BunSocket.makeNet({ path }))))
@@ -58,8 +58,8 @@ describe("daemon client over a unix socket", () => {
     withHome((path) =>
       Effect.gen(function*() {
         const loaded = yield* DaemonClient.snapshot
-        expect(loaded.subscriptions.map((s) => s.id)).toEqual(["sub_7f3k"])
-        expect(loaded.plugins.map((p) => p.name)).toEqual(["github-pr"])
+        expect(Result.getOrThrow(loaded.subscriptions).map((s) => s.id)).toEqual(["sub_7f3k"])
+        expect(Result.getOrThrow(loaded.plugins).map((p) => p.name)).toEqual(["github-pr"])
         expect((yield* (yield* DaemonClient.DaemonClient).ServiceStatus()).version).toBe("you")
       }).pipe(Effect.provide(client(path).pipe(Layer.provideMerge(daemon(path)))))
     ))
@@ -71,7 +71,15 @@ describe("daemon client over a unix socket", () => {
         expect(before._tag).toBe("DaemonNotRunning")
         yield* Layer.build(daemon(path))
         const after = yield* DaemonClient.snapshot.pipe(Effect.retry({ schedule: Schedule.spaced("100 millis"), times: 50 }))
-        expect(after.plugins).toHaveLength(1)
+        expect(Result.getOrThrow(after.plugins)).toHaveLength(1)
       }).pipe(Effect.provide(client(path)), Effect.scoped)
+    ))
+  it.live("fails only the section whose call the daemon answers with a defect", () =>
+    withHome((path) =>
+      Effect.gen(function*() {
+        const loaded = yield* DaemonClient.snapshot
+        expect(Result.isFailure(loaded.subscriptions)).toBe(true)
+        expect(Result.getOrThrow(loaded.plugins)).toHaveLength(1)
+      }).pipe(Effect.provide(client(path).pipe(Layer.provideMerge(daemon(path, true)))))
     ))
 })

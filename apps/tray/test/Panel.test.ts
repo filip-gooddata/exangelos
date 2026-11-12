@@ -1,14 +1,19 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Ids } from "@exangelos/domain"
-import { Effect, Ref } from "effect"
+import { Effect, Ref, Result } from "effect"
 import { TestClock } from "effect/testing"
 import { DaemonClient, Host, Panel } from "../src/index.ts"
 import { plugin, subscription } from "./fixtures.ts"
 
 type Answer = Effect.Effect<DaemonClient.Snapshot, DaemonClient.DaemonNotRunning | DaemonClient.DaemonUnreachable>
 
-const healthy: Answer = Effect.succeed({ subscriptions: [subscription()], plugins: [plugin()] })
-const failing: Answer = Effect.succeed({ subscriptions: [], plugins: [plugin({ process: "failing" })] })
+const loaded = (
+  subscriptions: ReadonlyArray<ReturnType<typeof subscription>>,
+  plugins: ReadonlyArray<ReturnType<typeof plugin>>
+): Answer => Effect.succeed({ subscriptions: Result.succeed(subscriptions), plugins: Result.succeed(plugins) })
+
+const healthy = loaded([subscription()], [plugin()])
+const failing = loaded([], [plugin({ process: "failing" })])
 const absent: Answer = Effect.fail(new DaemonClient.DaemonNotRunning({ message: "SocketOpenError: no such file" }))
 
 const start = (first: Answer, refusals = 0) =>
@@ -35,21 +40,21 @@ const start = (first: Answer, refusals = 0) =>
 describe("panel state", () => {
   it.effect("loads subscriptions and plugins and lists what needs you", () =>
     Effect.gen(function*() {
-      const { panel, sent } = yield* start(Effect.succeed({
-        subscriptions: [subscription()],
-        plugins: [
+      const { panel, sent } = yield* start(loaded(
+        [subscription()],
+        [
           plugin({ name: Ids.PluginName.make("ok") }),
           plugin({ name: Ids.PluginName.make("new"), trust: "inert" }),
           plugin({ name: Ids.PluginName.make("official"), trust: "inert", origin: { _tag: "Official", version: "1" } }),
           plugin({ name: Ids.PluginName.make("crashy"), process: "failing" }),
           plugin({ name: Ids.PluginName.make("locked"), configuration: { _tag: "Rejected", reason: "401" } })
         ]
-      }))
+      ))
       const state = yield* panel.current
       if (state._tag !== "Ready") return expect.fail(state._tag)
-      expect(state.subscriptions.map((s) => s.id)).toEqual(["sub_7f3k"])
-      expect(state.plugins).toHaveLength(5)
-      expect(state.needsYou.map((alert) => [alert._tag, "plugin" in alert ? alert.plugin : ""])).toEqual([
+      expect(Result.getOrThrow(state.subscriptions).map((s) => s.id)).toEqual(["sub_7f3k"])
+      expect(Result.getOrThrow(state.plugins)).toHaveLength(5)
+      expect(Result.getOrThrow(state.needsYou).map((alert) => [alert._tag, "plugin" in alert ? alert.plugin : ""])).toEqual([
         ["WaitsForEnable", "new"],
         ["DigestMismatch", "official"],
         ["Failing", "crashy"],
@@ -74,7 +79,7 @@ describe("panel state", () => {
       expect((yield* panel.current)._tag).toBe("DaemonNotRunning")
       yield* next(healthy)
       const state = yield* panel.current
-      expect(state._tag === "Ready" && state.subscriptions.length).toBe(1)
+      expect(state._tag === "Ready" && Result.getOrThrow(state.subscriptions).length).toBe(1)
       expect(sent).toEqual([false])
     }).pipe(Effect.scoped))
   it.effect("keeps the icon while the daemon is gone and tells a refusing host again", () =>
@@ -85,5 +90,17 @@ describe("panel state", () => {
       yield* next(failing)
       yield* next(failing)
       expect(sent).toEqual([true, true])
+    }).pipe(Effect.scoped))
+  it.effect("keeps the plugins and the icon when only the subscriptions fail", () =>
+    Effect.gen(function*() {
+      const { panel, sent } = yield* start(Effect.succeed({
+        subscriptions: Result.fail("NotImplemented: List"),
+        plugins: Result.succeed([plugin({ process: "failing" })])
+      }))
+      const state = yield* panel.current
+      if (state._tag !== "Ready") return expect.fail(state._tag)
+      expect(state.subscriptions).toStrictEqual(Result.fail("NotImplemented: List"))
+      expect(Result.getOrThrow(state.plugins)).toHaveLength(1)
+      expect(sent).toEqual([true])
     }).pipe(Effect.scoped))
 })

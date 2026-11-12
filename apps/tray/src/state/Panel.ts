@@ -1,6 +1,6 @@
 import type { Alert, Plugin, Subscription } from "@exangelos/domain"
-import { Context, Data, type Duration, Effect, Layer, Option, Ref, Schedule, type Scope, Semaphore, Stream, SubscriptionRef } from "effect"
-import { DaemonClient, type DaemonNotRunning, type DaemonUnreachable, type Snapshot, snapshot } from "../daemon/DaemonClient.ts"
+import { Context, Data, type Duration, Effect, Layer, Option, Ref, Result, Schedule, type Scope, Semaphore, Stream, SubscriptionRef } from "effect"
+import { DaemonClient, type DaemonNotRunning, type DaemonUnreachable, type Section, type Snapshot, snapshot } from "../daemon/DaemonClient.ts"
 import { Host, type HostCommandFailed } from "../host/Host.ts"
 
 export type PanelState = Data.TaggedEnum<{
@@ -8,9 +8,9 @@ export type PanelState = Data.TaggedEnum<{
   DaemonNotRunning: { readonly message: string }
   DaemonUnreachable: { readonly message: string }
   Ready: {
-    readonly subscriptions: ReadonlyArray<Subscription.Subscription>
-    readonly plugins: ReadonlyArray<Plugin.Plugin>
-    readonly needsYou: ReadonlyArray<Alert.Alert>
+    readonly subscriptions: Section<ReadonlyArray<Subscription.Subscription>>
+    readonly plugins: Section<ReadonlyArray<Plugin.Plugin>>
+    readonly needsYou: Section<ReadonlyArray<Alert.Alert>>
   }
 }>
 export const PanelState = Data.taggedEnum<PanelState>()
@@ -36,7 +36,7 @@ export const fromLoad = <R>(
   load: Effect.Effect<Snapshot, DaemonNotRunning | DaemonUnreachable, R>
 ): Effect.Effect<PanelState, never, R> =>
   load.pipe(
-    Effect.map(({ plugins, subscriptions }) => PanelState.Ready({ subscriptions, plugins, needsYou: needsYou(plugins) })),
+    Effect.map(({ plugins, subscriptions }) => PanelState.Ready({ subscriptions, plugins, needsYou: Result.map(plugins, needsYou) })),
     Effect.catchTags({
       DaemonNotRunning: ({ message }) => Effect.succeed(PanelState.DaemonNotRunning({ message })),
       DaemonUnreachable: ({ message }) => Effect.succeed(PanelState.DaemonUnreachable({ message }))
@@ -44,7 +44,7 @@ export const fromLoad = <R>(
   )
 
 export const attention = (state: PanelState): Option.Option<boolean> =>
-  state._tag === "Ready" ? Option.some(state.needsYou.length > 0) : Option.none()
+  state._tag === "Ready" ? Option.map(Result.getSuccess(state.needsYou), (alerts) => alerts.length > 0) : Option.none()
 
 export class Panel extends Context.Service<Panel, {
   readonly current: Effect.Effect<PanelState>
@@ -58,7 +58,7 @@ export interface Options {
   readonly interval: Duration.Input
 }
 
-/** Loads now and then every `interval`. After each load that reaches the daemon, tells the host when the needs-you list has turned empty or non-empty; a host that refuses is told again after the next load. */
+/** Loads now and then every `interval`. After each load that lists the plugins, tells the host when the needs-you list has turned empty or non-empty; a host that refuses is told again after the next load. */
 export const make = ({ interval, load, setAttention }: Options): Effect.Effect<Panel["Service"], never, Scope.Scope> =>
   Effect.gen(function*() {
     const state = yield* SubscriptionRef.make<PanelState>(PanelState.Loading())
