@@ -3,6 +3,8 @@ import { mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "@effect/vitest"
+import { Effect } from "effect"
+import { DaemonContract } from "@exangelos/contracts"
 import { callOf, run } from "./harness.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "exangelos-cli-"))
@@ -33,6 +35,21 @@ describe("plugin configure", () => {
     const result = await run(["plugin", "configure", "github-pr", "--secret-file", `token=${file}`])
     expect(result.exit._tag).toBe("Success")
     expect(callOf(result, "ConfigurePlugin")?.payload).toEqual({ name: "github-pr", values: { token: fake } })
+  })
+
+  it("keeps a secret the plugin echoes in its rejection out of the output", async () => {
+    const file = join(directory, "rejected")
+    writeFileSync(file, fake)
+    const result = await run(["plugin", "configure", "github-pr", "--secret-file", `token=${file}`, "--json"], {
+      handlers: {
+        ConfigurePlugin: () => Effect.fail(new DaemonContract.ConfigurationRejected({ reason: `bad token ${fake}` }))
+      }
+    })
+    expect(result.exit._tag).toBe("Failure")
+    expect(JSON.parse(result.stdout)).toMatchObject({
+      error: { _tag: "ConfigurationRejected", reason: "bad token [secret]" }
+    })
+    expect(result.stdout + result.stderr).not.toContain(fake)
   })
 
   it("refuses a secret field given as key=value and sends nothing", async () => {

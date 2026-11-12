@@ -195,7 +195,10 @@ const configure = Command.make(
         const secrets = yield* Secrets.read(sources, (key) => labels.get(key) ?? key)
         const values: Record<string, string> = { ...plain }
         for (const [key, value] of secrets) values[key] = Redacted.value(value)
-        return yield* client.ConfigurePlugin({ name, values })
+        const revealed = secrets.map(([, value]) => Redacted.value(value))
+        return yield* client.ConfigurePlugin({ name, values }).pipe(
+          Effect.mapError((failure) => Secrets.scrub(failure, revealed))
+        )
       })
       yield* respond(work, {
         schema: Plugin.Plugin,

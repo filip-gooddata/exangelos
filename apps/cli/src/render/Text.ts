@@ -167,7 +167,13 @@ export const plugin = (plugin: Plugin.Plugin): string => {
     ["Configured by", plugin.configuredBy === undefined ? undefined : actorText(plugin.configuredBy)],
     ["Process", plugin.process],
     ["Unavailable since", plugin.unavailableSince === undefined ? undefined : time(plugin.unavailableSince)],
-    ["Main parameter", catalogue?.parameters.main]
+    ["Main parameter", catalogue?.parameters.main],
+    [
+      "Parameters schema",
+      catalogue === undefined || Object.keys(catalogue.parameters.schema).length === 0
+        ? undefined
+        : JSON.stringify(catalogue.parameters.schema)
+    ]
   ])
   if (catalogue === undefined) return lines.join("\n")
   const fieldsTable = catalogue.configuration.map((field) => [

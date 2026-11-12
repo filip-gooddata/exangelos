@@ -38,9 +38,9 @@ const fromCommand = (source: { readonly key: string; readonly command: string })
   Effect.scoped(Effect.gen(function*() {
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const handle = yield* spawner.spawn(ChildProcess.make("sh", ["-c", source.command]))
-    const [output, exitCode] = yield* Effect.all(
-      [Stream.mkString(Stream.decodeText(Stream.drainFork(handle.stdout, handle.stderr))), handle.exitCode],
-      { concurrency: 2 }
+    const [output, , exitCode] = yield* Effect.all(
+      [Stream.mkString(Stream.decodeText(handle.stdout)), Stream.runDrain(handle.stderr), handle.exitCode],
+      { concurrency: 3 }
     )
     if (exitCode !== 0) {
       return yield* new InputInvalid({
@@ -74,6 +74,15 @@ const fromPrompt = (source: { readonly key: string }, label: string) =>
     Effect.catchTag("QuitError", () =>
       Effect.fail(new InputInvalid({ message: `No value was entered for the secret field "${source.key}".` })))
   )
+
+/** Replaces every secret value inside the string fields of `failure`, so an echoed value never gets printed. */
+export const scrub = <F extends object>(failure: F, values: ReadonlyArray<string>): F => {
+  const clean = (text: string) => values.reduce((acc, value) => acc.split(value).join("[secret]"), text)
+  const fields = Object.fromEntries(
+    Object.entries(failure).map(([key, field]) => [key, typeof field === "string" ? clean(field) : field])
+  )
+  return Object.assign(Object.create(Object.getPrototypeOf(failure)), failure, fields)
+}
 
 /**
  * Reads each secret once. The values stay redacted until the caller hands them to the daemon,
