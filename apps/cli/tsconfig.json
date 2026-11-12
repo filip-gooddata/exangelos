@@ -2,6 +2,8 @@
   "extends": "../../tsconfig.base.json",
   "include": [
     "src",
-    "test"
+    "test",
+    "e2e",
+    "build.ts"
   ]
 }

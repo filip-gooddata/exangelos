@@ -62,8 +62,11 @@ export const isOpen = (subscription: Subscription): boolean =>
 export const isWatched = (subscription: Subscription, plugin: Plugin): boolean =>
   subscription.state._tag === "Active" && PluginRules.isAvailable(plugin)
 
+export const isSuspendedWhen = (subscription: Subscription, available: boolean): boolean =>
+  subscription.state._tag === "Active" && !available
+
 export const isSuspended = (subscription: Subscription, plugin: Plugin): boolean =>
-  subscription.state._tag === "Active" && !PluginRules.isAvailable(plugin)
+  isSuspendedWhen(subscription, PluginRules.isAvailable(plugin))
 
 export const isOwnSession = (subscription: Subscription, actor: Actor): boolean =>
   actor._tag === "Session" && subscription.wakeTarget !== undefined && sameSession(actor.session, subscription.wakeTarget)
@@ -162,6 +165,20 @@ export const cancel = (subscription: Subscription, actor: Actor, now: DateTime.U
   })
 }
 
+export const suspensionWakeWhen = (
+  subscription: Subscription,
+  unavailable: Option.Option<{ readonly since: DateTime.Utc; readonly problem: string }>,
+  lastSuspensionWake: Option.Option<DateTime.Utc>,
+  now: DateTime.Utc,
+  limits: Limits
+): Option.Option<Why> => {
+  if (Option.isNone(unavailable) || !isSuspendedWhen(subscription, false)) return Option.none()
+  const { since, problem } = unavailable.value
+  if (DateTime.isLessThan(now, DateTime.addDuration(since, limits.unavailableBeforeWake))) return Option.none()
+  if (Option.exists(lastSuspensionWake, (woken) => DateTime.isGreaterThanOrEqualTo(woken, since))) return Option.none()
+  return Option.some({ _tag: "Suspended", since, problem } as const)
+}
+
 export const suspensionWake = (
   subscription: Subscription,
   plugin: Plugin,
@@ -170,8 +187,8 @@ export const suspensionWake = (
   limits: Limits
 ): Option.Option<Why> => {
   const since = plugin.unavailableSince
-  if (since === undefined || !isSuspended(subscription, plugin)) return Option.none()
-  if (DateTime.isLessThan(now, DateTime.addDuration(since, limits.unavailableBeforeWake))) return Option.none()
-  if (Option.exists(lastSuspensionWake, (woken) => DateTime.isGreaterThanOrEqualTo(woken, since))) return Option.none()
-  return Option.map(PluginRules.problem(plugin), (problem) => ({ _tag: "Suspended", since, problem }) as const)
+  const unavailable = since === undefined || PluginRules.isAvailable(plugin)
+    ? Option.none()
+    : Option.map(PluginRules.problem(plugin), (problem) => ({ since, problem }))
+  return suspensionWakeWhen(subscription, unavailable, lastSuspensionWake, now, limits)
 }

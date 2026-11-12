@@ -6,7 +6,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "build": "bun build.ts",
+    "e2e": "bun run --bun vitest run e2e"
   },
   "dependencies": {
     "@exangelos/contracts": "workspace:*",
@@ -17,5 +19,9 @@
     "@exangelos/paths": "workspace:*",
     "effect": "catalog:",
     "@effect/platform-bun": "catalog:"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:",
+    "vitest": "catalog:"
   }
 }
