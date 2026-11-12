@@ -1,17 +1,16 @@
 import { Context, Effect, Layer, Ref } from "effect"
-import type { Catalogue, Ids } from "@exangelos/domain"
+import type { Catalogue, Ids, Refusal } from "@exangelos/domain"
 import type { OfficialFetchFailed } from "../ports/OfficialPluginSource.ts"
 import {
   PluginAccess,
   PluginNotFound,
   type Described,
-  type ParametersInvalid,
-  type PluginUnavailable
+  type ParametersInvalid
 } from "../seam/PluginAccess.ts"
 
 export type Describe = (
   parameters: Catalogue.Parameters
-) => Effect.Effect<Described, PluginUnavailable | OfficialFetchFailed | ParametersInvalid>
+) => Effect.Effect<Described, Refusal.PluginUnavailable | OfficialFetchFailed | ParametersInvalid>
 
 export class PluginAccessFake extends Context.Service<PluginAccessFake, {
   /** How `describe` answers for the plugin; an unknown plugin is not found. */
