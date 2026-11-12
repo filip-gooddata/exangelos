@@ -82,18 +82,23 @@ describe("layerSystemd", () => {
       })
     ))
 
-  it.effect("uninstall stops a service still running after its unit file is gone", () =>
+  it.effect("uninstall stops a starting service and drops its login link after its unit file is gone", () =>
     inTempDirectory((directory) =>
       Effect.gen(function*() {
-        const fake = FakeSpawner.make(({ args }) => args[1] === "is-active" ? { stdout: "active\n" } : {})
+        const fs = yield* FileSystem.FileSystem
+        const link = `${directory}/default.target.wants/exangelos.daemon.service`
+        yield* fs.makeDirectory(`${directory}/default.target.wants`)
+        yield* fs.symlink(`${directory}/exangelos.daemon.service`, link)
+        const fake = FakeSpawner.make(({ args }) => args[1] === "show" ? { stdout: "activating\n" } : {})
         yield* UserService.use((service) => service.uninstall("exangelos.daemon")).pipe(
           provide(layerSystemd({ directory }), fake)
         )
         expect(fake.ran.map(FakeSpawner.line)).toEqual([
-          "systemctl --user is-active exangelos.daemon.service",
+          "systemctl --user show -p ActiveState --value exangelos.daemon.service",
           "systemctl --user stop exangelos.daemon.service",
           "systemctl --user daemon-reload"
         ])
+        expect(yield* fs.readDirectory(`${directory}/default.target.wants`)).toEqual([])
       })
     ))
 
@@ -110,6 +115,7 @@ describe("layerSystemd", () => {
           reason: "stdoutPath has a line break or a trailing backslash"
         })
         expect(fake.ran).toEqual([])
+        expect(yield* (yield* FileSystem.FileSystem).readDirectory(directory)).toEqual([])
       })
     ))
 })

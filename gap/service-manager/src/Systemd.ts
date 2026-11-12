@@ -76,10 +76,12 @@ export const layerSystemd = (options: {
             if (yield* fs.exists(unitFile(label))) {
               yield* systemctl("disable", "--now", unit(label))
               yield* fs.remove(unitFile(label), { force: true })
-            } else if (yield* isActive(label)) {
-              yield* systemctl("stop", unit(label))
             } else {
-              return
+              const shown = yield* systemctl("show", "-p", "ActiveState", "--value", unit(label))
+              if (!["inactive", "failed"].includes(shown.stdout.trim())) {
+                yield* systemctl("stop", unit(label))
+              }
+              yield* fs.remove(path.join(options.directory, "default.target.wants", unit(label)), { force: true })
             }
             yield* systemctl("daemon-reload")
           }),
