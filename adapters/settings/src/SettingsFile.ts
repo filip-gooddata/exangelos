@@ -9,7 +9,8 @@ const initial = Schema.encodeSync(Settings.Settings)(Settings.initial)
 
 const withDefaults = (file: unknown): unknown => {
   if (!Schema.is(Record)(file)) return file
-  const limits = Schema.is(Record)(file.limits) ? { ...initial.limits, ...file.limits } : file.limits ?? initial.limits
+  if (!("limits" in file)) return { ...initial, ...file }
+  const limits = Schema.is(Record)(file.limits) ? { ...initial.limits, ...file.limits } : file.limits
   return { ...initial, ...file, limits }
 }
 

@@ -1,4 +1,4 @@
-import { Effect, FileSystem, Layer, Option, Path } from "effect"
+import { Effect, FileSystem, Layer, Option, Path, Semaphore } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import { SecretStore } from "@exangelos/application"
 import type { Ids } from "@exangelos/domain"
@@ -25,17 +25,26 @@ export const layerKeychain: Layer.Layer<SecretStore.SecretStore, never, Keychain
   })
 )
 
-/** Keeps every secret in one JSON file at mode 0600, for machines with no keychain. */
+/** Keeps every secret in one JSON file at mode 0600, for machines with no keychain. Writes in one process run one at a time. */
 export const layerFile = (path: string): Layer.Layer<SecretStore.SecretStore, never, FileSystem.FileSystem | Path.Path> =>
   Layer.effect(SecretStore.SecretStore)(
     Effect.gen(function*() {
       const context = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
+      const writing = yield* Semaphore.make(1)
       return {
         set: (plugin, field, value) =>
-          SecretsFile.set(path, plugin, field, value).pipe(Effect.mapError(failed(plugin)), Effect.provide(context)),
+          SecretsFile.set(path, plugin, field, value).pipe(
+            writing.withPermit,
+            Effect.mapError(failed(plugin)),
+            Effect.provide(context)
+          ),
         get: (plugin, field) => SecretsFile.get(path, plugin, field).pipe(Effect.mapError(failed(plugin)), Effect.provide(context)),
         delete: (plugin, fields) =>
-          SecretsFile.remove(path, plugin, fields).pipe(Effect.mapError(failed(plugin)), Effect.provide(context))
+          SecretsFile.remove(path, plugin, fields).pipe(
+            writing.withPermit,
+            Effect.mapError(failed(plugin)),
+            Effect.provide(context)
+          )
       }
     })
   )

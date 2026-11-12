@@ -51,9 +51,14 @@ const run = (spawner: ChildProcessSpawner.ChildProcessSpawner["Service"], comman
 const reasonOf = (command: string, outcome: Outcome) =>
   `${command} exited with ${outcome.exitCode}${outcome.stderr.trim() === "" ? "" : `: ${outcome.stderr.trim()}`}`
 
+const exitedWith = (command: string, outcome: Outcome) => `${command} exited with ${outcome.exitCode}`
+
 const quote = (word: string) => `"${word.replace(/[\\"]/g, (character) => `\\${character}`)}"`
 
 const macOSNotFound = 44
+
+// security -i reads lines into a 4096 byte buffer, NUL included, and runs any overflow as a further command.
+const securityLineLimit = 4095
 
 export const macOS: Layer.Layer<Keychain, never, ChildProcessSpawner.ChildProcessSpawner> = Layer.effect(Keychain)(
   Effect.gen(function*() {
@@ -65,10 +70,20 @@ export const macOS: Layer.Layer<Keychain, never, ChildProcessSpawner.ChildProces
       store,
       set: (entry, secret) =>
         Effect.gen(function*() {
-          const hex = (yield* bytes(Redacted.value(secret))).map((byte) => byte.toString(16).padStart(2, "0")).join("")
+          const value = Redacted.value(secret)
+          if (!/^[\x20-\x7e]*$/.test(value)) {
+            return yield* fail("set")("the macOS Keychain store takes printable ASCII secrets only")
+          }
+          if (/[\0\r\n]/.test(entry.account + entry.service)) {
+            return yield* fail("set")("the entry name holds a line break or NUL")
+          }
+          const hex = (yield* bytes(value)).map((byte) => byte.toString(16).padStart(2, "0")).join("")
           const line = `add-generic-password -U -a ${quote(entry.account)} -s ${quote(entry.service)} -X ${hex}\n`
-          const outcome = yield* run(spawner, "security", ["-i"], line).pipe(Effect.mapError((error) => fail("set")(error.message)))
-          if (outcome.exitCode !== 0) return yield* fail("set")(reasonOf("security", outcome))
+          if ((yield* bytes(line)).length > securityLineLimit) {
+            return yield* fail("set")("the secret is too long for security's input line")
+          }
+          const outcome = yield* run(spawner, "security", ["-i"], line).pipe(Effect.mapError(() => fail("set")("security could not start")))
+          if (outcome.exitCode !== 0) return yield* fail("set")(exitedWith("security", outcome))
         }),
       get: (entry) =>
         Effect.gen(function*() {
@@ -104,8 +119,8 @@ export const secretService: Layer.Layer<Keychain, never, ChildProcessSpawner.Chi
         Effect.gen(function*() {
           const label = `--label=${entry.service} ${entry.account}`
           const outcome = yield* run(spawner, "secret-tool", ["store", label, ...attributes(entry)], Redacted.value(secret))
-            .pipe(Effect.mapError((error) => fail("set")(error.message)))
-          if (outcome.exitCode !== 0) return yield* fail("set")(reasonOf("secret-tool", outcome))
+            .pipe(Effect.mapError(() => fail("set")("secret-tool could not start")))
+          if (outcome.exitCode !== 0) return yield* fail("set")(exitedWith("secret-tool", outcome))
         }),
       get: (entry) =>
         Effect.gen(function*() {

@@ -30,9 +30,12 @@ const save = (path: string, contents: Contents) =>
     const paths = yield* Path.Path
     const temp = `${path}.${yield* Random.nextInt}.tmp`
     yield* fs.makeDirectory(paths.dirname(path), { recursive: true, mode: 0o700 })
-    yield* fs.writeFileString(temp, JSON.stringify(contents), { mode: 0o600 })
-    yield* fs.chmod(temp, 0o600)
-    yield* fs.rename(temp, path)
+    yield* fs.writeFileString(temp, "", { flag: "wx", mode: 0o600 })
+    yield* Effect.gen(function*() {
+      yield* fs.chmod(temp, 0o600)
+      yield* fs.writeFileString(temp, JSON.stringify(contents), { flag: "w" })
+      yield* fs.rename(temp, path)
+    }).pipe(Effect.onError(() => fs.remove(temp).pipe(Effect.ignore)))
   }).pipe(Effect.mapError((error) => new SecretsFileFailed({ path, reason: error.message })))
 
 export const get = (path: string, plugin: string, field: string) =>

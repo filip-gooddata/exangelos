@@ -58,6 +58,8 @@ describe("SettingsFile", () => {
         const error = yield* Effect.flip(store.read)
         expect(error).toBeInstanceOf(SettingsStore.SettingsUnreadable)
         expect(error.path).toBe(path)
+        yield* fs.writeFileString(path, JSON.stringify({ limits: null }))
+        expect(yield* Effect.flip(store.read)).toBeInstanceOf(SettingsStore.SettingsUnreadable)
       })
     ))
 })

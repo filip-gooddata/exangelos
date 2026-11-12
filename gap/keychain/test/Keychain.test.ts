@@ -57,12 +57,24 @@ describe("macOS Keychain", () => {
   })
 
   it.effect("fails with the exit status and never the secret", () => {
-    const { provide } = keychain(Keychain.macOS, () => ({ exitCode: 51, stderr: "add-generic-password: returned 51" }))
+    const { provide } = keychain(Keychain.macOS, () => ({ exitCode: 51, stderr: `unknown command ${secretHex} ${secret}` }))
     return Effect.gen(function*() {
       const error = yield* Effect.flip((yield* service).set(entry, Redacted.make(secret)))
       expect(error).toMatchObject({ _tag: "KeychainFailed", store: "macOS Keychain", operation: "set" })
       expect(error.reason).toContain("51")
       expect(error.reason).not.toContain(secret)
+      expect(error.reason).not.toContain(secretHex)
+    }).pipe(provide)
+  })
+
+  it.effect("refuses a secret security cannot store or return intact, before running it", () => {
+    const { calls, provide } = keychain(Keychain.macOS, () => ({}))
+    return Effect.gen(function*() {
+      const keychain = yield* service
+      const unicode = yield* Effect.flip(keychain.set(entry, Redacted.make("pässword")))
+      const long = yield* Effect.flip(keychain.set(entry, Redacted.make("x".repeat(2100))))
+      expect([unicode._tag, long._tag]).toEqual(["KeychainFailed", "KeychainFailed"])
+      expect(calls).toEqual([])
     }).pipe(provide)
   })
 })
