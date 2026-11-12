@@ -1,4 +1,4 @@
-import { Effect, Layer, Option, Ref } from "effect"
+import { DateTime, Effect, Layer, Option, Ref } from "effect"
 import type { Catalogue, Event, Ids, Plugin, Subscription, Wake } from "@exangelos/domain"
 import { Session } from "@exangelos/domain"
 import { EventRepository } from "../ports/EventRepository.ts"
@@ -75,7 +75,7 @@ export const layerRepositories: Layer.Layer<
           (filter.plugin === undefined || filter.plugin === subscription.plugin) &&
           (filter.target === undefined ||
             (subscription.wakeTarget !== undefined && Session.sameSession(filter.target, subscription.wakeTarget)))
-        )
+        ).sort((a, b) => DateTime.toEpochMillis(a.createdAt) - DateTime.toEpochMillis(b.createdAt))
       ),
     store: (subscription, change) =>
       write((s) => ({
