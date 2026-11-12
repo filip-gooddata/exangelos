@@ -10,8 +10,8 @@ import { PluginImportSource } from "@exangelos/application"
 import { Paths } from "@exangelos/paths"
 import * as PluginDirectoryLive from "@exangelos/plugin-directory"
 import * as PluginImportLive from "@exangelos/plugin-import"
-import { type ArchiveEntry, manifest, pluginEntries, tarGz, zip } from "./fixtures.ts"
-import { buildTemplate } from "./template.ts"
+import { type ArchiveEntry, pluginEntries, tarGz, zip } from "./fixtures.ts"
+import { buildTemplate, templateEntries } from "./template.ts"
 
 const served = new Map<string, Buffer>()
 
@@ -69,15 +69,13 @@ describe("PluginImportSource", () => {
   it.live("places a tar.gz archive under the plugin's name, inside one wrapper directory", () =>
     Effect.gen(function*() {
       const s = yield* setup
-      const archive = yield* archiveFile(s, "a.tar.gz", tarGz([
-        { path: "template-1.0.0/", type: "directory" },
-        ...pluginEntries("template", "template-1.0.0/")
-      ]))
+      const files = yield* Effect.promise(() => templateEntries(Path.join(s.root, "build"), "template-0.1.0/"))
+      const archive = yield* archiveFile(s, "a.tar.gz", tarGz([{ path: "template-0.1.0/", type: "directory" }, ...files]))
 
       const directory = yield* place(s, { _tag: "ArchiveFile", path: archive })
 
       expect(directory).toBe(Path.join(s.plugins, "template"))
-      expect(yield* listing(directory)).toEqual(["main.js", "plugin.json"])
+      expect(yield* listing(directory)).toEqual(["dist", "plugin.json"])
       expect(yield* listing(Path.dirname(s.plugins))).toEqual(["plugins"])
     }).pipe(Effect.scoped))
 
@@ -85,11 +83,11 @@ describe("PluginImportSource", () => {
     Effect.gen(function*() {
       const s = yield* setup
       yield* writeFile(Path.join(s.plugins, "template", "stale.js"), "old")
-      served.set("https://releases.test/final.zip", zip(pluginEntries("template")))
+      served.set("https://releases.test/final.zip", zip(yield* Effect.promise(() => templateEntries(Path.join(s.root, "build")))))
 
       const directory = yield* place(s, { _tag: "HttpsLink", url: "https://releases.test/final.zip" })
 
-      expect(yield* listing(directory)).toEqual(["main.js", "plugin.json"])
+      expect(yield* listing(directory)).toEqual(["dist", "plugin.json"])
     }).pipe(Effect.scoped))
 
   it.live("copies a local directory without its .git", () =>
@@ -110,8 +108,7 @@ describe("PluginImportSource", () => {
     Effect.gen(function*() {
       const s = yield* setup
       const repository = Path.join(s.root, "repo")
-      yield* writeFile(Path.join(repository, "plugin.json"), manifest("from-git"))
-      yield* writeFile(Path.join(repository, "main.js"), "1")
+      yield* Effect.promise(() => buildTemplate(repository))
       const git = (...args: Array<string>) =>
         execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", repository, ...args])
       git("init", "--quiet")
@@ -130,9 +127,9 @@ describe("PluginImportSource", () => {
       const directory = yield* place(s, { _tag: "GitRepository", url: repository, ref: "v1" })
       const linked = yield* Effect.flip(place(s, { _tag: "GitRepository", url: repository, ref: "linked" }))
 
-      expect(yield* listing(directory)).toEqual(["main.js", "plugin.json"])
+      expect(yield* listing(directory)).toEqual(["dist", "plugin.json"])
       expect(linked.reason).toMatch(/leak is a link/)
-      expect(yield* listing(s.plugins)).toEqual(["from-git"])
+      expect(yield* listing(s.plugins)).toEqual(["template"])
     }).pipe(Effect.scoped))
 
   const refusals: ReadonlyArray<[string, ReadonlyArray<ArchiveEntry>, RegExp]> = [
