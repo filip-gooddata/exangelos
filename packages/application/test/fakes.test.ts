@@ -3,6 +3,8 @@ import { DateTime, Effect, Exit, Fiber, Option, Stream } from "effect"
 import { Event, Ids, Session, Subscription, Wake } from "@exangelos/domain"
 import {
   EventRepository,
+  OfficialPluginSource,
+  PluginAccess,
   PluginDirectory,
   PluginImportSource,
   PluginRuntime,
@@ -11,10 +13,12 @@ import {
   WakeTarget
 } from "@exangelos/application"
 import {
+  layerPluginAccess,
   layerPluginFiles,
   layerPluginRuntime,
   layerRepositories,
   layerWakeTarget,
+  PluginAccessFake,
   PluginFilesFake,
   PluginRuntimeFake,
   WakeTargetFake
@@ -150,4 +154,32 @@ describe("PluginFilesFake", () => {
       expect((yield* directory.list).map((p) => p.name)).toEqual(["template"])
       expect((yield* directory.read(placed)).digest).toBe("d2")
     }).pipe(Effect.provide(layerPluginFiles([]))))
+})
+
+describe("PluginAccessFake", () => {
+  it.effect("joins the positional main parameter after the plugin is ready", () =>
+    Effect.gen(function*() {
+      const access = yield* PluginAccess.PluginAccess
+      const fake = yield* PluginAccessFake
+      const official = Ids.PluginName.make("official")
+      yield* fake.define(name, {
+        catalogue,
+        describe: (parameters) => Effect.succeed({ catalogue, parameters, subject: String(parameters["name"]), label: "x" })
+      })
+      yield* fake.define(official, {
+        catalogue,
+        ready: Effect.fail(new OfficialPluginSource.OfficialFetchFailed({ plugin: official, reason: "offline" })),
+        describe: () => Effect.die("not ready")
+      })
+      const you = { _tag: "You" } as const
+      const conflicting = { parameters: { name: "y" }, main: Option.some("x") }
+
+      const described = yield* access.describe(you, name, { parameters: {}, main: Option.some("x") })
+      const refused = yield* Effect.flip(access.describe(you, name, conflicting))
+      const unready = yield* Effect.flip(access.describe(you, official, conflicting))
+
+      expect(described.subject).toBe("x")
+      expect(refused._tag).toBe("ParametersInvalid")
+      expect(unready._tag).toBe("OfficialFetchFailed")
+    }).pipe(Effect.provide(layerPluginAccess)))
 })
