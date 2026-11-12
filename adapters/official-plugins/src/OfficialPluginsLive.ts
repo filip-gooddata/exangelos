@@ -24,22 +24,28 @@ export const layer = (options: {
       const settings = yield* SettingsStore.SettingsStore
       const imports = yield* NamedImport
 
-      const releaseFolder = options.releaseUrl?.startsWith("file:") ? Url.fileURLToPath(options.releaseUrl) : undefined
+      const inFolder = (folder: string, file: string) => {
+        const path = Path.join(folder, file)
+        return Effect.tryPromise({
+          try: () => Fs.access(path),
+          catch: () => `${file} is not in ${folder}`
+        }).pipe(Effect.as<PluginImportSource.Source>({ _tag: "ArchiveFile", path }))
+      }
 
       const source = (official: OfficialPluginSource.Official, folder: string | undefined) => {
         const file = archiveName(official)
-        const local = folder ?? releaseFolder
-        if (local === undefined) {
-          if (options.releaseUrl === undefined) {
-            return Effect.fail(`this binary names no release address; point the officialPluginFolder setting at a folder holding ${file}`)
-          }
-          return Effect.succeed<PluginImportSource.Source>({ _tag: "HttpsLink", url: `${options.releaseUrl.replace(/\/$/, "")}/${file}` })
+        const releaseUrl = options.releaseUrl
+        if (folder !== undefined) return inFolder(folder, file)
+        if (releaseUrl === undefined) {
+          return Effect.fail(`this binary names no release address; point the officialPluginFolder setting at a folder holding ${file}`)
         }
-        const path = Path.join(local, file)
-        return Effect.tryPromise({
-          try: () => Fs.access(path),
-          catch: () => `${file} is not in ${local}`
-        }).pipe(Effect.as<PluginImportSource.Source>({ _tag: "ArchiveFile", path }))
+        if (releaseUrl.startsWith("file:")) {
+          return Effect.try({
+            try: () => Url.fileURLToPath(releaseUrl),
+            catch: () => `the release address ${releaseUrl} is not a usable file URL`
+          }).pipe(Effect.flatMap((released) => inFolder(released, file)))
+        }
+        return Effect.succeed<PluginImportSource.Source>({ _tag: "HttpsLink", url: `${releaseUrl.replace(/\/$/, "")}/${file}` })
       }
 
       const fetch = (official: OfficialPluginSource.Official) =>
