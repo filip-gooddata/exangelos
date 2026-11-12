@@ -192,7 +192,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
             "quit" => app.exit(0),
             _ => {}
         })
-        .on_tray_icon_event(|tray, event| platform::tray_event(tray, event))
+        .on_tray_icon_event(platform::tray_event)
         .build(app)
 }
 
