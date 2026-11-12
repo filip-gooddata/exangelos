@@ -1,0 +1,65 @@
+[
+  {
+    "env": {
+      "EXANGELOS_HOME": "/srv/exangelos",
+      "XDG_STATE_HOME": "/var/state",
+      "HOME": "/home/ada"
+    },
+    "socketPath": "/srv/exangelos/daemon.sock"
+  },
+  {
+    "env": {
+      "XDG_STATE_HOME": "/var/state",
+      "HOME": "/home/ada"
+    },
+    "socketPath": "/var/state/exangelos/daemon.sock"
+  },
+  {
+    "env": {
+      "HOME": "/home/ada"
+    },
+    "socketPath": "/home/ada/.local/state/exangelos/daemon.sock"
+  },
+  {
+    "env": {
+      "EXANGELOS_HOME": "",
+      "XDG_STATE_HOME": "",
+      "HOME": "/home/ada"
+    },
+    "socketPath": "/home/ada/.local/state/exangelos/daemon.sock"
+  },
+  {
+    "env": {
+      "EXANGELOS_HOME": "/srv/exangelos/"
+    },
+    "socketPath": "/srv/exangelos//daemon.sock"
+  },
+  {
+    "env": {
+      "EXANGELOS_HOME": "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "socketPath": "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/daemon.sock"
+  },
+  {
+    "env": {
+      "EXANGELOS_HOME": "/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "socketPath": null
+  },
+  {
+    "env": {
+      "XDG_STATE_HOME": "/var/state"
+    },
+    "socketPath": null
+  },
+  {
+    "env": {},
+    "socketPath": null
+  },
+  {
+    "env": {
+      "HOME": ""
+    },
+    "socketPath": null
+  }
+]

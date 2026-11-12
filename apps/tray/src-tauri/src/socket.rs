@@ -1,15 +1,31 @@
-use std::env;
 use std::path::PathBuf;
 
+/// The longest socket path, in UTF-8 bytes, that fits `sockaddr_un` on every
+/// supported platform.
+pub const MAX_SOCKET_PATH_BYTES: usize = 103;
+
+/// Resolves the daemon socket the way the daemon's Paths adapter does:
 /// `$EXANGELOS_HOME/daemon.sock`, else
-/// `${XDG_STATE_HOME:-$HOME/.local/state}/exangelos/daemon.sock`.
-pub fn daemon_socket_path() -> PathBuf {
-    let set = |name: &str| env::var_os(name).filter(|value| !value.is_empty());
-    if let Some(home) = set("EXANGELOS_HOME") {
-        return PathBuf::from(home).join("daemon.sock");
+/// `${XDG_STATE_HOME:-$HOME/.local/state}/exangelos/daemon.sock`. Empty
+/// variables count as unset, HOME is required whenever EXANGELOS_HOME is
+/// unset, and parts are joined as strings, as the adapter does.
+pub fn daemon_socket_path(env: impl Fn(&str) -> Option<String>) -> Result<PathBuf, String> {
+    let set = |name: &str| env(name).filter(|value| !value.is_empty());
+    let state = match set("EXANGELOS_HOME") {
+        Some(single) => single,
+        None => {
+            let home = set("HOME")
+                .ok_or("HOME is not set, so the daemon socket path cannot be resolved")?;
+            let base = set("XDG_STATE_HOME").unwrap_or_else(|| format!("{home}/.local/state"));
+            format!("{base}/exangelos")
+        }
+    };
+    let socket = format!("{state}/daemon.sock");
+    let length = socket.len();
+    if length > MAX_SOCKET_PATH_BYTES {
+        return Err(format!(
+            "SocketPathTooLong: {socket} is {length} bytes, over the limit of {MAX_SOCKET_PATH_BYTES}"
+        ));
     }
-    let state = set("XDG_STATE_HOME")
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(set("HOME").unwrap_or_default()).join(".local/state"));
-    state.join("exangelos").join("daemon.sock")
+    Ok(PathBuf::from(socket))
 }

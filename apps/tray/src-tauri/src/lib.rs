@@ -36,8 +36,9 @@ async fn relay_open(
     host: State<'_, Host>,
     events: Channel<InvokeResponseBody>,
 ) -> Result<u32, String> {
+    let socket = socket::daemon_socket_path(|name| std::env::var(name).ok())?;
     host.relay
-        .open(&socket::daemon_socket_path(), move |event| {
+        .open(&socket, move |event| {
             let message = match event {
                 RelayEvent::Data(bytes) => InvokeResponseBody::Raw(bytes),
                 RelayEvent::Closed => InvokeResponseBody::Json(r#"{"type":"closed"}"#.into()),
