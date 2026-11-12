@@ -94,3 +94,21 @@ export const layer = (interval: Duration.Input): Layer.Layer<Panel, never, Daemo
       })
     })
   )
+
+const describeSection = <A>(name: string, section: Section<ReadonlyArray<A>>) =>
+  Result.match(section, { onSuccess: (items) => `${name} ${items.length}`, onFailure: (message) => `${name} failed (${message})` })
+
+/** Passes once the daemon has answered and the plugins have loaded; the report names every section. */
+export const smokeReport = (state: PanelState): { readonly ok: boolean; readonly report: string } =>
+  PanelState.$match(state, {
+    Loading: () => ({ ok: false, report: "panel still loading" }),
+    DaemonNotRunning: ({ message }) => ({ ok: false, report: `daemon not running: ${message}` }),
+    DaemonUnreachable: ({ message }) => ({ ok: false, report: `daemon unreachable: ${message}` }),
+    Ready: ({ needsYou, plugins, subscriptions }) => ({
+      ok: Result.isSuccess(plugins),
+      report: `panel ready: ${
+        [describeSection("plugins", plugins), describeSection("needs you", needsYou), describeSection("subscriptions", subscriptions)]
+          .join(", ")
+      }`
+    })
+  })
