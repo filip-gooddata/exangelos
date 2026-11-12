@@ -9,5 +9,9 @@
     "build:plugins": "bun src/cli/build-plugins.ts",
     "build:release": "bun src/cli/build-release.ts",
     "render:homebrew": "bun src/cli/render-homebrew.ts"
+  },
+  "dependencies": {
+    "@exangelos/plugin-directory": "workspace:*",
+    "effect": "catalog:"
   }
 }

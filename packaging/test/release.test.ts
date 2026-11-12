@@ -1,25 +1,31 @@
 import { execFileSync } from "node:child_process"
-import { describe, expect, it } from "vitest"
 import { readdirSync } from "node:fs"
 import { join } from "node:path"
-import { listTarGz } from "../src/tar.ts"
-import { buildRelease } from "../src/release.ts"
+import { beforeAll, describe, expect, it } from "@effect/vitest"
+import { buildRelease, type Release } from "../src/release.ts"
 import { hostTarget, readChecksums } from "../src/release-files.ts"
+import { listTarGz } from "../src/tar.ts"
 import { helloPlugin, standInEntry, temporaryDirectory } from "./helpers.ts"
 
-describe("release build for this machine", () => {
-  const work = temporaryDirectory("release")
-  const release = buildRelease({
+const buildInto = (work: string, version: string, pluginDirectories: ReadonlyArray<string>): Promise<Release> =>
+  buildRelease({
     entry: standInEntry,
-    version: "9.9.9",
-    pluginDirectories: [helloPlugin],
+    version,
+    pluginDirectories,
     officialPluginsDirectory: join(work, "official-plugins"),
     releaseDirectory: join(work, "release"),
     targets: [hostTarget()]
   })
-  const [built] = release.binaries
+
+describe("release build for this machine", () => {
+  const work = temporaryDirectory("release")
+  let release: Release
+  beforeAll(async () => {
+    release = await buildInto(work, "9.9.9", [helloPlugin])
+  })
 
   it("compiles a binary that reports the version and carries the plugin digests", () => {
+    const [built] = release.binaries
     expect(execFileSync(built!.binary, ["--version"], { encoding: "utf8" })).toBe("exangelos 9.9.9\n")
     expect(JSON.parse(execFileSync(built!.binary, ["--official-plugins"], { encoding: "utf8" }))).toEqual(release.officialPlugins)
   })
@@ -32,19 +38,10 @@ describe("release build for this machine", () => {
 })
 
 describe("rebuilding a release directory", () => {
-  it("drops archives from an earlier build so SHA256SUMS covers every archive", () => {
+  it("drops archives from an earlier build so SHA256SUMS covers every archive", async () => {
     const work = temporaryDirectory("rebuild")
-    const build = (version: string) =>
-      buildRelease({
-        entry: standInEntry,
-        version,
-        pluginDirectories: [],
-        officialPluginsDirectory: join(work, "official-plugins"),
-        releaseDirectory: join(work, "release"),
-        targets: [hostTarget()]
-      })
-    build("1.0.0")
-    build("1.0.1")
+    await buildInto(work, "1.0.0", [])
+    await buildInto(work, "1.0.1", [])
     const archives = readdirSync(join(work, "release")).filter((name) => name.endsWith(".tar.gz"))
     expect(archives).toEqual(readChecksums(join(work, "release")).map((line) => line.file))
   })

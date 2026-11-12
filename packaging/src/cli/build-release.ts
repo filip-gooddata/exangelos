@@ -22,7 +22,7 @@ const { values } = parseArgs({
   }
 })
 
-const release = buildRelease({
+const release = await buildRelease({
   entry: values.entry === undefined ? defaultEntry : resolve(values.entry),
   version: values.version ?? packagingVersion(),
   pluginDirectories:

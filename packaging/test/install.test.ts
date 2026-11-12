@@ -1,7 +1,7 @@
 import { spawnSync } from "node:child_process"
 import { cpSync, existsSync, readFileSync, readlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { beforeAll, describe, expect, it } from "@effect/vitest"
 import { buildRelease, packagingDirectory } from "../src/release.ts"
 import { hostTarget } from "../src/release-files.ts"
 import { standInEntry, temporaryDirectory } from "./helpers.ts"
@@ -11,14 +11,16 @@ const installScript = join(packagingDirectory, "install.sh")
 describe("install script", () => {
   const work = temporaryDirectory("install")
   const releaseDirectory = join(work, "release")
-  buildRelease({
-    entry: standInEntry,
-    version: "9.9.9",
-    pluginDirectories: [],
-    officialPluginsDirectory: join(work, "official-plugins"),
-    releaseDirectory,
-    targets: [hostTarget()]
-  })
+  beforeAll(() =>
+    buildRelease({
+      entry: standInEntry,
+      version: "9.9.9",
+      pluginDirectories: [],
+      officialPluginsDirectory: join(work, "official-plugins"),
+      releaseDirectory,
+      targets: [hostTarget()]
+    })
+  )
 
   const install = (release: string, installDirectory: string) =>
     spawnSync("sh", [installScript], {

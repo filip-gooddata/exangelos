@@ -32,9 +32,6 @@ const adHocSign = (binary: string, target: Target): void => {
   }
 }
 
-// Compiles one binary per target, ad-hoc signs the macOS ones when the host can,
-// and leaves for each target a release archive holding `exangelos` and a copy named
-// with the Rust target triple, which is the name Tauri expects for a sidecar.
 export const buildBinaries = (build: BinaryBuild): ReadonlyArray<BuiltBinary> => {
   const binaries = join(build.outDirectory, "binaries")
   const sidecars = join(build.outDirectory, "sidecars")

@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterAll } from "vitest"
+import { afterAll } from "@effect/vitest"
 
 export const fixtures = join(import.meta.dirname, "fixtures")
 export const standInEntry = join(fixtures, "stand-in-entry.ts")

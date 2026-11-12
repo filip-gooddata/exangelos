@@ -2,7 +2,8 @@ import { execFileSync } from "node:child_process"
 import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import { digestDirectory } from "./digest.ts"
+import { digestDirectory } from "@exangelos/plugin-directory"
+import { Effect } from "effect"
 import { clearReleaseFiles, pluginArchiveName, writeChecksums } from "./release-files.ts"
 import { createTarGz, extractTarGz } from "./tar.ts"
 
@@ -30,10 +31,7 @@ const readManifest = (pluginDirectory: string): Manifest => {
 
 export const bun = process.env["BUN"] ?? "bun"
 
-// Runs the plugin's own `build` script, archives plugin.json and the entry it names
-// at the archive root, and digests the unpacked archive the way the daemon digests
-// an installed plugin.
-export const buildPluginArchive = (pluginDirectory: string, outDirectory: string): OfficialPlugin & { readonly archive: string } => {
+export const buildPluginArchive = async (pluginDirectory: string, outDirectory: string): Promise<OfficialPlugin & { readonly archive: string }> => {
   const manifest = readManifest(pluginDirectory)
   if (manifest.entry._tag !== "Bundle") throw new Error(`${manifest.name}: only bundle entries are packaged`)
   const entryPath = manifest.entry.path
@@ -49,16 +47,17 @@ export const buildPluginArchive = (pluginDirectory: string, outDirectory: string
     const unpacked = join(work, "unpacked")
     mkdirSync(unpacked)
     extractTarGz(archive, unpacked)
-    return { name: manifest.name, version: manifest.version, digest: digestDirectory(unpacked), archive }
+    return { name: manifest.name, version: manifest.version, digest: await Effect.runPromise(digestDirectory(unpacked)), archive }
   } finally {
     rmSync(work, { recursive: true, force: true })
   }
 }
 
-export const buildPluginArchives = (pluginDirectories: ReadonlyArray<string>, outDirectory: string): ReadonlyArray<OfficialPlugin> => {
+export const buildPluginArchives = async (pluginDirectories: ReadonlyArray<string>, outDirectory: string): Promise<ReadonlyArray<OfficialPlugin>> => {
   clearReleaseFiles(outDirectory)
   mkdirSync(outDirectory, { recursive: true })
-  const built = pluginDirectories.map((directory) => buildPluginArchive(directory, outDirectory))
+  const built: Array<OfficialPlugin & { readonly archive: string }> = []
+  for (const directory of pluginDirectories) built.push(await buildPluginArchive(directory, outDirectory))
   writeChecksums(outDirectory, built.map((plugin) => plugin.archive))
   const official = built.map(({ name, version, digest }) => ({ name, version, digest }))
   writeFileSync(join(outDirectory, officialPluginsFileName), `${JSON.stringify(official, null, 2)}\n`)

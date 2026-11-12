@@ -73,8 +73,6 @@ export const writeChecksums = (directory: string, files: ReadonlyArray<string>):
   return path
 }
 
-// Removes what an earlier build left, so SHA256SUMS covers every archive beside it,
-// without deleting anything else in a directory the caller named.
 export const clearReleaseFiles = (directory: string): void => {
   if (!existsSync(directory)) return
   for (const name of readdirSync(directory)) {

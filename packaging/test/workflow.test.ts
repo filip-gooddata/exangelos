@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "@effect/vitest"
 import { packagingDirectory, repositoryDirectory } from "../src/release.ts"
 
 const workflowPath = join(repositoryDirectory, ".github", "workflows", "release.yml")

@@ -11,6 +11,6 @@ const { values } = parseArgs({
 })
 
 const directories = values.plugins === undefined ? officialPluginDirectories() : values.plugins.split(",").filter((d) => d !== "").map((d) => resolve(d))
-const official = buildPluginArchives(directories, resolve(values.out))
+const official = await buildPluginArchives(directories, resolve(values.out))
 for (const plugin of official) console.log(`${plugin.name} ${plugin.version}: ${plugin.digest}`)
 console.log(resolve(values.out))

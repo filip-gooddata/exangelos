@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process"
 import { mkdirSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "@effect/vitest"
 import { renderCask, renderFormula, trayImageName } from "../src/homebrew.ts"
 import { binaryArchiveName, targets } from "../src/release-files.ts"
 import { temporaryDirectory } from "./helpers.ts"

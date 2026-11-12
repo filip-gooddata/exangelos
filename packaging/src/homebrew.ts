@@ -56,8 +56,6 @@ ${binaryResource(release, "linux-x64", "      ")}    end
 end
 `
 
-// The tray stream's Tauri bundle is assumed to be named Exangelos.app, with the
-// sidecar at Contents/MacOS/exangelos and a disk image named the Tauri way.
 export const trayImageName = (version: string, arch: "aarch64" | "x64"): string => `Exangelos_${version}_${arch}.dmg`
 
 export const renderCask = (release: HomebrewRelease): string => {

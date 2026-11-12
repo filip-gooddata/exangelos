@@ -31,10 +31,9 @@ export interface Release {
   readonly checksums: string
 }
 
-// Plugin archives come first: their digests are compiled into the binaries.
-export const buildRelease = (build: ReleaseBuild): Release => {
+export const buildRelease = async (build: ReleaseBuild): Promise<Release> => {
   clearReleaseFiles(build.releaseDirectory)
-  const officialPlugins = buildPluginArchives(build.pluginDirectories, build.officialPluginsDirectory)
+  const officialPlugins = await buildPluginArchives(build.pluginDirectories, build.officialPluginsDirectory)
   const binaries = buildBinaries({
     entry: build.entry,
     version: build.version,
