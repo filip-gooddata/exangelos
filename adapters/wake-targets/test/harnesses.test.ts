@@ -26,10 +26,10 @@ const deliverTo = (session: Session.Session, exitCode = 0) =>
 describe("T3 Code", () => {
   it("maps what t3 returns", () => {
     expect(T3.interpret(exited(0))).toEqual({ _tag: "Delivered" })
-    expect(T3.interpret(exited(0, "", "warning: slow"))).toEqual({ _tag: "Delivered" })
-    expect(T3.interpret(exited(1, "", "thread not found\n"))).toEqual({
+    expect(T3.interpret(exited(0, "WARN Database migration history diverges\nQueued.\n"))).toEqual({ _tag: "Delivered" })
+    expect(T3.interpret(exited(1, "WARN Database migration history diverges\n", "Thread t1 is archived and cannot receive messages.\n"))).toEqual({
       _tag: "Failed",
-      reason: "t3 exited with 1: thread not found"
+      reason: "t3 exited with 1: Thread t1 is archived and cannot receive messages."
     })
     expect(T3.interpret(timedOut)).toEqual({ _tag: "Failed", reason: "t3 did not finish within 30s" })
   })
@@ -45,11 +45,15 @@ describe("T3 Code", () => {
 describe("Codex", () => {
   it("maps what codex queue returns", () => {
     expect(Codex.interpret(exited(0))).toEqual({ _tag: "Delivered" })
-    expect(Codex.interpret(exited(0, "", "WARNING: failed to resume thread\n"))).toEqual({
+    const warning = "Warning: message was queued, but could not resume thread t1: start a local daemon or specify a server with --remote"
+    expect(Codex.interpret(exited(0, "Queued message m1 for thread t1.\n", `${warning}\n`))).toEqual({
       _tag: "Delivered",
-      note: "queued, but codex could not resume the thread: WARNING: failed to resume thread"
+      note: `queued; codex runs it when the thread next resumes: ${warning}`
     })
-    expect(Codex.interpret(exited(2, "", "error: no session\n"))._tag).toBe("Failed")
+    expect(Codex.interpret(exited(1, "", "Error: No active session found matching '-nope'.\n"))).toEqual({
+      _tag: "Failed",
+      reason: "codex exited with 1: Error: No active session found matching '-nope'."
+    })
     expect(Codex.interpret(timedOut)._tag).toBe("Failed")
   })
 
