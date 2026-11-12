@@ -1,0 +1,153 @@
+import { describe, expect, it } from "@effect/vitest"
+import { Effect, Layer, Schema, Stream } from "effect"
+import { readFileSync } from "node:fs"
+import { Manifest } from "@exangelos/contracts"
+import { PluginTest } from "@exangelos/plugin-sdk"
+import { encodeCursor } from "../src/Cursor.ts"
+import { plugin } from "../src/JiraPlugin.ts"
+import { comment, history, jiraWith, page } from "./stubJira.ts"
+import type { StubAnswer, StubCall } from "./stubJira.ts"
+
+const token = "ATATT-not-a-real-token-7f3a"
+const values = { site: "https://acme.atlassian.net", email: "dev@example.com", token }
+
+const cloud: StubAnswer = { status: 200, body: { baseUrl: values.site, deploymentType: "Cloud" } }
+
+const changelog = [
+  history(10001, "2026-11-12T09:00:00.000+0000", [
+    { field: "status", fieldId: "status", from: "1", fromString: "To Do", to: "3", toString: "In Progress" }
+  ]),
+  history(10002, "2026-11-12T09:20:00.000+0000", [
+    { field: "assignee", fieldId: "assignee", from: null, fromString: null, to: "id-Ana", toString: "Ana" }
+  ])
+]
+const comments = [comment(20001, "2026-11-12T09:10:00.000+0000", "On it")]
+
+const jira = (answer: (call: StubCall) => StubAnswer) => {
+  const tested = plugin.layer.pipe(Layer.provide(jiraWith(answer)))
+  return PluginTest.makeClient({ layer: tested })
+}
+
+const site = (call: StubCall): StubAnswer => {
+  const startAt = Number(call.param("startAt") ?? "0")
+  switch (call.path) {
+    case "/rest/api/3/serverInfo":
+      return cloud
+    case "/rest/api/3/myself":
+      return { status: 200, body: { accountId: "id-dev" } }
+    case "/rest/api/3/issue/DEMO-7":
+      return { status: 200, body: { id: "10042", key: "DEMO-7", fields: { summary: "Fix login" } } }
+    case "/rest/api/3/issue/DEMO-7/changelog": {
+      const { items, ...rest } = page(changelog, startAt, 100)
+      return { status: 200, body: { ...rest, maxResults: 100, isLast: true, values: items } }
+    }
+    case "/rest/api/3/issue/DEMO-7/comment": {
+      const { items, ...rest } = page(comments, startAt, 100)
+      return { status: 200, body: { ...rest, maxResults: 100, comments: items } }
+    }
+    default:
+      return { status: 404, body: { errorMessages: ["Issue does not exist or you do not have permission to see it."] } }
+  }
+}
+
+/** A cursor that has seen nothing on DEMO-7 since before its first history and comment. */
+const before = encodeCursor({
+  v: 1,
+  target: "issue",
+  issueId: "10042",
+  changelog: { consumed: 0, recent: [], lastCreated: "2026-11-12T08:00:00.000Z", atLast: [] },
+  comments: { consumed: 0, recent: [], lastCreated: "2026-11-12T08:00:00.000Z", atLast: [] }
+})
+
+describe("Jira plugin", () => {
+  it.effect("hands over the catalogue", () =>
+    Effect.gen(function*() {
+      const client = yield* jira(site)
+      const { catalogue } = yield* client.Handshake()
+      expect(catalogue.eventTypes.map((eventType) => eventType.type)).toEqual([
+        "status.changed",
+        "comment.added",
+        "assignee.changed",
+        "field.changed",
+        "issue.entered",
+        "issue.left"
+      ])
+      expect(catalogue.eventTypes[4]?.description).toContain("enters and leaves the result between two polls is never seen")
+      expect(catalogue.parameters.main).toBe("target")
+      expect(catalogue.configuration.map((field) => [field._tag, field.key])).toEqual([
+        ["Text", "site"],
+        ["Text", "email"],
+        ["Secret", "token"]
+      ])
+    }).pipe(Effect.scoped))
+
+  it.effect.each([
+    { input: { target: " demo-7 " }, subject: "issue:DEMO-7", parameters: { target: "DEMO-7", kind: "issue" } },
+    {
+      input: { target: "project = DEMO AND status = Open" },
+      subject: "jql:project = DEMO AND status = Open",
+      parameters: { target: "project = DEMO AND status = Open", kind: "jql" }
+    }
+  ])("describes $subject", ({ input, parameters, subject }) =>
+    Effect.gen(function*() {
+      const client = yield* jira(site)
+      expect(yield* client.Describe({ parameters: input })).toMatchObject({ _tag: "Described", subject, parameters })
+    }).pipe(Effect.scoped))
+
+  it.effect("refuses a target that is not an issue key when the kind says issue", () =>
+    Effect.gen(function*() {
+      const client = yield* jira(site)
+      const described = yield* client.Describe({ parameters: { target: "status = Open", kind: "issue" } })
+      expect(described).toEqual({ _tag: "Invalid", reason: "\"status = Open\" is not an issue key such as PROJECT-123." })
+    }).pipe(Effect.scoped))
+
+  it.effect("rejects a credential Jira answers 401 to, without repeating the token", () =>
+    Effect.gen(function*() {
+      const client = yield* jira((call) =>
+        call.path === "/rest/api/3/myself" ? { status: 401, body: { message: "Client must be authenticated" } } : cloud
+      )
+      const result = yield* client.Configure({ values })
+      expect(result).toMatchObject({ _tag: "Rejected", reason: expect.stringContaining("rejected the email and API token") })
+      expect(JSON.stringify(result)).not.toContain(token)
+    }).pipe(Effect.scoped))
+
+  it.effect("emits what changed since the cursor, then moves the cursor past it", () =>
+    Effect.gen(function*() {
+      const client = yield* jira(site)
+      expect(yield* client.Configure({ values })).toEqual({ _tag: "Accepted" })
+      const items = yield* client.Watch({ parameters: { target: "DEMO-7", kind: "issue" }, eventTypes: [], cursor: before })
+        .pipe(Stream.take(4), Stream.runCollect)
+
+      expect(items.map((item) => item._tag === "Event" ? item.event.type : item._tag)).toEqual([
+        "status.changed",
+        "comment.added",
+        "assignee.changed",
+        "Cursor"
+      ])
+      expect(items[1]).toMatchObject({
+        event: {
+          summary: "DEMO-7: comment by Ana: On it",
+          dedupeKey: "10042:comment:20001",
+          link: "https://acme.atlassian.net/browse/DEMO-7?focusedCommentId=20001"
+        }
+      })
+      const moved = items[3]?._tag === "Cursor" ? JSON.parse(items[3].cursor) : undefined
+      expect(moved).toMatchObject({ issueId: "10042", changelog: { consumed: 2 }, comments: { consumed: 1 } })
+      expect(JSON.stringify(items)).not.toContain(token)
+    }).pipe(Effect.scoped))
+
+  it.effect("ends when the issue is gone", () =>
+    Effect.gen(function*() {
+      const client = yield* jira(site)
+      yield* client.Configure({ values })
+      const items = yield* client.Watch({ parameters: { target: "GONE-1" }, eventTypes: [] }).pipe(Stream.runCollect)
+      expect(items).toEqual([{ _tag: "End", reason: "The issue GONE-1 no longer exists or this account cannot see it." }])
+    }).pipe(Effect.scoped))
+
+  it("declares an entry the manifest schema accepts", () => {
+    const manifest = Schema.decodeUnknownSync(Manifest.Manifest)(
+      JSON.parse(readFileSync(new URL("../plugin.json", import.meta.url), "utf8"))
+    )
+    expect(manifest).toEqual({ name: "jira", version: "0.1.0", entry: { _tag: "Bundle", path: "dist/main.js" } })
+  })
+})

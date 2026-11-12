@@ -3,8 +3,6 @@ import { layer } from "../src/JiraClient.ts"
 import { HttpClient, HttpClientResponse, UrlParams } from "effect/http"
 import type { HttpClientRequest } from "effect/http"
 
-declare const Response: new(body: string, init: { status: number; headers?: Record<string, string> }) => object
-
 export interface StubAnswer {
   readonly status: number
   readonly body?: unknown
