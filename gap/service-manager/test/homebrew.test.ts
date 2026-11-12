@@ -16,6 +16,7 @@ describe("layerHomebrew", () => {
           case "start":
             running = true
             return {}
+          case "kill":
           case "stop":
             running = false
             return {}
@@ -42,7 +43,7 @@ describe("layerHomebrew", () => {
         "brew services info --json exangelos",
         "brew services start exangelos",
         "brew services info --json exangelos",
-        "brew services stop exangelos",
+        "brew services kill exangelos",
         "brew services stop exangelos"
       ])
     }))

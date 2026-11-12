@@ -47,6 +47,7 @@ describe("rendering", () => {
         `Description=Exangelos & "friends" 100%%`,
         ``,
         `[Service]`,
+        `Type=exec`,
         `ExecStart="/opt/My Apps/xng" "say \\"hi\\" & 50%% $$HOME"`,
         `Environment="GREETING=a \\"b\\" & c 10%% $X"`,
         `Restart=on-failure`,

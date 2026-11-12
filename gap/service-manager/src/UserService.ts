@@ -80,6 +80,8 @@ export const makeRunner = Effect.gen(function*() {
   return { output, succeed }
 })
 
+const validLabel = /^[A-Za-z0-9_][A-Za-z0-9._-]*$/
+
 export const makeUserService = (operations: {
   readonly install: (definition: ServiceDefinition) => Effect.Effect<void, Failure>
   readonly start: (label: string) => Effect.Effect<void, Failure>
@@ -91,11 +93,21 @@ export const makeUserService = (operations: {
     Effect.mapError((error: Failure) =>
       new ServiceFailed({ operation, reason: error._tag === "CommandFailed" ? error.reason : error.message })
     )
+  const checked = <A>(operation: Operation, label: string, run: () => Effect.Effect<A, Failure>) =>
+    validLabel.test(label)
+      ? run().pipe(as(operation))
+      : Effect.fail(new ServiceFailed({ operation, reason: `invalid service label: ${JSON.stringify(label)}` }))
   return UserService.of({
-    install: (definition) => operations.install(definition).pipe(as("install")),
-    start: (label) => operations.start(label).pipe(as("start")),
-    stop: (label) => operations.stop(label).pipe(as("stop")),
-    uninstall: (label) => operations.uninstall(label).pipe(as("uninstall")),
-    status: (label) => operations.status(label).pipe(as("status"))
+    install: (definition) => {
+      const multiline = (["program", "description", "stdoutPath", "stderrPath"] as const)
+        .find((field) => /[\r\n]/.test(definition[field]))
+      return multiline === undefined
+        ? checked("install", definition.label, () => operations.install(definition))
+        : Effect.fail(new ServiceFailed({ operation: "install", reason: `${multiline} contains a line break` }))
+    },
+    start: (label) => checked("start", label, () => operations.start(label)),
+    stop: (label) => checked("stop", label, () => operations.stop(label)),
+    uninstall: (label) => checked("uninstall", label, () => operations.uninstall(label)),
+    status: (label) => checked("status", label, () => operations.status(label))
   })
 }

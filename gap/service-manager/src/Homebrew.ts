@@ -25,7 +25,7 @@ export const layerHomebrew = (options: {
       return makeUserService({
         install: () => Effect.void,
         start: () => services("start"),
-        stop: () => services("stop"),
+        stop: () => services("kill"),
         uninstall: () => services("stop"),
         status: () =>
           Effect.gen(function*() {

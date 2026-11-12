@@ -22,6 +22,7 @@ export const renderSystemdUnit = (definition: ServiceDefinition): string =>
     `Description=${escapeSpecifiers(definition.description)}`,
     ``,
     `[Service]`,
+    `Type=exec`,
     `ExecStart=${[definition.program, ...definition.arguments].map(commandWord).join(" ")}`,
     ...Object.entries(definition.environment).map(([name, value]) => `Environment=${quote(`${name}=${value}`)}`),
     `Restart=on-failure`,

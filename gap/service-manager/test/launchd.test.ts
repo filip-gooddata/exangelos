@@ -92,4 +92,18 @@ describe("layerLaunchd", () => {
         })
       })
     ))
+
+  it.effect("refuses a label that would leave the directory", () =>
+    inTempDirectory((directory) =>
+      Effect.gen(function*() {
+        const fake = FakeSpawner.make()
+        const error = yield* UserService.use((service) => service.install({ ...awkward, label: "../escape" })).pipe(
+          provide(layerLaunchd({ directory, uid: 501 }), fake),
+          Effect.flip
+        )
+        expect(error).toMatchObject({ _tag: "ServiceFailed", operation: "install" })
+        expect(fake.ran).toEqual([])
+        expect(yield* (yield* FileSystem.FileSystem).readDirectory(directory)).toEqual([])
+      })
+    ))
 })
