@@ -45,12 +45,19 @@ export class BacklogOverLimit extends Schema.TaggedError<BacklogOverLimit>()("Ba
   pending: Schema.Int,
   limit: Schema.Int,
   /** The last event number the agent must acknowledge through before resume succeeds. */
-  through: Ids.AckedThrough
+  through: Ids.AckedThrough,
+  /** `count`: more events are pending than the limit allows. `age`: the oldest pending event is too old. */
+  reason: Schema.Literals(["count", "age"])
 }) {}
 
 export class OfficialFetchFailed extends Schema.TaggedError<OfficialFetchFailed>()("OfficialFetchFailed", {
   plugin: Ids.PluginName,
   reason: Schema.String
+}) {}
+
+/** The call is the owner's alone, and a session made it. */
+export class HumanRequired extends Schema.TaggedError<HumanRequired>()("HumanRequired", {
+  plugin: Ids.PluginName
 }) {}
 
 export class ImportFailed extends Schema.TaggedError<ImportFailed>()("ImportFailed", {
@@ -224,7 +231,7 @@ export class ImportPlugin extends Rpc.make("ImportPlugin", {
 export class EnablePlugin extends Rpc.make("EnablePlugin", {
   payload: { ...name, digest: Schema.NonEmptyString },
   success: Plugin.Plugin,
-  error: Schema.Union([PluginNotFound, DigestMismatch])
+  error: Schema.Union([PluginNotFound, DigestMismatch, HumanRequired])
 }) {}
 
 export class DisablePlugin extends Rpc.make("DisablePlugin", {

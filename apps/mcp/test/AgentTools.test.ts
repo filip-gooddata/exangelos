@@ -46,7 +46,7 @@ describe("MCP tools", () => {
       expect(result.content).toEqual([{
         type: "text",
         text:
-          "Not resumed: 23 events are pending, over the limit of 20. Acknowledge them first: call ack with id: \"sub_full\", through: 27, then call resume."
+          "Not resumed: 3 events are pending, and the oldest is older than the backlog allows. Acknowledge them first: call ack with id: \"sub_full\", through: 27, then call resume."
       }])
     }))
 

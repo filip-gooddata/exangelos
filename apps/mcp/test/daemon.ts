@@ -58,7 +58,7 @@ export const handlers = DaemonContract.AgentGroup.toLayer({
   Pause: notFaked,
   Resume: ({ id }) =>
     id === "sub_full"
-      ? Effect.fail(new DaemonContract.BacklogOverLimit({ pending: 23, limit: 20, through: 27 }))
+      ? Effect.fail(new DaemonContract.BacklogOverLimit({ pending: 3, limit: 20, through: 27, reason: "age" }))
       : Effect.succeed({
       ...existing,
       id,

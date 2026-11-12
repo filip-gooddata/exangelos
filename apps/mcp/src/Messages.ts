@@ -100,7 +100,9 @@ export const failureMessage = (failure: AgentFailure, subscription = "<subscript
     case "TransitionRefused":
       return `The subscription is ${failure.state._tag}, so this was refused: ${failure.message}. Call show to see its state.`
     case "BacklogOverLimit":
-      return `Not resumed: ${failure.pending} events are pending, over the limit of ${failure.limit}. Acknowledge them first: call ack with id: "${subscription}", through: ${failure.through}, then call resume.`
+      return `Not resumed: ${failure.pending} events are pending, ${
+        failure.reason === "count" ? `over the limit of ${failure.limit}` : "and the oldest is older than the backlog allows"
+      }. Acknowledge them first: call ack with id: "${subscription}", through: ${failure.through}, then call resume.`
     case "RpcClientError":
       return connectionFailedMessage(failure.message)
     case "DaemonNotRunning":

@@ -25,11 +25,23 @@ describe("agent commands", () => {
 
   it("names the ack command to run when resume is refused for a backlog over the limit", async () => {
     const result = await run(["resume", "sub_7f3k"], {
-      handlers: { Resume: () => Effect.fail(new DaemonContract.BacklogOverLimit({ pending: 23, limit: 20, through: 27 })) }
+      handlers: { Resume: () => Effect.fail(new DaemonContract.BacklogOverLimit({ pending: 23, limit: 20, through: 27, reason: "count" })) }
     })
     expect(result.exit._tag).toBe("Failure")
     expect(result.stderr).toBe(
       "Nothing was resumed: 23 events are pending, over the backlog limit. Acknowledge them first with `exangelos ack sub_7f3k --through 27`, then resume."
+    )
+  })
+
+  it("tells the owner to use their own terminal when a session tries to enable a plugin", async () => {
+    const result = await run(["plugin", "enable", "github-pr", "--digest", "abc"], {
+      handlers: {
+        EnablePlugin: () => Effect.fail(new DaemonContract.HumanRequired({ plugin: Ids.PluginName.make("github-pr") }))
+      }
+    })
+    expect(result.exit._tag).toBe("Failure")
+    expect(result.stderr).toBe(
+      "Only you can do this for github-pr, and this terminal runs inside an agent session. Run the command again from your own terminal."
     )
   })
 
