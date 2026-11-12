@@ -22,7 +22,11 @@ const target = {
 const limits = {
   eventTypes: Schema.optionalKey(Schema.NonEmptyArray(Ids.EventType)),
   maxEvents: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
-  until: Schema.optionalKey(Schema.String)
+  until: Schema.optionalKey(
+    Schema.String.check(Schema.isPattern(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?(Z|[+-]\d{2}:\d{2})$/)).annotate({
+      description: "When the subscription expires: an ISO 8601 time with Z or an offset, such as 2026-12-01T09:00:00Z."
+    })
+  )
 }
 
 const SubscriptionResult = Schema.Struct({ subscription: Subscription.Subscription })
@@ -94,7 +98,7 @@ export const toolkit = Toolkit.make(
   ),
   tool(
     "wait",
-    "Wait until a subscription has something for you and return the same text a wake would deliver.",
+    "Wait until a subscription has something for you; text holds the same text a wake would deliver.",
     id,
     Schema.Struct({ text: Schema.String, wake: Wake.WakeContent })
   ),
@@ -139,7 +143,7 @@ const untilTime = (until: string | undefined): Effect.Effect<{ readonly until?: 
     : Option.match(DateTime.make(until), {
       onNone: () =>
         Effect.fail(
-          new ToolFailure({ message: `until is not a time: "${until}". Pass an ISO 8601 time such as 2026-12-01T09:00:00Z.` })
+          new ToolFailure({ message: `until is not a valid time: "${until}". Pass an ISO 8601 time such as 2026-12-01T09:00:00Z.` })
         ),
       onSome: (time) => Effect.succeed({ until: DateTime.toUtc(time) })
     })
