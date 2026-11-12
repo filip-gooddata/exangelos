@@ -2,7 +2,6 @@ import { Duration, Effect, Layer } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import { WakeTarget } from "@exangelos/application"
 import { WakeText } from "@exangelos/contracts"
-import type { Session } from "@exangelos/domain"
 import type { Invocation, Outcome, Verdict } from "./Attempt.ts"
 import { run } from "./Attempt.ts"
 import * as ClaudeCode from "./ClaudeCode.ts"
@@ -29,20 +28,10 @@ const attempt = (
     if (verdict.note !== undefined) yield* Effect.logWarning(verdict.note)
   })
 
-const plan = (session: Session.Session, text: string): readonly [Invocation, (outcome: Outcome) => Verdict] => {
-  switch (session.harness) {
-    case "t3":
-      return [T3.invocation(session.sessionId, text), T3.interpret]
-    case "claude-code":
-      return [ClaudeCode.invocation(session.sessionId, text), ClaudeCode.interpret]
-    case "codex":
-      return [Codex.invocation(session.sessionId, text), Codex.interpret]
-  }
-}
-
 /**
- * Delivers each wake through the harness of its session: T3 Code, Claude Code or Codex. One attempt
- * per call; the caller owns retries.
+ * Delivers each wake through the harness of its session: T3 Code or Codex. A Claude Code session
+ * has no route and every wake for it fails at once (see `ClaudeCode`). One attempt per call; the
+ * caller owns retries.
  */
 export const layer = (options: Options = {}): Layer.Layer<WakeTarget.WakeTarget, never, ChildProcessSpawner.ChildProcessSpawner> =>
   Layer.effect(WakeTarget.WakeTarget, Effect.gen(function*() {
@@ -50,8 +39,14 @@ export const layer = (options: Options = {}): Layer.Layer<WakeTarget.WakeTarget,
     const limit = Duration.fromInputUnsafe(options.limit ?? defaultLimit)
     return {
       deliver: (session, content) => {
-        const [planned, interpret] = plan(session, WakeText.render(content))
-        return attempt(spawner, planned, interpret, limit)
+        switch (session.harness) {
+          case "t3":
+            return attempt(spawner, T3.invocation(session.sessionId, WakeText.render(content)), T3.interpret, limit)
+          case "codex":
+            return attempt(spawner, Codex.invocation(session.sessionId, WakeText.render(content)), Codex.interpret, limit)
+          case "claude-code":
+            return Effect.fail(new WakeTarget.DeliveryFailed({ reason: ClaudeCode.noRoute(content.subscription) }))
+        }
       }
     }
   }))

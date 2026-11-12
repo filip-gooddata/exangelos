@@ -3,7 +3,7 @@ import { Duration, Effect, Exit, Layer } from "effect"
 import { WakeTarget } from "@exangelos/application"
 import { WakeText } from "@exangelos/contracts"
 import type { Session } from "@exangelos/domain"
-import { ClaudeCode, Codex, layer, T3 } from "../src/index.ts"
+import { Codex, layer, T3 } from "../src/index.ts"
 import { content, exited, recordingSpawner } from "./fixtures.ts"
 
 const timedOut = { _tag: "TimedOut", limit: Duration.seconds(30) } as const
@@ -70,26 +70,12 @@ describe("Codex", () => {
 })
 
 describe("Claude Code", () => {
-  it("maps what claude --bg returns", () => {
-    expect(ClaudeCode.interpret(exited(0, "abc123\n"))).toEqual({ _tag: "Delivered" })
-    expect(ClaudeCode.interpret(exited(0, "Session is running; started a copy as def456\n"))._tag).toBe("Delivered")
-    expect(ClaudeCode.interpret(exited(1, "", "No conversation found\n"))).toEqual({
-      _tag: "Failed",
-      reason: "claude exited with 1: No conversation found"
-    })
-    expect(ClaudeCode.interpret(timedOut)._tag).toBe("Failed")
-  })
-
-  it.effect("passes an id that starts with a dash as the value of --resume", () =>
+  it.effect("fails every wake with a fixed reason and starts no process", () =>
     Effect.gen(function*() {
       const { exit, spawned } = yield* deliverTo({ harness: "claude-code", sessionId: "-x:1" })
-      expect(Exit.isSuccess(exit)).toBe(true)
-      expect(spawned).toEqual([{ program: "claude", args: ["--bg", "--resume=-x:1", "--", text], stdin: "" }])
-    }))
-
-  it.effect("reports a non-zero exit as a failed delivery", () =>
-    Effect.gen(function*() {
-      const { exit } = yield* deliverTo({ harness: "claude-code", sessionId: "abc" }, 1)
-      expect(exit).toEqual(Exit.fail(new WakeTarget.DeliveryFailed({ reason: "claude exited with 1" })))
+      expect(exit).toEqual(Exit.fail(new WakeTarget.DeliveryFailed({
+        reason: "Claude Code has no route into a running session; run `exangelos wait sub_7f3k` in the session"
+      })))
+      expect(spawned).toEqual([])
     }))
 })
