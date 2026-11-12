@@ -4,9 +4,10 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import { PluginImportSource } from "@exangelos/application"
+import { Paths } from "@exangelos/paths"
 import * as PluginDirectoryLive from "@exangelos/plugin-directory"
 import * as PluginImportLive from "@exangelos/plugin-import"
 import { type ArchiveEntry, manifest, pluginEntries, tarGz, zip } from "./fixtures.ts"
@@ -23,6 +24,9 @@ const stubHttp = Layer.succeed(
     ))
   })
 )
+
+const pathsIn = (home: string) =>
+  Paths.layer.pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ EXANGELOS_HOME: home }))), Layer.orDie)
 
 interface Setup {
   readonly root: string
@@ -42,9 +46,9 @@ const place = (setup: Setup, source: PluginImportSource.Source) =>
     const imports = yield* PluginImportSource.PluginImportSource
     return yield* imports.place(source)
   }).pipe(
-    Effect.provide(PluginImportLive.layer({ directory: setup.plugins }).pipe(
-      Layer.provide(PluginDirectoryLive.layer({ directory: setup.plugins })),
-      Layer.provide(Layer.mergeAll(BunServices.layer, stubHttp))
+    Effect.provide(PluginImportLive.layer.pipe(
+      Layer.provide(PluginDirectoryLive.layer),
+      Layer.provide(Layer.mergeAll(BunServices.layer, stubHttp, pathsIn(Path.dirname(setup.plugins))))
     ))
   )
 

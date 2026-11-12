@@ -3,12 +3,13 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import * as Tar from "tar"
 import { OfficialPluginSource, SettingsStore } from "@exangelos/application"
 import { Ids, Settings } from "@exangelos/domain"
 import * as OfficialPlugins from "@exangelos/official-plugins"
+import { Paths } from "@exangelos/paths"
 import * as PluginDirectoryLive from "@exangelos/plugin-directory"
 import * as PluginImportLive from "@exangelos/plugin-import"
 
@@ -38,7 +39,6 @@ const buildArchive = (root: string, folder: string, name: string) =>
   })
 
 const fetch = (root: string, name: string, options: { folder?: string; served?: Map<string, Uint8Array> }) => {
-  const plugins = Path.join(root, "plugins")
   const settings = Layer.succeed(SettingsStore.SettingsStore, {
     read: Effect.succeed<Settings.Settings>(
       options.folder === undefined ? Settings.initial : { ...Settings.initial, officialPluginFolder: options.folder }
@@ -55,9 +55,10 @@ const fetch = (root: string, name: string, options: { folder?: string; served?: 
       ))
     })
   )
-  const imports = PluginImportLive.layer({ directory: plugins }).pipe(
-    Layer.provide(PluginDirectoryLive.layer({ directory: plugins })),
-    Layer.provide(Layer.mergeAll(BunServices.layer, http))
+  const paths = Paths.layer.pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ EXANGELOS_HOME: root }))), Layer.orDie)
+  const imports = PluginImportLive.layer.pipe(
+    Layer.provide(PluginDirectoryLive.layer),
+    Layer.provide(Layer.mergeAll(BunServices.layer, http, paths))
   )
   return Effect.gen(function*() {
     const source = yield* OfficialPluginSource.OfficialPluginSource

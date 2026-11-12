@@ -17,10 +17,11 @@
   "devDependencies": {
     "@effect/platform-bun": "catalog:",
     "@effect/vitest": "catalog:",
-    "@types/bun": "catalog:",
-    "vitest": "catalog:",
+    "@exangelos/paths": "workspace:*",
     "@exangelos/plugin-directory": "workspace:*",
     "@exangelos/plugin-import": "workspace:*",
-    "tar": "catalog:"
+    "@types/bun": "catalog:",
+    "tar": "catalog:",
+    "vitest": "catalog:"
   }
 }

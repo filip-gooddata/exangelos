@@ -11,9 +11,10 @@
   },
   "dependencies": {
     "@exangelos/application": "workspace:*",
+    "@exangelos/contracts": "workspace:*",
     "@exangelos/domain": "workspace:*",
-    "effect": "catalog:",
-    "@exangelos/contracts": "workspace:*"
+    "@exangelos/paths": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
     "@effect/platform-bun": "catalog:",

@@ -12,6 +12,7 @@
   "dependencies": {
     "@exangelos/application": "workspace:*",
     "@exangelos/domain": "workspace:*",
+    "@exangelos/paths": "workspace:*",
     "effect": "catalog:",
     "tar": "catalog:",
     "yauzl": "catalog:"

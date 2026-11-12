@@ -2,6 +2,7 @@ import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { Effect, Layer, Semaphore } from "effect"
 import { PluginDirectory, PluginImportSource } from "@exangelos/application"
+import { Paths } from "@exangelos/paths"
 import { HttpClient } from "effect/http"
 import { ChildProcessSpawner } from "effect/process"
 import { unpack } from "./Archive.ts"
@@ -16,17 +17,16 @@ const attempt = <A>(f: () => Promise<A>) =>
 
 /**
  * Places plugins from archives, https links, local directories and git repositories into the
- * plugin directory. Each import is staged in a new directory beside the plugin directory, checked,
+ * plugin directory at `Paths.pluginDir`. Each import is staged in a new directory beside the plugin directory, checked,
  * and only then moved under the plugin's manifest name. A failed import leaves the plugin directory
  * as it was.
  */
-export const layer = (options: { readonly directory: string }) =>
-  Layer.effect(
+export const layer = Layer.effect(
     PluginImportSource.PluginImportSource,
     Effect.gen(function*() {
       const plugins = yield* PluginDirectory.PluginDirectory
       const context = yield* Effect.context<ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient>()
-      const root = Path.resolve(options.directory)
+      const root = Path.resolve((yield* Paths.Paths).pluginDir)
       const swap = yield* Semaphore.make(1)
 
       const stage = Effect.acquireRelease(
@@ -100,4 +100,4 @@ export const layer = (options: { readonly directory: string }) =>
 
       return { place }
     })
-  )
+)

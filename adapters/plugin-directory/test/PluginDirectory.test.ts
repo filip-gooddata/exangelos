@@ -3,8 +3,9 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import { layer as fileSystemLayer } from "@effect/platform-bun/BunFileSystem"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber, Layer, type Scope, Stream } from "effect"
+import { ConfigProvider, Effect, Fiber, Layer, type Scope, Stream } from "effect"
 import { PluginDirectory } from "@exangelos/application"
+import { Paths } from "@exangelos/paths"
 import { digestDirectory, layer } from "@exangelos/plugin-directory"
 
 const temporary = Effect.acquireRelease(
@@ -24,8 +25,11 @@ const writePlugin = (directory: string, name: string, bundle = "console.log(1)")
 
 const withDirectory = <A, E>(f: (root: string) => Effect.Effect<A, E, PluginDirectory.PluginDirectory | Scope.Scope>) =>
   Effect.gen(function*() {
-    const root = yield* temporary
-    return yield* f(root).pipe(Effect.provide(layer({ directory: root }).pipe(Layer.provide(fileSystemLayer))))
+    const home = yield* temporary
+    const root = Path.join(home, "plugins")
+    yield* Effect.promise(() => Fs.mkdir(root))
+    const paths = Paths.layer.pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ EXANGELOS_HOME: home }))), Layer.orDie)
+    return yield* f(root).pipe(Effect.provide(layer.pipe(Layer.provide(Layer.mergeAll(fileSystemLayer, paths)))))
   })
 
 describe("PluginDirectory", () => {

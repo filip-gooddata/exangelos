@@ -2,9 +2,10 @@ import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
 import * as BunServices from "@effect/platform-bun/BunServices"
-import { Effect, Layer } from "effect"
+import { ConfigProvider, Effect, Layer } from "effect"
 import { layerFetchHttpClient } from "@exangelos/plugin-import"
 import { PluginImportSource } from "@exangelos/application"
+import { Paths } from "@exangelos/paths"
 import * as PluginDirectoryLive from "@exangelos/plugin-directory"
 import * as PluginImportLive from "@exangelos/plugin-import"
 import { pluginEntries, tarGz, zip } from "./fixtures.ts"
@@ -25,8 +26,9 @@ const program = Effect.gen(function*() {
   console.log("digest from-tar", digest)
 })
 
-await Effect.runPromise(program.pipe(Effect.provide(PluginImportLive.layer({ directory: plugins }).pipe(
-  Layer.provide(PluginDirectoryLive.layer({ directory: plugins })),
-  Layer.provide(Layer.mergeAll(BunServices.layer, layerFetchHttpClient))
+const paths = Paths.layer.pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ EXANGELOS_HOME: root }))), Layer.orDie)
+await Effect.runPromise(program.pipe(Effect.provide(PluginImportLive.layer.pipe(
+  Layer.provide(PluginDirectoryLive.layer),
+  Layer.provide(Layer.mergeAll(BunServices.layer, layerFetchHttpClient, paths))
 ))))
 await Fs.rm(root, { recursive: true, force: true })

@@ -284,6 +284,9 @@ importers:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
+      '@exangelos/paths':
+        specifier: workspace:*
+        version: link:../paths
       '@exangelos/plugin-directory':
         specifier: workspace:*
         version: link:../plugin-directory
@@ -324,6 +327,9 @@ importers:
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@exangelos/paths':
+        specifier: workspace:*
+        version: link:../paths
       effect:
         specifier: 'catalog:'
         version: 4.1.4
@@ -349,6 +355,9 @@ importers:
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@exangelos/paths':
+        specifier: workspace:*
+        version: link:../paths
       effect:
         specifier: 'catalog:'
         version: 4.1.4

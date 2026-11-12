@@ -3,6 +3,7 @@ import * as Path from "node:path"
 import { Duration, Effect, FileSystem, Layer, Schema, Stream } from "effect"
 import { PluginDirectory } from "@exangelos/application"
 import { Manifest } from "@exangelos/contracts"
+import { Paths } from "@exangelos/paths"
 import { digestDirectory } from "./Digest.ts"
 
 const { ManifestInvalid, PluginDirectoryFailed } = PluginDirectory
@@ -56,15 +57,14 @@ export const readPlugin = (directory: string): Effect.Effect<PluginDirectory.Ins
   }).pipe(Effect.mapError((reason) => new ManifestInvalid({ directory, reason })))
 
 /**
- * The plugin directory: one subdirectory per plugin, named after the plugin. A subdirectory whose
+ * The plugin directory at `Paths.pluginDir`: one subdirectory per plugin, named after the plugin. A subdirectory whose
  * manifest does not read, or names another plugin, is left out of `list`.
  */
-export const layer = (options: { readonly directory: string }) =>
-  Layer.effect(
+export const layer = Layer.effect(
     PluginDirectory.PluginDirectory,
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
-      const root = Path.resolve(options.directory)
+      const root = Path.resolve((yield* Paths.Paths).pluginDir)
 
       const list = Effect.gen(function*() {
         const entries = yield* Effect.tryPromise({
@@ -107,4 +107,4 @@ export const layer = (options: { readonly directory: string }) =>
 
       return { list, read: readPlugin, remove, changes }
     })
-  )
+)
