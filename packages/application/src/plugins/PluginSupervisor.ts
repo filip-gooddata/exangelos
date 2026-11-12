@@ -63,6 +63,7 @@ export class PluginSupervisor extends Context.Service<PluginSupervisor, {
   readonly ready: (name: Ids.PluginName) => Effect.Effect<PluginProcess, Refusal.PluginUnavailable>
   readonly watch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly unwatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
+  readonly rewatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
 }>()("@exangelos/application/PluginSupervisor") {}
 
 type Outcome =
@@ -569,6 +570,7 @@ export const layerPluginSupervisor: Layer.Layer<
     ready,
     watch: openStream,
     // The intake may unwatch from inside the stream's own ingest, so the removal runs on its own fiber.
-    unwatch: (subscription) => Effect.asVoid(Effect.forkDetach(FiberMap.remove(streams, subscription)))
+    unwatch: (subscription) => Effect.asVoid(Effect.forkDetach(FiberMap.remove(streams, subscription))),
+    rewatch: (subscription) => Effect.andThen(FiberMap.remove(streams, subscription), openStream(subscription))
   })
 }))
