@@ -1,10 +1,10 @@
 import { execFileSync } from "node:child_process"
-import { readdirSync } from "node:fs"
+import { mkdirSync, readdirSync } from "node:fs"
 import { join } from "node:path"
 import { beforeAll, describe, expect, it } from "@effect/vitest"
 import { buildRelease, type Release } from "../src/release.ts"
 import { hostTarget, readChecksums } from "../src/release-files.ts"
-import { listTarGz } from "../src/tar.ts"
+import { extractTarGz, listTarGz } from "../src/tar.ts"
 import { helloPlugin, standInEntry, temporaryDirectory } from "./helpers.ts"
 
 const buildInto = (work: string, version: string, pluginDirectories: ReadonlyArray<string>): Promise<Release> =>
@@ -28,6 +28,18 @@ describe("release build for this machine", () => {
     const [built] = release.binaries
     expect(execFileSync(built!.binary, ["--version"], { encoding: "utf8" })).toBe("exangelos 9.9.9\n")
     expect(JSON.parse(execFileSync(built!.binary, ["--official-plugins"], { encoding: "utf8" }))).toEqual(release.officialPlugins)
+  })
+
+  it("acts as Bun for a bundled plugin when BUN_BE_BUN is set", () => {
+    const [built] = release.binaries
+    const unpacked = join(work, "hello")
+    mkdirSync(unpacked)
+    extractTarGz(join(work, "official-plugins", "hello-1.2.3.tar.gz"), unpacked)
+    const output = execFileSync(built!.binary, [join(unpacked, "dist", "index.js")], {
+      encoding: "utf8",
+      env: { ...process.env, BUN_BE_BUN: "1" }
+    })
+    expect(output).toBe("hello plugin\n")
   })
 
   it("archives the binary alone and lists every release file in SHA256SUMS", () => {

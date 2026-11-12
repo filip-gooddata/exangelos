@@ -29,6 +29,9 @@ case "$(uname -m)" in
   x86_64 | amd64) arch=x64 ;;
   *) fail "unsupported machine $(uname -m)" ;;
 esac
+if [ "$os" = linux ] && ! getconf GNU_LIBC_VERSION >/dev/null 2>&1; then
+  fail "the Linux build needs glibc; this system has another C library"
+fi
 
 fetch() {
   case "$release" in
