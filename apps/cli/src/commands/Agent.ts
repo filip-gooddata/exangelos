@@ -3,7 +3,7 @@ import { Argument, Command, Flag } from "effect/cli"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
 import { Plugin, Subscription } from "@exangelos/domain"
 import * as Text from "../render/Text.ts"
-import { DaemonClient } from "./Client.ts"
+import { Connection } from "./Connection.ts"
 import * as Input from "./Input.ts"
 import { type Failure, respond } from "./Output.ts"
 
@@ -52,7 +52,7 @@ const plugins = Command.make(
   },
   ({ name }) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const listed = client.ListPlugins()
       yield* Option.match(name, {
         onNone: () => respond(listed, { schema: Schema.Array(Plugin.Plugin), text: Text.plugins }),
@@ -90,7 +90,7 @@ const subscribe = Command.make(
   },
   (input) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const work = Effect.gen(function*() {
         const payload = {
           plugin: yield* Input.pluginName(input.plugin),
@@ -131,7 +131,7 @@ const update = Command.make(
   },
   (input) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const work = Effect.gen(function*() {
         const id = yield* Input.subscriptionId(input.subscription)
         const parameters = input.parameters.length === 0 ? undefined : yield* Input.pairs(input.parameters)
@@ -167,14 +167,14 @@ const list = Command.make(
   },
   ({ all }) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       yield* respond(client.List({ all }), { schema: Schema.Array(SubscriptionSchema), text: Text.subscriptions })
     })
 ).pipe(Command.withDescription("List this session's subscriptions"))
 
 const show = Command.make("show", { subscription: subscriptionArgument }, ({ subscription }) =>
   Effect.gen(function*() {
-    const client = yield* DaemonClient
+    const client = yield* Connection
     const work = Effect.flatMap(Input.subscriptionId(subscription), (id) => client.Show({ id }))
     yield* respond(work, { schema: DaemonContract.Details, text: Text.details, subscription })
   })).pipe(Command.withDescription("Show one subscription with intent, events, wakes and changes"))
@@ -187,7 +187,7 @@ const events = Command.make(
   },
   ({ after, subscription }) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const work = Effect.flatMap(Input.subscriptionId(subscription), (id) =>
         Option.match(after, {
           onNone: () => client.Events({ id }),
@@ -205,7 +205,7 @@ const ack = Command.make(
   },
   ({ subscription, through }) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const work = Effect.flatMap(Input.subscriptionId(subscription), (id) => client.Ack({ id, through }))
       yield* respond(work, {
         schema: SubscriptionSchema,
@@ -217,7 +217,7 @@ const ack = Command.make(
 
 const wait = Command.make("wait", { subscription: subscriptionArgument }, ({ subscription }) =>
   Effect.gen(function*() {
-    const client = yield* DaemonClient
+    const client = yield* Connection
     const work = Effect.flatMap(Input.subscriptionId(subscription), (id) => client.Wait({ id }))
     yield* respond(work, {
       schema: DaemonContract.Wait.successSchema,
@@ -231,13 +231,13 @@ const stateChange = <E extends Failure>(
   name: "pause" | "resume" | "cancel",
   description: string,
   call: (
-    client: DaemonClient["Service"],
+    client: Connection["Service"],
     id: Subscription.Subscription["id"]
   ) => Effect.Effect<Subscription.Subscription, E>
 ) =>
   Command.make(name, { subscription: subscriptionArgument }, ({ subscription }) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const work = Effect.flatMap(Input.subscriptionId(subscription), (id) => call(client, id))
       yield* respond(work, {
         schema: SubscriptionSchema,
@@ -251,7 +251,7 @@ const retarget = Command.make(
   { subscription: subscriptionArgument, target: targetFlag, pullOnly: pullOnlyFlag },
   (input) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const work = Effect.gen(function*() {
         const id = yield* Input.subscriptionId(input.subscription)
         if (!input.pullOnly && Option.isNone(input.target)) {

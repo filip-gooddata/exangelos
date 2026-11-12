@@ -3,7 +3,7 @@ import { Argument, Command, Flag, Prompt } from "effect/cli"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
 import { Plugin, Settings } from "@exangelos/domain"
 import * as Text from "../render/Text.ts"
-import { DaemonClient } from "./Client.ts"
+import { Connection } from "./Connection.ts"
 import * as Input from "./Input.ts"
 import { type Failure, Json, respond } from "./Output.ts"
 import * as Secrets from "./Secrets.ts"
@@ -12,7 +12,7 @@ const command = WakeText.command
 
 const nameArgument = Argument.String("name").pipe(Argument.withDescription("The plugin name"))
 
-const findPlugin = (client: DaemonClient["Service"], name: string) =>
+const findPlugin = (client: Connection["Service"], name: string) =>
   Effect.flatMap(client.ListPlugins(), (all) => {
     const found = all.find((plugin) => plugin.name === name)
     return found === undefined ? Effect.fail(new DaemonContract.PluginNotFound({ plugin: name })) : Effect.succeed(found)
@@ -40,7 +40,7 @@ const importPlugin = Command.make(
   },
   ({ ref, source }) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const work = Effect.flatMap(importSource(source, ref), (resolved) => client.ImportPlugin({ source: resolved }))
       yield* respond(work, {
         schema: Plugin.Plugin,
@@ -61,7 +61,7 @@ const enable = Command.make(
   },
   ({ digest, name }) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const json = yield* Json
       const work = Effect.gen(function*() {
         const plugin = yield* Effect.flatMap(Input.pluginName(name), (valid) => findPlugin(client, valid))
@@ -87,13 +87,13 @@ const enable = Command.make(
 const byName = <A, E extends Failure>(
   name: string,
   description: string,
-  call: (client: DaemonClient["Service"], name: Plugin.Plugin["name"]) => Effect.Effect<A, E>,
+  call: (client: Connection["Service"], name: Plugin.Plugin["name"]) => Effect.Effect<A, E>,
   schema: Schema.Codec<A, unknown>,
   text: (value: A, name: string) => string
 ) =>
   Command.make(name, { name: nameArgument }, (input) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const work = Effect.flatMap(Input.pluginName(input.name), (valid) => call(client, valid))
       yield* respond(work, { schema, text: (value) => text(value, input.name) })
     })).pipe(Command.withDescription(description))
@@ -127,7 +127,7 @@ const devLink = Command.make(
   { path: Argument.String("path").pipe(Argument.withDescription("The plugin's working directory")) },
   ({ path }) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const absolute = (yield* Path.Path).resolve(path)
       yield* respond(client.DevLink({ path: absolute }), {
         schema: Plugin.Plugin,
@@ -166,7 +166,7 @@ const configure = Command.make(
   },
   (input) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const work = Effect.gen(function*() {
         const name = yield* Input.pluginName(input.name)
         const plain = yield* Input.pairs(input.values)
@@ -243,7 +243,7 @@ const settingsSet = Command.make(
   { values: Argument.String("key=value").pipe(Argument.withDescription("Settings to change"), Argument.variadic({ min: 1 })) },
   ({ values }) =>
     Effect.gen(function*() {
-      const client = yield* DaemonClient
+      const client = yield* Connection
       const work = Effect.gen(function*() {
         const changes = yield* Input.pairs(values)
         let encoded: unknown = yield* Schema.encodeEffect(SettingsJson)(yield* client.GetSettings()).pipe(Effect.orDie)
@@ -263,7 +263,7 @@ const settingsSet = Command.make(
 
 const settings = Command.make("settings", {}, () =>
   Effect.gen(function*() {
-    const client = yield* DaemonClient
+    const client = yield* Connection
     yield* respond(client.GetSettings(), { schema: Settings.Settings, text: Text.settings })
   })).pipe(
     Command.withDescription("Show the settings"),
@@ -272,7 +272,7 @@ const settings = Command.make("settings", {}, () =>
 
 const serviceStatus = Command.make("status", {}, () =>
   Effect.gen(function*() {
-    const client = yield* DaemonClient
+    const client = yield* Connection
     yield* respond(client.ServiceStatus(), {
       schema: DaemonContract.ServiceStatus.successSchema,
       text: Text.serviceStatus
