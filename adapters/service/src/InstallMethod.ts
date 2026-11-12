@@ -1,7 +1,7 @@
 import { Data } from "effect"
 
 export type InstallMethod = Data.TaggedEnum<{
-  Homebrew: { readonly formula: string }
+  Homebrew: { readonly formula: string; readonly prefix: string }
   AppBundle: { readonly bundle: string }
   Standalone: {}
 }>
@@ -13,7 +13,7 @@ export const detect = (realProgramPath: string): InstallMethod => {
   const cellar = segments.indexOf("Cellar")
   const formula = cellar === -1 ? undefined : segments[cellar + 1]
   if (formula !== undefined && formula !== "") {
-    return InstallMethod.Homebrew({ formula })
+    return InstallMethod.Homebrew({ formula, prefix: segments.slice(0, cellar).join("/") })
   }
   const bundleEnd = segments.findIndex((segment, index) => segment.endsWith(".app") && segments[index + 1] === "Contents")
   if (bundleEnd !== -1) {

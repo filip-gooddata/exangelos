@@ -15,12 +15,14 @@ const parseInfo = (stdout: string) =>
 
 export const layerHomebrew = (options: {
   readonly formula: string
+  readonly brew?: string
 }): Layer.Layer<UserService, never, ChildProcessSpawner.ChildProcessSpawner> =>
   Layer.effect(
     UserService,
     Effect.gen(function*() {
       const run = yield* makeRunner
-      const services = (command: string) => Effect.asVoid(run.succeed("brew", ["services", command, options.formula]))
+      const brew = options.brew ?? "brew"
+      const services = (command: string) => Effect.asVoid(run.succeed(brew, ["services", command, options.formula]))
 
       return makeUserService({
         install: () => Effect.void,
@@ -30,12 +32,12 @@ export const layerHomebrew = (options: {
         status: () =>
           Effect.gen(function*() {
             const args = ["services", "info", "--json", options.formula]
-            const output = yield* run.output("brew", args)
+            const output = yield* run.output(brew, args)
             if (output.exitCode !== 0) {
               if (output.stderr.includes("No available formula")) {
                 return ServiceStatus.NotInstalled()
               }
-              return yield* commandFailed("brew", args, output)
+              return yield* commandFailed(brew, args, output)
             }
             const info = yield* parseInfo(output.stdout)
             if (info?.running !== true) {

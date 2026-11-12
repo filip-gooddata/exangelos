@@ -48,18 +48,18 @@ describe("ServiceManager", () => {
         })
     ))
 
-  it.effect("starts the formula's service for a Homebrew binary and installs nothing", () =>
+  it.effect("starts the formula's service through its own brew and refuses overrides it cannot pass on", () =>
     scenario(
       { executable: "Cellar/exangelos/1.0.0/bin/exangelos", platform: "darwin" },
       (root, fake) =>
         Effect.gen(function*() {
-          const fs = yield* FileSystem.FileSystem
           const manager = yield* Port.ServiceManager
-          yield* manager.install
+          const refused = yield* Effect.flip(manager.install)
+          expect(refused).toMatchObject({ _tag: "ServiceFailed", method: "homebrew" })
+          expect(refused.reason).toContain("EXANGELOS_HOME")
           yield* manager.start
-          expect(yield* fs.exists(`${root}/home/Library/LaunchAgents`)).toBe(false)
           expect(fake.ran.map((ran) => [ran.command, ...ran.args].join(" "))).toEqual([
-            "brew services start exangelos"
+            `${root}/bin/brew services start exangelos`
           ])
         })
     ))

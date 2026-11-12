@@ -4,7 +4,7 @@ import { InstallMethod } from "@exangelos/service"
 describe("InstallMethod.detect", () => {
   it("names the formula of a binary inside the Homebrew Cellar", () => {
     expect(InstallMethod.detect("/opt/homebrew/Cellar/exangelos/1.0.0/bin/exangelos")).toEqual(
-      InstallMethod.InstallMethod.Homebrew({ formula: "exangelos" })
+      InstallMethod.InstallMethod.Homebrew({ formula: "exangelos", prefix: "/opt/homebrew" })
     )
   })
 

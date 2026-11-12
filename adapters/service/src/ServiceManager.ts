@@ -1,5 +1,4 @@
-import { Config, Effect, FileSystem, Layer, Option } from "effect"
-import type { Path } from "effect"
+import { Config, Effect, FileSystem, Layer, Option, Path } from "effect"
 import type { ChildProcessSpawner } from "effect/process"
 import { ServiceManager } from "@exangelos/application"
 import { Paths } from "@exangelos/paths"
@@ -32,11 +31,12 @@ const make = (options: Options) =>
     const paths = yield* Paths.Paths
     const home = yield* Config.NonEmptyString("HOME")
     const configHome = yield* Config.option(Config.NonEmptyString("XDG_CONFIG_HOME"))
-    const program = yield* fs.realPath(options.executable).pipe(Effect.orElseSucceed(() => options.executable))
+    const executable = (yield* Path.Path).resolve(options.executable)
+    const program = yield* fs.realPath(executable).pipe(Effect.orElseSucceed(() => executable))
     const install = detect(program)
 
     const [method, userServiceLayer] = install._tag === "Homebrew"
-      ? ["homebrew", layerHomebrew({ formula: install.formula })] as const
+      ? ["homebrew", layerHomebrew({ formula: install.formula, brew: `${install.prefix}/bin/brew` })] as const
       : options.platform === "darwin"
       ? ["launch-agent", layerLaunchd({ directory: `${home}/Library/LaunchAgents`, uid: options.uid })] as const
       : [
@@ -45,11 +45,12 @@ const make = (options: Options) =>
       ] as const
     const userService = yield* Effect.provide(UserService, userServiceLayer)
 
+    const overrides = yield* environment
     const definition: ServiceDefinition = {
       label,
       program,
       arguments: ["daemon"],
-      environment: yield* environment,
+      environment: overrides,
       stdoutPath: paths.logFile,
       stderrPath: paths.logFile,
       description: "Exangelos daemon"
@@ -66,7 +67,15 @@ const make = (options: Options) =>
         })),
         Effect.mapError(fromUserService)
       ),
-      install: method === "homebrew" ? Effect.void : fs.makeDirectory(paths.logDir, { recursive: true }).pipe(
+      install: method === "homebrew"
+        ? Object.keys(overrides).length === 0
+          ? Effect.void
+          : Effect.fail(failed(
+            `the Homebrew service runs with the formula's environment, so it would not see ${
+              Object.keys(overrides).join(", ")
+            }; unset them or run exangelos daemon in the foreground`
+          ))
+        : fs.makeDirectory(paths.logDir, { recursive: true }).pipe(
         Effect.mapError((error) => failed(error.message)),
         Effect.andThen(userService.install(definition).pipe(Effect.mapError(fromUserService)))
       ),
