@@ -660,6 +660,9 @@ importers:
       '@exangelos/contracts':
         specifier: workspace:*
         version: link:../contracts
+      '@exangelos/domain':
+        specifier: workspace:*
+        version: link:../domain
       effect:
         specifier: 'catalog:'
         version: 4.1.4
@@ -693,6 +696,9 @@ importers:
 
   plugins/template:
     dependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
       '@exangelos/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
