@@ -87,6 +87,7 @@ const defaults = {
   ConfigurePlugin: () => Effect.succeed(plugin),
   DevLink: () => Effect.succeed(plugin),
   DevUnlink: () => Effect.void,
+  ListPluginAlerts: () => Effect.succeed([]),
   GetSettings: () => Effect.die("unused"),
   SetSettings: () => Effect.die("unused"),
   ServiceStatus: () => Effect.succeed({ version: "0.1.0", startMethod: "foreground" as const })

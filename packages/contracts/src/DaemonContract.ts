@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
-import { Catalogue, Event, Ids, Plugin, Session, Settings, Subscription, Wake } from "@exangelos/domain"
+import { Alert, Catalogue, Event, Ids, Plugin, Session, Settings, Subscription, Wake } from "@exangelos/domain"
 
 export class PluginNotFound extends Schema.TaggedError<PluginNotFound>()("PluginNotFound", {
   plugin: Schema.String
@@ -43,7 +43,9 @@ export class TransitionRefused extends Schema.TaggedError<TransitionRefused>()("
 
 export class BacklogOverLimit extends Schema.TaggedError<BacklogOverLimit>()("BacklogOverLimit", {
   pending: Schema.Int,
-  limit: Schema.Int
+  limit: Schema.Int,
+  /** The last event number the agent must acknowledge through before resume succeeds. */
+  through: Ids.AckedThrough
 }) {}
 
 export class OfficialFetchFailed extends Schema.TaggedError<OfficialFetchFailed>()("OfficialFetchFailed", {
@@ -253,6 +255,15 @@ export class DevUnlink extends Rpc.make("DevUnlink", {
   error: PluginNotFound
 }) {}
 
+/**
+ * One alert for each plugin that waits for the owner because of its trust: `WaitsForEnable` for an
+ * inert plugin the owner can enable, `DigestMismatch` for an official plugin whose files do not match
+ * the checksum the binary carries. An official plugin the owner disabled has no alert.
+ */
+export class ListPluginAlerts extends Rpc.make("ListPluginAlerts", {
+  success: Schema.Array(Alert.Alert)
+}) {}
+
 export class GetSettings extends Rpc.make("GetSettings", {
   success: Settings.Settings
 }) {}
@@ -278,6 +289,7 @@ export class ManagementGroup extends RpcGroup.make(
   ConfigurePlugin,
   DevLink,
   DevUnlink,
+  ListPluginAlerts,
   GetSettings,
   SetSettings,
   ServiceStatus
