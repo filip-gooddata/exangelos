@@ -1,6 +1,6 @@
 import { Context, Schema } from "effect"
-import type { Effect } from "effect"
-import { Catalogue, Ids, Session } from "@exangelos/domain"
+import type { Effect, Option } from "effect"
+import { Catalogue, Ids, type Refusal, Session } from "@exangelos/domain"
 import type { OfficialFetchFailed } from "../ports/OfficialPluginSource.ts"
 
 export const Described = Schema.Struct({
@@ -15,30 +15,27 @@ export class PluginNotFound extends Schema.TaggedError<PluginNotFound>()("Plugin
   plugin: Ids.PluginName
 }) {}
 
-export class PluginUnavailable extends Schema.TaggedError<PluginUnavailable>()("PluginUnavailable", {
-  plugin: Ids.PluginName,
-  reason: Schema.String
-}) {}
-
-export class ParametersInvalid extends Schema.TaggedError<ParametersInvalid>()("ParametersInvalid", {
-  plugin: Ids.PluginName,
-  reason: Schema.String
-}) {}
-
 /** What the plugin half offers the subscription half. */
 export class PluginAccess extends Context.Service<PluginAccess, {
   /**
    * Makes the plugin ready, fetching an official plugin on first use and starting it, then asks
    * it to validate and normalise the parameters and name the subject. A fetch records the actor.
+   * A plugin with a `PluginRules.problem` fails as unavailable. Once the plugin is ready, `main`
+   * joins the parameters under `catalogue.parameters.main` through `Subscribe.withMain`, so a main
+   * given both ways with different values fails as ParametersInvalid, as does a Describe refusal.
    */
   readonly describe: (
     actor: Session.Actor,
     plugin: Ids.PluginName,
-    parameters: Catalogue.Parameters
-  ) => Effect.Effect<Described, PluginNotFound | PluginUnavailable | OfficialFetchFailed | ParametersInvalid>
+    request: { readonly parameters: Catalogue.Parameters; readonly main: Option.Option<string> }
+  ) => Effect.Effect<
+    Described,
+    PluginNotFound | Refusal.PluginUnavailable | Refusal.ParametersInvalid | OfficialFetchFailed
+  >
   /**
-   * Runs the subscription's Watch stream from its stored cursor whenever its plugin is available,
-   * handing each item to SubscriptionIntake. Watching an already watched subscription does nothing.
+   * Runs the subscription's Watch stream from its stored cursor while `Lifecycle.isWatched` holds,
+   * handing each item to SubscriptionIntake.ingest. Watching an already watched subscription does
+   * nothing.
    */
   readonly watch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   /** Stops the subscription's Watch stream. Its cursor stays stored. */
