@@ -2,6 +2,7 @@ import { Console, Data, Effect, Schema } from "effect"
 import { Flag, GlobalFlag } from "effect/cli"
 import type { RpcClientError } from "effect/rpc"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
+import { DaemonClient } from "@exangelos/daemon-client"
 import {
   backlogOverLimitMessage,
   noDaemonMessage,
@@ -39,6 +40,7 @@ const ContractError = Schema.Union([
   DaemonContract.DigestMismatch,
   DaemonContract.ConfigurationInvalid,
   DaemonContract.ConfigurationRejected,
+  DaemonClient.DaemonNotRunning,
   InputInvalid
 ])
 type ContractError = typeof ContractError.Type
@@ -52,6 +54,8 @@ export const failureMessage = (failure: Failure, subscription?: string): string 
   switch (failure._tag) {
     case "RpcClientError":
       return noDaemonMessage(failure.message)
+    case "DaemonNotRunning":
+      return noDaemonMessage(`nothing answers on ${failure.path}`)
     case "InputInvalid":
       return failure.message
     case "PluginNotFound":

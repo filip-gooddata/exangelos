@@ -4,13 +4,10 @@ import { DaemonContract } from "@exangelos/contracts"
 import { Ids } from "@exangelos/domain"
 import { callOf, run, subscription } from "./harness.ts"
 
-const session = { T3CODE_THREAD_ID: "thread-1" }
-
 describe("agent commands", () => {
-  it("subscribes with the main parameter, key=value pairs, the intent and the caller's session", async () => {
+  it("subscribes with the main parameter, key=value pairs and the intent", async () => {
     const result = await run(
-      ["subscribe", "github-pr", "acme/app#123", "branch=main", "depth=2", "--intent", "fix CI on PR 123", "--once"],
-      { env: session }
+      ["subscribe", "github-pr", "acme/app#123", "branch=main", "depth=2", "--intent", "fix CI on PR 123", "--once"]
     )
     expect(result.exit._tag).toBe("Success")
     const call = callOf(result, "Subscribe")
@@ -23,7 +20,6 @@ describe("agent commands", () => {
       target: { _tag: "Caller" },
       similarOk: []
     })
-    expect(call?.headers).toMatchObject({ "x-exangelos-harness": "t3", "x-exangelos-session-id": "thread-1" })
     expect(result.stdout).toContain("Subscription:  sub_7f3k")
   })
 
@@ -42,7 +38,7 @@ describe("agent commands", () => {
         : Effect.fail(new DaemonContract.SimilarSubscriptions({ similar: [similar] }))
     const argv = ["subscribe", "github-pr", "acme/app#123", "--intent", "fix CI"]
 
-    const refused = await run(argv, { env: session, handlers: { Subscribe: refuse } })
+    const refused = await run(argv, { handlers: { Subscribe: refuse } })
     expect(refused.exit._tag).toBe("Failure")
     expect(refused.stderr).toBe(
       [
@@ -52,7 +48,7 @@ describe("agent commands", () => {
       ].join("\n")
     )
 
-    const created = await run([...argv, "--similar-ok", "sub_old1"], { env: session, handlers: { Subscribe: refuse } })
+    const created = await run([...argv, "--similar-ok", "sub_old1"], { handlers: { Subscribe: refuse } })
     expect(created.exit._tag).toBe("Success")
     expect(callOf(created, "Subscribe")?.payload).toMatchObject({ similarOk: ["sub_old1"] })
   })
@@ -78,7 +74,7 @@ describe("agent commands", () => {
     },
     { argv: ["cancel", "sub_7f3k"], rpc: "Cancel", payload: { id: "sub_7f3k" }, out: "sub_7f3k is cancelled by you." }
   ])("$rpc sends its payload and prints the answer", async ({ argv, out, payload, rpc }) => {
-    const result = await run(argv, { env: session })
+    const result = await run(argv)
     expect(result.exit._tag).toBe("Success")
     expect(callOf(result, rpc)?.payload).toEqual(payload)
     expect(result.stdout).toContain(out)

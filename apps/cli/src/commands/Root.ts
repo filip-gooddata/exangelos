@@ -1,7 +1,5 @@
-import { Effect, Option } from "effect"
 import { Command } from "effect/cli"
-import { RpcClient } from "effect/rpc"
-import { SessionHeaders, WakeText } from "@exangelos/contracts"
+import { WakeText } from "@exangelos/contracts"
 import * as Agent from "./Agent.ts"
 import * as Management from "./Management.ts"
 import { Json } from "./Output.ts"
@@ -25,11 +23,3 @@ export const make = <
   )
 }
 
-/** Runs a command with the calling session, detected from `env`, on every daemon call it makes. */
-export const withSession = (env: Readonly<Record<string, string | undefined>>) => <A, E, R>(
-  effect: Effect.Effect<A, E, R>
-): Effect.Effect<A, E, R> =>
-  Option.match(SessionHeaders.detect(env), {
-    onNone: () => effect,
-    onSome: (session) => RpcClient.withHeaders(effect, SessionHeaders.toHeaders(session))
-  })

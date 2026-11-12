@@ -7,7 +7,8 @@ import { type Rpc, type RpcGroup, RpcTest } from "effect/rpc"
 import { TestConsole } from "effect/testing"
 import { DaemonContract } from "@exangelos/contracts"
 import { Catalogue, Ids, Plugin, Subscription } from "@exangelos/domain"
-import { DaemonClient } from "../src/commands/Client.ts"
+import { DaemonClient } from "@exangelos/daemon-client"
+import * as Connection from "../src/commands/Connection.ts"
 import * as Root from "../src/commands/Root.ts"
 
 const at = DateTime.makeUnsafe("2026-11-12T10:00:00Z")
@@ -134,7 +135,7 @@ export const run = (
   argv: ReadonlyArray<string>,
   options: {
     readonly handlers?: Partial<HandlerMap>
-    readonly env?: Readonly<Record<string, string | undefined>>
+    readonly connection?: Layer.Layer<Connection.Connection>
     readonly commandOutput?: string
   } = {}
 ): Promise<Result> =>
@@ -164,10 +165,9 @@ export const run = (
       Stdio.layerTest({}),
       Layer.succeed(Terminal.Terminal, terminal),
       Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner(options.commandOutput ?? "", ran)),
-      Layer.succeed(DaemonClient, client)
+      options.connection ?? Connection.layer(Layer.succeed(DaemonClient.DaemonClient, client))
     )
     const exit = yield* Command.runWith(Root.make(), { version: "0.0.0-test" })(argv).pipe(
-      Root.withSession(options.env ?? {}),
       Effect.provide(environment),
       Effect.exit
     )
