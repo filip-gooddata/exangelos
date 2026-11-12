@@ -3,6 +3,7 @@
 //! the relay.
 
 pub mod relay;
+pub mod sidecar;
 pub mod socket;
 
 use std::process;
@@ -111,6 +112,18 @@ fn host_smoke_report(app: AppHandle, host: State<'_, Host>, ok: bool, report: St
     app.exit(if ok { 0 } else { 1 });
 }
 
+fn start_daemon() {
+    let started = socket::daemon_socket_path(|name| std::env::var(name).ok())
+        .and_then(|socket| sidecar::ensure_daemon(&socket, &sidecar::sidecar_path()?));
+    match started {
+        Ok(sidecar::Daemon::Answering) => {}
+        Ok(sidecar::Daemon::Started { pid }) => {
+            eprintln!("started the Exangelos daemon, pid {pid}")
+        }
+        Err(message) => eprintln!("the Exangelos daemon is not running: {message}"),
+    }
+}
+
 fn tray_image(png: &[u8]) -> Image<'static> {
     Image::from_bytes(png).expect("bundled tray icon is a valid PNG")
 }
@@ -151,8 +164,7 @@ pub fn run() {
             let window = build_panel(app.handle())?;
             platform::prepare_panel(&window)?;
             build_tray(app.handle())?;
-            // The sidecar (the daemon binary shipped with the app) starts here
-            // once it exists; see `bundle.externalBin`.
+            start_daemon();
             Ok(())
         })
         .on_window_event(|window, event| {
