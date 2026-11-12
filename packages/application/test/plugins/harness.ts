@@ -63,13 +63,18 @@ export const unavailableReports = (plugin: string) =>
 export const storePlugin = (plugin: Plugin.Plugin) =>
   Effect.flatMap(PluginRepository.PluginRepository, (r) => r.store(plugin))
 
-export const activeSubscription = (plugin: string, id: string, cursor?: string) =>
+export const activeSubscription = (
+  plugin: string,
+  id: string,
+  cursor?: string,
+  parameters: Subscription.Subscription["parameters"] = { name: id }
+) =>
   Effect.gen(function*() {
     const now = yield* DateTime.now
     const subscription: Subscription.Subscription = {
       id: Ids.SubscriptionId.make(id),
       plugin: name(plugin),
-      parameters: { name: id },
+      parameters,
       subject: id,
       label: id,
       intent: "test",
