@@ -5,7 +5,14 @@ import * as Lifecycle from "./Lifecycle.ts"
 import type { Limits } from "./Limits.ts"
 import type { Plugin } from "./Plugin.ts"
 import * as PluginRules from "./PluginRules.ts"
-import { IntentRequired, NoWakeTarget, PluginUnavailable, SimilarSubscriptions, SubjectChanged } from "./Refusal.ts"
+import {
+  IntentRequired,
+  NoWakeTarget,
+  ParametersInvalid,
+  PluginUnavailable,
+  SimilarSubscriptions,
+  SubjectChanged
+} from "./Refusal.ts"
 import { sameSession, type Session } from "./Session.ts"
 import type { Subscription } from "./Subscription.ts"
 
@@ -113,3 +120,17 @@ export const update = (
 
 export const isOwn = (subscription: Subscription, caller: Session): boolean =>
   subscription.wakeTarget !== undefined && sameSession(subscription.wakeTarget, caller)
+
+export const withMain = (
+  parameters: Parameters,
+  key: string,
+  main: Option.Option<string>
+): Result.Result<Parameters, ParametersInvalid> => {
+  if (Option.isNone(main)) return Result.succeed(parameters)
+  if (key in parameters && parameters[key] !== main.value) {
+    return Result.fail(
+      new ParametersInvalid({ reason: `${key} is given twice, as "${main.value}" and as ${JSON.stringify(parameters[key])}.` })
+    )
+  }
+  return Result.succeed({ ...parameters, [key]: main.value })
+}

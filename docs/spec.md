@@ -139,6 +139,7 @@ Driven adapters, one package each:
 - Service manager over the service gap package.
 - Settings file.
 - Paths (XDG resolution and the single-directory override).
+- Daemon client: the daemon's RPC transport over its unix socket. The client side serves the CLI and the MCP server and reports a distinct error when no daemon runs. The server side sets the socket's mode to 0600, removes a stale socket file and refuses to start beside a live daemon.
 
 Gap packages that fill holes in the Effect ecosystem. Each is general-purpose, has no dependency on Exangelos packages, has its own tests, and stays private to the workspace in version 1 so it can be published later:
 
@@ -471,6 +472,12 @@ Pinned exactly:
 | Bun | 1.4.2 |
 | pnpm | 12.10.1 |
 | Rust toolchain for the tray app | stable, cargo 1.99.1 (Tauri 2.12 needs Rust 1.90 or later) |
+| Turborepo (turbo) | 2.11.11 |
+| Vitest | 5.1.0 |
+| Vite | 8.3.8 |
+| @effect/tsgo (Effect-aware tsgo, binary `effect-tsgo`) with typescript | 0.68.1 with 7.0.2 |
+| @foldkit/vite-plugin | 0.29.0 |
+| tauri-nspanel (Rust crate) | 2.1.1 |
 
 The other tools (Turborepo, Vitest, tsgo, the Foldkit Vite plugin, tauri-nspanel) are pinned exactly to their current release when the repository is scaffolded, and the pins are recorded in this table then.
 
