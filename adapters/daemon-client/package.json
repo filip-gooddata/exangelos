@@ -6,12 +6,18 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "bun run --bun vitest run"
   },
   "dependencies": {
+    "@effect/platform-bun": "catalog:",
     "@exangelos/contracts": "workspace:*",
     "@exangelos/domain": "workspace:*",
-    "effect": "catalog:",
-    "@effect/platform-bun": "catalog:"
+    "@exangelos/paths": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/vitest": "catalog:",
+    "vitest": "catalog:"
   }
 }
