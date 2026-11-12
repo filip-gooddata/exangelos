@@ -3,6 +3,7 @@ import { ChildProcessSpawner } from "effect/process"
 import { SecretStore } from "@exangelos/application"
 import type { Ids } from "@exangelos/domain"
 import { Keychain } from "@exangelos/keychain"
+import { Paths } from "@exangelos/paths"
 import * as SecretsFile from "./SecretsFile.ts"
 
 const entry = (plugin: Ids.PluginName, field: string): Keychain.Entry => ({ service: `exangelos.${plugin}`, account: field })
@@ -26,9 +27,10 @@ export const layerKeychain: Layer.Layer<SecretStore.SecretStore, never, Keychain
 )
 
 /** Keeps every secret in one JSON file at mode 0600, for machines with no keychain. Writes in one process run one at a time. */
-export const layerFile = (path: string): Layer.Layer<SecretStore.SecretStore, never, FileSystem.FileSystem | Path.Path> =>
+export const layerFile: Layer.Layer<SecretStore.SecretStore, never, FileSystem.FileSystem | Path.Path | Paths.Paths> =
   Layer.effect(SecretStore.SecretStore)(
     Effect.gen(function*() {
+      const path = (yield* Paths.Paths).secretsFile
       const context = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
       const writing = yield* Semaphore.make(1)
       return {
@@ -52,20 +54,20 @@ export const layerFile = (path: string): Layer.Layer<SecretStore.SecretStore, ne
 type Chosen = Layer.Layer<
   SecretStore.SecretStore,
   never,
-  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path
+  ChildProcessSpawner.ChildProcessSpawner | FileSystem.FileSystem | Path.Path | Paths.Paths
 >
 
 /**
  * Uses the macOS Keychain on macOS, Secret Service on Linux when `secret-tool` reaches one,
- * and otherwise the 0600 file at `file`.
+ * and otherwise the 0600 file the Paths service names.
  */
-export const layer = (options: { readonly platform: string; readonly file: string }): Chosen =>
+export const layer = (platform: string): Chosen =>
   Layer.unwrap(
-    Keychain.detect(options.platform).pipe(
+    Keychain.detect(platform).pipe(
       Effect.map((store): Chosen =>
         Option.isSome(store)
           ? layerKeychain.pipe(Layer.provide(Keychain.layer(store.value)))
-          : layerFile(options.file)
+          : layerFile
       )
     )
   )

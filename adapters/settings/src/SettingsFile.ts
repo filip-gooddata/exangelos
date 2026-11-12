@@ -1,6 +1,7 @@
 import { Effect, FileSystem, Layer, Path, Random, Schema } from "effect"
 import { SettingsStore } from "@exangelos/application"
 import { Settings } from "@exangelos/domain"
+import { Paths } from "@exangelos/paths"
 
 const Json = Schema.fromJsonString(Schema.Unknown)
 const Record = Schema.Record(Schema.String, Schema.Unknown)
@@ -45,13 +46,16 @@ const write = (path: string, settings: Settings.Settings) =>
     yield* fs.rename(temp, path)
   }).pipe(Effect.mapError((error) => new SettingsStore.SettingsWriteFailed({ path, reason: error.message })))
 
-export const layer = (path: string): Layer.Layer<SettingsStore.SettingsStore, never, FileSystem.FileSystem | Path.Path> =>
-  Layer.effect(SettingsStore.SettingsStore)(
-    Effect.gen(function*() {
-      const context = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
-      return {
-        read: read(path).pipe(Effect.provide(context)),
-        write: (settings) => write(path, settings).pipe(Effect.provide(context))
-      }
-    })
-  )
+/** Reads and writes the settings file the Paths service names. */
+export const layer: Layer.Layer<SettingsStore.SettingsStore, never, FileSystem.FileSystem | Path.Path | Paths.Paths> = Layer.effect(
+  SettingsStore.SettingsStore
+)(
+  Effect.gen(function*() {
+    const path = (yield* Paths.Paths).settingsFile
+    const context = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
+    return {
+      read: read(path).pipe(Effect.provide(context)),
+      write: (settings) => write(path, settings).pipe(Effect.provide(context))
+    }
+  })
+)

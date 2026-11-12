@@ -1,9 +1,10 @@
 import { NodeFileSystem, NodePath } from "@effect/platform-node-shared"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, FileSystem, Layer, Option, Redacted, Sink, Stream } from "effect"
+import { ConfigProvider, Effect, FileSystem, Layer, Option, Redacted, Sink, Stream } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import { SecretStore } from "@exangelos/application"
 import { Ids } from "@exangelos/domain"
+import { Paths } from "@exangelos/paths"
 import { SecretStores } from "../src/index.ts"
 
 const Platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
@@ -13,11 +14,13 @@ const reveal = (secret: Option.Option<Redacted.Redacted<string>>) => Option.map(
 
 const temporaryFile = Effect.gen(function*() {
   const fs = yield* FileSystem.FileSystem
-  const directory = yield* fs.makeTempDirectoryScoped()
-  return { directory: `${directory}/data`, path: `${directory}/data/secrets.json` }
+  const home = yield* fs.makeTempDirectoryScoped()
+  const paths = Paths.layer.pipe(Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ EXANGELOS_HOME: home }))))
+  return { directory: home, path: `${home}/secrets.json`, paths }
 })
 
-const fileStore = (path: string) => SecretStore.SecretStore.pipe(Effect.provide(SecretStores.layerFile(path)))
+const fileStore = <E>(paths: Layer.Layer<Paths.Paths, E>) =>
+  SecretStore.SecretStore.pipe(Effect.provide(SecretStores.layerFile.pipe(Layer.provide(paths))))
 
 /** A spawner whose every command exits with `exitCode` and records the program it ran. */
 const spawner = (exitCode: number) => {
@@ -46,7 +49,7 @@ const spawner = (exitCode: number) => {
 describe("file store", () => {
   it.effect("stores, reads and deletes secrets", () =>
     Effect.gen(function*() {
-      const store = yield* fileStore((yield* temporaryFile).path)
+      const store = yield* fileStore((yield* temporaryFile).paths)
       expect(yield* store.get(github, "token")).toEqual(Option.none())
       yield* store.set(github, "token", Redacted.make("ghp-one"))
       yield* store.set(github, "webhook", Redacted.make("hook"))
@@ -59,8 +62,8 @@ describe("file store", () => {
   it.effect("keeps the file at mode 0600 and replaces it through a rename", () =>
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
-      const { directory, path } = yield* temporaryFile
-      const store = yield* fileStore(path)
+      const { directory, path, paths } = yield* temporaryFile
+      const store = yield* fileStore(paths)
       yield* store.set(github, "token", Redacted.make("ghp-one"))
       const before = yield* fs.stat(path)
       yield* store.set(github, "token", Redacted.make("ghp-two"))
@@ -73,8 +76,8 @@ describe("file store", () => {
   it.effect("fails without showing the file's contents when it does not decode", () =>
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
-      const { path } = yield* temporaryFile
-      const store = yield* fileStore(path)
+      const { path, paths } = yield* temporaryFile
+      const store = yield* fileStore(paths)
       yield* store.set(github, "token", Redacted.make("ghp-one"))
       yield* fs.writeFileString(path, JSON.stringify({ github: { token: 42, other: "ghp-leak" } }))
       const error = yield* Effect.flip(store.get(github, "token"))
@@ -84,13 +87,37 @@ describe("file store", () => {
     }).pipe(Effect.provide(Platform)))
 })
 
+describe("file store lookups", () => {
+  it.effect("treats inherited object properties as missing entries", () =>
+    Effect.gen(function*() {
+      const store = yield* fileStore((yield* temporaryFile).paths)
+      const constructor = Ids.PluginName.make("constructor")
+      expect(yield* store.get(constructor, "name")).toEqual(Option.none())
+      yield* store.set(github, "token", Redacted.make("ghp-one"))
+      expect(yield* store.get(github, "toString")).toEqual(Option.none())
+      yield* store.delete(github, ["toString"])
+      expect(reveal(yield* store.get(github, "token"))).toEqual(Option.some("ghp-one"))
+    }).pipe(Effect.provide(Platform)))
+
+  it.effect("keeps both of two concurrent writes", () =>
+    Effect.gen(function*() {
+      const store = yield* fileStore((yield* temporaryFile).paths)
+      yield* Effect.all([
+        store.set(github, "token", Redacted.make("ghp-one")),
+        store.set(github, "webhook", Redacted.make("hook"))
+      ], { concurrency: "unbounded" })
+      expect(reveal(yield* store.get(github, "token"))).toEqual(Option.some("ghp-one"))
+      expect(reveal(yield* store.get(github, "webhook"))).toEqual(Option.some("hook"))
+    }).pipe(Effect.provide(Platform)))
+})
+
 describe("choosing a store", () => {
   const chosen = (platform: string, exitCode: number) => {
     const fake = spawner(exitCode)
     return Effect.gen(function*() {
-      const { path } = yield* temporaryFile
+      const { paths } = yield* temporaryFile
       const store = yield* SecretStore.SecretStore.pipe(
-        Effect.provide(SecretStores.layer({ platform, file: path }).pipe(Layer.provide(fake.layer)))
+        Effect.provide(SecretStores.layer(platform).pipe(Layer.provide(fake.layer), Layer.provide(paths)))
       )
       yield* store.delete(github, ["token"])
       return fake.programs

@@ -341,6 +341,9 @@ importers:
       '@exangelos/keychain':
         specifier: workspace:*
         version: link:../../gap/keychain
+      '@exangelos/paths':
+        specifier: workspace:*
+        version: link:../paths
       effect:
         specifier: 'catalog:'
         version: 4.1.4
@@ -378,6 +381,9 @@ importers:
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@exangelos/paths':
+        specifier: workspace:*
+        version: link:../paths
       effect:
         specifier: 'catalog:'
         version: 4.1.4

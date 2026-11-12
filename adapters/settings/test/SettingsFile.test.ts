@@ -1,8 +1,9 @@
 import { NodeFileSystem, NodePath } from "@effect/platform-node-shared"
 import { describe, expect, it } from "@effect/vitest"
-import { Duration, Effect, FileSystem, Layer } from "effect"
+import { ConfigProvider, Duration, Effect, FileSystem, Layer } from "effect"
 import { SettingsStore } from "@exangelos/application"
 import { Settings } from "@exangelos/domain"
+import { Paths } from "@exangelos/paths"
 import { SettingsFile } from "../src/index.ts"
 
 const Platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
@@ -10,9 +11,14 @@ const Platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
 const withStore = <A, E>(test: (path: string, store: SettingsStore.SettingsStore["Service"]) => Effect.Effect<A, E, FileSystem.FileSystem>) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
-    const path = `${yield* fs.makeTempDirectoryScoped()}/config/settings.json`
-    const store = yield* SettingsStore.SettingsStore.pipe(Effect.provide(SettingsFile.layer(path)))
-    return yield* test(path, store)
+    const home = yield* fs.makeTempDirectoryScoped()
+    const store = yield* SettingsStore.SettingsStore.pipe(
+      Effect.provide(SettingsFile.layer.pipe(
+        Layer.provide(Paths.layer),
+        Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ EXANGELOS_HOME: home })))
+      ))
+    )
+    return yield* test(`${home}/settings.json`, store)
   }).pipe(Effect.provide(Platform))
 
 describe("SettingsFile", () => {
