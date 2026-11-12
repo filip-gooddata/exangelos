@@ -79,18 +79,114 @@ describe("Tree", () => {
       const { fs, root, write } = yield* fixture
       yield* write("dist/child/inside.txt", "a")
       yield* write("outside/child/secret.txt", "b")
+      const child = `${root}/dist/child`
+      const isChild = sameDirectory(fs, child)
       const swapping = FileSystem.FileSystem.of({
         ...fs,
         readDirectory: (path, options) =>
-          path === `${root}/dist/child`
-            ? fs.remove(path, { recursive: true }).pipe(
-              Effect.andThen(fs.symlink(`${root}/outside/child`, path)),
-              Effect.andThen(fs.readDirectory(path, options))
-            )
-            : fs.readDirectory(path, options)
+          Effect.gen(function*() {
+            if (yield* isChild(path)) {
+              yield* fs.remove(child, { recursive: true })
+              yield* fs.symlink(`${root}/outside/child`, child)
+            }
+            return yield* fs.readDirectory(path, options)
+          })
       })
       const glob = Result.getOrThrow(FileGlob.parse({ path: `${root}/dist/**` }, "/home/ada"))
 
       expect((yield* Tree.scan(glob).pipe(Effect.provideService(FileSystem.FileSystem, swapping))).size).toBe(0)
     }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
+
+  it.effect("records nothing from outside when a swapped directory is restored before the scan moves on", () =>
+    Effect.gen(function*() {
+      const { fs, root, write } = yield* fixture
+      yield* write("dist/child/inside.txt", "a")
+      yield* write("outside/child/secret.txt", "b")
+      const child = `${root}/dist/child`
+      const isChild = sameDirectory(fs, child)
+      let swapped = false
+      let fired = false
+      const restore = Effect.gen(function*() {
+        if (!swapped) return
+        swapped = false
+        yield* fs.remove(child)
+        yield* fs.rename(`${child}.away`, child)
+      })
+      const racing = FileSystem.FileSystem.of({
+        ...fs,
+        readDirectory: (path, options) =>
+          Effect.gen(function*() {
+            if (yield* isChild(path)) {
+              yield* fs.rename(child, `${child}.away`)
+              yield* fs.symlink(`${root}/outside/child`, child)
+              swapped = true
+              fired = true
+            }
+            return yield* fs.readDirectory(path, options)
+          }),
+        lstat: (path) => fs.lstat(path).pipe(Effect.ensuring(Effect.orDie(restore)))
+      })
+      const glob = Result.getOrThrow(FileGlob.parse({ path: `${root}/dist/**` }, "/home/ada"))
+
+      const found = yield* Tree.scan(glob).pipe(Effect.provideService(FileSystem.FileSystem, racing))
+
+      expect(fired).toBe(true)
+      expect(swapped).toBe(false)
+      expect(found.has("child/secret.txt")).toBe(false)
+      expect((yield* fs.lstat(child)).type).toBe("Directory")
+    }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
+
+  it.effect("records nothing from outside when an ancestor is swapped and restored around an observed file", () =>
+    Effect.gen(function*() {
+      const { fs, root, write } = yield* fixture
+      yield* write("dist/a/child/secret.txt", "a")
+      yield* write("outside/a/child/secret.txt", "b")
+      yield* fs.remove(`${root}/dist/a/child/secret.txt`)
+      const ancestor = `${root}/dist/a`
+      let fired = false
+      const racing = FileSystem.FileSystem.of({
+        ...fs,
+        lstat: (path) =>
+          fired || !path.endsWith("/secret.txt") ? fs.lstat(path) : Effect.gen(function*() {
+            fired = true
+            yield* Effect.orDie(fs.rename(ancestor, `${ancestor}.away`))
+            yield* Effect.orDie(fs.symlink(`${root}/outside/a`, ancestor))
+            return yield* fs.lstat(path).pipe(Effect.ensuring(Effect.orDie(
+              fs.remove(ancestor).pipe(Effect.andThen(fs.rename(`${ancestor}.away`, ancestor)))
+            )))
+          })
+      })
+      const glob = Result.getOrThrow(FileGlob.parse({ path: `${root}/dist/**` }, "/home/ada"))
+
+      const found = yield* Tree.observe(glob, "a/child/secret.txt").pipe(
+        Effect.provideService(FileSystem.FileSystem, racing)
+      )
+
+      expect(fired).toBe(true)
+      expect(found.size).toBe(0)
+    }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
+
+  it.effect("sees nothing for a relative path that leaves its directory", () =>
+    Effect.gen(function*() {
+      const { root, write } = yield* fixture
+      yield* write("dist/main.js", "a")
+      yield* write("main.js", "b")
+      const glob = Result.getOrThrow(FileGlob.parse({ path: `${root}/dist/**` }, "/home/ada"))
+
+      expect((yield* Tree.observe(glob, "x/../main.js")).size).toBe(0)
+      expect((yield* Tree.observe(glob, "./main.js")).size).toBe(0)
+    }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
 })
+
+
+/** Whether a path names the same directory as `directory` did when this was made, however it is spelt. */
+const sameDirectory = (fs: FileSystem.FileSystem, directory: string) => {
+  let original: FileSystem.File.Info | undefined
+  return (path: string) =>
+    Effect.gen(function*() {
+      original ??= yield* fs.stat(directory)
+      const info = yield* fs.stat(path).pipe(Effect.option)
+      return info._tag === "Some" && info.value.ino._tag === "Some" && original.ino._tag === "Some" &&
+        info.value.ino.value === original.ino.value && info.value.dev === original.dev
+    })
+}

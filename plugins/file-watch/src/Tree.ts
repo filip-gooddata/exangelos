@@ -1,6 +1,7 @@
 import { Effect, FileSystem, Option } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 import type { FileGlob } from "./FileGlob.ts"
+import * as OpenDirectory from "./OpenDirectory.ts"
 
 /** What the plugin remembers of a file to tell a change. */
 export interface Fingerprint {
@@ -23,9 +24,6 @@ const fingerprint = (info: FileSystem.File.Info): Fingerprint => ({
 
 const join = (directory: string, name: string) => directory === "" ? name : `${directory}/${name}`
 
-const absolute = (glob: FileGlob, relative: string) =>
-  relative === "" ? glob.base : glob.base === "/" ? `/${relative}` : `${glob.base}/${relative}`
-
 const ifMissing = <A>(fallback: A) => (error: PlatformError) =>
   error.reason._tag === "NotFound" ? Effect.succeed(fallback) : Effect.fail(error)
 
@@ -33,41 +31,37 @@ const lstat = (fs: FileSystem.FileSystem, path: string) =>
   fs.lstat(path).pipe(Effect.asSome, Effect.catch(ifMissing(Option.none<FileSystem.File.Info>())))
 
 /**
- * Whether a directory below the base still resolves to the same place under
- * the base's real path. Checked after reading the directory, so one that was
- * swapped for a symbolic link while being read is discarded.
+ * Reads one open directory and descends into its subdirectories. Names and
+ * metadata come through the directory's identity path, so a directory swapped
+ * for a symbolic link at its name, even briefly, is never read through.
  */
-const resolvesInside = (fs: FileSystem.FileSystem, glob: FileGlob, realBase: string, relative: string) =>
-  fs.realPath(absolute(glob, relative)).pipe(
-    Effect.map((real) => real === (relative === "" ? realBase : realBase === "/" ? `/${relative}` : `${realBase}/${relative}`)),
-    Effect.catch(ifMissing(false))
-  )
-
-const parentOf = (relative: string) => relative.includes("/") ? relative.slice(0, relative.lastIndexOf("/")) : ""
-
 const walk = (
   fs: FileSystem.FileSystem,
   glob: FileGlob,
-  realBase: string,
+  directory: OpenDirectory.OpenDirectory,
   relative: string,
   into: Map<string, Fingerprint>
 ): Effect.Effect<void, PlatformError> =>
   Effect.gen(function*() {
-    const names = yield* fs.readDirectory(absolute(glob, relative)).pipe(Effect.catch(ifMissing<Array<string>>([])))
+    const names = yield* fs.readDirectory(directory.path).pipe(Effect.catch(ifMissing<Array<string>>([])))
     const depth = relative === "" ? 0 : relative.split("/").length
-    const files: Array<readonly [string, Fingerprint]> = []
     const directories: Array<string> = []
     for (const name of names) {
       const path = join(relative, name)
       if (glob.ignores(path)) continue
-      const info = yield* lstat(fs, absolute(glob, path))
+      const info = yield* lstat(fs, `${directory.path}/${name}`)
       if (Option.isNone(info)) continue
-      if (info.value.type === "Directory" && depth + 1 < glob.depth) directories.push(path)
-      if (info.value.type === "File" && glob.includes(path)) files.push([path, fingerprint(info.value)])
+      if (info.value.type === "Directory" && depth + 1 < glob.depth) directories.push(name)
+      if (info.value.type === "File" && glob.includes(path)) into.set(path, fingerprint(info.value))
     }
-    if (!(yield* resolvesInside(fs, glob, realBase, relative))) return
-    for (const [path, file] of files) into.set(path, file)
-    for (const path of directories) yield* walk(fs, glob, realBase, path, into)
+    for (const name of directories) {
+      yield* Effect.scoped(
+        Effect.gen(function*() {
+          const opened = yield* OpenDirectory.child(directory, name)
+          if (Option.isSome(opened)) yield* walk(fs, glob, opened.value, join(relative, name), into)
+        })
+      )
+    }
   })
 
 /**
@@ -90,35 +84,40 @@ export const baseExists = (glob: FileGlob) =>
 /** Every matching file below the base directory. Symbolic links are never followed. */
 export const scan = (glob: FileGlob) => observe(glob, "")
 
+const isName = (segment: string) => segment !== "" && segment !== "." && segment !== ".." && !segment.includes("\0")
+
 /**
- * The matching files at or below one relative path. A path that reaches
- * through a symbolic link below the base directory sees nothing, including a
- * directory swapped for one while it is read. A swap that is undone between
- * the read and the check goes unseen; closing that needs descriptor-relative
- * traversal, which the file system API does not offer.
+ * The matching files at or below one relative path. Each directory on the way
+ * is opened without following a symbolic link and then read through its
+ * identity, so nothing reached through a symbolic link below the base
+ * directory is recorded, however a swap is timed.
  */
 export const observe = (glob: FileGlob, relative: string) =>
-  Effect.gen(function*() {
+  Effect.scoped(Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const found = new Map<string, Fingerprint>()
     if (!(yield* baseExists(glob))) return found as Snapshot
-    const realBase = yield* fs.realPath(glob.base)
+    let directory = yield* OpenDirectory.base(yield* fs.realPath(glob.base))
     if (relative === "") {
-      yield* walk(fs, glob, realBase, "", found)
+      yield* walk(fs, glob, directory, "", found)
       return found as Snapshot
     }
     const segments = relative.split("/")
+    if (!segments.every(isName)) return found as Snapshot
     for (let index = 1; index <= segments.length; index++) {
       const path = segments.slice(0, index).join("/")
+      const name = segments[index - 1]!
       if (glob.ignores(path)) return found as Snapshot
-      const info = yield* lstat(fs, absolute(glob, path))
+      const info = yield* lstat(fs, `${directory.path}/${name}`)
       if (Option.isNone(info)) return found as Snapshot
-      const last = index === segments.length
-      if (!last && info.value.type !== "Directory") return found as Snapshot
-      if (last && info.value.type === "File" && glob.includes(path)) {
-        if (yield* resolvesInside(fs, glob, realBase, parentOf(path))) found.set(path, fingerprint(info.value))
-      }
-      if (last && info.value.type === "Directory" && index < glob.depth) yield* walk(fs, glob, realBase, path, found)
+      if (index === segments.length) {
+        if (info.value.type === "File" && glob.includes(path)) found.set(path, fingerprint(info.value))
+        if (info.value.type !== "Directory" || index >= glob.depth) return found as Snapshot
+      } else if (info.value.type !== "Directory") return found as Snapshot
+      const opened = yield* OpenDirectory.child(directory, name)
+      if (Option.isNone(opened)) return found as Snapshot
+      if (index === segments.length) yield* walk(fs, glob, opened.value, path, found)
+      else directory = opened.value
     }
     return found as Snapshot
-  })
+  }))
