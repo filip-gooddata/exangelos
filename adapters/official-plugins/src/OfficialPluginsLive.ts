@@ -2,6 +2,7 @@ import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { Effect, Layer } from "effect"
 import { OfficialPluginSource, PluginImportSource, SettingsStore } from "@exangelos/application"
+import { NamedImport } from "@exangelos/plugin-import"
 
 /** The release file of an official plugin: a gzip tar with `plugin.json` at its root. */
 export const archiveName = (official: OfficialPluginSource.Official) => `${official.name}-${official.version}.tar.gz`
@@ -19,7 +20,7 @@ export const layer = (options: {
     OfficialPluginSource.OfficialPluginSource,
     Effect.gen(function*() {
       const settings = yield* SettingsStore.SettingsStore
-      const imports = yield* PluginImportSource.PluginImportSource
+      const imports = yield* NamedImport
 
       const source = (official: OfficialPluginSource.Official, folder: string | undefined) => {
         const file = archiveName(official)
@@ -37,11 +38,7 @@ export const layer = (options: {
         Effect.gen(function*() {
           const current = yield* Effect.mapError(settings.read, (unreadable) => unreadable.reason)
           const from = yield* source(official, current.officialPluginFolder)
-          const directory = yield* Effect.mapError(imports.place(from), (failed) => failed.reason)
-          if (Path.basename(directory) !== official.name) {
-            return yield* Effect.fail(`the archive holds ${Path.basename(directory)}, not ${official.name}`)
-          }
-          return directory
+          return yield* Effect.mapError(imports.place(from, official.name), (failed) => failed.reason)
         }).pipe(Effect.mapError((reason) => new OfficialPluginSource.OfficialFetchFailed({ plugin: official.name, reason })))
 
       return { known: options.known, fetch }

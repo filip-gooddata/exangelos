@@ -1,6 +1,6 @@
 import { DateTime, Effect, Layer, Option, Ref } from "effect"
 import type { Catalogue, Event, Ids, Plugin, Subscription, Wake } from "@exangelos/domain"
-import { Session } from "@exangelos/domain"
+import { Delivery, Session } from "@exangelos/domain"
 import { EventRepository } from "../ports/EventRepository.ts"
 import { PluginRepository, type PluginChange } from "../ports/PluginRepository.ts"
 import { SubscriptionRepository } from "../ports/SubscriptionRepository.ts"
@@ -34,8 +34,6 @@ const withoutEntry = <K, V>(map: ReadonlyMap<K, V>, key: K): ReadonlyMap<K, V> =
   next.delete(key)
   return next
 }
-
-const undelivered = (wake: Wake.Wake) => wake.state === "waiting" || wake.state === "sending"
 
 /** The four repositories over one in-memory store, so writes that span them stay consistent. */
 export const layerRepositories: Layer.Layer<
@@ -121,7 +119,7 @@ export const layerRepositories: Layer.Layer<
         ...s,
         wakes: [
           ...s.wakes.map((other) =>
-            other.subscription === wake.subscription && undelivered(other)
+            other.subscription === wake.subscription && Delivery.isUndelivered(other)
               ? { ...other, state: "replaced" as const }
               : other
           ),
@@ -131,8 +129,8 @@ export const layerRepositories: Layer.Layer<
     update: (wake) => write((s) => ({ ...s, wakes: s.wakes.map((other) => other.id === wake.id ? wake : other) })),
     list: (subscription) => read((s) => s.wakes.filter((wake) => wake.subscription === subscription)),
     findUndelivered: (subscription) =>
-      read((s) => Option.fromNullishOr(s.wakes.find((wake) => wake.subscription === subscription && undelivered(wake)))),
-    listUndelivered: read((s) => s.wakes.filter(undelivered))
+      read((s) => Option.fromNullishOr(s.wakes.find((wake) => wake.subscription === subscription && Delivery.isUndelivered(wake)))),
+    listUndelivered: read((s) => s.wakes.filter(Delivery.isUndelivered))
   })
 
   return Layer.mergeAll(plugins, subscriptions, events, wakes)
