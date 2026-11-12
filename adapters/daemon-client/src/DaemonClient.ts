@@ -12,6 +12,8 @@ export class DaemonNotRunning extends Schema.TaggedError<DaemonNotRunning>()("Da
   path: Schema.String
 }) {}
 
+const reserved = new Set([SessionHeaders.harnessHeader, SessionHeaders.sessionHeader])
+
 export class DaemonClient extends Context.Service<
   DaemonClient,
   RpcClient.FromGroup<DaemonContract.DaemonContract, RpcClientError>
@@ -27,6 +29,10 @@ export const layer = ({ path, session }: Options): Layer.Layer<DaemonClient, Dae
   Effect.gen(function*() {
     if (!(yield* answers(path))) return yield* new DaemonNotRunning({ path })
     const sessionHeaders = Option.match(session, { onNone: () => [], onSome: (s) => Object.entries(SessionHeaders.toHeaders(s)) })
+    const withSession = (headers: ReadonlyArray<[string, string]>) => [
+      ...headers.filter(([name]) => !reserved.has(name.toLowerCase())),
+      ...sessionHeaders
+    ]
     const protocol = Layer.effect(
       RpcClient.Protocol,
       Effect.map(RpcClient.makeProtocolSocket(), (socket) =>
@@ -35,7 +41,7 @@ export const layer = ({ path, session }: Options): Layer.Layer<DaemonClient, Dae
           send: (clientId, request) =>
             socket.send(
               clientId,
-              request._tag === "Request" ? { ...request, headers: [...request.headers, ...sessionHeaders] } : request
+              request._tag === "Request" ? { ...request, headers: withSession(request.headers) } : request
             )
         }))
     ).pipe(

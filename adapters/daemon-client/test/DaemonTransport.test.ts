@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import type { Session } from "@exangelos/domain"
 import { Context, Effect, Exit, Layer, Option } from "effect"
-import { RpcServer } from "effect/rpc"
+import { RpcClient, RpcServer } from "effect/rpc"
 import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { dirname } from "node:path"
 import { DaemonClient, DaemonServer } from "../src/index.ts"
@@ -79,6 +79,17 @@ describe("daemon transport", () => {
       }).pipe(Effect.scoped)
     ))
 
+  it.live("sends its own session over headers the caller set", () =>
+    withSocket((path) =>
+      Effect.gen(function*() {
+        const client = yield* DaemonClient.DaemonClient
+        const other = SessionHeaders.toHeaders({ harness: "t3", sessionId: "other" })
+        expect((yield* client.ServiceStatus().pipe(RpcClient.withHeaders(other))).version).toBe("codex/thread-7")
+      }).pipe(
+        Effect.provide(connected(path, Option.some(session)))
+      )
+    ))
+
   it.live("sends no session headers without a session", () =>
     withSocket((path) =>
       Effect.gen(function*() {
@@ -128,6 +139,17 @@ describe("daemon transport", () => {
         const exit = yield* Layer.build(daemon(path)).pipe(Effect.scoped, Effect.exit)
         expect(exit).toEqual(Exit.fail(new DaemonServer.DaemonAlreadyRunning({ path })))
       }).pipe(Effect.provide(daemon(path)))
+    ))
+
+  it.live("lets one of two daemons starting together win", () =>
+    withSocket((path) =>
+      Effect.gen(function*() {
+        const start = Layer.build(daemon(path)).pipe(Effect.exit)
+        const exits = yield* Effect.all([start, start], { concurrency: 2 })
+        expect(exits.filter(Exit.isSuccess)).toHaveLength(1)
+        expect(exits.filter(Exit.isFailure)).toEqual([Exit.fail(new DaemonServer.DaemonAlreadyRunning({ path }))])
+        expect(statSync(path).isSocket()).toBe(true)
+      }).pipe(Effect.scoped)
     ))
 
   it.live("reports that no daemon runs", () =>
