@@ -92,7 +92,19 @@ const poll = (client: JiraClient["Service"], site: JiraSite, target: Target, sta
             wait: retryAfterSeconds === undefined ? defaultPollInterval : Duration.seconds(retryAfterSeconds),
           }
         }).pipe(Effect.tap(Effect.logWarning("Jira is rate limiting this plugin; waiting before the next poll"))),
-      NotFound: () => Effect.succeed(ended(state, `The ${subjectName(target)} no longer exists or this account cannot see it.`)),
+      NotFound: () =>
+        client.resolveRoute(site).pipe(
+          Effect.as(ended(state, `The ${subjectName(target)} no longer exists or this account cannot see it.`)),
+          Effect.catchTag("CredentialRejected", ({ status }) =>
+            Effect.fail(
+              new Plugin.CredentialsRejected({ reason: `Jira rejected the email and API token (HTTP ${status}).` })
+            )),
+          Effect.mapError((error) =>
+            error instanceof Plugin.CredentialsRejected
+              ? error
+              : new Plugin.SourceFailed({ reason: `Jira answered 404, then the credential check failed (${error._tag}).` })
+          )
+        ),
       JqlResultTooLarge: ({ limit }) =>
         Effect.succeed(ended(state, `The JQL query matches more than ${limit} issues, the most one subscription tracks.`)),
       CredentialRejected: ({ status }) =>

@@ -175,6 +175,25 @@ describe("Jira plugin", () => {
       expect(items).toEqual([{ _tag: "End", reason: "The issue GONE-1 no longer exists or this account cannot see it." }])
     }).pipe(Effect.scoped))
 
+  it.effect("reports a revoked token that Jira answers with 404 as a rejected credential", () =>
+    Effect.gen(function*() {
+      let revoked = false
+      const client = yield* jira((call) => {
+        if (!revoked) return site(call)
+        if (call.path === "/rest/api/3/serverInfo") return cloud
+        if (call.path === "/_edge/tenant_info") return { status: 200, body: { cloudId: "cloud-1" } }
+        if (call.path.endsWith("/rest/api/3/myself")) return { status: 401, body: { message: "Client must be authenticated" } }
+        return { status: 404, body: { errorMessages: ["Issue does not exist or you do not have permission to see it."] } }
+      })
+      yield* client.Configure({ values })
+      revoked = true
+      const failure = yield* client.Watch({ parameters: { target: "DEMO-7" }, eventTypes: [] }).pipe(
+        Stream.runCollect,
+        Effect.flip
+      )
+      expect(failure).toMatchObject({ _tag: "CredentialsRejected" })
+    }).pipe(Effect.scoped))
+
   it.effect("does not call a credential rejected when the site cannot tell its cloud id", () =>
     Effect.gen(function*() {
       const client = yield* jira((call) => call.path === "/_edge/tenant_info" ? { status: 503 } : scoped(call))
