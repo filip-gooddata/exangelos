@@ -20,7 +20,7 @@ describe("file-watch plugin", () => {
       expect(catalogue.configuration).toEqual([])
     }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
 
-  it.effect("describes a glob by its expanded path and refuses a relative one", () =>
+  it.effect("describes a glob by its expanded path and refuses a relative or malformed one", () =>
     Effect.gen(function*() {
       const plugin = yield* client
 
@@ -31,6 +31,8 @@ describe("file-watch plugin", () => {
         label: "~/code/api-gateway/dist/**"
       })
       expect((yield* plugin.Describe({ parameters: { path: "dist/**" } }))._tag).toBe("Invalid")
+      expect((yield* plugin.Describe({ parameters: { path: "~/code/{api,web/dist/**" } }))._tag).toBe("Invalid")
+      expect((yield* plugin.Describe({ parameters: { path: "~/code/**", ignore: ["[ab"] } }))._tag).toBe("Invalid")
     }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
 
   it.live("reports files on disk and catches up from its cursor", () =>
