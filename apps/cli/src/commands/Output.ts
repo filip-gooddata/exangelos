@@ -5,6 +5,7 @@ import { DaemonContract, WakeText } from "@exangelos/contracts"
 import { DaemonClient } from "@exangelos/daemon-client"
 import {
   backlogOverLimitMessage,
+  connectionFailedMessage,
   noDaemonMessage,
   noWakeTargetMessage,
   similarSubscriptionsMessage
@@ -50,9 +51,9 @@ const encodeContractError = Schema.encodeSync(Schema.toCodecJson(ContractError))
 export const failureMessage = (failure: Failure, subscription?: string): string => {
   switch (failure._tag) {
     case "RpcClientError":
-      return noDaemonMessage(failure.message)
+      return connectionFailedMessage(failure.message)
     case "DaemonNotRunning":
-      return noDaemonMessage(`nothing answers on ${failure.path}`)
+      return noDaemonMessage(failure.reason)
     case "InputInvalid":
       return failure.message
     case "PluginNotFound":

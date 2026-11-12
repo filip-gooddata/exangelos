@@ -567,6 +567,9 @@ importers:
       '@effect/platform-bun':
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)
+      '@exangelos/application':
+        specifier: workspace:*
+        version: link:../../packages/application
       '@exangelos/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -585,6 +588,9 @@ importers:
       '@exangelos/paths':
         specifier: workspace:*
         version: link:../../adapters/paths
+      '@exangelos/service':
+        specifier: workspace:*
+        version: link:../../adapters/service
       effect:
         specifier: 'catalog:'
         version: 4.1.4
