@@ -6,11 +6,18 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
     "@exangelos/application": "workspace:*",
     "@exangelos/domain": "workspace:*",
+    "@exangelos/paths": "workspace:*",
     "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/platform-node-shared": "catalog:",
+    "@effect/vitest": "catalog:",
+    "vitest": "catalog:"
   }
 }
