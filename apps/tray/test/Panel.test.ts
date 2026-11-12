@@ -5,7 +5,7 @@ import { TestClock } from "effect/testing"
 import { DaemonClient, Host, Panel } from "../src/index.ts"
 import { plugin, subscription } from "./fixtures.ts"
 
-type Answer = Effect.Effect<DaemonClient.Snapshot, DaemonClient.DaemonNotRunning | DaemonClient.DaemonUnreachable>
+type Answer = Effect.Effect<DaemonClient.Snapshot, DaemonClient.DaemonNotRunning>
 
 const loaded = (
   subscriptions: ReadonlyArray<ReturnType<typeof subscription>>,

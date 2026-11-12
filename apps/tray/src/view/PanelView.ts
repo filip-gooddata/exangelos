@@ -27,7 +27,6 @@ export const toModel = (state: PanelState): Model =>
   States.$match(state, {
     Loading: () => ({ status: "Loading…", sections: [] }),
     DaemonNotRunning: ({ message }) => ({ status: `The daemon is not running: ${message}`, sections: [] }),
-    DaemonUnreachable: ({ message }) => ({ status: `The daemon does not answer: ${message}`, sections: [] }),
     Ready: ({ needsYou, plugins, subscriptions }) => ({
       status: "Connected",
       sections: [

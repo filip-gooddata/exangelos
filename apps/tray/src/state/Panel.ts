@@ -1,12 +1,11 @@
 import type { Alert, Plugin, Subscription } from "@exangelos/domain"
 import { Context, Data, type Duration, Effect, Layer, Option, Ref, Result, Schedule, type Scope, Semaphore, Stream, SubscriptionRef } from "effect"
-import { DaemonClient, type DaemonNotRunning, type DaemonUnreachable, type Section, type Snapshot, snapshot } from "../daemon/DaemonClient.ts"
+import { DaemonClient, type DaemonNotRunning, type Section, type Snapshot, snapshot } from "../daemon/DaemonClient.ts"
 import { Host, type HostCommandFailed } from "../host/Host.ts"
 
 export type PanelState = Data.TaggedEnum<{
   Loading: {}
   DaemonNotRunning: { readonly message: string }
-  DaemonUnreachable: { readonly message: string }
   Ready: {
     readonly subscriptions: Section<ReadonlyArray<Subscription.Subscription>>
     readonly plugins: Section<ReadonlyArray<Plugin.Plugin>>
@@ -29,7 +28,7 @@ export const needsYou = (
 ]
 
 export const fromLoad = <R>(
-  load: Effect.Effect<Snapshot, DaemonNotRunning | DaemonUnreachable, R>
+  load: Effect.Effect<Snapshot, DaemonNotRunning, R>
 ): Effect.Effect<PanelState, never, R> =>
   load.pipe(
     Effect.map(({ plugins, subscriptions, trustAlerts }) =>
@@ -39,10 +38,7 @@ export const fromLoad = <R>(
         needsYou: Result.flatMap(plugins, (loaded) => Result.map(trustAlerts, (alerts) => needsYou(loaded, alerts)))
       })
     ),
-    Effect.catchTags({
-      DaemonNotRunning: ({ message }) => Effect.succeed(PanelState.DaemonNotRunning({ message })),
-      DaemonUnreachable: ({ message }) => Effect.succeed(PanelState.DaemonUnreachable({ message }))
-    })
+    Effect.catchTag("DaemonNotRunning", ({ message }) => Effect.succeed(PanelState.DaemonNotRunning({ message })))
   )
 
 export const attention = (state: PanelState): Option.Option<boolean> =>
@@ -55,7 +51,7 @@ export class Panel extends Context.Service<Panel, {
 }>()("@exangelos/tray/Panel") {}
 
 export interface Options {
-  readonly load: Effect.Effect<Snapshot, DaemonNotRunning | DaemonUnreachable>
+  readonly load: Effect.Effect<Snapshot, DaemonNotRunning>
   readonly setAttention: (needsYou: boolean) => Effect.Effect<void, HostCommandFailed>
   readonly interval: Duration.Input
 }
@@ -103,7 +99,6 @@ export const smokeReport = (state: PanelState): { readonly ok: boolean; readonly
   PanelState.$match(state, {
     Loading: () => ({ ok: false, report: "panel still loading" }),
     DaemonNotRunning: ({ message }) => ({ ok: false, report: `daemon not running: ${message}` }),
-    DaemonUnreachable: ({ message }) => ({ ok: false, report: `daemon unreachable: ${message}` }),
     Ready: ({ needsYou, plugins, subscriptions }) => ({
       ok: Result.isSuccess(plugins),
       report: `panel ready: ${

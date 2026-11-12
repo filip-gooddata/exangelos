@@ -41,7 +41,7 @@ const handlers = (listDies: boolean) => DaemonContract.DaemonContract.toLayer({
 })
 
 const daemon = (path: string, listDies = false) =>
-  RpcServer.layer(DaemonContract.DaemonContract).pipe(Layer.provide(handlers(listDies)), Layer.provide(DaemonServer.layer(path)))
+  RpcServer.layer(DaemonContract.DaemonContract, { disableFatalDefects: true }).pipe(Layer.provide(handlers(listDies)), Layer.provide(DaemonServer.layer(path)))
 
 const client = (path: string) =>
   DaemonClient.layer.pipe(Layer.provide(Layer.effect(Socket.Socket, BunSocket.makeNet({ path }))))

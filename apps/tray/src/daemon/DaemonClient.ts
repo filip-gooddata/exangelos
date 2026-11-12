@@ -1,6 +1,6 @@
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import { type Alert, type Plugin, PluginRules, type Subscription } from "@exangelos/domain"
-import { Cause, Context, Effect, Layer, Option, Result, Schema } from "effect"
+import { Context, Effect, Layer, Option, Predicate, Result, Schema } from "effect"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
 import type { Socket } from "effect/socket"
@@ -46,38 +46,45 @@ export class DaemonNotRunning extends Schema.TaggedError<DaemonNotRunning>()("Da
   message: Schema.String
 }) {}
 
-export class DaemonUnreachable extends Schema.TaggedError<DaemonUnreachable>()("DaemonUnreachable", {
-  message: Schema.String
-}) {}
+const describeDefect = (defect: unknown): string => {
+  if (Predicate.hasProperty(defect, "message") && typeof defect.message === "string" && defect.message !== "") {
+    return defect.message
+  }
+  if (Predicate.hasProperty(defect, "_tag") && typeof defect._tag === "string") return defect._tag
+  if (Predicate.hasProperty(defect, "name") && typeof defect.name === "string") return defect.name
+  return String(defect)
+}
 
 const section = <A>(
+  operation: string,
   call: Effect.Effect<A, RpcClientError>
-): Effect.Effect<Section<A>, DaemonNotRunning | DaemonUnreachable> =>
+): Effect.Effect<Section<A>, DaemonNotRunning> =>
   call.pipe(
     Effect.map(Result.succeed),
-    Effect.mapError((error): DaemonNotRunning | DaemonUnreachable =>
+    Effect.catch((error) =>
       error.reason._tag === "SocketOpenError"
-        ? new DaemonNotRunning({ message: error.message })
-        : new DaemonUnreachable({ message: error.message })
+        ? Effect.fail(new DaemonNotRunning({ message: error.message }))
+        : Effect.succeed(Result.fail(`${operation}: ${error.message}`))
     ),
-    Effect.catchDefect((defect) => Effect.succeed(Result.fail(Cause.pretty(Cause.die(defect)).split("\n")[0] ?? "")))
+    Effect.catchDefect((defect) => Effect.succeed(Result.fail(`${operation}: ${describeDefect(defect)}`)))
   )
 
-/** The trust alert of each plugin. Until the daemon serves `ListPluginAlerts` this derives them from `ListPlugins` without the official checksum, so a disabled official plugin also shows as a checksum mismatch. */
+/** The trust alert of each plugin. Until the daemon serves `ListPluginAlerts` this derives them from `ListPlugins` without the official checksums, so an inert official plugin raises no alert. */
 export const trustAlerts = (
   client: DaemonClient["Service"]
 ): Effect.Effect<ReadonlyArray<Alert.Alert>, RpcClientError> =>
   Effect.map(
     client.ListPlugins(),
-    (plugins) => plugins.flatMap((plugin) => Option.toArray(PluginRules.trustAlert(plugin, Option.none())))
+    (plugins) => plugins.flatMap((plugin) => Option.toArray(PluginRules.trustAlert(plugin, Option.some(plugin.digest))))
   )
 
-/** Loads the active subscriptions and every plugin with their trust alerts. A call the daemon answers with a defect fails only its own section. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */
-export const snapshot: Effect.Effect<Snapshot, DaemonNotRunning | DaemonUnreachable, DaemonClient> = Effect.gen(
-  function*() {
-    const client = yield* DaemonClient
-    const subscriptions = yield* section(client.List({ all: false }))
-    const plugins = yield* section(client.ListPlugins())
-    return { subscriptions, plugins, trustAlerts: yield* section(trustAlerts(client)) }
-  }
+/** Loads the active subscriptions and every plugin with their trust alerts. A call that fails or that the daemon answers with a defect fails only its own section. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */
+export const snapshot: Effect.Effect<Snapshot, DaemonNotRunning, DaemonClient> = Effect.flatMap(
+  DaemonClient,
+  (client) =>
+    Effect.all({
+      subscriptions: section("List", client.List({ all: false })),
+      plugins: section("ListPlugins", client.ListPlugins()),
+      trustAlerts: section("ListPluginAlerts", trustAlerts(client))
+    }, { concurrency: "unbounded" })
 )
