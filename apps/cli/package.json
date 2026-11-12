@@ -7,7 +7,7 @@
   },
   "scripts": {
     "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
-    "test": "bun run --bun vitest run test",
+    "test": "bun run --bun vitest run --dir test",
     "build": "bun build.ts",
     "e2e": "bun run --bun vitest run e2e"
   },
