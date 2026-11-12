@@ -8,7 +8,12 @@ import { ServiceManager } from "@exangelos/service"
 import * as FakeSpawner from "./FakeSpawner.ts"
 
 const scenario = <A, E>(
-  options: { executable: string; platform: "darwin" | "linux"; reply?: Parameters<typeof FakeSpawner.make>[0] },
+  options: {
+    executable: string
+    platform: "darwin" | "linux"
+    reply?: Parameters<typeof FakeSpawner.make>[0]
+    env?: (root: string) => Record<string, string>
+  },
   body: (root: string, fake: ReturnType<typeof FakeSpawner.make>) => Effect.Effect<A, E, Port.ServiceManager | FileSystem.FileSystem>
 ) =>
   Effect.scoped(Effect.gen(function*() {
@@ -18,8 +23,11 @@ const scenario = <A, E>(
     yield* fs.makeDirectory(executable.slice(0, executable.lastIndexOf("/")), { recursive: true })
     yield* fs.writeFileString(executable, "")
     const fake = FakeSpawner.make(options.reply)
-    const env = { HOME: `${root}/home`, EXANGELOS_HOME: `${root}/xa` }
-    const layer = ServiceManager.layer({ executable, platform: options.platform, uid: 501 }).pipe(
+    const env = { HOME: `${root}/home`, EXANGELOS_HOME: `${root}/xa`, ...options.env?.(root) }
+    const service = { executable, platform: options.platform, uid: 501 }
+    const layer = ServiceManager.layer.pipe(
+      Layer.provide(ServiceManager.layerUserService(service)),
+      Layer.provideMerge(ServiceManager.layerInstallation(service)),
       Layer.provide(Layer.mergeAll(fake.layer, Paths.layer)),
       Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord(env)))
     )
@@ -60,6 +68,23 @@ describe("ServiceManager", () => {
           yield* manager.start
           expect(fake.ran.map((ran) => [ran.command, ...ran.args].join(" "))).toEqual([
             `${root}/bin/brew services start exangelos`
+          ])
+        })
+    ))
+
+  it.effect("writes the systemd user unit under XDG_CONFIG_HOME and passes the variable on", () =>
+    scenario(
+      { executable: "bin/exangelos", platform: "linux", env: (root) => ({ XDG_CONFIG_HOME: `${root}/cfg` }) },
+      (root, fake) =>
+        Effect.gen(function*() {
+          const fs = yield* FileSystem.FileSystem
+          yield* (yield* Port.ServiceManager).install
+          const unit = yield* fs.readFileString(`${root}/cfg/systemd/user/exangelos.daemon.service`)
+          expect(unit).toContain(`ExecStart="${root}/bin/exangelos" "daemon"`)
+          expect(unit).toContain(`Environment="XDG_CONFIG_HOME=${root}/cfg"`)
+          expect(fake.ran.map((ran) => [ran.command, ...ran.args].join(" "))).toEqual([
+            "systemctl --user daemon-reload",
+            "systemctl --user enable exangelos.daemon.service"
           ])
         })
     ))
