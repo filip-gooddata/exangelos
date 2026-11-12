@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { digestDirectory } from "../src/digest.ts"
@@ -31,6 +31,17 @@ describe("official plugin archives", () => {
 })
 
 describe("plugin digest", () => {
+  it("matches the value plugin-files' digestDirectory gives for the same tree", () => {
+    const directory = temporaryDirectory("digest-vector")
+    mkdirSync(join(directory, "sub"))
+    writeFileSync(join(directory, "a"), "one")
+    writeFileSync(join(directory, "sub", "b"), "two")
+    chmodSync(join(directory, "sub", "b"), 0o755)
+    writeFileSync(join(directory, "empty"), "")
+    symlinkSync("a", join(directory, "link"))
+    expect(digestDirectory(directory)).toBe("fb9c09833e1542198a1594b6f95aed750ec3ceeb5f6ee294fb95a2c203011f42")
+  })
+
   it("counts content and the execute bit, not timestamps", () => {
     const directory = temporaryDirectory("digest")
     writeFileSync(join(directory, "a"), "one")
