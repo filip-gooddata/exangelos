@@ -1,1 +1,1 @@
-export {}
+export * as StdioPluginRuntime from "./StdioPluginRuntime.ts"

@@ -11,6 +11,10 @@ export class PluginUnavailable extends Schema.TaggedError<PluginUnavailable>()("
   problem: Schema.String
 }) {}
 
+export class ParametersInvalid extends Schema.TaggedError<ParametersInvalid>()("ParametersInvalid", {
+  reason: Schema.String
+}) {}
+
 export class NoWakeTarget extends Schema.TaggedError<NoWakeTarget>()("NoWakeTarget", {}) {}
 
 export const SimilarMatch = Schema.Struct({ id: SubscriptionId, parameters: Parameters })
