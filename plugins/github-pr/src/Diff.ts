@@ -57,17 +57,22 @@ const advance = <A extends { readonly id: string }>(mark: Mark, items: ReadonlyA
     return m
   }, mark)
 
-/** The current run of each check name: one still running wins, else the last to complete. */
+/**
+ * The current run of each check, told apart by kind and name since a check
+ * run and a commit status may share a name: one still running wins, else the
+ * last to complete.
+ */
 const latestByName = (checks: ReadonlyArray<Check>): ReadonlyArray<Check> => {
   const byName = new Map<string, Check>()
   for (const check of checks) {
-    const seen = byName.get(check.name)
+    const key = `${check.kind}:${check.name}`
+    const seen = byName.get(key)
     if (
       seen === undefined ||
       check.completedAt === null ||
       (seen.completedAt !== null && check.completedAt >= seen.completedAt)
     ) {
-      byName.set(check.name, check)
+      byName.set(key, check)
     }
   }
   return [...byName.values()]
@@ -119,7 +124,8 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     })
   }
 
-  const checks = latestByName(snapshot.checks).filter((c) => !matchesAny(filters.checks, c.name))
+  const current = latestByName(snapshot.checks)
+  const checks = current.filter((c) => !matchesAny(filters.checks, c.name))
   const failedReported = new Set(sameHead ? previous.failedReported : [])
   for (const check of checks.filter(isFailure)) {
     if (failedReported.has(check.id)) continue
@@ -201,8 +207,10 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     })
   }
 
-  const required = checks.filter((c) => c.required || snapshot.requiredChecks.includes(c.name))
-  const requiredPassed = !missingRequired && required.every((c) => c.outcome === "passed")
+  // Ignore patterns quiet notifications only: GitHub still blocks the merge on an ignored required check.
+  const required = current.filter((c) => c.required || snapshot.requiredChecks.includes(c.name))
+  const requiredPassed = required.every((c) => c.outcome === "passed") &&
+    snapshot.requiredChecks.every((name) => current.some((c) => c.name === name))
   const approved = snapshot.reviewDecision === "APPROVED" || snapshot.reviewDecision === null
   const ready = snapshot.state === "OPEN" && !snapshot.isDraft && snapshot.mergeable === "MERGEABLE" && approved &&
     requiredPassed

@@ -184,6 +184,7 @@ const toCheck = (node: typeof ContextNode.Type): Check =>
   node.__typename === "CheckRun"
     ? {
       id: node.id,
+      kind: "run",
       name: node.name,
       outcome: outcome(node),
       required: node.isRequired,
@@ -192,6 +193,7 @@ const toCheck = (node: typeof ContextNode.Type): Check =>
     }
     : {
       id: node.id,
+      kind: "status",
       name: node.context,
       outcome: outcome(node),
       required: node.isRequired,
@@ -245,9 +247,12 @@ export const layer = Layer.effect(
           Effect.mapError(() => new Unavailable({ reason: `Could not reach ${connection.host}` }))
         )
         const now = yield* Clock.currentTimeMillis
+        const secret = Redacted.value(connection.token)
+        // A server or proxy could echo the token in a message; none leaves this function with it.
+        const scrub = (text: string) => secret === "" ? text : text.replaceAll(secret, "[token]")
         const message = response.json.pipe(
           Effect.flatMap(Schema.decodeUnknownEffect(ErrorMessage)),
-          Effect.map((body) => body.message),
+          Effect.map((body) => scrub(body.message)),
           Effect.orElseSucceed(() => `HTTP ${response.status}`)
         )
         if (response.status === 401) {
@@ -266,7 +271,8 @@ export const layer = Layer.effect(
           Effect.flatMap(Schema.decodeUnknownEffect(answer(data))),
           Effect.mapError(() => new Unavailable({ reason: "GitHub sent an answer this plugin cannot read" }))
         )
-        const error = body.errors?.[0]
+        const first = body.errors?.[0]
+        const error = first === undefined ? undefined : { ...first, message: scrub(first.message) }
         if (error !== undefined) {
           if (error.type === "RATE_LIMITED") return yield* new RateLimited({ retryAfter: waitOf(response.headers, now) })
           if (error.type === "NOT_FOUND") return yield* new NotFound({ reason: error.message })
@@ -330,6 +336,9 @@ export const layer = Layer.effect(
           const again = more.data.repository?.pullRequest
           if (again == null) return yield* notFound
           next = collect(again)
+        }
+        if (Object.keys(next).length > 0) {
+          return yield* new Unavailable({ reason: `More than ${maxPages} pages of activity; reading it again next poll` })
         }
 
         const rules = [

@@ -23,6 +23,7 @@ export const snapshot = (overrides: Partial<Snapshot> = {}): Snapshot => ({
 
 export const check = (name: string, outcome: Check["outcome"], overrides: Partial<Check> = {}): Check => ({
   id: `check-${name}-${outcome}`,
+  kind: "run",
   name,
   outcome,
   required: false,

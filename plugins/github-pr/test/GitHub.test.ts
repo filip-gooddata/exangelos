@@ -38,7 +38,7 @@ describe("GitHub", () => {
 
   it.effect("tells a refused token from a missing repository, without the token in the reason", () =>
     Effect.gen(function*() {
-      const refused = yield* fetch([Stub.badCredentials])
+      const refused = yield* fetch([{ status: 401, body: { message: "Bad credentials for ghp_stubbed" } }])
       const missing = yield* fetch([Stub.notFound("acme", "api")])
 
       expect(refused.result).toMatchObject({ _tag: "Failure", failure: { _tag: "Unauthorized" } })

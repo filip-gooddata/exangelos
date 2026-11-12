@@ -126,6 +126,18 @@ describe("step", () => {
     expect(keys([snapshot({ ...base, checks: [check("build", "pending", { required: true })] })])).toEqual([])
   })
 
+  it("is not ready while a required check fails, even one it is told to ignore or one a status of the same name passes", () => {
+    const approved = { reviewDecision: "APPROVED" as const }
+    const ignoredFailure = snapshot({ ...approved, checks: [check("build", "failed", { required: true })] })
+    const shadowed = snapshot({
+      ...approved,
+      checks: [check("build", "failed", { required: true }), check("build", "passed", { kind: "status", id: "status-build" })]
+    })
+
+    expect(keys([ignoredFailure], { ...noFilters, checks: [/^build$/] })).toEqual([])
+    expect(keys([shadowed])).toEqual([`checks.failed/${head}/check-build-failed`])
+  })
+
   it("ends on merged and on closed", () => {
     expect(poll([snapshot(), snapshot({ state: "MERGED", mergedAt: now })]).end).toBe("merged")
     expect(poll([snapshot(), snapshot({ state: "CLOSED", closedAt: now })]).end).toBe("closed")

@@ -23,6 +23,8 @@ export type CheckOutcome = "pending" | "passed" | "failed" | "cancelled"
 
 export interface Check {
   readonly id: string
+  /** A check run or a commit status. */
+  readonly kind: "run" | "status"
   readonly name: string
   readonly outcome: CheckOutcome
   readonly required: boolean
