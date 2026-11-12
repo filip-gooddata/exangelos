@@ -77,6 +77,7 @@ export const layerPluginAccess: Layer.Layer<
         }
       }),
     watch: supervisor.watch,
-    unwatch: supervisor.unwatch
+    unwatch: supervisor.unwatch,
+    rewatch: supervisor.rewatch
   })
 }))
