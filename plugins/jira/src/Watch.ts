@@ -6,6 +6,7 @@ import { toItem } from "./Events.ts"
 import type { WatchItem } from "./Events.ts"
 import { defaultPollInterval } from "./JiraClient.ts"
 import type { JiraClient } from "./JiraClient.ts"
+import type { InvalidCursor } from "./JiraError.ts"
 import type { JiraSite } from "./Site.ts"
 import type { Target } from "./Target.ts"
 
@@ -22,14 +23,18 @@ interface Poll {
   readonly next: PollState
 }
 
+/** A cursor this version cannot read is replaced by a baseline: no events, the cursor at the current state. */
+const rebaseline = ({ reason }: InvalidCursor) =>
+  Effect.logWarning(`${reason} Starting again from the current state.`).pipe(Effect.as(undefined))
+
 const read = (client: JiraClient["Service"], site: JiraSite, target: Target, cursor: string | undefined) =>
   Effect.gen(function*() {
     if (target.kind === "issue") {
-      const previous = cursor === undefined ? undefined : yield* decodeIssueCursor(cursor)
+      const previous = cursor === undefined ? undefined : yield* decodeIssueCursor(cursor).pipe(Effect.catch(rebaseline))
       const snapshot = yield* client.readIssue({ site, key: target.key, position: issuePosition(previous) })
       return diffIssue({ siteUrl: site.url, previous, snapshot })
     }
-    const previous = cursor === undefined ? undefined : yield* decodeJqlCursor(cursor)
+    const previous = cursor === undefined ? undefined : yield* decodeJqlCursor(cursor).pipe(Effect.catch(rebaseline))
     const snapshot = yield* client.readJql({ site, jql: target.jql })
     return diffJql({ siteUrl: site.url, previous, snapshot, observedAt: yield* DateTime.now })
   })
@@ -76,8 +81,6 @@ const poll = (client: JiraClient["Service"], site: JiraSite, target: Target, sta
       NotFound: () => Effect.succeed(ended(state, `The ${subjectName(target)} no longer exists or this account cannot see it.`)),
       JqlResultTooLarge: ({ limit }) =>
         Effect.succeed(ended(state, `The JQL query matches more than ${limit} issues, the most one subscription tracks.`)),
-      InvalidCursor: ({ reason }) =>
-        Effect.succeed(ended(state, `${reason} Subscribe again to start from the issue's current state.`)),
       CredentialRejected: ({ status }) =>
         Effect.fail(new Plugin.CredentialsRejected({ reason: `Jira rejected the email and API token (HTTP ${status}).` })),
       UnsupportedSite: ({ reason }) => Effect.fail(new Plugin.SourceFailed({ reason })),

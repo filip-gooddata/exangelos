@@ -165,6 +165,15 @@ describe("Jira plugin", () => {
       expect(items).toEqual([{ _tag: "End", reason: "The issue GONE-1 no longer exists or this account cannot see it." }])
     }).pipe(Effect.scoped))
 
+  it.effect("starts from the current state when the cursor is unreadable", () =>
+    Effect.gen(function*() {
+      const client = yield* jira(site)
+      yield* client.Configure({ values })
+      const items = yield* client.Watch({ parameters: { target: "DEMO-7" }, eventTypes: [], cursor: "{\"v\":0}" })
+        .pipe(Stream.take(1), Stream.runCollect)
+      expect(items.map((item) => item._tag)).toEqual(["Cursor"])
+    }).pipe(Effect.scoped))
+
   it("declares an entry the manifest schema accepts", () => {
     const manifest = Schema.decodeUnknownSync(Manifest.Manifest)(
       JSON.parse(readFileSync(new URL("../plugin.json", import.meta.url), "utf8"))
