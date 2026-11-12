@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { cpSync, existsSync, readFileSync, readlinkSync, writeFileSync } from "node:fs"
+import { chmodSync, cpSync, existsSync, mkdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { beforeAll, describe, expect, it } from "@effect/vitest"
 import { buildRelease, packagingDirectory } from "../src/release.ts"
@@ -51,6 +51,27 @@ describe("install script (contract test with the real bun, tar and sh)", () => {
     const result = install(tampered, installDirectory)
     expect(result.status).not.toBe(0)
     expect(result.stderr).toContain("checksum mismatch")
+    expect(existsSync(installDirectory)).toBe(false)
+  })
+  it("refuses a Linux system without glibc and installs nothing", () => {
+    const fakeBin = join(work, "musl-bin")
+    mkdirSync(fakeBin)
+    writeFileSync(join(fakeBin, "uname"), '#!/bin/sh\n[ "$1" = -m ] && echo x86_64 || echo Linux\n')
+    writeFileSync(join(fakeBin, "getconf"), "#!/bin/sh\nexit 1\n")
+    chmodSync(join(fakeBin, "uname"), 0o755)
+    chmodSync(join(fakeBin, "getconf"), 0o755)
+    const installDirectory = join(work, "bin-musl")
+    const result = spawnSync("sh", [installScript], {
+      encoding: "utf8",
+      env: {
+        PATH: `${fakeBin}:${process.env["PATH"]}`,
+        HOME: join(work, "home"),
+        EXANGELOS_RELEASE: releaseDirectory,
+        EXANGELOS_INSTALL_DIR: installDirectory
+      }
+    })
+    expect(result.status).not.toBe(0)
+    expect(result.stderr).toContain("needs glibc")
     expect(existsSync(installDirectory)).toBe(false)
   })
 })
