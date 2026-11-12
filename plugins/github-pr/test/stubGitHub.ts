@@ -2,8 +2,8 @@ import { Effect, Layer, Ref } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 
 /**
- * Answers shaped after GitHub's GraphQL documentation. Written by hand: no
- * test reaches GitHub.
+ * Answers written by hand in the shapes api.github.com returned to a
+ * read-only probe on 2026-11-12. No test reaches GitHub.
  */
 export interface Answer {
   readonly status: number
@@ -18,13 +18,19 @@ export interface Sent {
   readonly variables: Record<string, unknown>
 }
 
-const quota = { "x-ratelimit-limit": "5000", "x-ratelimit-remaining": "4999", "x-ratelimit-reset": "1794484800" }
+const quota = {
+  "x-ratelimit-limit": "5000",
+  "x-ratelimit-remaining": "4999",
+  "x-ratelimit-used": "1",
+  "x-ratelimit-reset": "1794484800",
+  "x-ratelimit-resource": "graphql"
+}
 
 export const ok = (data: unknown): Answer => ({ status: 200, body: { data }, headers: quota })
 
 export const badCredentials: Answer = {
   status: 401,
-  body: { message: "Bad credentials", documentation_url: "https://docs.github.com/graphql", status: "401" }
+  body: { message: "Bad credentials", documentation_url: "https://docs.github.com/rest", status: "401" }
 }
 
 export const notFound = (owner: string, repo: string): Answer => ({
@@ -35,7 +41,7 @@ export const notFound = (owner: string, repo: string): Answer => ({
     errors: [{
       type: "NOT_FOUND",
       path: ["repository"],
-      locations: [{ line: 2, column: 3 }],
+      locations: [{ line: 3, column: 3 }],
       message: `Could not resolve to a Repository with the name '${owner}/${repo}'.`
     }]
   }
@@ -77,9 +83,10 @@ export const pullRequest = (fields: PullRequestFields = {}): Answer =>
         baseRefOid: "b".repeat(40),
         mergeable: fields.mergeable ?? "MERGEABLE",
         reviewDecision: fields.reviewDecision === undefined ? "REVIEW_REQUIRED" : fields.reviewDecision,
+        // A branch governed by a ruleset: no protection rule, the required contexts come from refUpdateRule.
         baseRef: {
           refUpdateRule: { requiredStatusCheckContexts: ["build"] },
-          branchProtectionRule: { requiredStatusCheckContexts: ["build"] }
+          branchProtectionRule: null
         },
         reviews: page([]),
         comments: page((fields.comments ?? []).map((c) => ({
