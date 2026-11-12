@@ -799,6 +799,9 @@ importers:
 
   packaging:
     dependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
       '@exangelos/plugin-directory':
         specifier: workspace:*
         version: link:../adapters/plugin-directory
