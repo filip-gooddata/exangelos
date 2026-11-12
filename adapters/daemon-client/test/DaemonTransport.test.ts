@@ -111,11 +111,11 @@ describe("daemon transport", () => {
       return Effect.sync(() => expect(statSync(nested).isSocket()).toBe(true)).pipe(Effect.provide(daemon(nested)))
     }))
 
-  it.live("leaves nothing behind when it stops", () =>
+  it.live("leaves only its lock file when it stops", () =>
     withSocket((path) =>
       Layer.build(daemon(path)).pipe(
         Effect.scoped,
-        Effect.andThen(Effect.sync(() => expect(readdirSync(dirname(path))).toEqual([])))
+        Effect.andThen(Effect.sync(() => expect(readdirSync(dirname(path))).toEqual(["daemon.sock.lock"])))
       )
     ))
 
@@ -150,6 +150,18 @@ describe("daemon transport", () => {
         expect(exits.filter(Exit.isFailure)).toEqual([Exit.fail(new DaemonServer.DaemonAlreadyRunning({ path }))])
         expect(statSync(path).isSocket()).toBe(true)
       }).pipe(Effect.scoped)
+    ))
+
+  it.live("lets one of two daemons win over a stale socket file", () =>
+    withSocket((path) =>
+      Effect.gen(function*() {
+        const start = Layer.build(daemon(path)).pipe(Effect.exit, Effect.scoped)
+        for (let round = 0; round < 50; round++) {
+          writeFileSync(path, "")
+          const exits = yield* Effect.all([start, start], { concurrency: 2 })
+          expect(exits.filter(Exit.isSuccess)).toHaveLength(1)
+        }
+      })
     ))
 
   it.live("reports that no daemon runs", () =>

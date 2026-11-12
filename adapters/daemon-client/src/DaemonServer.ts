@@ -3,44 +3,19 @@ import { BunSocketServer } from "@effect/platform-bun"
 import { Effect, Layer, Schema } from "effect"
 import { RpcSerialization, RpcServer } from "effect/rpc"
 import { SocketServer } from "effect/socket"
-import { chmod, link, lstat, mkdir, mkdtemp, rm } from "node:fs/promises"
+import { chmod, mkdir, mkdtemp, rename, rm } from "node:fs/promises"
 import { dirname } from "node:path"
-import { answers } from "./Listener.ts"
+import { held } from "./Lock.ts"
 
 export class DaemonAlreadyRunning extends Schema.TaggedError<DaemonAlreadyRunning>()("DaemonAlreadyRunning", {
   path: Schema.String
 }) {}
 
-const inode = (path: string) =>
-  Effect.promise(() => lstat(path).then((stats) => stats.ino, () => undefined))
-
-const unlinkIfSame = (path: string, ino: number | undefined) =>
-  Effect.gen(function*() {
-    if (ino !== undefined && (yield* inode(path)) === ino) yield* Effect.promise(() => rm(path, { force: true }))
-  })
-
-const linked = (from: string, to: string) =>
-  Effect.promise(() =>
-    link(from, to).then(
-      () => true,
-      (error: NodeJS.ErrnoException) => (error.code === "EEXIST" ? false : Promise.reject(error))
-    )
-  )
-
-const publish = (socket: string, path: string) =>
-  Effect.gen(function*() {
-    for (const _ of [1, 2]) {
-      if (yield* linked(socket, path)) return
-      const stale = yield* inode(path)
-      if (yield* answers(path)) break
-      yield* unlinkIfSame(path, stale)
-    }
-    return yield* new DaemonAlreadyRunning({ path })
-  })
-
 const listen = (path: string) =>
   Effect.gen(function*() {
     yield* Effect.promise(() => mkdir(dirname(path), { recursive: true, mode: 0o700 }))
+    if (!(yield* held(`${path}.lock`))) return yield* new DaemonAlreadyRunning({ path })
+    yield* Effect.promise(() => rm(path, { force: true }))
     const hidden = yield* Effect.acquireRelease(
       Effect.promise(() => mkdtemp(`${dirname(path)}/.`)),
       (dir) => Effect.promise(() => rm(dir, { recursive: true, force: true }))
@@ -48,8 +23,10 @@ const listen = (path: string) =>
     const socket = `${hidden}/s`
     const server = yield* BunSocketServer.make({ path: socket })
     yield* Effect.promise(() => chmod(socket, 0o600))
-    const own = yield* inode(socket)
-    yield* Effect.acquireRelease(publish(socket, path), () => unlinkIfSame(path, own))
+    yield* Effect.acquireRelease(
+      Effect.promise(() => rename(socket, path)),
+      () => Effect.promise(() => rm(path, { force: true }))
+    )
     return yield* RpcServer.makeProtocolSocketServer.pipe(Effect.provideService(SocketServer.SocketServer, server))
   }).pipe(Effect.provide(RpcSerialization.layerNdjson))
 
