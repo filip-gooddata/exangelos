@@ -6,6 +6,7 @@ import { PluginRepository } from "../../ports/PluginRepository.ts"
 import { SubscriptionRepository } from "../../ports/SubscriptionRepository.ts"
 import { PluginAccess, PluginNotFound } from "../../seam/PluginAccess.ts"
 import { currentLimits } from "../Limits.ts"
+import { SubscriptionLocks } from "../Locks.ts"
 import { record, type Target, targetFlag } from "./shared.ts"
 
 export interface SubscribeRequest {
@@ -22,7 +23,10 @@ export interface SubscribeRequest {
   readonly similarOk: ReadonlyArray<Ids.SubscriptionId>
 }
 
-/** Creates an active subscription after the plugin names its subject, unless a similar one is open. */
+/**
+ * Creates an active subscription after the plugin names its subject, unless a similar one is open.
+ * The check and the store run under the creation lock, so two subscribes cannot both miss each other.
+ */
 export const subscribe = (
   actor: Session.Actor,
   request: SubscribeRequest,
@@ -35,30 +39,33 @@ export const subscribe = (
       parameters: request.parameters,
       main: Option.fromNullishOr(request.main)
     })
-    const plugin = yield* (yield* PluginRepository).find(request.plugin)
-    if (Option.isNone(plugin)) return yield* new PluginNotFound({ plugin: request.plugin })
-    const intent = yield* Effect.fromResult(Subscribe.check(plugin.value, request.intent))
-    const open = yield* (yield* SubscriptionRepository).list({ plugin: request.plugin })
-    yield* Effect.fromResult(Subscribe.similar(
-      open,
-      { plugin: request.plugin, subject: described.subject, wakeTarget },
-      request.similarOk
-    ))
-    const subscription = Lifecycle.create(
-      {
-        id: yield* NewId.subscriptionId,
-        plugin: request.plugin,
-        parameters: described.parameters,
-        subject: described.subject,
-        label: described.label,
-        intent,
-        wakeTarget,
-        ...(request.eventTypes === undefined ? {} : { eventTypes: request.eventTypes }),
-        ...(request.until === undefined ? {} : { endAt: request.until }),
-        ...(request.maxEvents === undefined ? {} : { maxEvents: request.maxEvents })
-      },
-      yield* DateTime.now,
-      yield* currentLimits
-    )
-    return yield* record(actor, "create", Option.none(), { subscription, wake: Option.none() })
+    const locks = yield* SubscriptionLocks
+    return yield* locks.withCreation(Effect.gen(function*() {
+      const plugin = yield* (yield* PluginRepository).find(request.plugin)
+      if (Option.isNone(plugin)) return yield* new PluginNotFound({ plugin: request.plugin })
+      const intent = yield* Effect.fromResult(Subscribe.check(plugin.value, request.intent))
+      const open = yield* (yield* SubscriptionRepository).list({ plugin: request.plugin })
+      yield* Effect.fromResult(Subscribe.similar(
+        open,
+        { plugin: request.plugin, subject: described.subject, wakeTarget },
+        request.similarOk
+      ))
+      const subscription = Lifecycle.create(
+        {
+          id: yield* NewId.subscriptionId,
+          plugin: request.plugin,
+          parameters: described.parameters,
+          subject: described.subject,
+          label: described.label,
+          intent,
+          wakeTarget,
+          ...(request.eventTypes === undefined ? {} : { eventTypes: request.eventTypes }),
+          ...(request.until === undefined ? {} : { endAt: request.until }),
+          ...(request.maxEvents === undefined ? {} : { maxEvents: request.maxEvents })
+        },
+        yield* DateTime.now,
+        yield* currentLimits
+      )
+      return yield* record(actor, "create", Option.none(), { subscription, wake: Option.none() })
+    }))
   })

@@ -7,11 +7,10 @@ import { PluginRepository } from "../../../src/ports/PluginRepository.ts"
 import { SubscriptionRepository } from "../../../src/ports/SubscriptionRepository.ts"
 import { WakeRepository } from "../../../src/ports/WakeRepository.ts"
 import { layerSubscriptionIntake } from "../../../src/subscriptions/daemon/Intake.ts"
-import { layerRemovedPlugins } from "../../../src/subscriptions/daemon/RemovedPlugins.ts"
 import { plugin } from "../../fixtures.ts"
 import { layerHarness } from "../harness.ts"
 
-export const layer = Layer.provideMerge(layerSubscriptionIntake, Layer.merge(layerHarness, layerRemovedPlugins))
+export const layer = Layer.provideMerge(layerSubscriptionIntake, layerHarness)
 
 export const session: Session.Session = { harness: "claude-code", sessionId: "s-1" }
 

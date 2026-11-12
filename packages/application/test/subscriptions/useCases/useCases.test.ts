@@ -1,11 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Duration, Effect, Fiber, Option } from "effect"
+import { DateTime, Duration, Effect, Fiber, Option, Result } from "effect"
 import { TestClock } from "effect/testing"
 import { Ids } from "@exangelos/domain"
 import type { Catalogue, Event, Session, Subscription } from "@exangelos/domain"
 import { PluginAccessFake } from "@exangelos/application/testing"
 import { PluginRepository } from "../../../src/ports/PluginRepository.ts"
-import { SubscriptionRepository } from "../../../src/ports/SubscriptionRepository.ts"
+import { SubscriptionIntake } from "../../../src/seam/SubscriptionIntake.ts"
+import { type Filter, SubscriptionRepository } from "../../../src/ports/SubscriptionRepository.ts"
 import { WakeRepository } from "../../../src/ports/WakeRepository.ts"
 import { commit } from "../../../src/subscriptions/Transitions.ts"
 import {
@@ -19,6 +20,7 @@ import {
   wait
 } from "../../../src/subscriptions/useCases/index.ts"
 import { catalogue, plugin } from "../../fixtures.ts"
+import { layer as layerWithIntake } from "../daemon/support.ts"
 import { layerHarness } from "../harness.ts"
 
 const own: Session.Session = { harness: "t3", sessionId: "own" }
@@ -110,6 +112,23 @@ describe("subscription use cases", () => {
       expect(elsewhere.wakeTarget).toEqual(other)
     }).pipe(Effect.provide(layerHarness)))
 
+  it.effect("concurrent subscribes from one session store one subscription and refuse the other as similar", () =>
+    Effect.gen(function*() {
+      yield* setup
+      const repository = yield* SubscriptionRepository
+      const slowList = { ...repository, list: (filter: Filter) => Effect.tap(repository.list(filter), () => Effect.yieldNow) }
+      const attempt = Effect.result(
+        Effect.provideService(subscribe(ownActor, request(), [own]), SubscriptionRepository, slowList)
+      )
+
+      const outcomes = yield* Effect.all([attempt, attempt], { concurrency: 2 })
+
+      const created = outcomes.filter(Result.isSuccess).map((outcome) => outcome.success)
+      const refused = outcomes.filter(Result.isFailure).map((outcome) => outcome.failure)
+      expect(created).toHaveLength(1)
+      expect(refused).toMatchObject([{ _tag: "SimilarSubscriptions", matches: [{ id: created[0]!.id }] }])
+    }).pipe(Effect.provide(layerHarness)))
+
   it.effect("acknowledge moves ackedThrough up to the last number and never back", () =>
     Effect.gen(function*() {
       const subscription = yield* withEvents(yield* subscribed(), 3)
@@ -156,6 +175,20 @@ describe("subscription use cases", () => {
 
       expect((yield* Fiber.join(waiting)).why).toMatchObject({ _tag: "Suspended", problem: "it keeps failing" })
     }).pipe(Effect.provide(layerHarness)))
+
+  it.effect("wait reports a removed plugin once it has been gone long enough", () =>
+    Effect.gen(function*() {
+      const subscription = yield* subscribed({ target: { _tag: "PullOnly" } })
+      const now = yield* DateTime.now
+      yield* (yield* SubscriptionIntake).pluginRemoved(prs, now, "the plugin was removed")
+      yield* (yield* PluginRepository).remove(prs, { plugin: prs, kind: "remove", actor: ownActor, at: now })
+      const waiting = yield* Effect.forkChild(wait(ownActor, { id: subscription.id }))
+      yield* TestClock.adjust(Duration.minutes(59))
+      expect(waiting.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust(Duration.minutes(2))
+
+      expect((yield* Fiber.join(waiting)).why).toMatchObject({ _tag: "Suspended", problem: "the plugin was removed" })
+    }).pipe(Effect.provide(layerWithIntake)))
 
   it.effect("pause by the own session stores no wake; by another actor it stores a paused wake", () =>
     Effect.gen(function*() {

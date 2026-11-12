@@ -11,7 +11,7 @@ import { SubscriptionLocks } from "../Locks.ts"
 import { SubscriptionSignals } from "../Signals.ts"
 import { commit, type CommitServices } from "../Transitions.ts"
 import { requestWake } from "../Wakes.ts"
-import { RemovedPlugins, type Unavailable } from "./RemovedPlugins.ts"
+import { RemovedPlugins, type Unavailable } from "../RemovedPlugins.ts"
 
 export type IntakeServices = CommitServices | SubscriptionLocks | RemovedPlugins
 

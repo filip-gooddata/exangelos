@@ -13,10 +13,12 @@ const every = <R>(interval: Duration.Input, work: Effect.Effect<void, never, R>)
   )
 
 /**
- * The subscription half's background work: every second it applies the time limits and sends
- * due wakes, every hour it applies retention. Runs until interrupted; the daemon app forks it.
+ * The subscription half's background work: every second it applies the time limits and, in its
+ * own loop so a slow session never holds them up, sends due wakes; every hour it applies
+ * retention. Runs until interrupted; the daemon app forks it.
  */
-export const runSubscriptionDaemon: Effect.Effect<never, never, SweepServices | DeliveryServices> = Effect.raceFirst(
-  every("1 second", Effect.andThen(sweepLimits, deliverDue)),
+export const runSubscriptionDaemon: Effect.Effect<never, never, SweepServices | DeliveryServices> = Effect.raceAll([
+  every("1 second", sweepLimits),
+  every("1 second", deliverDue),
   every("1 hour", sweepRetention)
-)
+])

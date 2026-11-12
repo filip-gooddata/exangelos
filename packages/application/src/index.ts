@@ -20,4 +20,4 @@ export { layerSubscriptionLocks, SubscriptionLocks } from "./subscriptions/Locks
 export { layerSubscriptionSignals, SubscriptionSignals } from "./subscriptions/Signals.ts"
 export { runSubscriptionDaemon } from "./subscriptions/daemon/Daemon.ts"
 export { layerSubscriptionIntake } from "./subscriptions/daemon/Intake.ts"
-export { layerRemovedPlugins, RemovedPlugins } from "./subscriptions/daemon/RemovedPlugins.ts"
+export { layerRemovedPlugins, RemovedPlugins } from "./subscriptions/RemovedPlugins.ts"

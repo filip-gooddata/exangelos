@@ -1,4 +1,4 @@
-import { Array as Arr, DateTime, Effect, Option } from "effect"
+import { Array as Arr, DateTime, Duration, Effect, Option } from "effect"
 import { Delivery, Lifecycle, PluginRules } from "@exangelos/domain"
 import type { Event, Ids, Limits, Plugin, Session, Subscription, Wake } from "@exangelos/domain"
 import { EventRepository } from "../../ports/EventRepository.ts"
@@ -6,11 +6,11 @@ import { PluginRepository } from "../../ports/PluginRepository.ts"
 import type { SettingsStore } from "../../ports/SettingsStore.ts"
 import { SubscriptionRepository } from "../../ports/SubscriptionRepository.ts"
 import { WakeRepository } from "../../ports/WakeRepository.ts"
-import { WakeTarget } from "../../ports/WakeTarget.ts"
+import { DeliveryFailed, WakeTarget } from "../../ports/WakeTarget.ts"
 import { currentLimits } from "../Limits.ts"
 import type { SubscriptionLocks } from "../Locks.ts"
 import { withSubscription } from "./Intake.ts"
-import { RemovedPlugins } from "./RemovedPlugins.ts"
+import { RemovedPlugins } from "../RemovedPlugins.ts"
 
 export type DeliveryServices =
   | WakeRepository
@@ -21,6 +21,9 @@ export type DeliveryServices =
   | SettingsStore
   | SubscriptionLocks
   | RemovedPlugins
+
+/** How long one attempt may take before it counts as failed, so a hung session cannot stall delivery. */
+export const deliveryTimeout = Duration.seconds(30)
 
 const isDue = (wake: Wake.Wake, now: DateTime.Utc): boolean =>
   wake.attempts.nextAttemptAt === undefined || DateTime.isLessThanOrEqualTo(wake.attempts.nextAttemptAt, now)
@@ -132,6 +135,10 @@ const attempt = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
     const { content, session, wake } = claimed.value
     const sender = yield* WakeTarget
     yield* sender.deliver(session, content).pipe(
+      Effect.timeoutOrElse({
+        duration: deliveryTimeout,
+        orElse: () => Effect.fail(new DeliveryFailed({ reason: "timed out" }))
+      }),
       Effect.andThen(settle({ ...wake, state: "delivered" })),
       Effect.catchTag("DeliveryFailed", (failure) =>
         Effect.flatMap(DateTime.now, (failedAt) => settle(Delivery.retry(wake, failure.reason, failedAt, limits))))
