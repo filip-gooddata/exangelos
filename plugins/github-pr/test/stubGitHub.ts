@@ -26,7 +26,11 @@ const quota = {
   "x-ratelimit-resource": "graphql"
 }
 
-export const ok = (data: unknown): Answer => ({ status: 200, body: { data }, headers: quota })
+export const ok = (data: unknown, headers: Record<string, string> = {}): Answer => ({
+  status: 200,
+  body: { data },
+  headers: { ...quota, ...headers }
+})
 
 export const badCredentials: Answer = {
   status: 401,
@@ -56,14 +60,29 @@ export const secondaryLimit: Answer = {
   }
 }
 
-const page = (nodes: ReadonlyArray<unknown>) => ({ pageInfo: { hasPreviousPage: false, startCursor: null }, nodes })
+const page = (nodes: ReadonlyArray<unknown>, startCursor: string | null = null) => ({
+  pageInfo: { hasPreviousPage: startCursor !== null, startCursor },
+  nodes
+})
+
+type CommentFields = { readonly id: string; readonly login: string; readonly body: string; readonly createdAt: string }
+
+const commentNode = (c: CommentFields) => ({
+  id: c.id,
+  body: c.body,
+  createdAt: c.createdAt,
+  url: `https://github.com/acme/api/pull/7#issuecomment-${c.id}`,
+  author: { login: c.login }
+})
 
 export interface PullRequestFields {
   readonly state?: "OPEN" | "CLOSED" | "MERGED"
   readonly head?: string
   readonly mergeable?: "MERGEABLE" | "CONFLICTING" | "UNKNOWN"
   readonly reviewDecision?: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null
-  readonly comments?: ReadonlyArray<{ readonly id: string; readonly login: string; readonly body: string; readonly createdAt: string }>
+  readonly comments?: ReadonlyArray<CommentFields>
+  readonly olderComments?: string
+  readonly headers?: Record<string, string>
   readonly checks?: ReadonlyArray<{ readonly id: string; readonly name: string; readonly conclusion: string | null }>
 }
 
@@ -89,13 +108,7 @@ export const pullRequest = (fields: PullRequestFields = {}): Answer =>
           branchProtectionRule: null
         },
         reviews: page([]),
-        comments: page((fields.comments ?? []).map((c) => ({
-          id: c.id,
-          body: c.body,
-          createdAt: c.createdAt,
-          url: `https://github.com/acme/api/pull/7#issuecomment-${c.id}`,
-          author: { login: c.login }
-        }))),
+        comments: page((fields.comments ?? []).map(commentNode), fields.olderComments ?? null),
         reviewThreads: page([]),
         commits: {
           nodes: [{
@@ -120,7 +133,11 @@ export const pullRequest = (fields: PullRequestFields = {}): Answer =>
         }
       }
     }
-  })
+  }, fields.headers)
+
+/** A follow-up page of comments, as `morePages(["comments"])` gets it. */
+export const commentsPage = (comments: ReadonlyArray<CommentFields>, older: string | null, headers?: Record<string, string>) =>
+  ok({ repository: { pullRequest: { comments: page(comments.map(commentNode), older) } } }, headers)
 
 export const viewer = ok({ viewer: { login: "octocat" } })
 

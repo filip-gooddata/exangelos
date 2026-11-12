@@ -42,8 +42,6 @@ export interface Since {
 export const endpoint = (host: string) =>
   host === "github.com" ? "https://api.github.com/graphql" : `https://${host}/api/graphql`
 
-const maxPages = 10
-
 const Login = Schema.NullOr(Schema.Struct({ login: Schema.String }))
 const Backward = Schema.Struct({ hasPreviousPage: Schema.Boolean, startCursor: Schema.NullOr(Schema.String) })
 
@@ -329,16 +327,23 @@ export const layer = Layer.effect(
         }
 
         let next = collect(pr)
-        for (let page = 1; page < maxPages && Object.keys(next).length > 0; page++) {
+        // Paging back stops at what the last poll saw, so even a long pause ends in a bounded number of pages.
+        while (Object.keys(next).length > 0) {
+          if (Option.isSome(quota) && quota.value.remaining === 0) {
+            const now = yield* Clock.currentTimeMillis
+            yield* Effect.sleep(Duration.millis(Math.max(quota.value.resetAt - now, 0)))
+          }
           const connections = Object.keys(next) as Array<Query.Connection>
-          const more = yield* post(connection, PagesData, Query.morePages(connections), { ...variables, ...next })
+          const request = post(connection, PagesData, Query.morePages(connections), { ...variables, ...next })
+          // A secondary limit mid-catch-up waits and asks for the same page, keeping the pages already read.
+          const more = yield* request.pipe(
+            Effect.catchTag("RateLimited", ({ retryAfter }) => Effect.sleep(retryAfter).pipe(Effect.andThen(request))),
+            Effect.catchTag("RateLimited", ({ retryAfter }) => Effect.sleep(retryAfter).pipe(Effect.andThen(request)))
+          )
           quota = Option.orElse(more.quota, () => quota)
           const again = more.data.repository?.pullRequest
           if (again == null) return yield* notFound
           next = collect(again)
-        }
-        if (Object.keys(next).length > 0) {
-          return yield* new Unavailable({ reason: `More than ${maxPages} pages of activity; reading it again next poll` })
         }
 
         const rules = [
