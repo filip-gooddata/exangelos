@@ -743,6 +743,13 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/contracts:
     dependencies:
