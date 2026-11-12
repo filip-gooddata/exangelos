@@ -546,6 +546,13 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@types/bun':
+        specifier: 'catalog:'
+        version: 1.4.2
+      vitest:
+        specifier: 'catalog:'
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
 
   apps/daemon:
     dependencies:
@@ -561,6 +568,9 @@ importers:
       '@exangelos/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@exangelos/daemon-client':
+        specifier: workspace:*
+        version: link:../../adapters/daemon-client
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
@@ -597,6 +607,10 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@types/bun':
+        specifier: 'catalog:'
+        version: 1.4.2
 
   apps/mcp:
     dependencies:

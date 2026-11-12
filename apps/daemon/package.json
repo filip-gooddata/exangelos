@@ -24,6 +24,10 @@
     "@exangelos/service": "workspace:*",
     "@exangelos/settings": "workspace:*",
     "effect": "catalog:",
-    "@effect/platform-bun": "catalog:"
+    "@effect/platform-bun": "catalog:",
+    "@exangelos/daemon-client": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "catalog:"
   }
 }
