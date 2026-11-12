@@ -14,5 +14,8 @@
     "@effect/platform-bun": "catalog:",
     "@exangelos/plugin-sdk": "workspace:*",
     "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@exangelos/contracts": "workspace:*"
   }
 }

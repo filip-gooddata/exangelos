@@ -22,7 +22,21 @@ const segmentsOf = (path: string) => path.split("/").filter((segment) => segment
 
 const unescape = (segment: string) => segment.replace(/\\(.)/g, "$1")
 
-const ancestorsAndSelf = (relative: string) => {
+const balanced = (pattern: string) => {
+  let braces = 0
+  let inClass = false
+  for (let index = 0; index < pattern.length; index++) {
+    const char = pattern[index]
+    if (char === "\\") index++
+    else if (inClass) inClass = char !== "]"
+    else if (char === "[") inClass = true
+    else if (char === "{") braces++
+    else if (char === "}" && braces > 0) braces--
+  }
+  return braces === 0 && !inClass
+}
+
+const ancestorsAndSelf =(relative: string) => {
   const segments = relative.split("/")
   return segments.map((_, index) => segments.slice(0, index + 1).join("/"))
 }
@@ -41,6 +55,8 @@ export const parse = (
   if (expanded === "") return Result.fail("The path glob is empty")
   if (!expanded.startsWith("/")) return Result.fail(`The path glob must start with / or ~/, got ${input.path}`)
   if (segmentsOf(expanded).includes("..")) return Result.fail("The path glob must not contain ..")
+  const unclosed = [expanded, ...(input.ignore ?? [])].find((pattern) => !balanced(pattern))
+  if (unclosed !== undefined) return Result.fail(`The glob ${unclosed} has an unclosed [ or {`)
   const segments = segmentsOf(expanded)
   if (segments.length === 0) return Result.fail("The path glob must name something below /")
   const literal = segments.findIndex((segment) => special.test(segment))
@@ -76,8 +92,7 @@ export const relativeTo = (directory: string, path: string): string | undefined 
 }
 
 /** Shows `path` with the home directory written as `~`. */
-export const display = (path: string, home: string) => relativeTo(home, path) === undefined
-  ? path
-  : path === home
-  ? "~"
-  : `~/${relativeTo(home, path)}`
+export const display = (path: string, home: string) => {
+  const relative = relativeTo(home, path)
+  return relative === undefined ? path : relative === "" ? "~" : `~/${relative}`
+}
