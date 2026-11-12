@@ -1,7 +1,6 @@
 import { Context, DateTime, Deferred, Duration, Effect, FiberMap, Layer, Option, Redacted, Ref, Semaphore, Stream } from "effect"
 import { Catalogue, Ids, Plugin, PluginRules, Settings } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
-import { OfficialPluginSource } from "../ports/OfficialPluginSource.ts"
 import { PluginDirectory } from "../ports/PluginDirectory.ts"
 import { PluginRepository, type PluginChange } from "../ports/PluginRepository.ts"
 import { PluginRuntime, type Launch, type PluginProcess } from "../ports/PluginRuntime.ts"
@@ -67,9 +66,6 @@ type Outcome =
 
 const stopped: Outcome = { _tag: "Stopped" }
 
-const officialChecksum = (known: ReadonlyArray<{ readonly name: Ids.PluginName; readonly digest: string }>, name: Ids.PluginName) =>
-  Option.fromNullishOr(known.find((official) => official.name === name)?.digest)
-
 /**
  * Starts every enabled and dev plugin and watches every plugin's files. Applies a change to files
  * made while the daemon was down, and keeps the one-hour suspension timers of plugins that were
@@ -82,7 +78,6 @@ export const layerPluginSupervisor: Layer.Layer<
   | SubscriptionRepository
   | PluginRuntime
   | PluginDirectory
-  | OfficialPluginSource
   | SecretStore
   | SettingsStore
   | AlertSink
@@ -92,7 +87,6 @@ export const layerPluginSupervisor: Layer.Layer<
   const subscriptions = yield* SubscriptionRepository
   const runtime = yield* PluginRuntime
   const directory = yield* PluginDirectory
-  const officials = yield* OfficialPluginSource
   const secrets = yield* SecretStore
   const settings = yield* SettingsStore
   const alerts = yield* AlertSink
@@ -106,7 +100,6 @@ export const layerPluginSupervisor: Layer.Layer<
   const changed = yield* Ref.make(yield* Deferred.make<void>())
   const writes = yield* Semaphore.make(1)
 
-  const checksum = (name: Ids.PluginName) => officialChecksum(officials.known, name)
   const limits = Effect.map(Effect.orElseSucceed(settings.read, () => Settings.initial), (s) => s.limits)
 
   const signal = Effect.flatMap(Deferred.make<void>(), (next) =>
@@ -393,7 +386,7 @@ export const layerPluginSupervisor: Layer.Layer<
       if (Option.isNone(installed) || Option.isNone(plugin)) return
       const same = installed.value.digest === plugin.value.digest
       if (same && (onlyIfDigestDiffers || plugin.value.trust !== "dev")) return
-      const result = PluginRules.filesChanged(plugin.value, installed.value.digest, checksum(name))
+      const result = PluginRules.filesChanged(plugin.value, installed.value.digest)
       yield* update(name, () => ({ ...result.plugin, version: installed.value.version }))
       yield* Effect.forEach(Option.toArray(result.alert), (alert) => Effect.ignore(alerts.show(alert)), {
         discard: true
@@ -457,7 +450,11 @@ export const layerPluginSupervisor: Layer.Layer<
   const reconfigure = (name: Ids.PluginName) =>
     Effect.gen(function*() {
       const process = (yield* Ref.get(processes)).get(name)
-      if (process !== undefined) return yield* configureProcess(name, process)
+      // A crash during Configure restarts the process, which configures it again.
+      if (process !== undefined) {
+        const answer = yield* Effect.option(configureProcess(name, process))
+        if (Option.isSome(answer)) return answer.value
+      }
       const plugin = yield* plugins.find(name)
       if (Option.isNone(plugin)) return { _tag: "Missing" } as Plugin.Configuration
       if (plugin.value.catalogue === undefined) return plugin.value.configuration

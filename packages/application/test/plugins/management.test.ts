@@ -138,12 +138,12 @@ describe("configure", () => {
       expect(plugin.configuration).toEqual({ _tag: "Missing" })
     })))
 
-  it.effect("marks rejected credentials, alerts you and suspends the subscriptions after an hour", () =>
+  it.effect("marks rejected credentials without echoing them, alerts you and suspends the subscriptions after an hour", () =>
     withPlugins(Effect.gen(function*() {
       const runtime = yield* PluginRuntimeFake
       yield* runtime.define(name("acme"), {
         catalogue: catalogue(hostAndToken),
-        configure: (values) => values.token === "bad" ? { _tag: "Rejected", reason: "401" } : { _tag: "Accepted" }
+        configure: (values) => values.token === "bad" ? { _tag: "Rejected", reason: `401 for ${values.token}` } : { _tag: "Accepted" }
       })
       yield* (yield* PluginFilesFake).offer(source, installed("acme"))
       const imported = yield* importPlugin(you, source)
@@ -158,7 +158,8 @@ describe("configure", () => {
       const result = yield* Effect.exit(configurePlugin(you, name("acme"), { token: "bad" }))
 
       expect(Exit.isFailure(result)).toBe(true)
-      expect(yield* pluginOf("acme")).toMatchObject({ configuration: { _tag: "Rejected", reason: "401" } })
+      expect(yield* pluginOf("acme")).toMatchObject({ configuration: { _tag: "Rejected", reason: "401 for [secret]" } })
+      expect(JSON.stringify(yield* (yield* AlertSinkFake).shown)).not.toContain("bad")
       expect(yield* (yield* AlertSinkFake).shown).toContainEqual(expect.objectContaining({ _tag: "CredentialsRejected" }))
       yield* settle
       expect(yield* runtime.openStreams(name("acme"))).toBe(0)
