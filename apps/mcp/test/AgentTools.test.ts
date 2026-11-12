@@ -38,6 +38,18 @@ describe("MCP tools", () => {
       }])
     }))
 
+  it.effect("names the ack call to make when resume is refused for a backlog over the limit", () =>
+    Effect.gen(function*() {
+      const mcp = yield* mcpClient(inMemory)
+      const result = yield* mcp.callTool({ name: "resume", arguments: { id: "sub_full" } })
+      expect(result.isError).toBe(true)
+      expect(result.content).toEqual([{
+        type: "text",
+        text:
+          "Not resumed: 23 events are pending, over the limit of 20. Acknowledge them first: call ack with id: \"sub_full\", through: 27, then call resume."
+      }])
+    }))
+
   it.effect("waits and returns the wake text", () =>
     Effect.gen(function*() {
       const mcp = yield* mcpClient(inMemory)
