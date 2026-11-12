@@ -182,4 +182,23 @@ describe("TauriIpcSocket", () => {
         expect(error._tag).toBe("RpcClientError")
         expect(error.reason._tag).toBe("SocketOpenError")
       })))
+
+  it.effect("fails the reader when the relay closes before relay_open resolves", () =>
+    Effect.gen(function*() {
+      const closed: Array<number> = []
+      const socket = TauriIpcSocket.make({
+        makeChannel: (onMessage) => onMessage,
+        invoke: (command, args) => {
+          if (command === "relay_open") {
+            ;(args as { readonly events: (message: unknown) => void }).events({ type: "closed" })
+            return Promise.resolve(7)
+          }
+          if (command === "relay_close") closed.push((args as { readonly connection: number }).connection)
+          return Promise.resolve(null)
+        }
+      })
+      const error = yield* socket.reader.pipe(Effect.scoped, Effect.flip)
+      expect(error.reason).toMatchObject({ _tag: "SocketCloseError", code: 1000 })
+      expect(closed).toEqual([7])
+    }))
 })

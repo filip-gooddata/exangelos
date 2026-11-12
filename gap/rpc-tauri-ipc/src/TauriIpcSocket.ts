@@ -1,5 +1,6 @@
-import { Effect, Latch, Layer, Semaphore } from "effect"
+import { Effect, Latch, Layer, Scope } from "effect"
 import type { NonEmptyReadonlyArray } from "effect/Array"
+import { constVoid } from "effect/Function"
 import { Socket } from "effect/socket"
 
 /**
@@ -21,6 +22,7 @@ const encoder = new TextEncoder()
 
 interface Connection {
   readonly id: number
+  readonly write: (bytes: Uint8Array) => Promise<unknown>
   readonly close: (event: Socket.CloseEvent) => void
 }
 
@@ -42,16 +44,17 @@ const toBytes = (message: unknown): Uint8Array | undefined => {
  * channel, and its scope closes it (`relay_close`). The relay's
  * `{type:"closed"}` fails `pull` with a `SocketCloseError` of code 1000 and
  * `{type:"error"}` with a `SocketReadError`; an open rejection fails the
- * acquisition with a `SocketOpenError`. Writes go out one at a time, in order,
- * to the current connection, and suspend while there is none.
+ * acquisition with a `SocketOpenError`. Writes, including a `CloseEvent`,
+ * suspend while there is no connection. Each connection sends its writes to
+ * the relay one at a time in call order; a caller that stops waiting does not
+ * reorder or cancel bytes already handed over.
  */
 export const make = (ipc: TauriIpc): Socket.Socket => {
   let current: Connection | undefined
   const connected = Latch.makeUnsafe(false)
-  const writeLock = Semaphore.makeUnsafe(1)
 
-  const closeRelay = (id: number) =>
-    Effect.tryPromise(() => ipc.invoke("relay_close", { connection: id })).pipe(Effect.ignore)
+  const closeRelayUnsafe = (id: number) => ipc.invoke("relay_close", { connection: id }).then(constVoid, constVoid)
+  const closeRelay = (id: number) => Effect.promise(() => closeRelayUnsafe(id))
 
   const reader: Socket.Socket["reader"] = Effect.gen(function*() {
     let buffer: Array<Uint8Array> = []
@@ -96,26 +99,50 @@ export const make = (ipc: TauriIpc): Socket.Socket => {
       fail(readError(new Error("Unexpected relay message")))
     }
 
-    const id = yield* Effect.acquireRelease(
-      Effect.tryPromise({
-        try: () => ipc.invoke("relay_open", { events: ipc.makeChannel(onMessage) }) as Promise<number>,
-        catch: (cause) => new Socket.SocketError({ reason: new Socket.SocketOpenError({ kind: "Unknown", cause }) })
-      }),
-      (id) =>
-        Effect.suspend(() => {
-          fail(closeError(1000))
-          return closeRelay(id)
-        })
+    let opened: number | undefined
+    yield* Scope.addFinalizer(
+      yield* Effect.scope,
+      Effect.suspend(() => {
+        fail(closeError(1000))
+        return opened === undefined ? Effect.void : closeRelay(opened)
+      })
     )
 
+    const id = yield* Effect.callback<number, Socket.SocketError>((resume) => {
+      let abandoned = false
+      ipc.invoke("relay_open", { events: ipc.makeChannel(onMessage) }).then(
+        (value) => {
+          const id = value as number
+          if (abandoned) return void closeRelayUnsafe(id)
+          opened = id
+          resume(Effect.succeed(id))
+        },
+        (cause) => {
+          if (abandoned) return
+          resume(Effect.fail(new Socket.SocketError({ reason: new Socket.SocketOpenError({ kind: "Unknown", cause }) })))
+        }
+      )
+      return Effect.sync(() => {
+        abandoned = true
+      })
+    })
+
+    // The relay may report end of file before relay_open resolves.
+    if (failure !== undefined) return yield* failure
+
+    let tail: Promise<unknown> = Promise.resolve()
+    const headers = { [connectionHeader]: String(id) }
     connection = {
       id,
+      write: (bytes) => {
+        const sent = tail.then(() => ipc.invoke("relay_write", bytes, { headers }))
+        tail = sent.then(constVoid, constVoid)
+        return sent
+      },
       close: (event) => fail(closeError(event.code, event.reason))
     }
-    if (failure === undefined) {
-      current = connection
-      connected.openUnsafe()
-    }
+    current = connection
+    connected.openUnsafe()
 
     return {
       pull: Effect.callback<NonEmptyReadonlyArray<Uint8Array>, Socket.SocketError>((resume) => {
@@ -135,25 +162,21 @@ export const make = (ipc: TauriIpc): Socket.Socket => {
       const target = current
       if (target === undefined) return connected.whenOpen(send(bytes))
       return Effect.tryPromise({
-        try: () => ipc.invoke("relay_write", bytes, { headers: { [connectionHeader]: String(target.id) } }),
+        try: () => target.write(bytes),
         catch: (cause) => new Socket.SocketError({ reason: new Socket.SocketWriteError({ cause }) })
-      }).pipe(Effect.asVoid, Effect.uninterruptible)
+      }).pipe(Effect.asVoid)
     })
 
   const closeCurrent = (event: Socket.CloseEvent): Effect.Effect<void> =>
     Effect.suspend(() => {
       const target = current
-      if (target === undefined) return Effect.void
+      if (target === undefined) return connected.whenOpen(closeCurrent(event))
       target.close(event)
       return closeRelay(target.id)
     })
 
   const write = (chunk: Uint8Array | string | Socket.CloseEvent) =>
-    writeLock.withPermit(
-      Socket.isCloseEvent(chunk)
-        ? closeCurrent(chunk)
-        : send(typeof chunk === "string" ? encoder.encode(chunk) : chunk)
-    )
+    Socket.isCloseEvent(chunk) ? closeCurrent(chunk) : send(typeof chunk === "string" ? encoder.encode(chunk) : chunk)
 
   const writeAll = (chunks: NonEmptyReadonlyArray<Uint8Array | string>) => {
     const parts = chunks.map((chunk) => typeof chunk === "string" ? encoder.encode(chunk) : chunk)
@@ -163,7 +186,7 @@ export const make = (ipc: TauriIpc): Socket.Socket => {
       bytes.set(part, offset)
       offset += part.byteLength
     }
-    return writeLock.withPermit(send(bytes))
+    return send(bytes)
   }
 
   return Socket.make({ reader, writer: Effect.succeed({ write, writeAll }) })
