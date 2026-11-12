@@ -1,4 +1,4 @@
-import type { Catalogue, Refusal } from "@exangelos/domain"
+import type { Catalogue, Refusal, Subscription } from "@exangelos/domain"
 import { WakeText } from "@exangelos/contracts"
 
 const command = WakeText.command
@@ -32,3 +32,8 @@ export const backlogOverLimitMessage = (
 
 export const noWakeTargetMessage =
   `This command did not run inside a known agent session, so there is no session to wake. Pass --target <harness>:<session-id> to name one, or --pull-only to collect events with \`${command} wait\`.`
+
+export const wakeHint = (subscription: Subscription.Subscription): string | undefined =>
+  subscription.wakeTarget?.harness === "claude-code"
+    ? `Claude Code sessions don't receive wakes yet: run \`${command} wait ${subscription.id}\` as a background command; it returns when there is something to say.`
+    : undefined

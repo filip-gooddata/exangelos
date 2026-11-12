@@ -3,11 +3,11 @@ import * as fs from "node:fs"
 import { DateTime, Effect, Exit, FileSystem, Layer, Path, Ref, Stdio, Stream, Terminal } from "effect"
 import { Command } from "effect/cli"
 import { ChildProcessSpawner } from "effect/process"
-import { type Rpc, type RpcGroup, RpcTest } from "effect/rpc"
+import { type Rpc, type RpcGroup, RpcServer, RpcTest } from "effect/rpc"
 import { TestConsole } from "effect/testing"
-import { DaemonContract } from "@exangelos/contracts"
+import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import { Catalogue, Ids, Plugin, Subscription } from "@exangelos/domain"
-import { DaemonClient } from "@exangelos/daemon-client"
+import { DaemonClient, DaemonServer } from "@exangelos/daemon-client"
 import * as Connection from "../src/commands/Connection.ts"
 import * as Root from "../src/commands/Root.ts"
 
@@ -135,7 +135,11 @@ export const run = (
   argv: ReadonlyArray<string>,
   options: {
     readonly handlers?: Partial<HandlerMap>
-    readonly connection?: Layer.Layer<Connection.Connection>
+    readonly socket?: {
+      readonly path: string
+      readonly env?: Readonly<Record<string, string | undefined>>
+      readonly serve?: boolean
+    }
     readonly commandOutput?: string
   } = {}
 ): Promise<Result> =>
@@ -156,7 +160,21 @@ export const run = (
     const handlers = DaemonContract.DaemonContract.toLayer(recorded) as Layer.Layer<
       Rpc.ToHandler<RpcGroup.Rpcs<DaemonContract.DaemonContract>>
     >
-    const client = yield* RpcTest.makeClient(DaemonContract.DaemonContract).pipe(Effect.provide(handlers))
+    const socket = options.socket
+    if (socket !== undefined && socket.serve !== false) {
+      yield* Layer.build(
+        RpcServer.layer(DaemonContract.DaemonContract).pipe(
+          Layer.provide(handlers),
+          Layer.provide(DaemonServer.layer(socket.path))
+        )
+      )
+    }
+    const client = socket === undefined
+      ? Layer.succeed(
+        DaemonClient.DaemonClient,
+        yield* RpcTest.makeClient(DaemonContract.DaemonContract).pipe(Effect.provide(handlers))
+      )
+      : DaemonClient.layer({ path: socket.path, session: SessionHeaders.detect(socket.env ?? {}) })
     const environment = Layer.mergeAll(
       FileSystem.layerNoop({
         readFileString: (path) => Effect.sync(() => fs.readFileSync(path, "utf8"))
@@ -165,7 +183,7 @@ export const run = (
       Stdio.layerTest({}),
       Layer.succeed(Terminal.Terminal, terminal),
       Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner(options.commandOutput ?? "", ran)),
-      options.connection ?? Connection.layer(Layer.succeed(DaemonClient.DaemonClient, client))
+      Connection.layer(client)
     )
     const exit = yield* Command.runWith(Root.make(), { version: "0.0.0-test" })(argv).pipe(
       Effect.provide(environment),

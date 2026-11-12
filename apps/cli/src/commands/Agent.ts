@@ -115,7 +115,11 @@ const subscribe = Command.make(
           ...(until === undefined ? {} : { until })
         })
       })
-      yield* respond(work, { schema: SubscriptionSchema, text: Text.subscription })
+      yield* respond(work, {
+        schema: SubscriptionSchema,
+        text: Text.hinted(Text.subscription),
+        json: Text.hintedJson
+      })
     })
 ).pipe(Command.withDescription("Subscribe to events from a plugin on one subject"))
 
@@ -233,15 +237,18 @@ const stateChange = <E extends Failure>(
   call: (
     client: Connection["Service"],
     id: Subscription.Subscription["id"]
-  ) => Effect.Effect<Subscription.Subscription, E>
+  ) => Effect.Effect<Subscription.Subscription, E>,
+  options: { readonly hint?: boolean } = {}
 ) =>
   Command.make(name, { subscription: subscriptionArgument }, ({ subscription }) =>
     Effect.gen(function*() {
       const client = yield* Connection
       const work = Effect.flatMap(Input.subscriptionId(subscription), (id) => call(client, id))
+      const text = (changed: Subscription.Subscription) => `${changed.id} is ${Text.stateText(changed.state)}.`
       yield* respond(work, {
         schema: SubscriptionSchema,
-        text: (changed) => `${changed.id} is ${Text.stateText(changed.state)}.`,
+        text: options.hint ? Text.hinted(text) : text,
+        ...(options.hint ? { json: Text.hintedJson } : {}),
         subscription
       })
     })).pipe(Command.withDescription(description))
@@ -283,7 +290,9 @@ export const commands = [
   ack,
   wait,
   stateChange("pause", "Pause a subscription", (client, id) => client.Pause({ id })),
-  stateChange("resume", "Resume a subscription with a fresh expiry", (client, id) => client.Resume({ id })),
+  stateChange("resume", "Resume a subscription with a fresh expiry", (client, id) => client.Resume({ id }), {
+    hint: true
+  }),
   retarget,
   stateChange("cancel", "Cancel a subscription", (client, id) => client.Cancel({ id }))
 ] as const

@@ -1,7 +1,7 @@
 import { DateTime, Duration } from "effect"
 import type { DaemonContract } from "@exangelos/contracts"
 import type { Event, Plugin, Session, Settings, Subscription } from "@exangelos/domain"
-import { parameterValue, parametersText } from "./Messages.ts"
+import { parameterValue, parametersText, wakeHint } from "./Messages.ts"
 
 const time = (value: DateTime.Utc): string => DateTime.formatIso(value)
 
@@ -202,3 +202,14 @@ export const settings = (value: Settings.Settings): string =>
 
 export const serviceStatus = (status: { readonly version: string; readonly startMethod: string }): string =>
   fields([["Daemon", "running"], ["Version", status.version], ["Start method", status.startMethod]]).join("\n")
+
+export const hinted = (text: (subscription: Subscription.Subscription) => string) =>
+(subscription: Subscription.Subscription): string => {
+  const hint = wakeHint(subscription)
+  return hint === undefined ? text(subscription) : `${text(subscription)}\n${hint}`
+}
+
+export const hintedJson = (subscription: Subscription.Subscription, encoded: unknown): unknown => {
+  const hint = wakeHint(subscription)
+  return hint === undefined ? encoded : Object.assign({}, encoded, { hint })
+}

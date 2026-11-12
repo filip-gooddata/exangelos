@@ -80,6 +80,20 @@ describe("agent commands", () => {
     expect(result.stdout).toContain(out)
   })
 
+  it("tells a Claude Code session how to wait, and a T3 session nothing", async () => {
+    const claude = subscription({ wakeTarget: { harness: "claude-code", sessionId: "c-1" } })
+    const hint =
+      "Claude Code sessions don't receive wakes yet: run `exangelos wait sub_7f3k` as a background command; it returns when there is something to say."
+    const subscribed = await run(["subscribe", "github-pr", "acme/app#123", "--intent", "x"], {
+      handlers: { Subscribe: () => Effect.succeed(claude) }
+    })
+    expect(subscribed.stdout.split("\n").at(-1)).toBe(hint)
+    const resumed = await run(["resume", "sub_7f3k", "--json"], { handlers: { Resume: () => Effect.succeed(claude) } })
+    expect(JSON.parse(resumed.stdout)).toMatchObject({ id: "sub_7f3k", hint })
+    const t3 = await run(["subscribe", "github-pr", "acme/app#123", "--intent", "x"])
+    expect(t3.stdout).not.toContain("Claude Code")
+  })
+
   it("prints one JSON document with --json, for an answer and for a refusal", async () => {
     const listed = await run(["list", "--json"])
     const [first] = JSON.parse(listed.stdout)
