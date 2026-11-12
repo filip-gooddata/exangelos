@@ -1,6 +1,6 @@
 import { Array as Arr, DateTime, Effect, Option } from "effect"
 import { Delivery, Lifecycle } from "@exangelos/domain"
-import type { Event, Limits, Plugin, Subscription, Wake } from "@exangelos/domain"
+import type { Event, Limits, Plugin, Session, Subscription, Wake } from "@exangelos/domain"
 import { EventRepository } from "../../ports/EventRepository.ts"
 import { PluginRepository } from "../../ports/PluginRepository.ts"
 import type { SettingsStore } from "../../ports/SettingsStore.ts"
@@ -48,37 +48,54 @@ const stored = (wake: Wake.Wake) =>
     return Arr.findFirst(yield* wakes.list(wake.subscription), (other) => other.id === wake.id)
   })
 
-/** Stores the attempt's outcome unless a newer wake replaced this one meanwhile. */
+interface Claim {
+  readonly wake: Wake.Wake
+  readonly session: Session.Session
+  readonly content: Wake.WakeContent
+}
+
+/** Marks the wake sending when it still has something to say, else drops it. */
+const claim = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
+  Effect.gen(function*() {
+    const latest = Option.filter(yield* stored(listed), Delivery.isUndelivered)
+    if (Option.isNone(latest)) return Option.none<Claim>()
+    const wake = latest.value
+    const wakes = yield* WakeRepository
+    const subscriptions = yield* SubscriptionRepository
+    const found = yield* subscriptions.find(wake.subscription)
+    if (Option.isNone(found)) return Option.none<Claim>()
+    const subscription = found.value
+    const plugins = yield* PluginRepository
+    const plugin = yield* plugins.find(subscription.plugin)
+    if (Option.isNone(plugin)) yield* Effect.logWarning("Wake dropped, its plugin is not stored", wake.id)
+    const events = yield* EventRepository
+    const pending = yield* events.list(subscription.id, subscription.ackedThrough)
+    const content = Option.flatMap(plugin, (p) => contentOf(wake, subscription, p, pending, now, limits))
+    const session = subscription.wakeTarget
+    if (session === undefined || Option.isNone(content)) {
+      yield* wakes.update({ ...wake, state: "dropped" })
+      return Option.none<Claim>()
+    }
+    const sending: Wake.Wake = { ...wake, state: "sending" }
+    yield* wakes.update(sending)
+    return Option.some({ wake: sending, session, content: content.value })
+  })
+
+/** Stores the attempt's outcome while the wake is still the one being sent; a newer wake or a drop wins. */
 const settle = (wake: Wake.Wake) =>
   Effect.gen(function*() {
-    if (Option.exists(yield* stored(wake), (current) => current.state === "replaced")) return
+    if (!Option.exists(yield* stored(wake), (current) => current.state === "sending")) return
     const wakes = yield* WakeRepository
     yield* wakes.update(wake)
   })
 
 const attempt = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
   Effect.gen(function*() {
-    const latest = Option.filter(yield* stored(listed), Delivery.isUndelivered)
-    if (Option.isNone(latest)) return
-    const wake = latest.value
-    const subscriptions = yield* SubscriptionRepository
-    const plugins = yield* PluginRepository
-    const events = yield* EventRepository
-    const wakes = yield* WakeRepository
+    const claimed = yield* claim(listed, now, limits)
+    if (Option.isNone(claimed)) return
+    const { content, session, wake } = claimed.value
     const sender = yield* WakeTarget
-    const found = yield* subscriptions.find(wake.subscription)
-    if (Option.isNone(found)) return
-    const subscription = found.value
-    const plugin = yield* plugins.find(subscription.plugin)
-    const target = subscription.wakeTarget
-    if (Option.isNone(plugin)) yield* Effect.logWarning("Wake dropped, its plugin is not stored", wake.id)
-    const pending = yield* events.list(subscription.id, subscription.ackedThrough)
-    const content = Option.flatMap(plugin, (p) => contentOf(wake, subscription, p, pending, now, limits))
-    if (target === undefined || Option.isNone(content)) {
-      return yield* wakes.update({ ...wake, state: "dropped" })
-    }
-    yield* wakes.update({ ...wake, state: "sending" })
-    yield* sender.deliver(target, content.value).pipe(
+    yield* sender.deliver(session, content).pipe(
       Effect.andThen(settle({ ...wake, state: "delivered" })),
       Effect.catchTag("DeliveryFailed", (failure) =>
         Effect.flatMap(DateTime.now, (failedAt) => settle(Delivery.retry(wake, failure.reason, failedAt, limits))))

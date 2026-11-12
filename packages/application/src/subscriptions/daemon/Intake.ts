@@ -8,6 +8,7 @@ import { SubscriptionRepository } from "../../ports/SubscriptionRepository.ts"
 import { WakeRepository } from "../../ports/WakeRepository.ts"
 import { SubscriptionIntake, type Verdict } from "../../seam/SubscriptionIntake.ts"
 import { currentLimits } from "../Limits.ts"
+import { SubscriptionSignals } from "../Signals.ts"
 import { commit, type CommitServices } from "../Transitions.ts"
 import { requestWake } from "../Wakes.ts"
 
@@ -93,10 +94,13 @@ const suspended = (plugin: Ids.PluginName, since: DateTime.Utc) =>
     const limits = yield* currentLimits
     const now = yield* DateTime.now
     const subscriptions = yield* SubscriptionRepository
+    const signals = yield* SubscriptionSignals
     for (const subscription of yield* subscriptions.list({ plugin, states: ["Active"] })) {
       const last = yield* lastSuspensionWake(subscription.id)
       const why = Lifecycle.suspensionWake(subscription, record, last, now, limits)
-      if (Option.isSome(why)) yield* requestWake(subscription, why.value)
+      if (Option.isNone(why)) continue
+      yield* requestWake(subscription, why.value)
+      yield* signals.changed(subscription.id)
     }
   })
 
