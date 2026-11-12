@@ -133,6 +133,7 @@ describe("Tree", () => {
       expect(fired).toBe(true)
       expect(swapped).toBe(false)
       expect(found.has("child/secret.txt")).toBe(false)
+      expect(found.has("child/inside.txt")).toBe(true)
       expect((yield* fs.lstat(child)).type).toBe("Directory")
     }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
 

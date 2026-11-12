@@ -66,6 +66,23 @@ const bind = (fd: number) =>
     return yield* failure("open", path, undefined, "cannot reach an open directory by identity")
   })
 
+/** Opens each component of a Linux path in turn without following a symbolic link, keeping only the last one open. */
+const walkFromRoot = (realBase: string) => {
+  const flags = O_PATH | NodeFs.constants.O_DIRECTORY | NodeFs.constants.O_NOFOLLOW
+  let fd = NodeFs.openSync("/", O_PATH | NodeFs.constants.O_DIRECTORY)
+  try {
+    for (const name of realBase.split("/").filter((segment) => segment !== "")) {
+      const next = NodeFs.openSync(`/proc/self/fd/${fd}/${name}`, flags)
+      NodeFs.closeSync(fd)
+      fd = next
+    }
+    return fd
+  } catch (cause) {
+    NodeFs.closeSync(fd)
+    throw cause
+  }
+}
+
 /**
  * Opens the base directory at its real path. No component may be a symbolic
  * link: macOS refuses one anywhere in the path, and Linux walks from the root
@@ -80,11 +97,10 @@ export const base = (realBase: string): Effect.Effect<OpenDirectory, PlatformErr
       return yield* failure("open", realBase, undefined, "the base directory was deleted")
     }
     if (process.platform !== "linux") return yield* unsupported("open", realBase)
-    const flags = O_PATH | NodeFs.constants.O_DIRECTORY | NodeFs.constants.O_NOFOLLOW
-    let fd = yield* open("/", O_PATH | NodeFs.constants.O_DIRECTORY)
-    for (const name of realBase.split("/").filter((segment) => segment !== "")) {
-      fd = yield* open(`/proc/self/fd/${fd}/${name}`, flags)
-    }
+    const fd = yield* Effect.acquireRelease(
+      Effect.try({ try: () => walkFromRoot(realBase), catch: (cause) => failure("open", realBase, cause) }),
+      (fd) => Effect.sync(() => NodeFs.closeSync(fd))
+    )
     const bound = yield* bind(fd)
     if (Option.isSome(bound)) return bound.value
     return yield* failure("open", realBase, undefined, "the base directory was deleted")
