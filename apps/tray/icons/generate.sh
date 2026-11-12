@@ -1,14 +1,9 @@
 #!/bin/sh
-# Regenerates every image in this directory from the two vectors in the
-# repository's assets/: icon.svg (the app icon) and menu-bar-glyph.svg (the
-# tray glyph). Replace either vector and run this script.
-# Needs rsvg-convert (Homebrew librsvg) and, for icon.icns, macOS iconutil.
 set -eu
 cd "$(dirname "$0")"
 icon=../../../assets/icon.svg
 glyph=../../../assets/menu-bar-glyph.svg
 
-# "Needs you": the glyph with a notch cut at the top right and a dot inside it.
 python3 - "$glyph" <<'PY'
 import re, sys
 src = open(sys.argv[1]).read()
@@ -27,11 +22,9 @@ open("glyph-attention.svg", "w").write(
 )
 PY
 
-# Menu bar template images: black glyph on transparent, 36 px for an 18 pt slot.
 rsvg-convert -w 36 -h 36 "$glyph" -o tray-quiet.png
 rsvg-convert -w 36 -h 36 glyph-attention.svg -o tray-attention.png
 
-# App icons, as tauri.conf.json lists them.
 rsvg-convert -w 32 -h 32 "$icon" -o 32x32.png
 rsvg-convert -w 128 -h 128 "$icon" -o 128x128.png
 rsvg-convert -w 256 -h 256 "$icon" -o 128x128@2x.png
