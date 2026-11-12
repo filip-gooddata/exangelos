@@ -86,6 +86,16 @@ describe("diffIssue", () => {
     const otherIssue = diffIssue({ siteUrl, previous: { ...seenUpTo100, issueId: "99" }, snapshot })
     expect(otherIssue.events).toEqual([])
   })
+
+  it("keeps a comment created at the same time as a deleted remembered one", () => {
+    const deletedAnchor = {
+      ...snapshot,
+      changelog: { start: 0, items: [] },
+      comments: { start: 0, items: [{ id: "202", created: at(0), author: mia, body: null }] }
+    }
+    const poll = diffIssue({ siteUrl, previous: seenUpTo100, snapshot: deletedAnchor })
+    expect(poll.events.map((event) => event.dedupeKey)).toEqual(["10042:comment:202"])
+  })
 })
 
 describe("diffJql", () => {

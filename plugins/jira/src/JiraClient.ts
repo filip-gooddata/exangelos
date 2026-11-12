@@ -116,7 +116,7 @@ const transportFailure = (error: HttpClientError.HttpClientError): HttpFailure =
 /** Jira writes offsets as +0000; ISO 8601 parsers want +00:00. */
 const parseTime = (value: string): Effect.Effect<DateTime.Utc, DecodeFailure> =>
   Option.match(DateTime.make(value.replace(/([+-]\d{2})(\d{2})$/, "$1:$2")), {
-    onNone: () => Effect.fail(new DecodeFailure({ reason: `Jira returned an unreadable time: ${value}` })),
+    onNone: () => Effect.fail(new DecodeFailure({ reason: "Jira returned an unreadable time." })),
     onSome: (time) => Effect.succeed(DateTime.toUtc(time))
   })
 

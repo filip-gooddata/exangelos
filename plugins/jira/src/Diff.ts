@@ -52,7 +52,8 @@ const documentText = (node: unknown): string => {
 /**
  * Splits a tail into the items the previous position had not seen and the position after it.
  * New items are those after the last item whose id the position remembers. When none of those
- * ids is left (all deleted), items created after the remembered time count as new.
+ * ids is left (all deleted), items created at or after the remembered time count as new; any
+ * item seen at that time would have been among the remembered ids.
  */
 const advance = <A extends { readonly id: string; readonly created: DateTime.Utc }>(
   previous: ListPosition | undefined,
@@ -70,7 +71,7 @@ const advance = <A extends { readonly id: string; readonly created: DateTime.Utc
   if (anchor >= 0) return { fresh: tail.items.slice(anchor + 1), position }
   if (previous.lastCreated === "") return { fresh: tail.items, position }
   const after = DateTime.toEpochMillis(DateTime.makeUnsafe(previous.lastCreated))
-  return { fresh: tail.items.filter((item) => DateTime.toEpochMillis(item.created) > after), position }
+  return { fresh: tail.items.filter((item) => DateTime.toEpochMillis(item.created) >= after), position }
 }
 
 const typeOfChange = (change: FieldChange): JiraEventType => {

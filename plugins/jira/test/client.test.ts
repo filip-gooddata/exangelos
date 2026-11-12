@@ -50,7 +50,10 @@ const issueServer = (calls: Array<StubCall>) => (call: StubCall) => {
 }
 
 describe("JiraClient", () => {
-  it.effect("catches up over several changelog pages without missing or repeating an event", () => {
+  it.effect.each([
+    { case: "from its position", consumed: 1, startAts: ["0", "2", "4"] },
+    { case: "from the start when items before its position were deleted", consumed: 60, startAts: ["10", "0", "2", "4"] }
+  ])("catches up over several changelog pages $case, missing and repeating nothing", ({ consumed, startAts }) => {
     const calls: Array<StubCall> = []
     return Effect.gen(function*() {
       const jira = yield* JiraClient
@@ -59,7 +62,7 @@ describe("JiraClient", () => {
         v: 1,
         target: "issue",
         issueId: "10042",
-        changelog: { consumed: 1, recent: ["10001"], lastCreated: "2026-11-12T09:00:00.000Z" },
+        changelog: { consumed, recent: ["10001"], lastCreated: "2026-11-12T09:00:00.000Z" },
         comments: { consumed: 1, recent: ["20001"], lastCreated: "2026-11-12T09:05:00.000Z" }
       }))
 
@@ -77,9 +80,7 @@ describe("JiraClient", () => {
         recent: ["10001", "10002", "10003", "10004", "10005"],
         lastCreated: "2026-11-12T09:40:00.000Z"
       })
-      expect(calls.filter((call) => call.path.endsWith("/changelog")).map((call) => call.param("startAt"))).toEqual(
-        ["0", "2", "4"]
-      )
+      expect(calls.filter((call) => call.path.endsWith("/changelog")).map((call) => call.param("startAt"))).toEqual(startAts)
 
       const again = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: issuePosition(poll.cursor) })
       expect(diffIssue({ siteUrl: jiraSite.url, previous: poll.cursor, snapshot: again }).events).toEqual([])
@@ -118,4 +119,46 @@ describe("JiraClient", () => {
     }).pipe(
       Effect.provide(jiraWith(() => ({ status: 200, body: { baseUrl: "https://jira.corp", deploymentType: "Server" } })))
     ))
+
+  it.effect("accepts a Cloud site once the credential reads /myself", () => {
+    const paths: Array<string> = []
+    return Effect.gen(function*() {
+      const jira = yield* JiraClient
+      yield* Effect.flatMap(site, jira.checkSite)
+      expect(paths).toEqual(["/rest/api/3/serverInfo", "/rest/api/3/myself"])
+    }).pipe(Effect.provide(jiraWith((call) => {
+      paths.push(call.path)
+      return call.path.endsWith("/myself")
+        ? { status: 200, body: { accountId: "id-dev", displayName: "Dev" } }
+        : { status: 200, body: { baseUrl: "https://acme.atlassian.net", deploymentType: "Cloud" } }
+    })))
+  })
+
+  const searchServer = (total: number) => (call: StubCall) => {
+    const from = Number(call.param("nextPageToken") ?? "0")
+    const to = Math.min(total, from + 100)
+    const issues = Array.from({ length: to - from }, (_, index) => ({
+      id: String(from + index + 1),
+      key: `DEMO-${from + index + 1}`,
+      fields: { summary: "Issue" }
+    }))
+    return { status: 200, body: to < total ? { issues, nextPageToken: String(to), isLast: false } : { issues, isLast: true } }
+  }
+
+  it.effect("pages the whole JQL result and refuses one above the membership limit", () =>
+    Effect.gen(function*() {
+      const jiraSite = yield* site
+      const whole = yield* Effect.flatMap(JiraClient, (jira) => jira.readJql({ site: jiraSite, jql: "project = DEMO" })).pipe(
+        Effect.provide(jiraWith(searchServer(250)))
+      )
+      expect(whole.issues.map((issue) => issue.key).slice(-1)).toEqual(["DEMO-250"])
+      expect(whole.issues).toHaveLength(250)
+
+      const error = yield* Effect.flip(
+        Effect.flatMap(JiraClient, (jira) => jira.readJql({ site: jiraSite, jql: "project = DEMO" })).pipe(
+          Effect.provide(jiraWith(searchServer(1500)))
+        )
+      )
+      expect(error._tag).toBe("JqlResultTooLarge")
+    }))
 })
