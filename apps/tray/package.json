@@ -6,7 +6,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "build:web": "vite build",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@exangelos/contracts": "workspace:*",
@@ -14,6 +16,10 @@
     "@exangelos/rpc-tauri-ipc": "workspace:*",
     "effect": "catalog:",
     "@effect/platform-browser": "catalog:",
-    "foldkit": "catalog:"
+    "foldkit": "catalog:",
+    "@tauri-apps/api": "catalog:"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "catalog:"
   }
 }
