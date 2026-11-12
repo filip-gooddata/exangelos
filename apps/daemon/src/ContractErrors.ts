@@ -60,11 +60,7 @@ export const removedDuringCall = (plugin: Ids.PluginName) => (_: Cause.NoSuchEle
 export const removedDuringImport = (_: Cause.NoSuchElementError) =>
   Effect.fail(new Contract.ImportFailed({ reason: "Another call removed the plugin while it was being imported." }))
 
-/**
- * Only the owner enables a plugin, so a call from an agent session is refused. The contract has no
- * HumanRequired error yet, so the refusal is a defect that names the plugin.
- */
-export const humanRequired = (e: HumanRequired) => Effect.die(e)
+export const humanRequired = (e: HumanRequired) => Effect.fail(new Contract.HumanRequired({ plugin: e.plugin }))
 
 export const digestMismatch = (e: DigestMismatch) =>
   Effect.fail(new Contract.DigestMismatch({ plugin: e.plugin, expected: e.expected, actual: e.actual }))
@@ -104,7 +100,7 @@ export const transitionRefused = (id: Ids.SubscriptionId) => (e: Refusal.NotAllo
 
 /**
  * The limit is the backlog count in the current settings, read again after resume refused. Resume
- * also refuses when the oldest pending event is too old; then pending can be below the limit.
+ * also refuses when the oldest pending event is too old, and then pending can be within the limit.
  */
 export const backlogOverLimit = (e: Refusal.BacklogOverLimit) =>
   Effect.gen(function*() {
@@ -112,6 +108,7 @@ export const backlogOverLimit = (e: Refusal.BacklogOverLimit) =>
     return yield* new Contract.BacklogOverLimit({
       pending: e.pending,
       limit: limits.backlogCount,
-      through: e.through
+      through: e.through,
+      reason: e.pending > limits.backlogCount ? "count" : "age"
     })
   })
