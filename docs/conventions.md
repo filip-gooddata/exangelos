@@ -27,7 +27,7 @@
 | Unit | domain rules and transitions, one test each | `pnpm --filter @exangelos/domain test` |
 | Use case | an application use case over the fakes from `@exangelos/application/testing` | `pnpm --filter @exangelos/application test` |
 | Contract | an adapter against its real dependency: SQLite file, template plugin child, unix socket | `pnpm --filter <adapter> test` |
-| End to end | the compiled binary in a temp `EXANGELOS_HOME` | `pnpm --filter @exangelos/cli test` |
+| End to end | the compiled binary in a temp `EXANGELOS_HOME`, outside `pnpm test` | `pnpm --filter @exangelos/cli e2e` |
 
 - `pnpm typecheck` and `pnpm test` run everything through Turborepo. A run that matches no package or no test counts as a failure.
 - A package that touches Bun APIs runs `bun run --bun vitest run`; the others run `vitest run`.
