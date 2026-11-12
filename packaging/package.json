@@ -1,0 +1,13 @@
+{
+  "name": "@exangelos/packaging",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "vitest run",
+    "build:plugins": "bun src/cli/build-plugins.ts",
+    "build:release": "bun src/cli/build-release.ts",
+    "render:homebrew": "bun src/cli/render-homebrew.ts"
+  }
+}
