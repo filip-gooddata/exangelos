@@ -170,6 +170,9 @@ catalogs:
     '@effect/platform-bun':
       specifier: 4.1.4
       version: 4.1.4
+    '@effect/platform-node-shared':
+      specifier: 4.1.4
+      version: 4.1.4
     '@effect/sql-sqlite-bun':
       specifier: 4.1.4
       version: 4.1.4
@@ -552,6 +555,10 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@effect/platform-node-shared':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
 
   packages/application:
     dependencies:
