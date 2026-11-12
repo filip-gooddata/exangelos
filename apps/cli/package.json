@@ -12,12 +12,14 @@
     "e2e": "bun run --bun vitest run e2e"
   },
   "dependencies": {
+    "@exangelos/application": "workspace:*",
     "@exangelos/contracts": "workspace:*",
     "@exangelos/domain": "workspace:*",
     "@exangelos/daemon-client": "workspace:*",
     "@exangelos/daemon": "workspace:*",
     "@exangelos/mcp": "workspace:*",
     "@exangelos/paths": "workspace:*",
+    "@exangelos/service": "workspace:*",
     "effect": "catalog:",
     "@effect/platform-bun": "catalog:"
   },

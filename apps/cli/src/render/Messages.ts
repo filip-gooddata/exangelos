@@ -11,6 +11,9 @@ export const parametersText = (parameters: Catalogue.Parameters): string =>
 export const noDaemonMessage = (reason: string): string =>
   `No Exangelos daemon is running, and starting it failed: ${reason}. Run \`${command} daemon\` in a terminal to start it in the foreground, then retry this command.`
 
+export const connectionFailedMessage = (message: string): string =>
+  `The connection to the Exangelos daemon failed: ${message}. Retry; if it keeps failing, restart the daemon with \`${command} daemon\`.`
+
 export const similarSubscriptionsMessage = (matches: ReadonlyArray<Refusal.SimilarMatch>): string =>
   [
     "Nothing was created: this session already has a similar open subscription.",

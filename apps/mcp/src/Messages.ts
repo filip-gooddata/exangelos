@@ -39,6 +39,9 @@ export const wakeHint = (subscription: Subscription.Subscription): Option.Option
 export const noDaemonMessage = (reason: string): string =>
   `No Exangelos daemon is running, and starting it failed: ${reason}. Run \`exangelos daemon\` in a terminal to start it in the foreground, then retry this call.`
 
+export const connectionFailedMessage = (message: string): string =>
+  `The connection to the Exangelos daemon failed: ${message}. Retry; if it keeps failing, restart the daemon with \`exangelos daemon\`.`
+
 const parameterValue = (value: unknown): string => typeof value === "string" ? value : JSON.stringify(value)
 
 export const similarLine = (match: Refusal.SimilarMatch): string =>
@@ -102,8 +105,8 @@ export const failureMessage = (failure: AgentFailure): string => {
     case "BacklogOverLimit":
       return `Not resumed: ${failure.pending} events are pending, over the limit of ${failure.limit}. Call events to find the last number, acknowledge through it with ack, then call resume.`
     case "RpcClientError":
-      return noDaemonMessage(failure.message)
+      return connectionFailedMessage(failure.message)
     case "DaemonNotRunning":
-      return noDaemonMessage(`nothing answers on ${failure.path}`)
+      return noDaemonMessage(failure.reason)
   }
 }
