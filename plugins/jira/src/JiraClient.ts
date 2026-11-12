@@ -11,6 +11,7 @@ import {
   UnsupportedSite
 } from "./JiraError.ts"
 import type { JiraError } from "./JiraError.ts"
+import { gatewayApi } from "./Site.ts"
 import type { JiraSite } from "./Site.ts"
 import { overlap } from "./Snapshot.ts"
 import type {
@@ -35,8 +36,18 @@ export const membershipLimit = 1000
 const pageSize = 100
 
 export class JiraClient extends Context.Service<JiraClient, {
-  /** Refuses a site that is not Jira Cloud (/rest/api/3/serverInfo), then proves the credential (/rest/api/3/myself). */
-  readonly checkSite: (site: JiraSite) => Effect.Effect<void, JiraError>
+  /**
+   * Refuses a site that is not Jira Cloud (/rest/api/3/serverInfo on the site URL), then proves the
+   * credential with `resolveRoute` and returns the site with its route.
+   */
+  readonly checkSite: (site: JiraSite) => Effect.Effect<JiraSite, JiraError>
+  /**
+   * Finds the base that accepts the credential. A classic API token reads /rest/api/3/myself on the
+   * site URL. When the site answers 401, the cloud id from the unauthenticated /_edge/tenant_info
+   * leads to the Atlassian gateway, where a scoped API token reads /myself. Fails with
+   * CredentialRejected when neither accepts it.
+   */
+  readonly resolveRoute: (site: JiraSite) => Effect.Effect<JiraSite, JiraError>
   /**
    * The issue's current fields plus every changelog history and comment from just before
    * `position` to the end. Without a position it reads both lists whole (a baseline).
@@ -100,6 +111,8 @@ const ServerInfoWire = Schema.Struct({ deploymentType: Schema.optionalKey(Schema
 
 const MyselfWire = Schema.Struct({ accountId: Schema.String })
 
+const TenantInfoWire = Schema.Struct({ cloudId: Schema.String.check(Schema.isPattern(/^[0-9a-zA-Z-]+$/)) })
+
 const retryAfterSeconds = (response: HttpClientResponse.HttpClientResponse): number | undefined =>
   Option.match(Headers.get(response.headers, "retry-after"), {
     onNone: () => undefined,
@@ -135,7 +148,7 @@ export const layer = Layer.effect(
       schema: S
     ): Effect.Effect<S["Type"], JiraError> =>
       Effect.gen(function*() {
-        const request = HttpClientRequest.get(`${site.url}${path}`, { urlParams }).pipe(
+        const request = HttpClientRequest.get(`${site.api}${path}`, { urlParams }).pipe(
           HttpClientRequest.basicAuth(site.email, site.token),
           HttpClientRequest.acceptJson
         )
@@ -232,9 +245,40 @@ export const layer = Layer.effect(
         )
       )
 
+    /** The cloud id of the site, read without the credential. */
+    const cloudId = (site: JiraSite) =>
+      Effect.gen(function*() {
+        const request = HttpClientRequest.get(`${site.url}/_edge/tenant_info`).pipe(HttpClientRequest.acceptJson)
+        const response = yield* http.execute(request).pipe(Effect.mapError(transportFailure))
+        if (response.status !== 200) {
+          return yield* new HttpFailure({ status: response.status, reason: "The site did not tell its cloud id." })
+        }
+        const body = yield* response.json.pipe(
+          Effect.mapError(() => new DecodeFailure({ reason: "The site sent a cloud id body that is not JSON." }))
+        )
+        const info = yield* Schema.decodeUnknownEffect(TenantInfoWire)(body).pipe(
+          Effect.mapError(() => new DecodeFailure({ reason: "The site answered /_edge/tenant_info with an unexpected shape." }))
+        )
+        return info.cloudId
+      })
+
+    const resolveRoute = (site: JiraSite): Effect.Effect<JiraSite, JiraError> => {
+      const direct = { ...site, api: site.url }
+      return get(direct, "/rest/api/3/myself", {}, MyselfWire).pipe(
+        Effect.as(direct),
+        Effect.catchTag("CredentialRejected", (rejected) =>
+          cloudId(site).pipe(
+            Effect.mapError(() => rejected),
+            Effect.map((id) => ({ ...site, api: gatewayApi(id) })),
+            Effect.tap((gateway) => get(gateway, "/rest/api/3/myself", {}, MyselfWire))
+          ))
+      )
+    }
+
     return {
+      resolveRoute,
       checkSite: (site) =>
-        get(site, "/rest/api/3/serverInfo", {}, ServerInfoWire).pipe(
+        get({ ...site, api: site.url }, "/rest/api/3/serverInfo", {}, ServerInfoWire).pipe(
           Effect.catchTag("NotFound", () =>
             Effect.fail(new UnsupportedSite({ reason: "The site has no Jira Cloud REST API v3." }))),
           Effect.flatMap((info) =>
@@ -242,8 +286,7 @@ export const layer = Layer.effect(
               ? Effect.void
               : Effect.fail(new UnsupportedSite({ reason: "Only Jira Cloud is supported; this site is not Cloud." }))
           ),
-          Effect.andThen(get(site, "/rest/api/3/myself", {}, MyselfWire)),
-          Effect.asVoid
+          Effect.andThen(resolveRoute(site))
         ),
 
       readIssue: ({ key, position, site }) =>

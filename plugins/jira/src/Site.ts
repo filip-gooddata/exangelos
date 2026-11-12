@@ -2,9 +2,14 @@ import { Effect } from "effect"
 import type { Redacted } from "effect"
 import { UnsupportedSite } from "./JiraError.ts"
 
-/** Where requests go and the credential they carry. `url` is an https origin without a trailing slash. */
+/**
+ * Where requests go and the credential they carry. `url` is the site's https origin without a
+ * trailing slash; browse links always use it. `api` is the base REST paths go to: the site itself
+ * for a classic API token, or the Atlassian gateway for a scoped one (see `JiraClient.resolveRoute`).
+ */
 export interface JiraSite {
   readonly url: string
+  readonly api: string
   readonly email: string
   readonly token: Redacted.Redacted<string>
 }
@@ -30,8 +35,12 @@ export const makeSite = (input: {
   if (!/^[a-z0-9.-]+(:\d+)?$/i.test(authority)) {
     return Effect.fail(new UnsupportedSite({ reason: "The site URL has no valid host." }))
   }
-  return Effect.succeed({ url: `https://${authority.toLowerCase()}`, email: input.email, token: input.token })
+  const origin = `https://${authority.toLowerCase()}`
+  return Effect.succeed({ url: origin, api: origin, email: input.email, token: input.token })
 }
 
 export const browseLink = (siteUrl: string, issueKey: string): string =>
   `${siteUrl}/browse/${encodeURIComponent(issueKey)}`
+
+/** The Atlassian gateway base that serves a scoped API token for the site with this cloud id. */
+export const gatewayApi = (cloudId: string): string => `https://api.atlassian.com/ex/jira/${encodeURIComponent(cloudId)}`

@@ -49,7 +49,7 @@ export const plugin = Plugin.make({
           Effect.flatMap((site) =>
             client.checkSite(site).pipe(
               Effect.mapError((error) => new Plugin.ConfigurationRejected({ reason: refusal(site, error) })),
-              Effect.andThen(Ref.set(configured, Option.some(site)))
+              Effect.flatMap((routed) => Ref.set(configured, Option.some(routed)))
             )
           )
         ),

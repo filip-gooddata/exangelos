@@ -50,6 +50,16 @@ const site = (call: StubCall): StubAnswer => {
   }
 }
 
+const gateway = "/ex/jira/cloud-1"
+
+/** A site that takes only a scoped token: 401 on the site URL, the same answers through the gateway. */
+const scoped = (call: StubCall): StubAnswer => {
+  if (call.path === "/rest/api/3/serverInfo") return cloud
+  if (call.path === "/_edge/tenant_info") return { status: 200, body: { cloudId: "cloud-1" } }
+  if (call.path.startsWith(gateway)) return site({ ...call, path: call.path.slice(gateway.length) })
+  return { status: 401, body: { message: "Client must be authenticated" } }
+}
+
 /** A cursor that has seen nothing on DEMO-7 since before its first history and comment. */
 const before = encodeCursor({
   v: 1,
@@ -111,9 +121,16 @@ describe("Jira plugin", () => {
       expect(JSON.stringify(result)).not.toContain(token)
     }).pipe(Effect.scoped))
 
-  it.effect("emits what changed since the cursor, then moves the cursor past it", () =>
-    Effect.gen(function*() {
-      const client = yield* jira(site)
+  it.effect.each([
+    { token: "a classic token on the site URL", answer: site, rest: "/rest/api/3/" },
+    { token: "a scoped token through the gateway", answer: scoped, rest: `${gateway}/rest/api/3/` }
+  ])("emits what changed since the cursor with $token, then moves the cursor past it", ({ answer, rest }) => {
+    const calls: Array<StubCall> = []
+    return Effect.gen(function*() {
+      const client = yield* jira((call) => {
+        calls.push(call)
+        return answer(call)
+      })
       expect(yield* client.Configure({ values })).toEqual({ _tag: "Accepted" })
       const items = yield* client.Watch({ parameters: { target: "DEMO-7", kind: "issue" }, eventTypes: [], cursor: before })
         .pipe(Stream.take(4), Stream.runCollect)
@@ -134,7 +151,11 @@ describe("Jira plugin", () => {
       const moved = items[3]?._tag === "Cursor" ? JSON.parse(items[3].cursor) : undefined
       expect(moved).toMatchObject({ issueId: "10042", changelog: { consumed: 2 }, comments: { consumed: 1 } })
       expect(JSON.stringify(items)).not.toContain(token)
-    }).pipe(Effect.scoped))
+      expect(calls.filter((call) => call.path.includes("/issue/")).every((call) => call.path.startsWith(rest))).toBe(true)
+      expect(calls.filter((call) => call.path === "/_edge/tenant_info").map((call) => call.request.headers.authorization))
+        .toEqual(answer === scoped ? [undefined, undefined] : [])
+    }).pipe(Effect.scoped)
+  })
 
   it.effect("ends when the issue is gone", () =>
     Effect.gen(function*() {

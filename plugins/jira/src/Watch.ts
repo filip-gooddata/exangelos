@@ -10,6 +10,8 @@ import type { JiraSite } from "./Site.ts"
 import type { Target } from "./Target.ts"
 
 interface PollState {
+  /** The site with the route that accepted the credential; undefined until the first poll resolves it. */
+  readonly route: JiraSite | undefined
   readonly cursor: string | undefined
   readonly wait: Duration.Duration | undefined
   readonly ended: boolean
@@ -32,25 +34,34 @@ const read = (client: JiraClient["Service"], site: JiraSite, target: Target, cur
     return diffJql({ siteUrl: site.url, previous, snapshot, observedAt: yield* DateTime.now })
   })
 
-const ended = (cursor: string | undefined, reason: string): Poll => ({
+const ended = (state: PollState, reason: string): Poll => ({
   items: [Plugin.end(reason)],
-  next: { cursor, wait: undefined, ended: true }
+  next: { ...state, wait: undefined, ended: true }
 })
 
 const subjectName = (target: Target) => target.kind === "issue" ? `issue ${target.key}` : "JQL query"
 
 /**
- * One poll from `cursor`: the new events, then the cursor after them when it moved. The cursor
- * moves only once the whole read has paged to the end, since the client returns nothing before then.
+ * One poll from the state's cursor: the new events, then the cursor after them when it moved. The
+ * cursor moves only once the whole read has paged to the end, since the client returns nothing
+ * before then. The first poll resolves the route; a 401 on a resolved route resolves it once more,
+ * in case the token was swapped for one that takes the other route.
  */
-const poll = (client: JiraClient["Service"], site: JiraSite, target: Target, cursor: string | undefined) =>
-  read(client, site, target, cursor).pipe(
-    Effect.map(({ cursor: after, events }): Poll => {
+const poll = (client: JiraClient["Service"], site: JiraSite, target: Target, state: PollState) => {
+  const { cursor } = state
+  const attempt = (route: JiraSite) =>
+    read(client, route, target, cursor).pipe(Effect.map((result) => ({ route, ...result })))
+  const resolved = client.resolveRoute(site).pipe(Effect.flatMap(attempt))
+  const routed = state.route === undefined
+    ? resolved
+    : attempt(state.route).pipe(Effect.catchTag("CredentialRejected", () => resolved))
+  return routed.pipe(
+    Effect.map(({ cursor: after, events, route }): Poll => {
       const next = encodeCursor(after)
       const items = events.map(toItem)
       return {
         items: next === cursor ? items : [...items, Plugin.cursor(next)],
-        next: { cursor: next, wait: defaultPollInterval, ended: false }
+        next: { route, cursor: next, wait: defaultPollInterval, ended: false }
       }
     }),
     Effect.catchTags({
@@ -58,16 +69,15 @@ const poll = (client: JiraClient["Service"], site: JiraSite, target: Target, cur
         Effect.succeed<Poll>({
           items: [],
           next: {
-            cursor,
+            ...state,
             wait: retryAfterSeconds === undefined ? defaultPollInterval : Duration.seconds(retryAfterSeconds),
-            ended: false
           }
         }).pipe(Effect.tap(Effect.logWarning("Jira is rate limiting this plugin; waiting before the next poll"))),
-      NotFound: () => Effect.succeed(ended(cursor, `The ${subjectName(target)} no longer exists or this account cannot see it.`)),
+      NotFound: () => Effect.succeed(ended(state, `The ${subjectName(target)} no longer exists or this account cannot see it.`)),
       JqlResultTooLarge: ({ limit }) =>
-        Effect.succeed(ended(cursor, `The JQL query matches more than ${limit} issues, the most one subscription tracks.`)),
+        Effect.succeed(ended(state, `The JQL query matches more than ${limit} issues, the most one subscription tracks.`)),
       InvalidCursor: ({ reason }) =>
-        Effect.succeed(ended(cursor, `${reason} Subscribe again to start from the issue's current state.`)),
+        Effect.succeed(ended(state, `${reason} Subscribe again to start from the issue's current state.`)),
       CredentialRejected: ({ status }) =>
         Effect.fail(new Plugin.CredentialsRejected({ reason: `Jira rejected the email and API token (HTTP ${status}).` })),
       UnsupportedSite: ({ reason }) => Effect.fail(new Plugin.SourceFailed({ reason })),
@@ -76,6 +86,7 @@ const poll = (client: JiraClient["Service"], site: JiraSite, target: Target, cur
       DecodeFailure: ({ reason }) => Effect.fail(new Plugin.SourceFailed({ reason: `Unexpected Jira response: ${reason}` }))
     })
   )
+}
 
 /**
  * Polls the target until it ends: the first poll at once, then one every `defaultPollInterval`,
@@ -88,13 +99,13 @@ export const watch = (input: {
   readonly cursor: string | undefined
 }) =>
   Stream.unfold<PollState, ReadonlyArray<WatchItem>, Plugin.CredentialsRejected | Plugin.SourceFailed, never>(
-    { cursor: input.cursor, wait: undefined, ended: false },
+    { route: undefined, cursor: input.cursor, wait: undefined, ended: false },
     (state) =>
       state.ended
         ? Effect.undefined
         : Effect.gen(function*() {
           if (state.wait !== undefined) yield* Effect.sleep(state.wait)
-          const { items, next } = yield* poll(input.client, input.site, input.target, state.cursor)
+          const { items, next } = yield* poll(input.client, input.site, input.target, state)
           return [items, next] as const
         })
   ).pipe(Stream.flattenIterable)
