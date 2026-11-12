@@ -23,6 +23,7 @@ const PANEL: &str = "panel";
 const TRAY: &str = "main";
 const CONNECTION_HEADER: &str = "exangelos-relay-connection";
 const SMOKE_TIMEOUT: Duration = Duration::from_secs(15);
+const DAEMON_START_TIMEOUT: Duration = Duration::from_secs(5);
 
 const ICON_QUIET: &[u8] = include_bytes!("../../icons/tray-quiet.png");
 const ICON_ATTENTION: &[u8] = include_bytes!("../../icons/tray-attention.png");
@@ -113,12 +114,20 @@ fn host_smoke_report(app: AppHandle, host: State<'_, Host>, ok: bool, report: St
 }
 
 fn start_daemon() {
-    let started = socket::daemon_socket_path(|name| std::env::var(name).ok())
-        .and_then(|socket| sidecar::ensure_daemon(&socket, &sidecar::sidecar_path()?));
-    match started {
+    let socket = match socket::daemon_socket_path(|name| std::env::var(name).ok()) {
+        Ok(socket) => socket,
+        Err(message) => return eprintln!("the Exangelos daemon is not running: {message}"),
+    };
+    match sidecar::sidecar_path().and_then(|sidecar| sidecar::ensure_daemon(&socket, &sidecar)) {
         Ok(sidecar::Daemon::Answering) => {}
         Ok(sidecar::Daemon::Started { pid }) => {
-            eprintln!("started the Exangelos daemon, pid {pid}")
+            eprintln!("started the Exangelos daemon, pid {pid}");
+            if !sidecar::wait_until_answering(&socket, DAEMON_START_TIMEOUT) {
+                eprintln!(
+                    "the Exangelos daemon did not answer within {} s",
+                    DAEMON_START_TIMEOUT.as_secs()
+                );
+            }
         }
         Err(message) => eprintln!("the Exangelos daemon is not running: {message}"),
     }

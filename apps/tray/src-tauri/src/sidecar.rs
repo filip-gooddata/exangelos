@@ -3,6 +3,7 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
+use std::time::{Duration, Instant};
 
 /// The sidecar's file name next to the host executable. Tauri strips the
 /// target triple from `bundle.externalBin` entries when it places them.
@@ -43,4 +44,18 @@ pub fn ensure_daemon(socket: &Path, sidecar: &Path) -> Result<Daemon, String> {
     let pid = child.id();
     thread::spawn(move || child.wait());
     Ok(Daemon::Started { pid })
+}
+
+/// Polls `socket` until it accepts a connection or `timeout` passes.
+pub fn wait_until_answering(socket: &Path, timeout: Duration) -> bool {
+    let deadline = Instant::now() + timeout;
+    loop {
+        if UnixStream::connect(socket).is_ok() {
+            return true;
+        }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        thread::sleep(Duration::from_millis(50));
+    }
 }
