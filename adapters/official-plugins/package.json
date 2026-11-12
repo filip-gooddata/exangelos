@@ -6,11 +6,22 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
     "@exangelos/application": "workspace:*",
     "@exangelos/domain": "workspace:*",
+    "@exangelos/plugin-import": "workspace:*",
     "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/platform-bun": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@exangelos/paths": "workspace:*",
+    "@exangelos/plugin-directory": "workspace:*",
+    "@types/bun": "catalog:",
+    "tar": "catalog:",
+    "vitest": "catalog:"
   }
 }

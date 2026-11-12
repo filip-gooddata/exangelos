@@ -86,6 +86,7 @@ export class ListPlugins extends Rpc.make("ListPlugins", {
 export class Subscribe extends Rpc.make("Subscribe", {
   payload: {
     plugin: Ids.PluginName,
+    main: Schema.optionalKey(Schema.String),
     parameters: Catalogue.Parameters,
     intent: Schema.NonEmptyString,
     eventTypes: Schema.optionalKey(Schema.NonEmptyArray(Ids.EventType)),
