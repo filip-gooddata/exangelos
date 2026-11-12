@@ -32,17 +32,21 @@ export interface Options {
   readonly commandFor?: CommandFor | undefined
   /** How long a plugin may take to answer the handshake. Defaults to 30 seconds. */
   readonly startTimeout?: Duration.Input | undefined
+  /** How long a plugin may take to exit after SIGTERM before it gets SIGKILL. Defaults to 5 seconds. */
+  readonly stopTimeout?: Duration.Input | undefined
 }
 
 /**
  * A PluginRuntime that spawns each plugin as a child process in its directory and
  * speaks the plugin protocol over its stdin and stdout. The plugin's stderr goes
- * to the daemon's stderr. Closing the scope passed to `start` stops the process.
+ * to the daemon's stderr. Closing the scope passed to `start` stops the process, killing it
+ * when it outlives the stop timeout.
  */
 export const make = Effect.fnUntraced(function*(options?: Options) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const commandFor = options?.commandFor ?? defaultCommand
   const startTimeout = Duration.fromInputUnsafe(options?.startTimeout ?? "30 seconds")
+  const stopTimeout = options?.stopTimeout ?? "5 seconds"
 
   const acquire = Effect.fnUntraced(function*(launch: PluginRuntime.Launch) {
     const plugin = launch.name
@@ -55,7 +59,8 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
       cwd: launch.directory,
       env,
       extendEnv: true,
-      stderr: "inherit"
+      stderr: "inherit",
+      forceKillAfter: stopTimeout
     }).pipe(Effect.mapError((error) => startFailed(error.message)))
 
     const { catalogue, client } = yield* Effect.gen(function*() {
