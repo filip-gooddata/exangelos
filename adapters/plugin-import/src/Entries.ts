@@ -45,6 +45,7 @@ export const preflight = (entries: ReadonlyArray<Entry>): ReadonlyArray<Entry> =
   const seen = new Map<string, Kind>()
   let total = 0
   const checked = entries.map((entry) => {
+    if (entry.kind === "directory" && /^(\.?\/)*\.?$/.test(entry.path)) return { ...entry, path: "" }
     const path = safePath(entry.path)
     if (entry.kind === "link") throw new Refused({ reason: `the entry ${path} is a link, and links are refused` })
     if (entry.kind === "special") throw new Refused({ reason: `the entry ${path} is a device or another special file` })
@@ -59,6 +60,7 @@ export const preflight = (entries: ReadonlyArray<Entry>): ReadonlyArray<Entry> =
     return { ...entry, path }
   })
   for (const entry of checked) {
+    if (entry.path === "") continue
     const segments = collisionKey(entry.path).split("/")
     for (let end = 1; end < segments.length; end++) {
       if (seen.get(segments.slice(0, end).join("/")) === "file") {
