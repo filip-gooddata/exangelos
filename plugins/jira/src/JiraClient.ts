@@ -12,6 +12,7 @@ import {
 } from "./JiraError.ts"
 import type { JiraError } from "./JiraError.ts"
 import type { JiraSite } from "./Site.ts"
+import { overlap } from "./Snapshot.ts"
 import type {
   Comment,
   FieldChange,
@@ -31,13 +32,10 @@ export const defaultPollInterval = Duration.seconds(60)
 /** The most issues a JQL subscription tracks; a larger result fails with JqlResultTooLarge. */
 export const membershipLimit = 1000
 
-/** How many items before the cursor's position a poll re-reads, so deletions do not hide new items. */
-export const overlap = 50
-
 const pageSize = 100
 
 export class JiraClient extends Context.Service<JiraClient, {
-  /** Refuses a site that is not Jira Cloud, probing /rest/api/3/serverInfo. Also proves the credential. */
+  /** Refuses a site that is not Jira Cloud (/rest/api/3/serverInfo), then proves the credential (/rest/api/3/myself). */
   readonly checkSite: (site: JiraSite) => Effect.Effect<void, JiraError>
   /**
    * The issue's current fields plus every changelog history and comment from just before
@@ -100,6 +98,8 @@ const SearchPageWire = Schema.Struct({
 
 const ServerInfoWire = Schema.Struct({ deploymentType: Schema.optionalKey(Schema.NullOr(Schema.String)) })
 
+const MyselfWire = Schema.Struct({ accountId: Schema.String })
+
 const retryAfterSeconds = (response: HttpClientResponse.HttpClientResponse): number | undefined =>
   Option.match(Headers.get(response.headers, "retry-after"), {
     onNone: () => undefined,
@@ -110,9 +110,7 @@ const retryAfterSeconds = (response: HttpClientResponse.HttpClientResponse): num
   })
 
 const transportFailure = (error: HttpClientError.HttpClientError): HttpFailure => {
-  const reason = error.reason
-  const description = "description" in reason && typeof reason.description === "string" ? `: ${reason.description}` : ""
-  return new HttpFailure({ reason: `${reason._tag}${description}` })
+  return new HttpFailure({ reason: `No answer from Jira (${error.reason._tag}).` })
 }
 
 /** Jira writes offsets as +0000; ISO 8601 parsers want +00:00. */
@@ -124,8 +122,6 @@ const parseTime = (value: string): Effect.Effect<DateTime.Utc, DecodeFailure> =>
 
 const person = (wire: typeof PersonWire.Type | undefined): Person | undefined =>
   wire === undefined ? undefined : { accountId: wire.accountId, displayName: wire.displayName }
-
-const newerThan = (id: string, lastId: string): boolean => lastId === "" || Number(id) > Number(lastId)
 
 export const layer = Layer.effect(
   JiraClient,
@@ -158,7 +154,7 @@ export const layer = Layer.effect(
           Effect.mapError(() => new DecodeFailure({ reason: `Jira sent a body that is not JSON for ${path}.` }))
         )
         return yield* Schema.decodeUnknownEffect(schema)(body).pipe(
-          Effect.mapError((error) => new DecodeFailure({ reason: `Unexpected response for ${path}: ${error.message}` }))
+          Effect.mapError(() => new DecodeFailure({ reason: `Jira answered ${path} with an unexpected shape.` }))
         )
       })
 
@@ -179,9 +175,9 @@ export const layer = Layer.effect(
       })
 
     /**
-     * Reads the tail after `position`, re-reading `overlap` items before it. If the tail does not
-     * reach back to an item the cursor already saw, items were deleted ahead of the position and
-     * the whole list is read again, so nothing new is skipped.
+     * Reads the tail after `position`, re-reading `overlap` items before it. If the tail holds
+     * none of the ids the cursor saw last, items were deleted ahead of the position and the
+     * whole list is read again, so nothing new is skipped.
      */
     const readTail = <A extends { readonly id: string }>(
       position: ListPosition | undefined,
@@ -191,8 +187,8 @@ export const layer = Layer.effect(
         if (position === undefined) return yield* readFrom(0, page)
         const start = Math.max(0, position.consumed - overlap)
         const tail = yield* readFrom(start, page)
-        const first = tail.items[0]
-        const reachesBack = first !== undefined && !newerThan(first.id, position.lastId)
+        const seen = new Set(position.recent)
+        const reachesBack = tail.items.some((item) => seen.has(item.id))
         return start === 0 || reachesBack ? tail : yield* readFrom(0, page)
       })
 
@@ -245,7 +241,9 @@ export const layer = Layer.effect(
             info.deploymentType === "Cloud"
               ? Effect.void
               : Effect.fail(new UnsupportedSite({ reason: "Only Jira Cloud is supported; this site is not Cloud." }))
-          )
+          ),
+          Effect.andThen(get(site, "/rest/api/3/myself", {}, MyselfWire)),
+          Effect.asVoid
         ),
 
       readIssue: ({ key, position, site }) =>

@@ -1,5 +1,6 @@
 import { DateTime } from "effect"
 import type { IssueCursor, JqlCursor } from "./Cursor.ts"
+import { overlap } from "./Snapshot.ts"
 import { browseLink } from "./Site.ts"
 import type { Comment, FieldChange, History, IssueSnapshot, JqlSnapshot, ListPosition, ListTail, Person } from "./Snapshot.ts"
 
@@ -48,19 +49,28 @@ const documentText = (node: unknown): string => {
   return [text, inner].filter((part) => part !== "").join(" ")
 }
 
-const advance = <A extends { readonly id: string }>(
+/**
+ * Splits a tail into the items the previous position had not seen and the position after it.
+ * New items are those after the last item whose id the position remembers. When none of those
+ * ids is left (all deleted), items created after the remembered time count as new.
+ */
+const advance = <A extends { readonly id: string; readonly created: DateTime.Utc }>(
   previous: ListPosition | undefined,
   tail: ListTail<A>
 ): { readonly fresh: ReadonlyArray<A>; readonly position: ListPosition } => {
-  const lastId = previous?.lastId ?? ""
-  const fresh = previous === undefined
-    ? []
-    : tail.items.filter((item) => lastId === "" || Number(item.id) > Number(lastId))
-  const newest = tail.items.reduce(
-    (highest, item) => highest === "" || Number(item.id) > Number(highest) ? item.id : highest,
-    lastId
-  )
-  return { fresh, position: { consumed: tail.start + tail.items.length, lastId: newest } }
+  const last = tail.items.at(-1)
+  const position: ListPosition = {
+    consumed: tail.start + tail.items.length,
+    recent: tail.items.slice(-overlap).map((item) => item.id),
+    lastCreated: last === undefined ? previous?.lastCreated ?? "" : DateTime.formatIso(last.created)
+  }
+  if (previous === undefined) return { fresh: [], position }
+  const seen = new Set(previous.recent)
+  const anchor = tail.items.findLastIndex((item) => seen.has(item.id))
+  if (anchor >= 0) return { fresh: tail.items.slice(anchor + 1), position }
+  if (previous.lastCreated === "") return { fresh: tail.items, position }
+  const after = DateTime.toEpochMillis(DateTime.makeUnsafe(previous.lastCreated))
+  return { fresh: tail.items.filter((item) => DateTime.toEpochMillis(item.created) > after), position }
 }
 
 const typeOfChange = (change: FieldChange): JiraEventType => {
@@ -120,7 +130,8 @@ const commentEvent = (snapshot: IssueSnapshot, siteUrl: string, comment: Comment
 /**
  * The events between the previous cursor and this snapshot of an issue, oldest first, and the
  * cursor after them. Without a previous cursor the poll is a baseline: no events, cursor at the end.
- * Items at or below the cursor's last id are dropped, so replaying a poll emits nothing twice.
+ * A cursor for another issue id also counts as none. Items the cursor already covers are
+ * dropped, so replaying a poll emits nothing twice.
  */
 export const diffIssue = (input: {
   readonly siteUrl: string
@@ -129,8 +140,9 @@ export const diffIssue = (input: {
 }): IssuePoll => {
   const { previous, siteUrl, snapshot } = input
   const link = browseLink(siteUrl, snapshot.key)
-  const changelog = advance(previous?.changelog, snapshot.changelog)
-  const comments = advance(previous?.comments, snapshot.comments)
+  const known = previous?.issueId === snapshot.id ? previous : undefined
+  const changelog = advance(known?.changelog, snapshot.changelog)
+  const comments = advance(known?.comments, snapshot.comments)
   const events = [
     ...changelog.fresh.flatMap((history) => historyEvents(snapshot, link, history)),
     ...comments.fresh.map((comment) => commentEvent(snapshot, siteUrl, comment))
@@ -149,7 +161,8 @@ export const diffIssue = (input: {
 
 /**
  * Issues entering and leaving a JQL result since the previous cursor, timed at `observedAt`.
- * Without a previous cursor, or when the query text changed, the poll is a baseline. Each edge
+ * Without a previous cursor, or when the query text changed, the poll is a baseline that keeps
+ * the edge counter. Each edge
  * takes the next number of the cursor's edge counter, so replaying a poll gives the same keys.
  */
 export const diffJql = (input: {
@@ -161,13 +174,12 @@ export const diffJql = (input: {
   const { observedAt, previous, siteUrl, snapshot } = input
   const members = snapshot.issues.map((issue) => ({ id: issue.id, key: issue.key }))
   const baseline = previous === undefined || previous.jql !== snapshot.jql
-  const edgesBefore = baseline ? 0 : previous.edges
   if (baseline) {
-    return { events: [], cursor: { v: 1, target: "jql", jql: snapshot.jql, members, edges: edgesBefore } }
+    return { events: [], cursor: { v: 1, target: "jql", jql: snapshot.jql, members, edges: previous?.edges ?? 0 } }
   }
   const before = new Set(previous.members.map((member) => member.id))
   const now = new Set(members.map((member) => member.id))
-  let edges = edgesBefore
+  let edges = previous.edges
   const events: Array<JiraEvent> = []
   for (const issue of snapshot.issues) {
     if (before.has(issue.id)) continue

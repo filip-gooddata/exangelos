@@ -59,8 +59,8 @@ describe("JiraClient", () => {
         v: 1,
         target: "issue",
         issueId: "10042",
-        changelog: { consumed: 1, lastId: "10001" },
-        comments: { consumed: 1, lastId: "20001" }
+        changelog: { consumed: 1, recent: ["10001"], lastCreated: "2026-11-12T09:00:00.000Z" },
+        comments: { consumed: 1, recent: ["20001"], lastCreated: "2026-11-12T09:05:00.000Z" }
       }))
 
       const snapshot = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: issuePosition(stored) })
@@ -72,7 +72,11 @@ describe("JiraClient", () => {
         "10042:history:10005:0"
       ])
       expect(poll.events.every((event) => event.type === "status.changed")).toBe(true)
-      expect(poll.cursor.changelog).toEqual({ consumed: 5, lastId: "10005" })
+      expect(poll.cursor.changelog).toEqual({
+        consumed: 5,
+        recent: ["10001", "10002", "10003", "10004", "10005"],
+        lastCreated: "2026-11-12T09:40:00.000Z"
+      })
       expect(calls.filter((call) => call.path.endsWith("/changelog")).map((call) => call.param("startAt"))).toEqual(
         ["0", "2", "4"]
       )

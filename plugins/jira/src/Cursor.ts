@@ -4,7 +4,8 @@ import type { IssuePosition } from "./Snapshot.ts"
 
 const Position = Schema.Struct({
   consumed: Schema.Int,
-  lastId: Schema.String
+  recent: Schema.Array(Schema.String),
+  lastCreated: Schema.String
 })
 
 export const IssueCursor = Schema.Struct({

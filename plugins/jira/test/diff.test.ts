@@ -46,16 +46,20 @@ const seenUpTo100: IssueCursor = {
   v: 1,
   target: "issue",
   issueId: "10042",
-  changelog: { consumed: 1, lastId: "100" },
-  comments: { consumed: 1, lastId: "200" }
+  changelog: { consumed: 1, recent: ["100"], lastCreated: "2026-11-12T10:00:00.000Z" },
+  comments: { consumed: 1, recent: ["200"], lastCreated: "2026-11-12T10:00:00.000Z" }
 }
 
 describe("diffIssue", () => {
   it("emits nothing on the first poll and positions the cursor at the end", () => {
     const poll = diffIssue({ siteUrl, previous: undefined, snapshot })
     expect(poll.events).toEqual([])
-    expect(poll.cursor.changelog).toEqual({ consumed: 3, lastId: "102" })
-    expect(poll.cursor.comments).toEqual({ consumed: 2, lastId: "201" })
+    expect(poll.cursor.changelog).toEqual({
+      consumed: 3,
+      recent: ["100", "101", "102"],
+      lastCreated: "2026-11-12T10:03:00.000Z"
+    })
+    expect(poll.cursor.comments).toEqual({ consumed: 2, recent: ["200", "201"], lastCreated: "2026-11-12T10:02:00.000Z" })
   })
 
   it("maps each change and comment to its event type, oldest first", () => {
@@ -78,6 +82,9 @@ describe("diffIssue", () => {
     const again = diffIssue({ siteUrl, previous: first.cursor, snapshot })
     expect(again.events).toEqual([])
     expect(again.cursor).toEqual(first.cursor)
+
+    const otherIssue = diffIssue({ siteUrl, previous: { ...seenUpTo100, issueId: "99" }, snapshot })
+    expect(otherIssue.events).toEqual([])
   })
 })
 
@@ -109,5 +116,9 @@ describe("diffJql", () => {
 
     const next = diffJql({ siteUrl, previous: poll.cursor, snapshot: now, observedAt: at(7) })
     expect(next.events).toEqual([])
+
+    const edited = diffJql({ siteUrl, previous: poll.cursor, snapshot: { ...now, jql: "project = DEMO" }, observedAt: at(8) })
+    expect(edited.events).toEqual([])
+    expect(edited.cursor.edges).toBe(5)
   })
 })

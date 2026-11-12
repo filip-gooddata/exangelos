@@ -62,13 +62,20 @@ export interface JqlSnapshot {
   readonly issues: ReadonlyArray<JqlIssue>
 }
 
-/** How far a list was read: items consumed so far and the highest id seen ("" before any). */
+/**
+ * How far an oldest-first list was read: the items consumed so far, the ids of the last
+ * `overlap` of them in order, and when the last one was created (ISO, "" before any).
+ */
 export interface ListPosition {
   readonly consumed: number
-  readonly lastId: string
+  readonly recent: ReadonlyArray<string>
+  readonly lastCreated: string
 }
 
 export interface IssuePosition {
   readonly changelog: ListPosition
   readonly comments: ListPosition
 }
+
+/** How many items before a position a poll re-reads, and how many ids a position remembers. */
+export const overlap = 50
