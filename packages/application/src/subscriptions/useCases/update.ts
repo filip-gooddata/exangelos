@@ -1,6 +1,6 @@
-import { DateTime, Effect, Option } from "effect"
+import { DateTime, Effect, Equal, Option } from "effect"
 import { Subscribe } from "@exangelos/domain"
-import type { Catalogue, Ids, Session } from "@exangelos/domain"
+import type { Catalogue, Ids, Session, Subscription } from "@exangelos/domain"
 import { SubscriptionRepository } from "../../ports/SubscriptionRepository.ts"
 import { PluginAccess } from "../../seam/PluginAccess.ts"
 import { currentLimits } from "../Limits.ts"
@@ -15,8 +15,23 @@ export interface UpdateRequest {
   readonly parameters?: Catalogue.Parameters
 }
 
-/** Changes what a subscription selects or how long it runs; the plugin must still name the same subject. */
+const selectionChanged = (before: Subscription.Subscription, after: Subscription.Subscription) =>
+  before.state._tag === "Active" && after.state._tag === "Active" &&
+  !(Equal.equals(before.parameters, after.parameters) && Equal.equals(before.eventTypes, after.eventTypes))
+
+/**
+ * Changes what a subscription selects or how long it runs; the plugin must still name the same
+ * subject. An active subscription whose selection changed gets its Watch stream reopened once the
+ * lock is released.
+ */
 export const update = (actor: Session.Actor, request: UpdateRequest) =>
+  Effect.gen(function*() {
+    const { before, after } = yield* change(actor, request)
+    if (selectionChanged(before, after)) yield* (yield* PluginAccess).rewatch(after.id)
+    return after
+  })
+
+const change = (actor: Session.Actor, request: UpdateRequest) =>
   locked(request.id, Effect.gen(function*() {
     const subscription = yield* load(request.id)
     const described = yield* (yield* PluginAccess).describe(
@@ -38,5 +53,5 @@ export const update = (actor: Session.Actor, request: UpdateRequest) =>
       },
       { reportedSubject: described.subject, lastStart, now: yield* DateTime.now, limits: yield* currentLimits }
     ))
-    return yield* record(actor, "update", Option.some(subscription), step)
+    return { before: subscription, after: yield* record(actor, "update", Option.some(subscription), step) }
   }))
