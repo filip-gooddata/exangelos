@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { afterAll } from "@effect/vitest"
 
 export const fixtures = join(import.meta.dirname, "fixtures")
-export const standInEntry = join(fixtures, "stand-in-entry.ts")
+export const standInBuildScript = join(fixtures, "stand-in-build.ts")
 export const helloPlugin = join(fixtures, "hello-plugin")
 
 export const temporaryDirectory = (label: string): string => {

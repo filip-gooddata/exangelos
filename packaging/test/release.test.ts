@@ -5,11 +5,11 @@ import { beforeAll, describe, expect, it } from "@effect/vitest"
 import { buildRelease, type Release } from "../src/release.ts"
 import { hostTarget, readChecksums } from "../src/release-files.ts"
 import { extractTarGz, listTarGz } from "../src/tar.ts"
-import { helloPlugin, standInEntry, temporaryDirectory } from "./helpers.ts"
+import { helloPlugin, standInBuildScript, temporaryDirectory } from "./helpers.ts"
 
 const buildInto = (work: string, version: string, pluginDirectories: ReadonlyArray<string>): Promise<Release> =>
   buildRelease({
-    entry: standInEntry,
+    buildScript: standInBuildScript,
     version,
     pluginDirectories,
     officialPluginsDirectory: join(work, "official-plugins"),

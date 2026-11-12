@@ -7,7 +7,7 @@ import { binaryArchiveName, platformOf, type Target } from "./release-files.ts"
 import { createTarGz } from "./tar.ts"
 
 export interface BinaryBuild {
-  readonly entry: string
+  readonly buildScript: string
   readonly version: string
   readonly officialPlugins: ReadonlyArray<OfficialPlugin>
   readonly targets: ReadonlyArray<Target>
@@ -20,11 +20,6 @@ export interface BuiltBinary {
   readonly archive: string
   readonly sidecar: string
 }
-
-export const compileDefines = (version: string, officialPlugins: ReadonlyArray<OfficialPlugin>): ReadonlyArray<string> => [
-  `--define=EXANGELOS_VERSION=${JSON.stringify(version)}`,
-  `--define=EXANGELOS_OFFICIAL_PLUGINS=${JSON.stringify(officialPlugins)}`
-]
 
 const adHocSign = (binary: string, target: Target): void => {
   if (target.os === "darwin" && process.platform === "darwin") {
@@ -43,8 +38,17 @@ export const buildBinaries = (build: BinaryBuild): ReadonlyArray<BuiltBinary> =>
     const binary = join(directory, "exangelos")
     execFileSync(
       bun,
-      ["build", "--compile", "--no-compile-autoload-dotenv", "--no-compile-autoload-bunfig", `--target=${target.bunTarget}`, ...compileDefines(build.version, build.officialPlugins), build.entry, `--outfile=${binary}`],
-      { cwd: directory, stdio: ["ignore", "ignore", "inherit"] }
+      [
+        build.buildScript,
+        `--target=${target.bunTarget}`,
+        "--version",
+        build.version,
+        "--official-plugins",
+        JSON.stringify(build.officialPlugins),
+        "--outfile",
+        binary
+      ],
+      { stdio: ["ignore", "ignore", "inherit"] }
     )
     adHocSign(binary, target)
     const archive = join(build.outDirectory, binaryArchiveName(build.version, target))

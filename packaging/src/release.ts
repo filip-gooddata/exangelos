@@ -8,7 +8,7 @@ export const packagingDirectory = resolve(import.meta.dirname, "..")
 export const repositoryDirectory = resolve(packagingDirectory, "..")
 export const defaultOfficialPluginsDirectory = join(packagingDirectory, "dist", "official-plugins")
 export const defaultReleaseDirectory = join(packagingDirectory, "dist", "release")
-export const defaultEntry = join(repositoryDirectory, "apps", "cli", "src", "main.ts")
+export const defaultBuildScript = join(repositoryDirectory, "apps", "cli", "build.ts")
 
 export const packagingVersion = (): string =>
   (JSON.parse(readFileSync(join(packagingDirectory, "package.json"), "utf8")) as { readonly version: string }).version
@@ -17,7 +17,7 @@ export const officialPluginDirectories = (pluginsRoot = join(repositoryDirectory
   officialPluginNames.map((name) => join(pluginsRoot, name))
 
 export interface ReleaseBuild {
-  readonly entry: string
+  readonly buildScript: string
   readonly version: string
   readonly pluginDirectories: ReadonlyArray<string>
   readonly officialPluginsDirectory: string
@@ -35,7 +35,7 @@ export const buildRelease = async (build: ReleaseBuild): Promise<Release> => {
   clearReleaseFiles(build.releaseDirectory)
   const officialPlugins = await buildPluginArchives(build.pluginDirectories, build.officialPluginsDirectory)
   const binaries = buildBinaries({
-    entry: build.entry,
+    buildScript: build.buildScript,
     version: build.version,
     officialPlugins,
     targets: build.targets ?? targets,

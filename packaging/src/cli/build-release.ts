@@ -3,7 +3,7 @@ import { parseArgs } from "node:util"
 import { findTarget, targets } from "../release-files.ts"
 import {
   buildRelease,
-  defaultEntry,
+  defaultBuildScript,
   defaultOfficialPluginsDirectory,
   defaultReleaseDirectory,
   describeRelease,
@@ -13,7 +13,7 @@ import {
 
 const { values } = parseArgs({
   options: {
-    entry: { type: "string" },
+    "build-script": { type: "string" },
     version: { type: "string" },
     plugins: { type: "string" },
     targets: { type: "string" },
@@ -23,7 +23,7 @@ const { values } = parseArgs({
 })
 
 const release = await buildRelease({
-  entry: values.entry === undefined ? defaultEntry : resolve(values.entry),
+  buildScript: values["build-script"] === undefined ? defaultBuildScript : resolve(values["build-script"]),
   version: values.version ?? packagingVersion(),
   pluginDirectories:
     values.plugins === undefined ? officialPluginDirectories() : values.plugins.split(",").filter((d) => d !== "").map((d) => resolve(d)),
