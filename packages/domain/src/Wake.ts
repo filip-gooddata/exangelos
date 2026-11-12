@@ -34,18 +34,21 @@ export const PendingLine = Schema.Struct({
 })
 export type PendingLine = typeof PendingLine.Type
 
+export const Why = Schema.TaggedUnion({
+  Events: {},
+  Paused: { reason: PauseReason },
+  Expired: {},
+  Ended: { reason: EndReason },
+  Cancelled: { actor: Actor },
+  Suspended: { since: Schema.DateTimeUtc, problem: Schema.String }
+})
+export type Why = typeof Why.Type
+
 export const WakeContent = Schema.Struct({
   subscription: SubscriptionId,
   plugin: Schema.String,
   subject: Schema.String,
-  why: Schema.TaggedUnion({
-    Events: {},
-    Paused: { reason: PauseReason },
-    Expired: {},
-    Ended: { reason: EndReason },
-    Cancelled: { actor: Actor },
-    Suspended: { since: Schema.DateTimeUtc, problem: Schema.String }
-  }),
+  why: Why,
   pending: Schema.Array(PendingLine)
 })
 export type WakeContent = typeof WakeContent.Type
