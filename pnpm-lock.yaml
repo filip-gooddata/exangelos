@@ -274,6 +274,9 @@ importers:
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@exangelos/plugin-import':
+        specifier: workspace:*
+        version: link:../plugin-import
       effect:
         specifier: 'catalog:'
         version: 4.1.4
@@ -290,9 +293,6 @@ importers:
       '@exangelos/plugin-directory':
         specifier: workspace:*
         version: link:../plugin-directory
-      '@exangelos/plugin-import':
-        specifier: workspace:*
-        version: link:../plugin-import
       '@types/bun':
         specifier: 'catalog:'
         version: 1.4.2
