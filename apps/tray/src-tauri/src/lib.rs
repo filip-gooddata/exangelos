@@ -199,7 +199,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
 #[allow(clippy::unused_unit)] // panel_event! requires the `-> ()`
 mod platform {
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
-    use tauri::{AppHandle, PhysicalPosition, Rect, WebviewWindow};
+    use tauri::{AppHandle, LogicalPosition, Manager, Position, Rect, Size, WebviewWindow};
     use tauri_nspanel::{
         tauri_panel, CollectionBehavior, ManagerExt, PanelLevel, StyleMask, WebviewWindowExt,
     };
@@ -219,7 +219,7 @@ mod platform {
         })
     }
 
-    pub fn prepare_panel(window: &WebviewWindow) -> tauri::Result<()> {
+    pub fn prepare_panel(window: &WebviewWindow) -> Result<(), Box<dyn std::error::Error>> {
         let panel = window.to_panel::<DropdownPanel>()?;
         panel.set_level(PanelLevel::Status.value());
         panel.set_collection_behavior(
@@ -231,7 +231,7 @@ mod platform {
         );
         // A non-activating panel takes key focus without activating the app,
         // so it can open over a fullscreen app.
-        let _ = panel.add_style_mask(StyleMask::empty().nonactivating_panel().value());
+        panel.add_style_mask(StyleMask::empty().nonactivating_panel().value())?;
 
         let events = DropdownPanelEvents::new();
         let weak = std::sync::Arc::downgrade(&panel);
@@ -264,16 +264,57 @@ mod platform {
         let Ok(panel) = app.get_webview_panel(PANEL) else {
             return;
         };
-        if let (Some(rect), Some(window)) = (anchor, panel.to_window()) {
-            if let (Ok(scale), Ok(size)) = (window.scale_factor(), window.outer_size()) {
-                let position = rect.position.to_physical::<f64>(scale);
-                let icon = rect.size.to_physical::<f64>(scale);
-                let x = position.x + icon.width / 2.0 - f64::from(size.width) / 2.0;
-                let y = position.y + icon.height;
-                let _ = window.set_position(PhysicalPosition::new(x, y));
+        // `panel.to_window()` would turn the panel back into a plain window,
+        // so the window comes from the manager.
+        if let (Some(rect), Some(window)) = (anchor, app.get_webview_window(PANEL)) {
+            if let Some(position) = dropdown_position(app, &window, rect) {
+                let _ = window.set_position(position);
             }
         }
         panel.show_and_make_key();
+    }
+
+    /// The tray rect is physical at the tray's screen scale, which may differ
+    /// from the panel's current screen, so the position is computed in
+    /// logical points, which AppKit shares across screens.
+    fn dropdown_position(
+        app: &AppHandle,
+        window: &WebviewWindow,
+        rect: Rect,
+    ) -> Option<LogicalPosition<f64>> {
+        let (icon_position, icon_size) = match (rect.position, rect.size) {
+            (Position::Logical(position), Size::Logical(size)) => (position, size),
+            (position, size) => {
+                let physical = position.to_physical::<f64>(1.0);
+                let scale = tray_screen_scale(app, physical.x, physical.y)?;
+                (position.to_logical(scale), size.to_logical(scale))
+            }
+        };
+        let panel = window
+            .outer_size()
+            .ok()?
+            .to_logical::<f64>(window.scale_factor().ok()?);
+        Some(LogicalPosition::new(
+            icon_position.x + icon_size.width / 2.0 - panel.width / 2.0,
+            icon_position.y + icon_size.height,
+        ))
+    }
+
+    fn tray_screen_scale(app: &AppHandle, x: f64, y: f64) -> Option<f64> {
+        app.available_monitors()
+            .ok()?
+            .into_iter()
+            .find_map(|monitor| {
+                let scale = monitor.scale_factor();
+                let origin = monitor.position().to_logical::<f64>(scale);
+                let size = monitor.size().to_logical::<f64>(scale);
+                let (x, y) = (x / scale, y / scale);
+                let inside = x >= origin.x
+                    && x < origin.x + size.width
+                    && y >= origin.y
+                    && y < origin.y + size.height;
+                inside.then_some(scale)
+            })
     }
 }
 
@@ -284,7 +325,7 @@ mod platform {
 
     use super::PANEL;
 
-    pub fn prepare_panel(_window: &WebviewWindow) -> tauri::Result<()> {
+    pub fn prepare_panel(_window: &WebviewWindow) -> Result<(), Box<dyn std::error::Error>> {
         Ok(())
     }
 

@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 // Placeholder panel script until the real panel lands. In smoke mode it sends
 // two lines through the relay and reports what came back.
 import { Channel, invoke } from "@tauri-apps/api/core"

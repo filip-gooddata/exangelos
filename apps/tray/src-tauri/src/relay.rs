@@ -89,6 +89,8 @@ impl Relay {
     }
 
     /// Forgets the connection without a `Closed` event. Unknown ids are fine.
+    /// Writes that already found the connection still finish, and a read already
+    /// handed to the sink is still delivered. Later writes get "unknown connection".
     pub fn close(&self, id: u32) {
         if let Some(connection) = self.connections.lock().unwrap().remove(&id) {
             connection.reader.abort();
