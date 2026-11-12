@@ -3,13 +3,11 @@ import { Prompt } from "effect/cli"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { InputInvalid, pairs } from "./Input.ts"
 
-/** Where one secret field's value comes from. The value itself never appears on the command line. */
 export type SecretSource =
   | { readonly _tag: "Command"; readonly key: string; readonly command: string }
   | { readonly _tag: "File"; readonly key: string; readonly path: string }
   | { readonly _tag: "Prompt"; readonly key: string }
 
-/** Collects `--secret-command key=<command>`, `--secret-file key=<path>` and `--secret-prompt key`. */
 export const sources = (flags: {
   readonly commands: ReadonlyArray<string>
   readonly files: ReadonlyArray<string>
@@ -75,19 +73,14 @@ const fromPrompt = (source: { readonly key: string }, label: string) =>
       Effect.fail(new InputInvalid({ message: `No value was entered for the secret field "${source.key}".` })))
   )
 
-/** Replaces every secret value inside the string fields of `failure`, so an echoed value never gets printed. */
 export const scrub = <F extends object>(failure: F, values: ReadonlyArray<string>): F => {
   const clean = (text: string) => values.reduce((acc, value) => acc.split(value).join("[secret]"), text)
   const fields = Object.fromEntries(
-    Object.entries(failure).map(([key, field]) => [key, typeof field === "string" ? clean(field) : field])
+    Object.entries(failure).map(([key, field]) => [key, key !== "_tag" && typeof field === "string" ? clean(field) : field])
   )
   return Object.assign(Object.create(Object.getPrototypeOf(failure)), failure, fields)
 }
 
-/**
- * Reads each secret once. The values stay redacted until the caller hands them to the daemon,
- * and no error names a value.
- */
 export const read = (
   all: ReadonlyArray<SecretSource>,
   label: (key: string) => string

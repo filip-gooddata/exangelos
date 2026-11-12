@@ -279,7 +279,6 @@ const retarget = Command.make(
     })
 ).pipe(Command.withDescription("Set a new wake target, or make the subscription pull-only"))
 
-/** The agent commands, also offered to agents over MCP. */
 export const commands = [
   plugins,
   subscribe,

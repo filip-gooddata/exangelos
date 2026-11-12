@@ -101,7 +101,6 @@ const terminal = Terminal.make({
   display: () => Effect.void
 })
 
-/** A spawner that answers every command with `output` and records the command lines it was asked to run. */
 const spawner = (output: string, ran: Array<string>) =>
   ChildProcessSpawner.make((command) =>
     Effect.sync(() => {
@@ -130,7 +129,6 @@ export interface Result {
   readonly ran: ReadonlyArray<string>
 }
 
-/** Runs `exangelos <argv>` against in-memory daemon handlers and returns what it printed and what the daemon saw. */
 export const run = (
   argv: ReadonlyArray<string>,
   options: {
@@ -156,7 +154,6 @@ export const run = (
           )
       ])
     ) as unknown as HandlerMap
-    // HandlersFrom types each handler's requirements as any; these handlers need nothing.
     const handlers = DaemonContract.DaemonContract.toLayer(recorded) as Layer.Layer<
       Rpc.ToHandler<RpcGroup.Rpcs<DaemonContract.DaemonContract>>
     >

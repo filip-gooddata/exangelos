@@ -52,6 +52,19 @@ describe("plugin configure", () => {
     expect(result.stdout + result.stderr).not.toContain(fake)
   })
 
+  it("keeps the failure readable when the secret matches part of its tag", async () => {
+    const file = join(directory, "tag")
+    writeFileSync(file, "Rejected")
+    const handlers = {
+      ConfigurePlugin: () => Effect.fail(new DaemonContract.ConfigurationRejected({ reason: "Rejected by GitHub" }))
+    }
+    const text = await run(["plugin", "configure", "github-pr", "--secret-file", `token=${file}`], { handlers })
+    expect(text.exit._tag).toBe("Failure")
+    expect(text.stderr).toContain("The plugin rejected the configuration: [secret] by GitHub.")
+    const json = await run(["plugin", "configure", "github-pr", "--secret-file", `token=${file}`, "--json"], { handlers })
+    expect(JSON.parse(json.stdout)).toMatchObject({ error: { _tag: "ConfigurationRejected", reason: "[secret] by GitHub" } })
+  })
+
   it("refuses a secret field given as key=value and sends nothing", async () => {
     const result = await run(["plugin", "configure", "github-pr", `token=${fake}`])
     expect(result.exit._tag).toBe("Failure")

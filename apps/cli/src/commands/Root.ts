@@ -4,10 +4,6 @@ import * as Agent from "./Agent.ts"
 import * as Management from "./Management.ts"
 import { Json } from "./Output.ts"
 
-/**
- * Builds the `exangelos` command tree. `commands` adds top-level commands (such as `daemon` and `mcp`)
- * and `pluginCommands` adds `plugin` subcommands (such as `scaffold`).
- */
 export const make = <
   const Extra extends ReadonlyArray<Command.Command.SubcommandEntry> = readonly [],
   const ExtraPlugin extends ReadonlyArray<Command.Command.SubcommandEntry> = readonly []

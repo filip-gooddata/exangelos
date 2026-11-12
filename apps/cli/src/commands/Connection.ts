@@ -9,10 +9,8 @@ export type Lazy = {
     : never
 }
 
-/** The daemon client commands call. Connecting happens on the first call; when it fails, every call fails with `DaemonNotRunning`. */
 export class Connection extends Context.Service<Connection, Lazy>()("@exangelos/cli/Connection") {}
 
-/** Provides {@link Connection} over `client`, built once on the first daemon call a command makes. */
 export const layer = <R>(
   client: Layer.Layer<DaemonClient.DaemonClient, DaemonClient.DaemonNotRunning, R>
 ): Layer.Layer<Connection, never, R> =>

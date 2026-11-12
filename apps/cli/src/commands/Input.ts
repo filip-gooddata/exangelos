@@ -8,7 +8,6 @@ export class InputInvalid extends Schema.TaggedError<InputInvalid>()("InputInval
 
 const invalid = (message: string) => Effect.fail(new InputInvalid({ message }))
 
-/** Splits bare `key=value` arguments into a record, keeping values as strings. */
 export const pairs = (args: ReadonlyArray<string>): Effect.Effect<Record<string, string>, InputInvalid> => {
   const result: Record<string, string> = {}
   for (const arg of args) {
@@ -90,7 +89,6 @@ export const maxEvents = (options: {
 
 const isHarness = Schema.is(Session.Harness)
 
-/** Maps `--target <harness>:<session>` and `--pull-only` to the contract's target; neither means the caller. */
 export const target = (options: {
   readonly target: Option.Option<string>
   readonly pullOnly: boolean

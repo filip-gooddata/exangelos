@@ -13,7 +13,6 @@ import { InputInvalid } from "./Input.ts"
 
 const command = WakeText.command
 
-/** The global `--json` flag: one JSON document on stdout instead of text for people. */
 export const Json = GlobalFlag.Setting("json")({
   flag: Flag.Boolean("json").pipe(
     Flag.withDefault(false),
@@ -21,7 +20,6 @@ export const Json = GlobalFlag.Setting("json")({
   )
 })
 
-/** A command failed after printing why; the entry point exits non-zero on it. */
 export class CommandFailed extends Data.TaggedError("CommandFailed")<{ readonly tag: string }> {}
 
 const ContractError = Schema.Union([
@@ -49,7 +47,6 @@ export type Failure = ContractError | RpcClientError.RpcClientError
 
 const encodeContractError = Schema.encodeSync(Schema.toCodecJson(ContractError))
 
-/** What to tell the caller, with the next step; `subscription` names the subscription the command was about. */
 export const failureMessage = (failure: Failure, subscription?: string): string => {
   switch (failure._tag) {
     case "RpcClientError":
@@ -100,10 +97,6 @@ const failureJson = (failure: Failure, message: string): unknown =>
     ? { error: { _tag: failure._tag, message } }
     : { error: Object.assign({}, encodeContractError(failure), { message }) }
 
-/**
- * Runs one command's work and prints its result: `text` for people, or the encoded value with `--json`.
- * A failure is printed (stderr for people, a `{"error": …}` document on stdout with `--json`) and becomes `CommandFailed`.
- */
 export const respond = <A, I, E extends Failure, R>(
   work: Effect.Effect<A, E, R>,
   options: {

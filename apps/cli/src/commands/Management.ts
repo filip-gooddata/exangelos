@@ -207,7 +207,6 @@ const configure = Command.make(
     })
 ).pipe(Command.withDescription("Configure a plugin; secret fields come from a command, a file or a hidden prompt"))
 
-/** The `plugin` subcommands; the entry point adds `scaffold`. */
 export const pluginCommands = [importPlugin, enable, disable, remove, configure, devLink, devUnlink] as const
 
 const SettingsJson = Schema.toCodecJson(Settings.Settings)
@@ -284,5 +283,4 @@ const service = Command.make("service").pipe(
   Command.withSubcommands([serviceStatus])
 )
 
-/** The management commands next to `plugin`, offered to the CLI and never over MCP. */
 export const commands = [settings, service] as const
