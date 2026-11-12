@@ -2,6 +2,7 @@ import { DateTime, Duration, Effect, Option, Schedule } from "effect"
 import type { Event } from "./Event.ts"
 import type { WakeId } from "./Ids.ts"
 import * as Lifecycle from "./Lifecycle.ts"
+import * as PluginRules from "./PluginRules.ts"
 import type { Limits } from "./Limits.ts"
 import type { Plugin } from "./Plugin.ts"
 import type { Subscription } from "./Subscription.ts"
@@ -78,7 +79,10 @@ export const retry = (wake: Wake, error: string, now: DateTime.Utc, limits: Limi
   }
 }
 
-export const hasSomethingToSay = (wake: Wake, subscription: Subscription, plugin: Plugin): boolean => {
+export const hasSomethingToSay = (wake: Wake, subscription: Subscription, plugin: Plugin): boolean =>
+  hasSomethingToSayWhen(wake, subscription, PluginRules.isAvailable(plugin))
+
+export const hasSomethingToSayWhen = (wake: Wake, subscription: Subscription, available: boolean): boolean => {
   switch (wake.reason) {
     case "events":
       return subscription.ackedThrough < wake.through
@@ -87,7 +91,7 @@ export const hasSomethingToSay = (wake: Wake, subscription: Subscription, plugin
     case "expired":
       return subscription.state._tag === "Expired"
     case "suspended":
-      return Lifecycle.isSuspended(subscription, plugin)
+      return Lifecycle.isSuspendedWhen(subscription, available)
     case "ended":
     case "cancelled":
       return true
