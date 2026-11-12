@@ -12,7 +12,7 @@ export const invocation = (sessionId: string, text: string): Invocation => ({
 
 // Unverified: the wording of the warning codex prints when the resume after queueing fails.
 // Hand check: queue into a Codex thread that is not running and read the output.
-const resumeWarning = /warn/i
+const isResumeWarning = (output: string): boolean => /warn/i.test(output) && /resum/i.test(output)
 
 export const interpret = (outcome: Outcome): Verdict => {
   switch (outcome._tag) {
@@ -27,7 +27,7 @@ export const interpret = (outcome: Outcome): Verdict => {
       // message is queued in the thread, so the wake counts as delivered: a retry would queue it
       // twice. The warning travels as a note.
       const output = `${outcome.stderr}\n${outcome.stdout}`
-      return resumeWarning.test(output)
+      return isResumeWarning(output)
         ? delivered(`queued, but codex could not resume the thread: ${lastLine(outcome.stderr) ?? lastLine(outcome.stdout)}`)
         : delivered()
     }

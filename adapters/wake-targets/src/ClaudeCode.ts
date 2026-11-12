@@ -7,7 +7,9 @@ import { delivered, exitReason, failed, lastLine, timedOutReason } from "./Attem
  * value, and `--` keeps the text a prompt.
  *
  * Unverified: that `--bg --resume` takes the prompt as an argument and that the text reaches the
- * conversation the person sees. Hand check: resume an idle session with a harmless text and open it.
+ * conversation the person sees, from the daemon's working directory and environment, and that the
+ * background session outlives the end of claude's process group (see `Attempt.run`). Hand check:
+ * resume an idle session with a harmless text from another directory, then open it.
  */
 export const invocation = (sessionId: string, text: string): Invocation => ({
   program: "claude",

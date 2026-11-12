@@ -32,6 +32,17 @@ export interface Refused {
 
 const longest = 300
 
+/** How much of each output stream an attempt keeps. The rest is read and dropped. */
+const kept = 16 * 1024
+
+const tail = <E>(output: Stream.Stream<Uint8Array, E>): Effect.Effect<string, E> =>
+  Stream.decodeText(output).pipe(
+    Stream.runFold(() => "", (text: string, chunk: string) => {
+      const joined = text + chunk
+      return joined.length > kept ? joined.slice(-kept) : joined
+    })
+  )
+
 /** The last non-empty line of the text, shortened, for a failure reason. */
 export const lastLine = (text: string): string | undefined => {
   const line = text.split("\n").map((part) => part.trim()).filter((part) => part.length > 0).at(-1)
@@ -47,7 +58,11 @@ export const exitReason = (program: string, outcome: Extract<Outcome, { _tag: "E
 export const timedOutReason = (program: string, outcome: Extract<Outcome, { _tag: "TimedOut" }>): string =>
   `${program} did not finish within ${Duration.format(outcome.limit)}`
 
-/** Runs the invocation once and gives up at the limit. The process is killed when it runs over. */
+/**
+ * Runs the invocation once and gives up at the limit. The process is killed when it runs over. When
+ * the scope closes, the spawner also ends what is left of the tool's process group, so a tool that
+ * keeps working in the background must detach that work itself.
+ */
 export const run = (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
   invocation: Invocation,
@@ -62,8 +77,8 @@ export const run = (
     return yield* Effect.scoped(Effect.gen(function*() {
       const handle = yield* spawner.spawn(command)
       const [stdout, stderr, exitCode] = yield* Effect.all([
-        Stream.mkString(Stream.decodeText(handle.stdout)),
-        Stream.mkString(Stream.decodeText(handle.stderr)),
+        tail(handle.stdout),
+        tail(handle.stderr),
         handle.exitCode
       ], { concurrency: "unbounded" })
       return { _tag: "Exited", exitCode, stdout, stderr } as Outcome

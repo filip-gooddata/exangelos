@@ -6,6 +6,10 @@ import { delivered, exitReason, failed, timedOutReason } from "./Attempt.ts"
  * The owner's command, as a program and its arguments, run without a shell. It gets the wake text
  * on stdin and the session in `EXANGELOS_HARNESS` and `EXANGELOS_SESSION_ID`, the subscription in
  * `EXANGELOS_SUBSCRIPTION`, on top of the daemon's environment.
+ *
+ * The command should exit once it has handed the text on, within the limit. A run past the limit
+ * may already have delivered, and the daemon retries every failed attempt, so the command has to
+ * tolerate getting the same wake twice.
  */
 export type WakeCommand = readonly [program: string, ...args: Array<string>]
 
