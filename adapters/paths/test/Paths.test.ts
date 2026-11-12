@@ -14,10 +14,12 @@ describe("Paths", () => {
         dataDir: "/home/a/.local/share/exangelos",
         stateDir: "/run/state/exangelos",
         settingsFile: "/home/a/.config/exangelos/settings.json",
+        secretsFile: "/home/a/.local/share/exangelos/secrets.json",
         databaseFile: "/home/a/.local/share/exangelos/exangelos.db",
         pluginDir: "/home/a/.local/share/exangelos/plugins",
         socketPath: "/run/state/exangelos/daemon.sock",
-        logDir: "/run/state/exangelos/logs"
+        logDir: "/run/state/exangelos/logs",
+        logFile: "/run/state/exangelos/logs/daemon.log"
       })
     }))
 

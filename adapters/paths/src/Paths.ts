@@ -12,10 +12,12 @@ export class Paths extends Context.Service<Paths, {
   readonly dataDir: string
   readonly stateDir: string
   readonly settingsFile: string
+  readonly secretsFile: string
   readonly databaseFile: string
   readonly pluginDir: string
   readonly socketPath: string
   readonly logDir: string
+  readonly logFile: string
 }>()("@exangelos/paths/Paths") {}
 
 const optional = (name: string) => Config.option(Config.NonEmptyString(name))
@@ -51,10 +53,12 @@ export const make = Effect.gen(function*() {
     dataDir: dirs.data,
     stateDir: dirs.state,
     settingsFile: `${dirs.config}/settings.json`,
+    secretsFile: `${dirs.data}/secrets.json`,
     databaseFile: `${dirs.data}/exangelos.db`,
     pluginDir: `${dirs.data}/plugins`,
     socketPath,
-    logDir: `${dirs.state}/logs`
+    logDir: `${dirs.state}/logs`,
+    logFile: `${dirs.state}/logs/daemon.log`
   })
 })
 
