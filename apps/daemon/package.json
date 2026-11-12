@@ -6,7 +6,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "bun run --bun vitest run"
   },
   "dependencies": {
     "@exangelos/application": "workspace:*",
@@ -25,9 +26,12 @@
     "@exangelos/settings": "workspace:*",
     "effect": "catalog:",
     "@effect/platform-bun": "catalog:",
-    "@exangelos/daemon-client": "workspace:*"
+    "@exangelos/daemon-client": "workspace:*",
+    "@exangelos/notifications": "workspace:*"
   },
   "devDependencies": {
-    "@types/bun": "catalog:"
+    "@types/bun": "catalog:",
+    "@effect/vitest": "catalog:",
+    "vitest": "catalog:"
   }
 }

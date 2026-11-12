@@ -1,4 +1,5 @@
 import { SessionHeaders } from "@exangelos/contracts"
+import { Daemon } from "@exangelos/daemon"
 import { Paths } from "@exangelos/paths"
 import { BunRuntime, BunServices } from "@effect/platform-bun"
 import { Effect, Layer, Stdio } from "effect"
@@ -11,16 +12,21 @@ const formatter = CliOutput.layer({
   formatVersion: (name, version) => `${name} ${version}`
 })
 
-const client = Entry.daemonClient(
-  SessionHeaders.detect(process.env),
-  Entry.serviceManager({
-    executable: process.execPath,
-    platform: process.platform === "darwin" ? "darwin" : "linux",
-    uid: process.getuid?.() ?? 0
-  })
-)
+const machine = {
+  executable: process.execPath,
+  platform: process.platform === "darwin" ? "darwin" : "linux",
+  uid: process.getuid?.() ?? 0
+} as const
 
-Stdio.Stdio.use(({ args }) => Effect.flatMap(args, Entry.run({ version: Build.version, client }))).pipe(
+const client = Entry.daemonClient(SessionHeaders.detect(process.env), Entry.serviceManager(machine))
+
+const daemon = {
+  ...Daemon.platformChoices(machine),
+  officialPlugins: Build.officialPlugins,
+  releaseUrl: Build.releaseUrl
+}
+
+Stdio.Stdio.use(({ args }) => Effect.flatMap(args, Entry.run({ version: Build.version, client, daemon }))).pipe(
   Effect.provide(Layer.mergeAll(formatter, Paths.layer, BunServices.layer)),
   BunRuntime.runMain({ disableErrorReporting: true })
 )
