@@ -80,7 +80,17 @@ export const enablePlugin = (actor: Session.Actor, name: Ids.PluginName, digest:
       return yield* new DigestMismatch({ plugin: name, expected: digest, actual: plugin.digest })
     }
     if (plugin.trust !== "inert") return plugin
-    yield* supervisor.update(name, (p) => ({ ...p, trust: "enabled" }), yield* change(name, "enable", actor, digest))
+    // Checked again under the write permit, so a file change racing this call cannot be trusted.
+    const enabled = yield* supervisor.update(
+      name,
+      (p) => p.digest === digest && p.trust === "inert" ? { ...p, trust: "enabled" } : undefined,
+      yield* change(name, "enable", actor, digest)
+    )
+    if (Option.isNone(enabled)) {
+      const now = yield* found(name)
+      if (now.digest !== digest) return yield* new DigestMismatch({ plugin: name, expected: digest, actual: now.digest })
+      return now
+    }
     yield* supervisor.restart(name)
     return yield* stored(name)
   })

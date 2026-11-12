@@ -1,6 +1,6 @@
 import { Context, DateTime, Deferred, Duration, Effect, FiberMap, Layer, Option, Redacted, Ref, Semaphore, Stream } from "effect"
 import { Catalogue, Ids, Plugin, PluginRules, Settings } from "@exangelos/domain"
-import { type Alert, AlertSink } from "../ports/AlertSink.ts"
+import { AlertSink } from "../ports/AlertSink.ts"
 import { OfficialPluginSource } from "../ports/OfficialPluginSource.ts"
 import { PluginDirectory } from "../ports/PluginDirectory.ts"
 import { PluginRepository, type PluginChange } from "../ports/PluginRepository.ts"
@@ -36,10 +36,13 @@ export const backoff = (failures: number): Duration.Duration =>
 export class PluginSupervisor extends Context.Service<PluginSupervisor, {
   /** Writes the plugin record, raising the alerts and suspension effects its change implies. */
   readonly store: (plugin: Plugin.Plugin, change?: PluginChange) => Effect.Effect<void>
-  /** Applies `f` to the stored record; does nothing when the plugin is unknown. */
+  /**
+   * Applies `f` to the stored record under the write permit. Nothing is written, and none returned,
+   * when the plugin is unknown or `f` returns undefined.
+   */
   readonly update: (
     name: Ids.PluginName,
-    f: (plugin: Plugin.Plugin) => Plugin.Plugin,
+    f: (plugin: Plugin.Plugin) => Plugin.Plugin | undefined,
     change?: PluginChange
   ) => Effect.Effect<Option.Option<Plugin.Plugin>>
   /** Starts, restarts or stops the process and file watch to match the stored record. */
@@ -56,13 +59,6 @@ export class PluginSupervisor extends Context.Service<PluginSupervisor, {
   readonly watch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly unwatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
 }>()("@exangelos/application/PluginSupervisor") {}
-
-interface Written {
-  readonly after: Plugin.Plugin
-  readonly raised: ReadonlyArray<Alert>
-  readonly lost: boolean
-  readonly regained: boolean
-}
 
 type Outcome =
   | { readonly _tag: "Stopped" }
@@ -131,56 +127,55 @@ export const layerPluginSupervisor: Layer.Layer<
       yield* intake.suspended(name, since, problem)
     }))
 
+  /**
+   * Stores the record and applies what its availability change implies, all under one permit so
+   * that a loss and a recovery never apply out of order. An unavailability episode starts when the
+   * record first carries `unavailableSince`, including a new record, and ends when it drops it.
+   */
   const write = (
     before: Option.Option<Plugin.Plugin>,
     next: Plugin.Plugin,
     change?: PluginChange
-  ): Effect.Effect<Written> =>
+  ): Effect.Effect<Plugin.Plugin> =>
     Effect.gen(function*() {
       const after = PluginRules.trackAvailability(next, yield* DateTime.now)
       yield* plugins.store(after, change)
-      const was = Option.match(before, { onNone: () => false, onSome: PluginRules.isAvailable })
-      const is = PluginRules.isAvailable(after)
-      return { after, raised: PluginRules.alerts(before, after), lost: was && !is, regained: !was && is }
-    })
-
-  const afterWrite = (result: Written): Effect.Effect<void> =>
-    Effect.gen(function*() {
-      const name = result.after.name
-      yield* Effect.forEach(result.raised, (alert) => Effect.ignore(alerts.show(alert)), { discard: true })
-      if (result.lost) {
-        yield* suspendAfter(name, result.after.unavailableSince ?? (yield* DateTime.now))
-        yield* closeStreams(name)
+      const wasOut = Option.match(before, { onNone: () => true, onSome: (p) => p.unavailableSince !== undefined })
+      const wasNew = Option.isNone(before)
+      yield* Effect.forEach(PluginRules.alerts(before, after), (alert) => Effect.ignore(alerts.show(alert)), {
+        discard: true
+      })
+      if (after.unavailableSince !== undefined && (wasNew || !wasOut)) {
+        yield* suspendAfter(after.name, after.unavailableSince)
+        yield* closeStreams(after.name)
       }
-      if (result.regained) {
-        yield* FiberMap.remove(timers, name)
-        yield* intake.restored(name)
-        yield* openStreams(name)
+      if (after.unavailableSince === undefined && wasOut) {
+        yield* FiberMap.remove(timers, after.name)
+        if (!wasNew) yield* intake.restored(after.name)
+        yield* openStreams(after.name)
       }
       yield* signal
+      return after
     })
 
   const store = (plugin: Plugin.Plugin, change?: PluginChange) =>
-    Effect.flatMap(
-      writes.withPermit(Effect.flatMap(plugins.find(plugin.name), (before) => write(before, plugin, change))),
-      afterWrite
-    )
+    writes.withPermit(Effect.asVoid(Effect.flatMap(plugins.find(plugin.name), (before) => write(before, plugin, change))))
+
+  const updateUnlocked = (
+    name: Ids.PluginName,
+    f: (plugin: Plugin.Plugin) => Plugin.Plugin | undefined,
+    change?: PluginChange
+  ): Effect.Effect<Option.Option<Plugin.Plugin>> =>
+    Effect.flatMap(plugins.find(name), (before) => {
+      const next = Option.isSome(before) ? f(before.value) : undefined
+      return next === undefined ? Effect.succeedNone : Effect.asSome(write(before, next, change))
+    })
 
   const update = (
     name: Ids.PluginName,
-    f: (plugin: Plugin.Plugin) => Plugin.Plugin,
+    f: (plugin: Plugin.Plugin) => Plugin.Plugin | undefined,
     change?: PluginChange
-  ): Effect.Effect<Option.Option<Plugin.Plugin>> =>
-    Effect.gen(function*() {
-      const result = yield* writes.withPermit(Effect.flatMap(plugins.find(name), (before) =>
-        Option.match(before, {
-          onNone: () => Effect.succeed(Option.none<Written>()),
-          onSome: (plugin) => Effect.map(write(before, f(plugin), change), Option.some)
-        })))
-      if (Option.isNone(result)) return Option.none<Plugin.Plugin>()
-      yield* afterWrite(result.value)
-      return Option.some(result.value.after)
-    })
+  ): Effect.Effect<Option.Option<Plugin.Plugin>> => writes.withPermit(updateUnlocked(name, f, change))
 
   const configurationOf = (name: Ids.PluginName, catalogue: Catalogue.Catalogue) =>
     Effect.gen(function*() {
@@ -199,9 +194,21 @@ export const layerPluginSupervisor: Layer.Layer<
       }
     })
 
+  /** Replaces every stored secret value in text a plugin wrote, such as a rejection reason. */
+  const scrub = (text: string, present: ReadonlyArray<readonly [string, Redacted.Redacted<string>]>) =>
+    present.reduce((out, [, value]) => {
+      const revealed = Redacted.value(value)
+      return revealed === "" ? out : out.split(revealed).join("[secret]")
+    }, text)
+
+  /** Counts Configure calls per plugin, so a stream's late rejection cannot undo a newer configuration. */
+  const generations = yield* Ref.make<ReadonlyMap<Ids.PluginName, number>>(new Map())
+  const generation = (name: Ids.PluginName) => Effect.map(Ref.get(generations), (all) => all.get(name) ?? 0)
+
   /** The only place a secret leaves the SecretStore: the Configure call. */
   const configureProcess = (name: Ids.PluginName, process: PluginProcess) =>
     Effect.gen(function*() {
+      yield* Ref.update(generations, (all) => new Map(all).set(name, (all.get(name) ?? 0) + 1))
       const { configuration, values, present } = yield* configurationOf(name, process.catalogue)
       if (configuration._tag === "Missing") {
         yield* update(name, (plugin) => ({ ...plugin, configuration }))
@@ -209,11 +216,10 @@ export const layerPluginSupervisor: Layer.Layer<
       }
       const withSecrets: Record<string, string> = { ...values }
       for (const [key, value] of present) withSecrets[key] = Redacted.value(value)
-      const answer = yield* Effect.option(process.configure(withSecrets))
-      const next: Plugin.Configuration = Option.match(answer, {
-        onNone: () => configuration,
-        onSome: (a) => a._tag === "Accepted" ? { _tag: "Set" } : { _tag: "Rejected", reason: a.reason }
-      })
+      const answer = yield* process.configure(withSecrets)
+      const next: Plugin.Configuration = answer._tag === "Accepted"
+        ? { _tag: "Set" }
+        : { _tag: "Rejected", reason: scrub(answer.reason, present) }
       yield* update(name, (plugin) => ({ ...plugin, configuration: next }))
       return next
     })
@@ -228,12 +234,22 @@ export const layerPluginSupervisor: Layer.Layer<
     Effect.flatMap(subscriptions.list({ plugin: name, states: ["Active"] }), (active) =>
       Effect.forEach(active, (subscription) => openStream(subscription.id), { discard: true }))
 
-  const rejectCredentials = (name: Ids.PluginName, reason: string): Effect.Effect<unknown> =>
-    update(name, (plugin) => ({ ...plugin, configuration: { _tag: "Rejected", reason } }))
+  /** Applies a stream's rejection only while its process and configuration are still current. */
+  const rejectCredentials = (name: Ids.PluginName, process: PluginProcess, configured: number, reason: string) =>
+    writes.withPermit(Effect.gen(function*() {
+      const current = (yield* Ref.get(processes)).get(name) === process && (yield* generation(name)) === configured
+      if (!current) return
+      const { present } = yield* configurationOf(name, process.catalogue)
+      yield* updateUnlocked(name, (plugin) => ({
+        ...plugin,
+        configuration: { _tag: "Rejected", reason: scrub(reason, present) }
+      }))
+    }))
 
   /** One Watch stream from the stored cursor, reopened after a source failure. */
   const runStream = (id: Ids.SubscriptionId, name: Ids.PluginName, process: PluginProcess): Effect.Effect<void> =>
     Effect.gen(function*() {
+      const configured = yield* generation(name)
       let failures = 0
       while (true) {
         const found = yield* subscriptions.find(id)
@@ -246,7 +262,8 @@ export const layerPluginSupervisor: Layer.Layer<
           ...(subscription.cursor === undefined ? {} : { cursor: subscription.cursor })
         }).pipe(
           Stream.runForEachWhile((item) =>
-            Effect.map(intake.ingest(id, item), (verdict) => {
+            // Interrupting the stream waits until an item is fully ingested.
+            Effect.map(Effect.uninterruptible(intake.ingest(id, item)), (verdict) => {
               failures = 0
               stop = verdict === "stop"
               return !stop
@@ -260,7 +277,7 @@ export const layerPluginSupervisor: Layer.Layer<
           if (error._tag === "PluginCrashed") return
           if (error._tag === "CredentialsRejected") {
             // Closing the plugin's streams interrupts this one, so it runs on its own fiber.
-            yield* Effect.forkDetach(rejectCredentials(name, error.reason))
+            yield* Effect.forkDetach(rejectCredentials(name, process, configured, error.reason))
             return
           }
         }
@@ -288,14 +305,15 @@ export const layerPluginSupervisor: Layer.Layer<
           Option.fromNullishOr((yield* directory.list).find((installed) => installed.name === plugin.name)),
           (installed) => installed.directory
         )
-      if (Option.isNone(at)) return Option.none<Launch>()
+      if (Option.isNone(at)) return Option.none<{ readonly launch: Launch; readonly digest: string }>()
       const installed = yield* directory.read(at.value)
-      return Option.some<Launch>({
+      const launch: Launch = {
         name: plugin.name,
         directory: installed.directory,
         entry: installed.entry,
         dev: plugin.trust === "dev"
-      })
+      }
+      return Option.some({ launch, digest: installed.digest })
     })
 
   /** One process lifetime: start, Handshake, Configure, streams, until it exits. */
@@ -303,9 +321,15 @@ export const layerPluginSupervisor: Layer.Layer<
     Effect.scoped(Effect.gen(function*() {
       const plugin = yield* plugins.find(name)
       if (Option.isNone(plugin) || plugin.value.trust === "inert") return stopped
-      const launch = yield* Effect.orElseSucceed(launchOf(plugin.value), () => Option.none<Launch>())
-      if (Option.isNone(launch)) return { _tag: "Crashed", reason: "its files cannot be read" } as Outcome
-      const process = yield* runtime.start(launch.value)
+      const found = yield* Effect.orElseSucceed(launchOf(plugin.value), () => Option.none())
+      if (Option.isNone(found)) return { _tag: "Crashed", reason: "its files cannot be read" } as Outcome
+      const { launch, digest } = found.value
+      if (plugin.value.trust !== "dev" && digest !== plugin.value.digest) {
+        // The files changed after they were trusted; the file watch rules apply, on their own fiber.
+        yield* Effect.forkDetach(filesChanged(name, launch.directory, true))
+        return stopped
+      }
+      const process = yield* runtime.start(launch)
       yield* Ref.update(processes, (all) => new Map(all).set(name, process))
       yield* Effect.addFinalizer(() =>
         Effect.andThen(
@@ -316,16 +340,18 @@ export const layerPluginSupervisor: Layer.Layer<
           }),
           closeStreams(name)
         ))
-      // A failing plugin stays unavailable until it has run for `stableAfter`.
+      yield* update(name, (p) => ({ ...p, catalogue: process.catalogue }))
+      const configured = yield* Effect.result(configureProcess(name, process))
+      if (configured._tag === "Failure") return { _tag: "Crashed", reason: configured.failure.reason } as Outcome
+      // Available only once configured. A failing plugin stays unavailable until it has run for `stableAfter`.
       const wasFailing = Option.exists(yield* plugins.find(name), (p) => p.process === "failing")
-      yield* update(name, (p) => ({ ...p, catalogue: process.catalogue, process: wasFailing ? "failing" : "running" }))
+      yield* update(name, (p) => ({ ...p, process: wasFailing ? "failing" : "running" }))
       if (wasFailing) {
         yield* Effect.forkScoped(Effect.andThen(
           Effect.sleep(restartPolicy.stableAfter),
           update(name, (p) => ({ ...p, process: "running" }))
         ))
       }
-      yield* configureProcess(name, process)
       yield* openStreams(name)
       const crash = yield* process.exited
       return { _tag: "Crashed", reason: crash.reason } as Outcome
@@ -491,6 +517,7 @@ export const layerPluginSupervisor: Layer.Layer<
     reconfigure,
     ready,
     watch: openStream,
-    unwatch: (subscription) => FiberMap.remove(streams, subscription)
+    // The intake may unwatch from inside the stream's own ingest, so the removal runs on its own fiber.
+    unwatch: (subscription) => Effect.asVoid(Effect.forkDetach(FiberMap.remove(streams, subscription)))
   })
 }))
