@@ -13,6 +13,10 @@
     "@exangelos/application": "workspace:*",
     "@exangelos/domain": "workspace:*",
     "@exangelos/service-manager": "workspace:*",
-    "effect": "catalog:"
+    "effect": "catalog:",
+    "@exangelos/paths": "workspace:*"
+  },
+  "devDependencies": {
+    "@effect/platform-node-shared": "catalog:"
   }
 }
