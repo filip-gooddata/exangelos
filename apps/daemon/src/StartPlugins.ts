@@ -1,8 +1,6 @@
 import { PluginDirectory, PluginRepository, PluginRuntime } from "@exangelos/application"
 import type { Plugin } from "@exangelos/domain"
-import { Duration, Effect, Layer } from "effect"
-
-const startTimeout = Duration.seconds(10)
+import { Effect, Layer } from "effect"
 
 const start = (installed: PluginDirectory.Installed) =>
   Effect.gen(function*() {
@@ -18,7 +16,6 @@ const start = (installed: PluginDirectory.Installed) =>
       process: "failing"
     }
     yield* runtime.start({ name: installed.name, directory: installed.directory, entry: installed.entry, dev: false }).pipe(
-      Effect.timeout(startTimeout),
       Effect.matchEffect({
         onFailure: (error) => Effect.logError(error).pipe(Effect.andThen(repository.store(failing))),
         onSuccess: (process) =>

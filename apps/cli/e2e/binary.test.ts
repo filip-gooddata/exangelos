@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite"
-import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { copyFile, lstat, mkdir, mkdtemp, readFile, rm, symlink } from "node:fs/promises"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
@@ -15,7 +15,7 @@ let daemon: Bun.Subprocess | undefined
 const env = () => ({ ...process.env, EXANGELOS_HOME: home, T3CODE_THREAD_ID: "", CLAUDE_CODE_SESSION_ID: "", CODEX_THREAD_ID: "" })
 
 const run = (binary: string, ...args: Array<string>) => {
-  const result = Bun.spawnSync([binary, ...args], { env: env(), stdout: "pipe", stderr: "pipe" })
+  const result = Bun.spawnSync([binary, ...args], { env: env(), stdout: "pipe", stderr: "pipe", timeout: 10_000 })
   return { status: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() }
 }
 
@@ -30,6 +30,23 @@ const listUntilReady = async () => {
     if (Date.now() > deadline) throw new Error(`daemon never answered: ${result.stderr}`)
     await Bun.sleep(200)
   }
+}
+
+const pluginRuns = () =>
+  Bun.spawnSync(["pgrep", "-f", join(home, "plugins", "template", "dist", "main.js")]).exitCode === 0
+
+const abandonSocket = async (path: string) => {
+  const listener = Bun.spawn(["bun", "-e", `require("node:net").createServer().listen(${JSON.stringify(path)})`])
+  while (!(await lstat(path).then((stats) => stats.isSocket(), () => false))) await Bun.sleep(50)
+  listener.kill("SIGKILL")
+  await listener.exited
+}
+
+const stop = async (child: Bun.Subprocess) => {
+  child.kill("SIGTERM")
+  const exited = await Promise.race([child.exited.then(() => true), Bun.sleep(10_000).then(() => false)])
+  if (!exited) child.kill("SIGKILL")
+  return exited
 }
 
 const build = (...args: Array<string>) => {
@@ -51,7 +68,7 @@ beforeAll(async () => {
 }, 120_000)
 
 afterAll(async () => {
-  daemon?.kill("SIGKILL")
+  if (daemon !== undefined) await stop(daemon)
   await rm(root, { recursive: true, force: true })
 })
 
@@ -69,7 +86,7 @@ describe("the exangelos binary", () => {
   })
 
   it("serves the template plugin's catalogue from a daemon that replaced a stale socket", async () => {
-    await writeFile(join(home, "daemon.sock"), "")
+    await abandonSocket(join(home, "daemon.sock"))
     daemon = startDaemon()
     const plugins = JSON.parse((await listUntilReady()).stdout)
     expect(plugins).toMatchObject([
@@ -80,14 +97,21 @@ describe("the exangelos binary", () => {
         catalogue: { eventTypes: [{ type: "tick", description: "One tick of the countdown" }] }
       }
     ])
-    expect((await lstat(join(home, "daemon.sock"))).mode & 0o777).toBe(0o600)
+    const socket = await lstat(join(home, "daemon.sock"))
+    expect(socket.isSocket()).toBe(true)
+    expect(socket.mode & 0o777).toBe(0o600)
+    expect(pluginRuns()).toBe(true)
   }, 30_000)
 
   it("applied the migrations to the database", () => {
     const database = new Database(join(home, "exangelos.db"), { readonly: true })
-    const tables = database.query("select name from sqlite_master where type = 'table'").all()
+    const tables = database.query<{ name: string }, []>("select name from sqlite_master where type = 'table'").all()
+    const migrations = database.query<{ migration_id: number }, []>("select migration_id from effect_sql_migrations").all()
     database.close()
-    expect(tables.length).toBeGreaterThan(1)
+    expect(tables.map((table) => table.name)).toEqual(
+      expect.arrayContaining(["plugins", "plugin_values", "plugin_changes", "subscriptions", "events", "wakes"])
+    )
+    expect(migrations).toEqual([{ migration_id: 1 }])
   })
 
   it("refuses a second daemon beside a live one", () => {
@@ -97,10 +121,10 @@ describe("the exangelos binary", () => {
     expect(run(exangelos, "plugins").status).toBe(0)
   })
 
-  it("leaves no daemon behind once stopped", async () => {
-    daemon!.kill("SIGTERM")
-    await daemon!.exited
+  it("stops with its plugin and leaves no daemon behind", async () => {
+    expect(await stop(daemon!)).toBe(true)
     daemon = undefined
+    expect(pluginRuns()).toBe(false)
     expect(run(exangelos, "plugins").stderr.trim()).toBe(`no daemon runs on ${join(home, "daemon.sock")}`)
   }, 15_000)
 

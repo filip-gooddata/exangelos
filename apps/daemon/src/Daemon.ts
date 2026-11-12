@@ -25,7 +25,7 @@ const database = Layer.unwrap(
 
 const plugins = StartPlugins.layer.pipe(
   Layer.provideMerge(MemoryPluginRepository.layer),
-  Layer.provide(Layer.mergeAll(PluginDirectoryLive.layer, StdioPluginRuntime.layer(), database))
+  Layer.provide(Layer.mergeAll(PluginDirectoryLive.layer, StdioPluginRuntime.layer({ startTimeout: "10 seconds" }), database))
 )
 
 export const layer = RpcServer.layer(DaemonContract.DaemonContract, { disableFatalDefects: true }).pipe(
