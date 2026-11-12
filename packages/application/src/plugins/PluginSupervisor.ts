@@ -65,8 +65,8 @@ export class PluginSupervisor extends Context.Service<PluginSupervisor, {
   readonly unwatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly rewatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   /**
-   * Rewatches, on the supervisor's own fiber and one pass at a time, every Watch stream opened with
-   * a wake window other than the stored one.
+   * Rewatches, on the supervisor's own fiber and one pass at a time, every Watch stream not yet
+   * known to be open with the stored wake window.
    */
   readonly settingsChanged: Effect.Effect<void>
 }>()("@exangelos/application/PluginSupervisor") {}
@@ -265,6 +265,8 @@ export const layerPluginSupervisor: Layer.Layer<
         if (Option.isNone(found) || found.value.state._tag !== "Active") return
         const subscription = found.value
         let stop = false
+        // A settings refresh during the read sees no recorded wake window and rewatches the stream.
+        yield* recordWakeWindow(id, undefined)
         const { wakeWindow } = yield* limits
         yield* recordWakeWindow(id, wakeWindow)
         const result = yield* process.watch({
@@ -588,7 +590,7 @@ export const layerPluginSupervisor: Layer.Layer<
     const opened = yield* Ref.get(openedWith)
     const stale = Array.from(streams, ([id]) => id).filter((id) => {
       const used = opened.get(id)
-      return used !== undefined && !Duration.equals(used, wakeWindow)
+      return used === undefined || !Duration.equals(used, wakeWindow)
     })
     yield* Effect.forEach(stale, rewatch, { discard: true })
   })
