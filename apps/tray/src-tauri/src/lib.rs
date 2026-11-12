@@ -192,13 +192,14 @@ fn build_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
             "quit" => app.exit(0),
             _ => {}
         })
-        .on_tray_icon_event(|tray, event| platform::tray_event(tray.app_handle(), event))
+        .on_tray_icon_event(|tray, event| platform::tray_event(tray, event))
         .build(app)
 }
 
 #[cfg(target_os = "macos")]
 #[allow(clippy::unused_unit)] // panel_event! requires the `-> ()`
 mod platform {
+    use tauri::tray::TrayIcon;
     use tauri::tray::{MouseButton, MouseButtonState, TrayIconEvent};
     use tauri::{AppHandle, LogicalPosition, Manager, Position, Rect, Size, WebviewWindow};
     use tauri_nspanel::{
@@ -245,7 +246,8 @@ mod platform {
         Ok(())
     }
 
-    pub fn tray_event(app: &AppHandle, event: TrayIconEvent) {
+    pub fn tray_event(tray: &TrayIcon, event: TrayIconEvent) {
+        let app = tray.app_handle();
         if let TrayIconEvent::Click {
             button: MouseButton::Left,
             button_state: MouseButtonState::Up,
@@ -255,7 +257,7 @@ mod platform {
         {
             match app.get_webview_panel(PANEL) {
                 Ok(panel) if panel.is_visible() => panel.hide(),
-                _ => show_panel(app, Some(rect)),
+                _ => show_panel(app, logical_tray_rect(tray, rect)),
             }
         }
     }
@@ -268,28 +270,39 @@ mod platform {
         // `panel.to_window()` would turn the panel back into a plain window,
         // so the window comes from the manager.
         if let (Some(rect), Some(window)) = (anchor, app.get_webview_window(PANEL)) {
-            if let Some(position) = dropdown_position(app, &window, rect) {
+            if let Some(position) = dropdown_position(&window, rect) {
                 let _ = window.set_position(position);
             }
         }
         panel.show_and_make_key();
     }
 
-    /// The tray rect is physical at the tray's screen scale, which may differ
-    /// from the panel's current screen, so the position is computed in
-    /// logical points, which AppKit shares across screens.
-    fn dropdown_position(
-        app: &AppHandle,
-        window: &WebviewWindow,
-        rect: Rect,
-    ) -> Option<LogicalPosition<f64>> {
-        let (icon_position, icon_size) = match (rect.position, rect.size) {
-            (Position::Logical(position), Size::Logical(size)) => (position, size),
-            (position, size) => {
-                let physical = position.to_physical::<f64>(1.0);
-                let scale = tray_screen_scale(app, physical.x, physical.y)?;
-                (position.to_logical(scale), size.to_logical(scale))
-            }
+    /// The tray rect is physical at the scale of the screen holding the tray
+    /// icon, which may differ from the panel's screen. Converting it with
+    /// that screen's own scale gives logical points, which AppKit shares
+    /// across screens.
+    fn logical_tray_rect(tray: &TrayIcon, rect: Rect) -> Option<Rect> {
+        if let (Position::Logical(_), Size::Logical(_)) = (rect.position, rect.size) {
+            return Some(rect);
+        }
+        let scale = tray
+            .with_inner_tray_icon(|inner| {
+                let mtm = tauri_nspanel::objc2::MainThreadMarker::new()?;
+                let window = inner.ns_status_item()?.button(mtm)?.window()?;
+                Some(window.backingScaleFactor())
+            })
+            .ok()??;
+        Some(Rect {
+            position: Position::Logical(rect.position.to_logical(scale)),
+            size: Size::Logical(rect.size.to_logical(scale)),
+        })
+    }
+
+    fn dropdown_position(window: &WebviewWindow, rect: Rect) -> Option<LogicalPosition<f64>> {
+        let (Position::Logical(icon_position), Size::Logical(icon_size)) =
+            (rect.position, rect.size)
+        else {
+            return None;
         };
         let panel = window
             .outer_size()
@@ -300,28 +313,11 @@ mod platform {
             icon_position.y + icon_size.height,
         ))
     }
-
-    fn tray_screen_scale(app: &AppHandle, x: f64, y: f64) -> Option<f64> {
-        app.available_monitors()
-            .ok()?
-            .into_iter()
-            .find_map(|monitor| {
-                let scale = monitor.scale_factor();
-                let origin = monitor.position().to_logical::<f64>(scale);
-                let size = monitor.size().to_logical::<f64>(scale);
-                let (x, y) = (x / scale, y / scale);
-                let inside = x >= origin.x
-                    && x < origin.x + size.width
-                    && y >= origin.y
-                    && y < origin.y + size.height;
-                inside.then_some(scale)
-            })
-    }
 }
 
 #[cfg(target_os = "linux")]
 mod platform {
-    use tauri::tray::TrayIconEvent;
+    use tauri::tray::{TrayIcon, TrayIconEvent};
     use tauri::{AppHandle, Manager, Rect, WebviewWindow};
 
     use super::PANEL;
@@ -331,7 +327,7 @@ mod platform {
     }
 
     /// AppIndicator delivers no click events; the menu opens the panel.
-    pub fn tray_event(_app: &AppHandle, _event: TrayIconEvent) {}
+    pub fn tray_event(_tray: &TrayIcon, _event: TrayIconEvent) {}
 
     pub fn show_panel(app: &AppHandle, _anchor: Option<Rect>) {
         if let Some(window) = app.get_webview_window(PANEL) {

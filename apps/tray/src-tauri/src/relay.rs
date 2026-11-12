@@ -60,8 +60,12 @@ impl Relay {
                     Err(error) => break RelayEvent::Error(error.to_string()),
                 }
             };
-            connections.lock().unwrap().remove(&id);
-            sink(last);
+            // After an explicit close the entry is already gone and the
+            // connection ends without a terminal event.
+            let still_open = connections.lock().unwrap().remove(&id).is_some();
+            if still_open {
+                sink(last);
+            }
         });
         map.insert(
             id,
