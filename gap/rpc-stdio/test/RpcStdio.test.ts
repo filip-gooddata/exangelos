@@ -6,9 +6,10 @@ import { RpcClient } from "effect/rpc"
 import { RpcStdio } from "@exangelos/rpc-stdio"
 import { EchoRpcs } from "./fixture/EchoRpcs.ts"
 
-const startFixture = (options?: RpcStdio.Options) =>
+const startFixture = (options?: RpcStdio.Options, startupDelayMillis = 0) =>
   Effect.gen(function*() {
-    const child = yield* ChildProcess.make(process.execPath, [`${import.meta.dirname}/fixture/server.ts`], {
+    const fixture = `${import.meta.dirname}/fixture/server.ts`
+    const child = yield* ChildProcess.make(process.execPath, [fixture, String(startupDelayMillis)], {
       stderr: "inherit"
     })
     const protocol = yield* RpcStdio.makeProtocol(child, options)
@@ -37,6 +38,12 @@ describe("RpcStdio", () => {
       yield* client.Echo({ text: "up" })
       yield* Effect.sleep("600 millis")
       expect(yield* client.Echo({ text: "still here" })).toBe("still here")
+    }).pipe(Effect.scoped, Effect.provide(BunServices.layer)))
+
+  it.live("arms the ping only once a slow-starting child answers", () =>
+    Effect.gen(function*() {
+      const { client } = yield* startFixture({ pingInterval: "50 millis", pingTimeout: "200 millis" }, 600)
+      expect(yield* client.Echo({ text: "late" })).toBe("late")
     }).pipe(Effect.scoped, Effect.provide(BunServices.layer)))
 
   it.live("fails an in-flight call and an open stream when the child dies", () =>

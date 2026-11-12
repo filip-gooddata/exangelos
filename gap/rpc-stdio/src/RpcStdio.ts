@@ -1,3 +1,4 @@
+import type { NonEmptyReadonlyArray } from "effect/Array"
 import { Cause, Deferred, Duration, Effect, Queue, Schedule, Scope, Stream } from "effect"
 import type { ChildProcessSpawner } from "effect/process"
 import { RpcClient, RpcSerialization } from "effect/rpc"
@@ -17,9 +18,11 @@ export interface Options {
  * the same error. The protocol never respawns the child; observe its exit through
  * the handle's `exitCode`.
  *
- * The client pings every `pingInterval` (default 5 seconds). If no frame arrives
- * within `pingTimeout` (default `pingInterval`), counted from creation and so
- * including the child's startup, calls fail with a `SocketReadError` reason.
+ * The protocol is created once the child answers a first ping, so it waits for
+ * the child to start without a deadline; bound it with a timeout if needed. From
+ * then on the client pings every `pingInterval` (default 5 seconds), and if no
+ * frame arrives within `pingTimeout` (default `pingInterval`), calls fail with a
+ * `SocketReadError` reason.
  */
 export const makeProtocol = (
   child: ChildProcessSpawner.ChildProcessHandle,
@@ -34,6 +37,8 @@ export const makeProtocol = (
   })
 
 const encoder = new TextEncoder()
+
+const ping = encoder.encode(`${JSON.stringify({ _tag: "Ping" })}\n`)
 
 const toBytes = (chunk: Uint8Array | string) => typeof chunk === "string" ? encoder.encode(chunk) : chunk
 
@@ -52,16 +57,23 @@ const makeSocket = (child: ChildProcessSpawner.ChildProcessHandle): Effect.Effec
       Effect.forkScoped
     )
 
+    const pull = Effect.mapError(yield* Stream.toPull(child.stdout), (error) =>
+      Cause.isDone(error)
+        ? closed("child process closed stdout")
+        : new Socket.SocketError({ reason: new Socket.SocketReadError({ cause: error }) }))
+    yield* Queue.offer(outgoing, ping)
+    let first: Effect.Effect<NonEmptyReadonlyArray<Uint8Array>, Socket.SocketError> | undefined = yield* Effect.exit(
+      Effect.raceFirst(pull, Deferred.await(broken))
+    )
+
     const reader = Effect.gen(function*() {
-      const pull = yield* Stream.toPull(child.stdout)
       yield* Effect.addFinalizer(() => Deferred.fail(broken, closed("reader closed")))
       return {
-        pull: Effect.mapError(pull, (error) =>
-          Cause.isDone(error)
-            ? closed("child process closed stdout")
-            : new Socket.SocketError({ reason: new Socket.SocketReadError({ cause: error }) })).pipe(
-            Effect.raceFirst(Deferred.await(broken))
-          ),
+        pull: Effect.suspend(() => {
+          const next = first ?? pull
+          first = undefined
+          return next
+        }).pipe(Effect.raceFirst(Deferred.await(broken))),
         upgrade: Socket.SocketUpgradeError.unsupported
       }
     })
