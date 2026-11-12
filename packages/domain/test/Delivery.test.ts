@@ -95,6 +95,7 @@ describe("Delivery", () => {
       Delivery.hasSomethingToSay(wake({ reason: "paused" }), subscription({ state: { _tag: "Expired" } }), plugin())
     ).toBe(true)
     expect(Delivery.hasSomethingToSay(wake({ reason: "suspended" }), subscription(), plugin())).toBe(false)
+    expect(Delivery.hasSomethingToSayWhen(wake({ reason: "suspended" }), subscription(), false)).toBe(true)
     }).pipe(Effect.runSync))
 
   it("lists every pending event in the wake content and never the intent", () => {
