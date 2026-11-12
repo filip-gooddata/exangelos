@@ -15,7 +15,10 @@ export class OfficialFetchFailed extends Schema.TaggedError<OfficialFetchFailed>
 }) {}
 
 export class OfficialPluginSource extends Context.Service<OfficialPluginSource, {
-  /** The official plugins built with this binary, with the digest each must match. */
+  /**
+   * The official plugins built with this binary. Each digest is the sha256 of the plugin's files as
+   * PluginDirectory.read computes it, so it also catches files changed after the fetch.
+   */
   readonly known: ReadonlyArray<Official>
   /**
    * Downloads the plugin's archive from the release files, or copies it from the local folder the

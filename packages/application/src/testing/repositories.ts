@@ -2,13 +2,14 @@ import { Effect, Layer, Option, Ref } from "effect"
 import type { Catalogue, Event, Ids, Plugin, Subscription, Wake } from "@exangelos/domain"
 import { Session } from "@exangelos/domain"
 import { EventRepository } from "../ports/EventRepository.ts"
-import { PluginRepository } from "../ports/PluginRepository.ts"
+import { PluginRepository, type PluginChange } from "../ports/PluginRepository.ts"
 import { SubscriptionRepository } from "../ports/SubscriptionRepository.ts"
 import { WakeRepository } from "../ports/WakeRepository.ts"
 
 interface Store {
   readonly plugins: ReadonlyMap<Ids.PluginName, Plugin.Plugin>
   readonly values: ReadonlyMap<Ids.PluginName, Catalogue.ConfigurationValues>
+  readonly pluginChanges: ReadonlyArray<PluginChange>
   readonly subscriptions: ReadonlyMap<Ids.SubscriptionId, Subscription.Subscription>
   readonly changes: ReadonlyArray<Subscription.Change>
   readonly events: ReadonlyArray<Event.Event>
@@ -18,6 +19,7 @@ interface Store {
 const empty: Store = {
   plugins: new Map(),
   values: new Map(),
+  pluginChanges: [],
   subscriptions: new Map(),
   changes: [],
   events: [],
@@ -46,9 +48,20 @@ export const layerRepositories: Layer.Layer<
   const plugins = Layer.succeed(PluginRepository, {
     find: (name) => read((s) => Option.fromNullishOr(s.plugins.get(name))),
     list: read((s) => [...s.plugins.values()].sort((a, b) => a.name.localeCompare(b.name))),
-    store: (plugin) => write((s) => ({ ...s, plugins: withEntry(s.plugins, plugin.name, plugin) })),
-    remove: (name) =>
-      write((s) => ({ ...s, plugins: withoutEntry(s.plugins, name), values: withoutEntry(s.values, name) })),
+    store: (plugin, change) =>
+      write((s) => ({
+        ...s,
+        plugins: withEntry(s.plugins, plugin.name, plugin),
+        pluginChanges: change === undefined ? s.pluginChanges : [...s.pluginChanges, change]
+      })),
+    remove: (name, change) =>
+      write((s) => ({
+        ...s,
+        plugins: withoutEntry(s.plugins, name),
+        values: withoutEntry(s.values, name),
+        pluginChanges: [...s.pluginChanges, change]
+      })),
+    changes: (name) => read((s) => s.pluginChanges.filter((change) => change.plugin === name)),
     values: (name) => read((s) => s.values.get(name) ?? {}),
     storeValues: (name, values) => write((s) => ({ ...s, values: withEntry(s.values, name, values) }))
   })
