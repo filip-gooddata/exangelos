@@ -1,0 +1,87 @@
+import { Effect, FileSystem, Option } from "effect"
+import type { FileGlob } from "./FileGlob.ts"
+
+/** What the plugin remembers of a file to tell a change. */
+export interface Fingerprint {
+  readonly modifiedAt: number
+  readonly size: number
+  readonly bornAt: number | undefined
+}
+
+/** Matching files by path relative to the base directory. */
+export type Snapshot = ReadonlyMap<string, Fingerprint>
+
+const fingerprint = (info: FileSystem.File.Info): Fingerprint => ({
+  modifiedAt: Option.match(info.mtime, { onNone: () => 0, onSome: (date) => date.getTime() }),
+  size: Number(info.size),
+  bornAt: Option.match(info.birthtime, {
+    onNone: () => undefined,
+    onSome: (date) => date.getTime() > 0 ? date.getTime() : undefined
+  })
+})
+
+const join = (directory: string, name: string) => directory === "" ? name : `${directory}/${name}`
+
+const absolute = (glob: FileGlob, relative: string) =>
+  relative === "" ? glob.base : glob.base === "/" ? `/${relative}` : `${glob.base}/${relative}`
+
+const lstat = (fs: FileSystem.FileSystem, path: string) =>
+  fs.lstat(path).pipe(Effect.option)
+
+const walk = (
+  fs: FileSystem.FileSystem,
+  glob: FileGlob,
+  relative: string,
+  into: Map<string, Fingerprint>
+): Effect.Effect<void> =>
+  Effect.gen(function*() {
+    const names = yield* fs.readDirectory(absolute(glob, relative)).pipe(Effect.orElseSucceed(() => []))
+    const depth = relative === "" ? 0 : relative.split("/").length
+    for (const name of names) {
+      const path = join(relative, name)
+      if (glob.ignores(path)) continue
+      const info = yield* lstat(fs, absolute(glob, path))
+      if (Option.isNone(info)) continue
+      if (info.value.type === "Directory" && depth + 1 < glob.depth) yield* walk(fs, glob, path, into)
+      if (info.value.type === "File" && glob.includes(path)) into.set(path, fingerprint(info.value))
+    }
+  })
+
+/** Whether the base directory exists as a directory. */
+export const baseExists = (glob: FileGlob) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const info = yield* lstat(fs, glob.base)
+    if (Option.isSome(info) && info.value.type === "Directory") return true
+    const followed = yield* fs.stat(glob.base).pipe(Effect.option)
+    return Option.isSome(followed) && followed.value.type === "Directory"
+  })
+
+/** Every matching file below the base directory. Symbolic links are never followed. */
+export const scan = (glob: FileGlob) => observe(glob, "")
+
+/**
+ * The matching files at or below one relative path. A path that reaches
+ * through a symbolic link below the base directory sees nothing.
+ */
+export const observe = (glob: FileGlob, relative: string) =>
+  Effect.gen(function*() {
+    const fs = yield* FileSystem.FileSystem
+    const found = new Map<string, Fingerprint>()
+    if (relative === "") {
+      if (yield* baseExists(glob)) yield* walk(fs, glob, "", found)
+      return found as Snapshot
+    }
+    const segments = relative.split("/")
+    for (let index = 1; index <= segments.length; index++) {
+      const path = segments.slice(0, index).join("/")
+      if (glob.ignores(path)) return found as Snapshot
+      const info = yield* lstat(fs, absolute(glob, path))
+      if (Option.isNone(info)) return found as Snapshot
+      const last = index === segments.length
+      if (!last && info.value.type !== "Directory") return found as Snapshot
+      if (last && info.value.type === "File" && glob.includes(path)) found.set(path, fingerprint(info.value))
+      if (last && info.value.type === "Directory" && index < glob.depth) yield* walk(fs, glob, path, found)
+    }
+    return found as Snapshot
+  })

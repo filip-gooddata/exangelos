@@ -571,6 +571,9 @@ importers:
 
   plugins/file-watch:
     dependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
       '@exangelos/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
