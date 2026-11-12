@@ -19,6 +19,9 @@ catalog:
   typescript: 7.0.2
   vite: 8.3.8
   vitest: 5.1.0
+  tar: 7.5.23
+  yauzl: 3.4.0
+  "@types/yauzl": 2.10.3
 
 minimumReleaseAgeExclude:
   - "@effect/tsgo-darwin-arm64@0.68.1"
@@ -36,3 +39,4 @@ minimumReleaseAgeExclude:
   - "@turbo/windows-64@2.11.11"
   - "@turbo/windows-arm64@2.11.11"
   - turbo@2.11.11
+  - tar@7.5.23
