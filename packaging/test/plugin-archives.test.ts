@@ -6,28 +6,31 @@ import { digestDirectory } from "@exangelos/plugin-directory"
 import { Effect } from "effect"
 import { buildPluginArchives, type OfficialPlugin, officialPluginsFileName } from "../src/plugin-archives.ts"
 import { extractTarGz, listTarGz } from "../src/tar.ts"
-import { helloPlugin, temporaryDirectory } from "./helpers.ts"
+import { helloPlugin, runWithRealPrograms, temporaryDirectory, withRealPrograms } from "./helpers.ts"
 
-describe("official plugin archives", () => {
+describe("official plugin archives (contract test with the real bun and tar)", () => {
   const work = temporaryDirectory("plugins")
   const out = join(work, "official-plugins")
   let hello: OfficialPlugin | undefined
   beforeAll(async () => {
-    ;[hello] = await buildPluginArchives([helloPlugin], out)
+    ;[hello] = await runWithRealPrograms(buildPluginArchives([helloPlugin], out))
   })
 
-  it("puts the manifest and the bundled entry at the archive root", () => {
-    expect(listTarGz(join(out, "hello-1.2.3.tar.gz")).toSorted()).toEqual(["dist/index.js", "plugin.json"])
-  })
+  it.effect("puts the manifest and the bundled entry at the archive root", () =>
+    Effect.gen(function*() {
+      const listing = yield* listTarGz(join(out, "hello-1.2.3.tar.gz"))
+      expect(listing.toSorted()).toEqual(["dist/index.js", "plugin.json"])
+    }).pipe(withRealPrograms))
 
-  it("records the digest of the unpacked plugin for the binary to carry", async () => {
-    const unpacked = join(work, "unpacked")
-    mkdirSync(unpacked)
-    extractTarGz(join(out, "hello-1.2.3.tar.gz"), unpacked)
-    expect(hello).toEqual({ name: "hello", version: "1.2.3", digest: await Effect.runPromise(digestDirectory(unpacked)) })
-    expect(JSON.parse(readFileSync(join(out, officialPluginsFileName), "utf8"))).toEqual([hello])
-    expect(execFileSync("bun", [join(unpacked, "dist/index.js")], { encoding: "utf8" })).toBe("hello plugin\n")
-  })
+  it.effect("records the digest of the unpacked plugin for the binary to carry", () =>
+    Effect.gen(function*() {
+      const unpacked = join(work, "unpacked")
+      mkdirSync(unpacked)
+      yield* extractTarGz(join(out, "hello-1.2.3.tar.gz"), unpacked)
+      expect(hello).toEqual({ name: "hello", version: "1.2.3", digest: yield* digestDirectory(unpacked) })
+      expect(JSON.parse(readFileSync(join(out, officialPluginsFileName), "utf8"))).toEqual([hello])
+      expect(execFileSync("bun", [join(unpacked, "dist/index.js")], { encoding: "utf8" })).toBe("hello plugin\n")
+    }).pipe(withRealPrograms))
 
   it("writes a SHA256SUMS that shasum accepts", () => {
     expect(execFileSync("shasum", ["-a", "256", "-c", "SHA256SUMS"], { cwd: out, encoding: "utf8" })).toBe("hello-1.2.3.tar.gz: OK\n")

@@ -11,6 +11,7 @@
     "render:homebrew": "bun src/cli/render-homebrew.ts"
   },
   "dependencies": {
+    "@effect/platform-bun": "catalog:",
     "@exangelos/plugin-directory": "workspace:*",
     "effect": "catalog:"
   }

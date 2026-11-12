@@ -1,5 +1,7 @@
 import { resolve } from "node:path"
 import { parseArgs } from "node:util"
+import { BunRuntime } from "@effect/platform-bun"
+import { Console, Effect } from "effect"
 import { findTarget, targets } from "../release-files.ts"
 import {
   buildRelease,
@@ -10,6 +12,7 @@ import {
   officialPluginDirectories,
   packagingVersion
 } from "../release.ts"
+import { bunSpawner } from "../spawner.ts"
 
 const { values } = parseArgs({
   options: {
@@ -22,7 +25,7 @@ const { values } = parseArgs({
   }
 })
 
-const release = await buildRelease({
+buildRelease({
   buildScript: values["build-script"] === undefined ? defaultBuildScript : resolve(values["build-script"]),
   version: values.version ?? packagingVersion(),
   pluginDirectories:
@@ -30,5 +33,8 @@ const release = await buildRelease({
   officialPluginsDirectory: resolve(values["official-plugins-out"]),
   releaseDirectory: resolve(values.out),
   targets: values.targets === undefined ? targets : values.targets.split(",").map(findTarget)
-})
-console.log(describeRelease(release))
+}).pipe(
+  Effect.flatMap((release) => Console.log(describeRelease(release))),
+  Effect.provide(bunSpawner),
+  BunRuntime.runMain
+)

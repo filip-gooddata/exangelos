@@ -4,22 +4,22 @@ import { join } from "node:path"
 import { beforeAll, describe, expect, it } from "@effect/vitest"
 import { buildRelease, packagingDirectory } from "../src/release.ts"
 import { hostTarget } from "../src/release-files.ts"
-import { standInBuildScript, temporaryDirectory } from "./helpers.ts"
+import { runWithRealPrograms, standInBuildScript, temporaryDirectory } from "./helpers.ts"
 
 const installScript = join(packagingDirectory, "install.sh")
 
-describe("install script", () => {
+describe("install script (contract test with the real bun, tar and sh)", () => {
   const work = temporaryDirectory("install")
   const releaseDirectory = join(work, "release")
   beforeAll(() =>
-    buildRelease({
+    runWithRealPrograms(buildRelease({
       buildScript: standInBuildScript,
       version: "9.9.9",
       pluginDirectories: [],
       officialPluginsDirectory: join(work, "official-plugins"),
       releaseDirectory,
       targets: [hostTarget()]
-    })
+    }))
   )
 
   const install = (release: string, installDirectory: string) =>
