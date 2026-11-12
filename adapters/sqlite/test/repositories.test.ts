@@ -25,7 +25,7 @@ const temporaryRepositories = () =>
 repositoryContract("SQLite", temporaryRepositories)
 // The fake lists subscriptions in insertion order, not oldest first; reported to the foundation.
 repositoryContract("in-memory", () => layerRepositories, [
-  "subscriptions list oldest first by every filter criterion and keep their changes"
+  "subscriptions list oldest first by creation time"
 ])
 
 describe("SQLite repositories", () => {

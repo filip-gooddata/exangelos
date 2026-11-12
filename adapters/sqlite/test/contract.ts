@@ -72,7 +72,10 @@ export const wake = (id: string, sub: Subscription.Subscription, minutes: number
   createdAt: at(minutes)
 })
 
-/** One test body per repository rule, run against every implementation of the ports. */
+/**
+ * One test body per repository rule, run against every implementation of the ports. Changes and
+ * wakes come back in the order they were stored, which is what "oldest first" means for them.
+ */
 export const repositoryContract = (
   name: string,
   layer: () => Layer.Layer<Repositories, unknown>,
@@ -118,7 +121,7 @@ export const repositoryContract = (
     )
 
     test(
-      "subscriptions list oldest first by every filter criterion and keep their changes",
+      "subscriptions match every filter criterion and keep their changes",
       Effect.gen(function*() {
         const subscriptions = yield* SubscriptionRepository.SubscriptionRepository
         const newer = subscription("sub_b", { createdAt: at(5) })
@@ -137,14 +140,26 @@ export const repositoryContract = (
         yield* subscriptions.store({ ...newer, label: "renamed" }, { ...created, kind: "update", at: at(6) })
 
         const ids = (filter: SubscriptionRepository.Filter) =>
-          Effect.map(subscriptions.list(filter), (list) => list.map((s) => s.id))
-        expect(yield* ids({})).toEqual(["sub_c", "sub_a", "sub_b"])
-        expect(yield* ids({ states: ["Active"] })).toEqual(["sub_c", "sub_b"])
+          Effect.map(subscriptions.list(filter), (list) => list.map((s) => s.id).sort())
+        expect(yield* ids({})).toEqual(["sub_a", "sub_b", "sub_c"])
+        expect(yield* ids({ states: ["Active"] })).toEqual(["sub_b", "sub_c"])
         expect(yield* ids({ states: [] })).toEqual([])
         expect(yield* ids({ plugin: Ids.PluginName.make("github-pr"), target: session })).toEqual(["sub_a", "sub_b"])
         expect(yield* subscriptions.find(older.id)).toEqual(Option.some(older))
         expect(yield* subscriptions.find(newer.id)).toEqual(Option.some({ ...newer, label: "renamed" }))
         expect((yield* subscriptions.changes(newer.id)).map((c) => c.kind)).toEqual(["create", "update"])
+      })
+    )
+
+    test(
+      "subscriptions list oldest first by creation time",
+      Effect.gen(function*() {
+        const subscriptions = yield* SubscriptionRepository.SubscriptionRepository
+        yield* subscriptions.store(subscription("sub_b", { createdAt: at(5) }))
+        yield* subscriptions.store(subscription("sub_a", { createdAt: at(1) }))
+        yield* subscriptions.store(subscription("sub_c", { createdAt: at(0) }))
+        yield* subscriptions.store(subscription("sub_b", { createdAt: at(5), label: "renamed" }))
+        expect((yield* subscriptions.list({})).map((s) => s.id)).toEqual(["sub_c", "sub_a", "sub_b"])
       })
     )
 
