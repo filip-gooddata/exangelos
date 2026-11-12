@@ -7,6 +7,7 @@
   },
   "scripts": {
     "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "bun run --bun vitest run --dir test",
     "build": "bun build.ts",
     "e2e": "bun run --bun vitest run e2e"
   },
@@ -21,6 +22,7 @@
     "@effect/platform-bun": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "@types/bun": "catalog:",
     "vitest": "catalog:"
   }
