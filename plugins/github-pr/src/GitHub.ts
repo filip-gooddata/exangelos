@@ -208,6 +208,11 @@ type Nodes = {
   checks: Array<typeof ContextNode.Type>
 }
 
+export interface Fetched {
+  readonly snapshot: Snapshot
+  readonly quota: Option.Option<Quota>
+}
+
 export class GitHub extends Context.Service<GitHub, {
   /** Checks the token by asking who it belongs to. */
   readonly viewer: (connection: Connection) => Effect.Effect<string, GitHubError>
@@ -215,7 +220,7 @@ export class GitHub extends Context.Service<GitHub, {
     connection: Connection,
     ref: PullRequestRef,
     since: Since | undefined
-  ) => Effect.Effect<{ readonly snapshot: Snapshot; readonly quota: Option.Option<Quota> }, GitHubError>
+  ) => Effect.Effect<Fetched, GitHubError>
 }>()("@exangelos/plugin-github-pr/GitHub") {}
 
 export const layer = Layer.effect(
