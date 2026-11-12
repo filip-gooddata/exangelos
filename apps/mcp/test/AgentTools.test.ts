@@ -53,4 +53,17 @@ describe("MCP tools", () => {
         wake: { subscription: "sub_7f3k", pending: [{ number: 4 }, { number: 5 }] }
       })
     }))
+
+  it.effect("tells a Claude Code session to wait in the background", () =>
+    Effect.gen(function*() {
+      const mcp = yield* mcpClient(inMemory)
+      const claude = yield* mcp.callTool({ name: "resume", arguments: { id: "sub_cc" } })
+      const t3 = yield* mcp.callTool({ name: "resume", arguments: { id: "sub_t3" } })
+      expect(claude.structuredContent).toMatchObject({
+        hint:
+          "Claude Code sessions don't receive wakes yet: run `exangelos wait sub_cc` as a background command; it returns when there is something to say."
+      })
+      expect(claude.content).toMatchObject([{ type: "text", text: expect.stringMatching(/something to say\."\}$/) }])
+      expect(t3.structuredContent).not.toHaveProperty("hint")
+    }))
 })

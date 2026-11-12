@@ -3,7 +3,7 @@ import { Tool, Toolkit } from "effect/ai"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
 import { Catalogue, Event, Ids, Plugin, Session, Subscription, Wake } from "@exangelos/domain"
 import * as AgentClient from "./AgentClient.ts"
-import { type AgentFailure, failureMessage } from "./Messages.ts"
+import { type AgentFailure, failureMessage, wakeHint } from "./Messages.ts"
 
 export class ToolFailure extends Schema.TaggedError<ToolFailure>()("ToolFailure", {
   message: Schema.String
@@ -27,6 +27,14 @@ const limits = {
     })
   )
 }
+
+const Hinted = Schema.Struct({ ...Subscription.Subscription.fields, hint: Schema.optionalKey(Schema.String) })
+
+const withHint = (subscription: Subscription.Subscription) =>
+  Option.match(wakeHint(subscription), {
+    onNone: () => subscription,
+    onSome: (hint) => ({ ...subscription, hint })
+  })
 
 const tool = <const Name extends string, Parameters extends Schema.Struct.Fields, Success extends Schema.Top>(
   name: Name,
@@ -61,7 +69,7 @@ export const toolkit = Toolkit.make(
       ...target,
       similarOk: Schema.optionalKey(Schema.Array(Ids.SubscriptionId))
     },
-    Subscription.Subscription
+    Hinted
   ),
   tool(
     "update",
@@ -104,7 +112,7 @@ export const toolkit = Toolkit.make(
     "resume",
     "Resume a paused subscription with a fresh expiry; acknowledge a backlog over the limit first.",
     id,
-    Subscription.Subscription
+    Hinted
   ),
   tool(
     "retarget",
@@ -155,7 +163,8 @@ export const handlers = toolkit.toLayer(Effect.gen(function*() {
       Effect.all([targetChoice({ target, pullOnly }), untilTime(until)]).pipe(
         Effect.flatMap(([choice, time]) =>
           call((client) => client.Subscribe({ ...rest, ...time, target: choice, similarOk: similarOk ?? [] }))
-        )
+        ),
+        Effect.map(withHint)
       ),
     update: ({ until, ...rest }) =>
       untilTime(until).pipe(Effect.flatMap((time) => call((client) => client.Update({ ...rest, ...time })))),
@@ -167,7 +176,7 @@ export const handlers = toolkit.toLayer(Effect.gen(function*() {
     wait: (input) =>
       call((client) => client.Wait(input)).pipe(Effect.map((wake) => ({ text: WakeText.render(wake), wake }))),
     pause: (input) => call((client) => client.Pause(input)),
-    resume: (input) => call((client) => client.Resume(input)),
+    resume: (input) => call((client) => client.Resume(input)).pipe(Effect.map(withHint)),
     retarget: ({ id, ...choice }) =>
       targetChoice(choice).pipe(Effect.flatMap((target) => call((client) => client.Retarget({ id, target })))),
     cancel: (input) => call((client) => client.Cancel(input))

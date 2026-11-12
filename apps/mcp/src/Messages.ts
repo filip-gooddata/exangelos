@@ -1,8 +1,8 @@
-import { Array as Arr } from "effect"
+import { Array as Arr, Option } from "effect"
 import type { RpcClientError } from "effect/rpc"
 import type { DaemonContract } from "@exangelos/contracts"
 import type { DaemonClient } from "@exangelos/daemon-client"
-import { Refusal } from "@exangelos/domain"
+import { Refusal, type Subscription } from "@exangelos/domain"
 
 export type AnyRefusal =
   | Refusal.IntentRequired
@@ -28,6 +28,13 @@ export type AgentFailure =
   | DaemonContract.BacklogOverLimit
   | RpcClientError.RpcClientError
   | DaemonClient.DaemonNotRunning
+
+export const wakeHint = (subscription: Subscription.Subscription): Option.Option<string> =>
+  subscription.wakeTarget?.harness === "claude-code"
+    ? Option.some(
+      `Claude Code sessions don't receive wakes yet: run \`exangelos wait ${subscription.id}\` as a background command; it returns when there is something to say.`
+    )
+    : Option.none()
 
 export const noDaemonMessage = (reason: string): string =>
   `No Exangelos daemon is running, and starting it failed: ${reason}. Run \`exangelos daemon\` in a terminal to start it in the foreground, then retry this call.`

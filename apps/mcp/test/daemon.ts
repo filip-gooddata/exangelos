@@ -56,7 +56,12 @@ export const handlers = DaemonContract.AgentGroup.toLayer({
       ]
     }),
   Pause: notFaked,
-  Resume: notFaked,
+  Resume: ({ id }) =>
+    Effect.succeed({
+      ...existing,
+      id,
+      wakeTarget: { harness: id === "sub_cc" ? "claude-code" as const : "t3" as const, sessionId: "s-1" }
+    }),
   Retarget: notFaked,
   Cancel: notFaked
 })
