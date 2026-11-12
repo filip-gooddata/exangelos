@@ -12,11 +12,12 @@ import * as OfficialPlugins from "@exangelos/official-plugins"
 import { Paths } from "@exangelos/paths"
 import * as PluginDirectoryLive from "@exangelos/plugin-directory"
 import * as PluginImportLive from "@exangelos/plugin-import"
+import { buildTemplate } from "./template.ts"
 
 const releaseUrl = "https://releases.test/v1"
 const official = (name: string): OfficialPluginSource.Official => ({
   name: Ids.PluginName.make(name),
-  version: "1.0.0",
+  version: "0.1.0",
   digest: "unchecked"
 })
 
@@ -25,15 +26,13 @@ const workspace = Effect.acquireRelease(
   (root) => Effect.promise(() => Fs.rm(root, { recursive: true, force: true }))
 )
 
-/** Writes `<name>-1.0.0.tar.gz` into the folder the way a release build packs it: `plugin.json` at the root. */
-const buildArchive = (root: string, folder: string, name: string) =>
+/** Packs the built template into `template-0.1.0.tar.gz` in the folder the way a release build does: `plugin.json` at the root. */
+const buildArchive = (root: string, folder: string) =>
   Effect.promise(async () => {
-    const files = Path.join(root, "build", name)
-    await Fs.mkdir(files, { recursive: true })
-    await Fs.writeFile(Path.join(files, "plugin.json"), JSON.stringify({ name, version: "1.0.0", entry: { _tag: "Bundle", path: "main.js" } }))
-    await Fs.writeFile(Path.join(files, "main.js"), "console.log(1)")
+    const files = Path.join(root, "build", "template")
+    await buildTemplate(files)
     await Fs.mkdir(folder, { recursive: true })
-    const file = Path.join(folder, `${name}-1.0.0.tar.gz`)
+    const file = Path.join(folder, "template-0.1.0.tar.gz")
     await Tar.c({ gzip: true, file, cwd: files, portable: true }, ["."])
     return file
   })
@@ -72,23 +71,23 @@ describe("OfficialPluginSource", () => {
   it.live("unpacks an official plugin from the local folder", () =>
     Effect.gen(function*() {
       const root = yield* workspace
-      yield* buildArchive(root, Path.join(root, "dist"), "github-pr")
+      yield* buildArchive(root, Path.join(root, "dist"))
 
-      const directory = yield* fetch(root, "github-pr", { folder: Path.join(root, "dist") })
+      const directory = yield* fetch(root, "template", { folder: Path.join(root, "dist") })
 
-      expect(directory).toBe(Path.join(root, "plugins", "github-pr"))
-      expect((yield* Effect.promise(() => Fs.readdir(directory))).sort()).toEqual(["main.js", "plugin.json"])
+      expect(directory).toBe(Path.join(root, "plugins", "template"))
+      expect((yield* Effect.promise(() => Fs.readdir(directory))).sort()).toEqual(["dist", "plugin.json"])
     }).pipe(Effect.scoped))
 
   it.live("downloads an official plugin from the release files", () =>
     Effect.gen(function*() {
       const root = yield* workspace
-      const file = yield* buildArchive(root, Path.join(root, "release"), "github-pr")
-      const served = new Map([[`${releaseUrl}/github-pr-1.0.0.tar.gz`, new Uint8Array(yield* Effect.promise(() => Fs.readFile(file)))]])
+      const file = yield* buildArchive(root, Path.join(root, "release"))
+      const served = new Map([[`${releaseUrl}/template-0.1.0.tar.gz`, new Uint8Array(yield* Effect.promise(() => Fs.readFile(file)))]])
 
-      const directory = yield* fetch(root, "github-pr", { served })
+      const directory = yield* fetch(root, "template", { served })
 
-      expect(directory).toBe(Path.join(root, "plugins", "github-pr"))
+      expect(directory).toBe(Path.join(root, "plugins", "template"))
     }).pipe(Effect.scoped))
 
   it.live("fails for a plugin missing from the folder or the release", () =>
@@ -99,7 +98,7 @@ describe("OfficialPluginSource", () => {
       const local = yield* Effect.flip(fetch(root, "jira", { folder: Path.join(root, "dist") }))
       const release = yield* Effect.flip(fetch(root, "jira", { served: new Map() }))
 
-      expect([local._tag, local.plugin, local.reason]).toEqual(["OfficialFetchFailed", "jira", `jira-1.0.0.tar.gz is not in ${Path.join(root, "dist")}`])
+      expect([local._tag, local.plugin, local.reason]).toEqual(["OfficialFetchFailed", "jira", `jira-0.1.0.tar.gz is not in ${Path.join(root, "dist")}`])
       expect(release.reason).toMatch(/not found/)
     }).pipe(Effect.scoped))
 })

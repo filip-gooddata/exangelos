@@ -7,6 +7,7 @@ import { ConfigProvider, Effect, Fiber, Layer, type Scope, Stream } from "effect
 import { PluginDirectory } from "@exangelos/application"
 import { Paths } from "@exangelos/paths"
 import { digestDirectory, layer } from "@exangelos/plugin-directory"
+import { buildTemplate } from "./template.ts"
 
 const temporary = Effect.acquireRelease(
   Effect.promise(() => Fs.mkdtemp(Path.join(Os.tmpdir(), "plugin-directory-"))),
@@ -36,7 +37,7 @@ describe("PluginDirectory", () => {
   it.live("lists plugins by name and skips one whose manifest is broken", () =>
     withDirectory((root) =>
       Effect.gen(function*() {
-        yield* writePlugin(Path.join(root, "template"), "template")
+        yield* Effect.promise(() => buildTemplate(Path.join(root, "template")))
         yield* writePlugin(Path.join(root, "github-pr"), "github-pr")
         yield* Effect.promise(async () => {
           await Fs.mkdir(Path.join(root, "broken"))
@@ -49,7 +50,7 @@ describe("PluginDirectory", () => {
 
         expect(plugins.map((plugin) => [plugin.name, plugin.version])).toEqual([
           ["github-pr", "1.0.0"],
-          ["template", "1.0.0"]
+          ["template", "0.1.0"]
         ])
         expect(plugins[1]?.entry).toEqual({ _tag: "Bundle", path: Path.join(root, "template", "dist", "main.js") })
         expect(broken._tag).toBe("ManifestInvalid")
@@ -59,11 +60,11 @@ describe("PluginDirectory", () => {
   it.live("gives the same digest for the same files and another after one byte changes", () =>
     Effect.gen(function*() {
       const root = yield* temporary
-      yield* writePlugin(Path.join(root, "a"), "template")
-      yield* writePlugin(Path.join(root, "b"), "template")
+      yield* Effect.promise(() => buildTemplate(Path.join(root, "a")))
+      yield* Effect.promise(() => buildTemplate(Path.join(root, "b")))
       const a = yield* digestDirectory(Path.join(root, "a"))
       const b = yield* digestDirectory(Path.join(root, "b"))
-      yield* writePlugin(Path.join(root, "b"), "template", "console.log(2)")
+      yield* Effect.promise(() => Fs.appendFile(Path.join(root, "b", "dist", "main.js"), "\n"))
       const changed = yield* digestDirectory(Path.join(root, "b"))
 
       expect(a).toMatch(/^[0-9a-f]{64}$/)
@@ -75,7 +76,7 @@ describe("PluginDirectory", () => {
     withDirectory((root) =>
       Effect.gen(function*() {
         const plugin = Path.join(root, "template")
-        yield* writePlugin(plugin, "template")
+        yield* Effect.promise(() => buildTemplate(plugin))
         const directory = yield* PluginDirectory.PluginDirectory
         const changed = yield* directory.changes(plugin).pipe(Stream.take(1), Stream.runDrain, Effect.forkScoped)
         yield* Effect.sleep("200 millis")

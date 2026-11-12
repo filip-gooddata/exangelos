@@ -11,6 +11,7 @@ import { Paths } from "@exangelos/paths"
 import * as PluginDirectoryLive from "@exangelos/plugin-directory"
 import * as PluginImportLive from "@exangelos/plugin-import"
 import { type ArchiveEntry, manifest, pluginEntries, tarGz, zip } from "./fixtures.ts"
+import { buildTemplate } from "./template.ts"
 
 const served = new Map<string, Buffer>()
 
@@ -95,14 +96,14 @@ describe("PluginImportSource", () => {
     Effect.gen(function*() {
       const s = yield* setup
       const source = Path.join(s.root, "work", "my-plugin")
-      yield* writeFile(Path.join(source, "plugin.json"), manifest("local-one"))
-      yield* writeFile(Path.join(source, "main.js"), "1")
+      yield* Effect.promise(() => buildTemplate(source))
       yield* writeFile(Path.join(source, ".git", "HEAD"), "ref: refs/heads/main")
 
       const directory = yield* place(s, { _tag: "Directory", path: source })
 
-      expect(directory).toBe(Path.join(s.plugins, "local-one"))
-      expect(yield* listing(directory)).toEqual(["main.js", "plugin.json"])
+      expect(directory).toBe(Path.join(s.plugins, "template"))
+      expect(yield* listing(directory)).toEqual(["dist", "plugin.json"])
+      expect(yield* listing(Path.join(directory, "dist"))).toEqual(["main.js"])
     }).pipe(Effect.scoped))
 
   it.live("checks out a git repository at a tag and drops .git", () =>
