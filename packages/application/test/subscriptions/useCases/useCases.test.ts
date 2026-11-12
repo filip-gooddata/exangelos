@@ -29,8 +29,11 @@ const prs = Ids.PluginName.make("github-pr")
 
 const setup = Effect.gen(function*() {
   yield* (yield* PluginRepository).store(plugin("github-pr"))
-  yield* (yield* PluginAccessFake).define(prs, (parameters: Catalogue.Parameters) =>
-    Effect.succeed({ catalogue, parameters, subject: `pr ${String(parameters.pr)}`, label: "PR" }))
+  yield* (yield* PluginAccessFake).define(prs, {
+    catalogue,
+    describe: (parameters: Catalogue.Parameters) =>
+      Effect.succeed({ catalogue, parameters, subject: `pr ${String(parameters.pr)}`, label: "PR" })
+  })
 })
 
 const request = (overrides: Partial<SubscribeRequest> = {}): SubscribeRequest => ({

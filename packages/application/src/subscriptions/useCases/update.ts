@@ -4,7 +4,7 @@ import type { Catalogue, Ids, Session } from "@exangelos/domain"
 import { SubscriptionRepository } from "../../ports/SubscriptionRepository.ts"
 import { PluginAccess } from "../../seam/PluginAccess.ts"
 import { currentLimits } from "../Limits.ts"
-import { load, record } from "./shared.ts"
+import { load, locked, record } from "./shared.ts"
 
 export interface UpdateRequest {
   readonly id: Ids.SubscriptionId
@@ -17,12 +17,12 @@ export interface UpdateRequest {
 
 /** Changes what a subscription selects or how long it runs; the plugin must still name the same subject. */
 export const update = (actor: Session.Actor, request: UpdateRequest) =>
-  Effect.gen(function*() {
+  locked(request.id, Effect.gen(function*() {
     const subscription = yield* load(request.id)
     const described = yield* (yield* PluginAccess).describe(
       actor,
       subscription.plugin,
-      request.parameters ?? subscription.parameters
+      { parameters: request.parameters ?? subscription.parameters, main: Option.none() }
     )
     const changes = yield* (yield* SubscriptionRepository).changes(subscription.id)
     const lastStart = changes.findLast((change) => change.kind === "create" || change.kind === "resume")?.at ??
@@ -39,4 +39,4 @@ export const update = (actor: Session.Actor, request: UpdateRequest) =>
       { reportedSubject: described.subject, lastStart, now: yield* DateTime.now, limits: yield* currentLimits }
     ))
     return yield* record(actor, "update", Option.some(subscription), step)
-  })
+  }))

@@ -2,6 +2,7 @@ import { DateTime, Effect, Option } from "effect"
 import type { Ids, Lifecycle, Session, Subscribe, Subscription } from "@exangelos/domain"
 import { SubscriptionRepository } from "../../ports/SubscriptionRepository.ts"
 import { SubscriptionNotFound } from "../Errors.ts"
+import { SubscriptionLocks } from "../Locks.ts"
 import { commit } from "../Transitions.ts"
 
 /** Where wakes go: the calling session, a named session, or nowhere (pull-only). */
@@ -37,4 +38,11 @@ export const record = (
     }
     yield* commit(before, { subscription: step.subscription, wake: step.wake, change })
     return step.subscription
+  })
+
+/** Runs a load-change-store of one subscription under its lock. */
+export const locked = <A, E, R>(id: Ids.SubscriptionId, effect: Effect.Effect<A, E, R>) =>
+  Effect.gen(function*() {
+    const locks = yield* SubscriptionLocks
+    return yield* locks.withLock(id)(effect)
   })

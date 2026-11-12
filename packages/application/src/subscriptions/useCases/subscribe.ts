@@ -31,7 +31,10 @@ export const subscribe = (
   Effect.gen(function*() {
     yield* Effect.fromResult(Subscribe.checkIntent(request.intent))
     const wakeTarget = yield* Effect.fromResult(Subscribe.wakeTarget(detected, targetFlag(request.target)))
-    const described = yield* (yield* PluginAccess).describe(actor, request.plugin, request.parameters)
+    const described = yield* (yield* PluginAccess).describe(actor, request.plugin, {
+      parameters: request.parameters,
+      main: Option.fromNullishOr(request.main)
+    })
     const plugin = yield* (yield* PluginRepository).find(request.plugin)
     if (Option.isNone(plugin)) return yield* new PluginNotFound({ plugin: request.plugin })
     const intent = yield* Effect.fromResult(Subscribe.check(plugin.value, request.intent))
