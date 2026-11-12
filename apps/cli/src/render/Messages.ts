@@ -25,12 +25,10 @@ export const similarSubscriptionsMessage = (matches: ReadonlyArray<Refusal.Simil
 
 export const backlogOverLimitMessage = (
   id: string,
-  refusal: { readonly pending: number; readonly through?: number | undefined }
+  refusal: { readonly pending: number; readonly through: number }
 ): string => {
   const pending = `${refusal.pending} ${refusal.pending === 1 ? "event is" : "events are"} pending`
-  return refusal.through === undefined
-    ? `Nothing was resumed: ${pending}, over the backlog limit. Read them with \`${command} events ${id}\`, acknowledge them with \`${command} ack ${id} --through <number>\`, then resume.`
-    : `Nothing was resumed: ${pending}, over the backlog limit. Acknowledge them first with \`${command} ack ${id} --through ${refusal.through}\`, then resume.`
+  return `Nothing was resumed: ${pending}, over the backlog limit. Acknowledge them first with \`${command} ack ${id} --through ${refusal.through}\`, then resume.`
 }
 
 export const noWakeTargetMessage =

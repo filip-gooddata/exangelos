@@ -79,7 +79,7 @@ export const failureMessage = (failure: Failure, subscription?: string): string 
         subscription ?? "<subscription>"
       }\` to see it.`
     case "BacklogOverLimit":
-      return backlogOverLimitMessage(subscription ?? "<subscription>", { pending: failure.pending })
+      return backlogOverLimitMessage(subscription ?? "<subscription>", failure)
     case "OfficialFetchFailed":
       return `Fetching the official plugin ${failure.plugin} failed: ${failure.reason}. Check the network connection, then retry.`
     case "ImportFailed":

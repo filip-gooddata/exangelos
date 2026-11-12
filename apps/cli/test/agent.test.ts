@@ -23,6 +23,16 @@ describe("agent commands", () => {
     expect(result.stdout).toContain("Subscription:  sub_7f3k")
   })
 
+  it("names the ack command to run when resume is refused for a backlog over the limit", async () => {
+    const result = await run(["resume", "sub_7f3k"], {
+      handlers: { Resume: () => Effect.fail(new DaemonContract.BacklogOverLimit({ pending: 23, limit: 20, through: 27 })) }
+    })
+    expect(result.exit._tag).toBe("Failure")
+    expect(result.stderr).toBe(
+      "Nothing was resumed: 23 events are pending, over the backlog limit. Acknowledge them first with `exangelos ack sub_7f3k --through 27`, then resume."
+    )
+  })
+
   it("refuses a malformed parameter before calling the daemon", async () => {
     const result = await run(["subscribe", "github-pr", "acme/app#123", "branch", "--intent", "x"])
     expect(result.exit._tag).toBe("Failure")
