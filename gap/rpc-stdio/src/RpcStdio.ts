@@ -1,4 +1,4 @@
-import { Cause, Duration, Effect, Queue, Schedule, Scope, Stream } from "effect"
+import { Cause, Deferred, Duration, Effect, Queue, Schedule, Scope, Stream } from "effect"
 import type { ChildProcessSpawner } from "effect/process"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import { Socket } from "effect/socket"
@@ -37,22 +37,31 @@ const encoder = new TextEncoder()
 
 const toBytes = (chunk: Uint8Array | string) => typeof chunk === "string" ? encoder.encode(chunk) : chunk
 
-const stdoutClosed = new Socket.SocketError({
-  reason: new Socket.SocketCloseError({ code: 1000, closeReason: "child process closed stdout" })
-})
+const closed = (closeReason: string) =>
+  new Socket.SocketError({ reason: new Socket.SocketCloseError({ code: 1000, closeReason }) })
 
 const makeSocket = (child: ChildProcessSpawner.ChildProcessHandle): Effect.Effect<Socket.Socket, never, Scope.Scope> =>
   Effect.gen(function*() {
+    const broken = yield* Deferred.make<never, Socket.SocketError>()
     const outgoing = yield* Queue.unbounded<Uint8Array, Cause.Done>()
-    yield* Stream.fromQueue(outgoing).pipe(Stream.run(child.stdin), Effect.ignore, Effect.forkScoped)
+    yield* Stream.fromQueue(outgoing).pipe(
+      Stream.run(child.stdin),
+      Effect.catch((cause) =>
+        Deferred.fail(broken, new Socket.SocketError({ reason: new Socket.SocketWriteError({ cause }) }))
+      ),
+      Effect.forkScoped
+    )
 
     const reader = Effect.gen(function*() {
       const pull = yield* Stream.toPull(child.stdout)
+      yield* Effect.addFinalizer(() => Deferred.fail(broken, closed("reader closed")))
       return {
         pull: Effect.mapError(pull, (error) =>
           Cause.isDone(error)
-            ? stdoutClosed
-            : new Socket.SocketError({ reason: new Socket.SocketReadError({ cause: error }) })),
+            ? closed("child process closed stdout")
+            : new Socket.SocketError({ reason: new Socket.SocketReadError({ cause: error }) })).pipe(
+            Effect.raceFirst(Deferred.await(broken))
+          ),
         upgrade: Socket.SocketUpgradeError.unsupported
       }
     })
@@ -63,5 +72,5 @@ const makeSocket = (child: ChildProcessSpawner.ChildProcessHandle): Effect.Effec
       writeAll: (chunks) => Effect.asVoid(Queue.offerAll(outgoing, chunks.map(toBytes)))
     }
 
-    return Socket.make({ reader, writer: Effect.succeed(writer) })
+    return Socket.make({ reader, writer: Effect.as(Effect.addFinalizer(() => Queue.end(outgoing)), writer) })
   })
