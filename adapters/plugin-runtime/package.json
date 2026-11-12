@@ -6,7 +6,8 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "bun run --bun vitest run"
   },
   "dependencies": {
     "@exangelos/application": "workspace:*",
@@ -14,5 +15,12 @@
     "@exangelos/contracts": "workspace:*",
     "@exangelos/rpc-stdio": "workspace:*",
     "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/platform-bun": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@exangelos/plugin-sdk": "workspace:*",
+    "@exangelos/plugin-template": "workspace:*",
+    "vitest": "catalog:"
   }
 }
