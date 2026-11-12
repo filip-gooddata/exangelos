@@ -35,30 +35,34 @@ export const initialTrust = (origin: Origin, digest: string, officialChecksum: O
   }
 }
 
+export const trustAlert = (plugin: Plugin, officialChecksum: Option.Option<string>): Option.Option<Alert> => {
+  if (plugin.trust !== "inert") return Option.none()
+  if (plugin.origin._tag !== "Official") return Option.some({ _tag: "WaitingToBeEnabled", plugin: plugin.name })
+  return Option.contains(officialChecksum, plugin.digest)
+    ? Option.none()
+    : Option.some({ _tag: "ChecksumMismatch", plugin: plugin.name })
+}
+
 export interface FilesChanged {
   readonly plugin: Plugin
   readonly restart: boolean
+  readonly alert: Option.Option<Alert>
 }
 
 export const filesChanged = (plugin: Plugin, digest: string, officialChecksum: Option.Option<string>): FilesChanged => {
-  const trust = initialTrust(plugin.origin, digest, officialChecksum)
+  const trust = plugin.trust === "enabled" ? initialTrust(plugin.origin, digest, officialChecksum) : plugin.trust
   const restart = trust !== "inert"
+  const changed: Plugin = { ...plugin, digest, trust, process: restart ? plugin.process : "stopped" }
   return {
-    plugin: { ...plugin, digest, trust, process: restart ? plugin.process : "stopped" },
-    restart
+    plugin: changed,
+    restart,
+    alert: plugin.trust === "inert" ? Option.none() : trustAlert(changed, officialChecksum)
   }
 }
 
 export const alerts = (before: Option.Option<Plugin>, after: Plugin): ReadonlyArray<Alert> => {
   const was = Option.getOrUndefined(before)
   const result: Array<Alert> = []
-  if (after.trust === "inert" && was?.trust !== "inert") {
-    result.push(
-      after.origin._tag === "Official"
-        ? { _tag: "ChecksumMismatch", plugin: after.name }
-        : { _tag: "WaitingToBeEnabled", plugin: after.name }
-    )
-  }
   if (after.process === "failing" && was?.process !== "failing") {
     result.push({ _tag: "KeepsFailing", plugin: after.name })
   }

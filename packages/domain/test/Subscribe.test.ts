@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Option, Result } from "effect"
 import type { Subscription } from "../src/index.ts"
 import { Ids, Subscribe } from "../src/index.ts"
-import { alice, bob, plugin, subscription } from "./fixtures.ts"
+import { alice, bob, later, limits, plugin, start, subscription } from "./fixtures.ts"
 
 const failure = <A, E>(result: Result.Result<A, E>): E | undefined =>
   Result.isFailure(result) ? result.failure : undefined
@@ -44,14 +44,22 @@ describe("Subscribe", () => {
     expect(Result.isSuccess(Subscribe.similar(others, candidate, [Ids.SubscriptionId.make("sub_a")]))).toBe(true)
   })
 
-  it("rule 5: an update applies while the plugin reports the same subject", () => {
-    const updated = Subscribe.update(subscription(), { intent: "Only care about reviews", maxEvents: 3 }, "acme/app#123")
-    expect(Result.getOrThrow(updated)).toMatchObject({ intent: "Only care about reviews", maxEvents: 3 })
-    expect(failure(Subscribe.update(subscription(), { parameters: { pr: "acme/app#9" } }, "acme/app#9"))).toMatchObject({
-      _tag: "SubjectChanged",
-      subject: "acme/app#123",
-      reported: "acme/app#9"
+  it("rule 5: an update applies while the plugin reports the same subject, within the lifetime", () => {
+    const context = { reportedSubject: "acme/app#123", lastStart: start, now: later(start, "1 day"), limits }
+    const updated = Subscribe.update(
+      subscription(),
+      { intent: "Only care about reviews", until: later(start, "30 days") },
+      context
+    )
+    expect(Result.getOrThrow(updated).subscription).toMatchObject({
+      intent: "Only care about reviews",
+      expiresAt: later(start, "7 days")
     })
+    const lowered = Result.getOrThrow(Subscribe.update(subscription({ lastNumber: 2 }), { maxEvents: 2 }, context))
+    expect(lowered.wake).toEqual(Option.some({ _tag: "Ended", reason: { _tag: "MaxEvents" } }))
+    expect(
+      failure(Subscribe.update(subscription(), { parameters: { pr: "acme/app#9" } }, { ...context, reportedSubject: "acme/app#9" }))
+    ).toMatchObject({ _tag: "SubjectChanged", subject: "acme/app#123", reported: "acme/app#9" })
   })
 
   it("rule 18: the default list shows the caller's own subscriptions", () => {

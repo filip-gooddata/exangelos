@@ -71,6 +71,9 @@ describe("Delivery", () => {
     expect(Delivery.hasSomethingToSay(wake({ through: 3 }), subscription({ lastNumber: 3, ackedThrough: 3 }), plugin()))
       .toBe(false)
     expect(Delivery.hasSomethingToSay(wake({ reason: "paused" }), subscription(), plugin())).toBe(false)
+    expect(
+      Delivery.hasSomethingToSay(wake({ reason: "paused" }), subscription({ state: { _tag: "Expired" } }), plugin())
+    ).toBe(true)
     expect(Delivery.hasSomethingToSay(wake({ reason: "suspended" }), subscription(), plugin())).toBe(false)
     }).pipe(Effect.runSync))
 

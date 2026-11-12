@@ -83,7 +83,7 @@ export const hasSomethingToSay = (wake: Wake, subscription: Subscription, plugin
     case "events":
       return subscription.ackedThrough < wake.through
     case "paused":
-      return subscription.state._tag === "Paused"
+      return subscription.state._tag === "Paused" || subscription.state._tag === "Expired"
     case "expired":
       return subscription.state._tag === "Expired"
     case "suspended":

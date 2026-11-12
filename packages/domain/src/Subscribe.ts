@@ -1,7 +1,8 @@
-import { Array as Arr, Option, Result } from "effect"
+import { Array as Arr, DateTime, Option, Result } from "effect"
 import type { Parameters } from "./Catalogue.ts"
 import type { EventType, PluginName, SubscriptionId } from "./Ids.ts"
 import * as Lifecycle from "./Lifecycle.ts"
+import type { Limits } from "./Limits.ts"
 import type { Plugin } from "./Plugin.ts"
 import * as PluginRules from "./PluginRules.ts"
 import { IntentRequired, NoWakeTarget, PluginUnavailable, SimilarSubscriptions, SubjectChanged } from "./Refusal.ts"
@@ -65,31 +66,48 @@ export const similar = (
 export interface Patch {
   readonly eventTypes?: ReadonlyArray<EventType>
   readonly maxEvents?: number
+  readonly until?: DateTime.Utc
   readonly intent?: string
   readonly parameters?: Parameters
   readonly label?: string
 }
 
+export interface UpdateContext {
+  readonly reportedSubject: string
+  readonly lastStart: DateTime.Utc
+  readonly now: DateTime.Utc
+  readonly limits: Limits
+}
+
 export const update = (
   subscription: Subscription,
   patch: Patch,
-  reportedSubject: string
-): Result.Result<Subscription, SubjectChanged | IntentRequired> => {
-  if (reportedSubject !== subscription.subject) {
-    return Result.fail(new SubjectChanged({ subject: subscription.subject, reported: reportedSubject }))
+  context: UpdateContext
+): Result.Result<Lifecycle.Step, SubjectChanged | IntentRequired> => {
+  if (context.reportedSubject !== subscription.subject) {
+    return Result.fail(new SubjectChanged({ subject: subscription.subject, reported: context.reportedSubject }))
   }
   const intent = patch.intent === undefined ? Result.succeed(subscription.intent) : checkIntent(patch.intent)
   return Result.map(intent, (intent) => {
     const { eventTypes: current, ...rest } = subscription
     const eventTypes = patch.eventTypes ?? current ?? []
-    return {
+    const lifetimeEnd = DateTime.addDuration(context.lastStart, context.limits.lifetime)
+    const updated: Subscription = {
       ...rest,
       ...(Arr.isReadonlyArrayNonEmpty(eventTypes) ? { eventTypes } : {}),
       intent,
       ...(patch.maxEvents === undefined ? {} : { maxEvents: patch.maxEvents }),
+      ...(patch.until === undefined ? {} : { expiresAt: DateTime.min(patch.until, lifetimeEnd) }),
       ...(patch.parameters === undefined ? {} : { parameters: patch.parameters }),
       ...(patch.label === undefined ? {} : { label: patch.label })
     }
+    const reached = updated.maxEvents !== undefined && updated.lastNumber >= updated.maxEvents
+    return reached
+      ? Result.getOrElse(Lifecycle.end(updated, { _tag: "MaxEvents" }, context.now), () => ({
+        subscription: updated,
+        wake: Option.none()
+      }))
+      : { subscription: updated, wake: Option.none() }
   })
 }
 
