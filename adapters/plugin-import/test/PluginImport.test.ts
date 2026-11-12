@@ -65,6 +65,9 @@ const listing = (directory: string) =>
 const archiveFile = (setup: Setup, name: string, content: Buffer) =>
   Effect.as(writeFile(Path.join(setup.root, "in", name), content), Path.join(setup.root, "in", name))
 
+/** The git test spawns about twenty git processes and a bundler run, so a loaded machine needs more than the default 5 s. */
+const gitTimeout = 30_000
+
 describe("PluginImportSource", () => {
   it.live("places a tar.gz archive under the plugin's name, inside one wrapper directory", () =>
     Effect.gen(function*() {
@@ -130,7 +133,7 @@ describe("PluginImportSource", () => {
       expect(yield* listing(directory)).toEqual(["dist", "plugin.json"])
       expect(linked.reason).toMatch(/leak is a link/)
       expect(yield* listing(s.plugins)).toEqual(["template"])
-    }).pipe(Effect.scoped))
+    }).pipe(Effect.scoped), gitTimeout)
 
   const refusals: ReadonlyArray<[string, ReadonlyArray<ArchiveEntry>, RegExp]> = [
     ["a .. entry", [...pluginEntries("template"), { path: "../escape.js", content: "x" }], /\.\. segment/],
