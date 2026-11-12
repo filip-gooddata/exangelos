@@ -110,6 +110,10 @@ _Avoid_: Silent, passive, polling
 A message the daemon sends to a wake target, pointing at the stored events.
 _Avoid_: Notification, nudge, ping, alert
 
+**Wake window**:
+How long the daemon gathers a subscription's events after the first one before it sends one wake. Each Watch carries it to the plugin, which gathers a source's changes into one event over the same span.
+_Avoid_: Debounce, settle interval
+
 **Alert**:
 A desktop notification for you, sent only when something needs you.
 _Avoid_: Wake, notification, warning

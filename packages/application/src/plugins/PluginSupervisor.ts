@@ -64,6 +64,8 @@ export class PluginSupervisor extends Context.Service<PluginSupervisor, {
   readonly watch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly unwatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly rewatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
+  /** Rewatches every open Watch stream, so each one gets the current settings. */
+  readonly rewatchAll: Effect.Effect<void>
 }>()("@exangelos/application/PluginSupervisor") {}
 
 type Outcome =
@@ -250,10 +252,12 @@ export const layerPluginSupervisor: Layer.Layer<
         if (Option.isNone(found) || found.value.state._tag !== "Active") return
         const subscription = found.value
         let stop = false
+        const { wakeWindow } = yield* limits
         const result = yield* process.watch({
           parameters: subscription.parameters,
           eventTypes: subscription.eventTypes ?? process.catalogue.eventTypes.map((spec) => spec.type),
-          ...(subscription.cursor === undefined ? {} : { cursor: subscription.cursor })
+          ...(subscription.cursor === undefined ? {} : { cursor: subscription.cursor }),
+          wakeWindow
         }).pipe(
           Stream.runForEachWhile((item) =>
             // Interrupting the stream waits until an item is fully ingested.
@@ -560,6 +564,9 @@ export const layerPluginSupervisor: Layer.Layer<
   })
   yield* Effect.forkScoped(startup)
 
+  const rewatch = (subscription: Ids.SubscriptionId) =>
+    Effect.andThen(FiberMap.remove(streams, subscription), openStream(subscription))
+
   return PluginSupervisor.of({
     store,
     update,
@@ -571,6 +578,7 @@ export const layerPluginSupervisor: Layer.Layer<
     watch: openStream,
     // The intake may unwatch from inside the stream's own ingest, so the removal runs on its own fiber.
     unwatch: (subscription) => Effect.asVoid(Effect.forkDetach(FiberMap.remove(streams, subscription))),
-    rewatch: (subscription) => Effect.andThen(FiberMap.remove(streams, subscription), openStream(subscription))
+    rewatch,
+    rewatchAll: Effect.suspend(() => Effect.forEach(Array.from(streams, ([id]) => id), rewatch, { discard: true }))
   })
 }))

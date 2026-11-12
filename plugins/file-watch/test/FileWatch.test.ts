@@ -6,7 +6,7 @@ import { Manifest } from "@exangelos/contracts"
 import { PluginTest } from "@exangelos/plugin-sdk"
 import { FileWatch } from "@exangelos/plugin-file-watch"
 
-const plugin = FileWatch.make({ settle: Duration.millis(300), home: "/home/ada" })
+const plugin = FileWatch.make({ home: "/home/ada" })
 
 const client = PluginTest.makeClient(plugin)
 
@@ -42,7 +42,12 @@ describe("file-watch plugin", () => {
       const plugin = yield* client
       const watch = (cursor?: string) =>
         Stream.toQueue(
-          plugin.Watch({ parameters: { path: `${root}/**` }, eventTypes: [], ...(cursor === undefined ? {} : { cursor }) }),
+          plugin.Watch({
+            parameters: { path: `${root}/**` },
+            eventTypes: [],
+            wakeWindow: Duration.millis(300),
+            ...(cursor === undefined ? {} : { cursor })
+          }),
           { capacity: 64 }
         ).pipe(Effect.map((items) => Queue.take(items).pipe(Effect.timeout(Duration.seconds(5)))))
 
@@ -69,6 +74,30 @@ describe("file-watch plugin", () => {
         ["file.deleted", { path: `${root}/build.log` }],
         ["file.created", expect.objectContaining({ path: `${root}/report.txt` })]
       ])
+    }).pipe(Effect.provide(BunFileSystem.layer)))
+
+  it.live("gathers the writes to one file inside the wake window into one event", () =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const plugin = yield* client
+      const firstEvent = (wakeWindow: Duration.Duration) =>
+        Effect.scoped(Effect.gen(function*() {
+          const root = yield* fs.makeTempDirectoryScoped({ prefix: "file-watch-" })
+          const items = yield* Stream.toQueue(
+            plugin.Watch({ parameters: { path: `${root}/**` }, eventTypes: [], wakeWindow }),
+            { capacity: 64 }
+          )
+          const next = Queue.take(items).pipe(Effect.timeout(Duration.seconds(5)))
+          yield* next
+          yield* fs.writeFileString(`${root}/build.log`, "started")
+          yield* Effect.sleep(Duration.millis(800))
+          yield* fs.writeFileString(`${root}/build.log`, "started, done")
+          const item = yield* next
+          return item._tag === "Event" ? item.event.payload : item
+        }))
+
+      expect(yield* firstEvent(Duration.millis(300))).toMatchObject({ size: 7 })
+      expect(yield* firstEvent(Duration.seconds(2))).toMatchObject({ size: 13 })
     }).pipe(Effect.provide(BunFileSystem.layer)))
 
   it("declares a manifest that validates and names the bundle the build writes", () => {

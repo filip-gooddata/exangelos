@@ -1,8 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Duration, Effect } from "effect"
 import { TestClock } from "effect/testing"
-import { devLink, enablePlugin, importPlugin, PluginAccess } from "@exangelos/application"
+import { devLink, enablePlugin, importPlugin, PluginAccess, setSettings } from "@exangelos/application"
 import { AlertSinkFake, PluginFilesFake, PluginRuntimeFake, SubscriptionIntakeFake } from "@exangelos/application/testing"
+import { Settings } from "@exangelos/domain"
 import { activeSubscription, catalogue, installed, name, pluginOf, settle, tick, unavailableReports, withPlugins, you } from "./harness.ts"
 
 /** Alerts other than the one an import raises while it waits to be enabled. */
@@ -49,6 +50,22 @@ describe("plugin supervision", () => {
       yield* access.unwatch(one)
       yield* settle
       expect(yield* runtime.openStreams(acme)).toBe(0)
+    })))
+
+  it.effect("opens a Watch with the wake window setting and reopens it when the setting changes", () =>
+    withPlugins(Effect.gen(function*() {
+      const wakeWindow = (seconds: number) =>
+        setSettings({ ...Settings.initial, limits: { ...Settings.initial.limits, wakeWindow: Duration.seconds(seconds) } })
+      yield* running
+      const runtime = yield* PluginRuntimeFake
+      yield* wakeWindow(2)
+      yield* (yield* PluginAccess.PluginAccess).watch(yield* activeSubscription("acme", "sub_one"))
+      yield* settle
+      yield* wakeWindow(7)
+      yield* settle
+
+      expect((yield* runtime.watches(acme)).map((request) => Duration.toSeconds(request.wakeWindow))).toEqual([2, 7])
+      expect(yield* runtime.openStreams(acme)).toBe(1)
     })))
 
   it.effect("restarts a crashed plugin and reopens its streams", () =>
