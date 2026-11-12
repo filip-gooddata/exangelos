@@ -57,23 +57,29 @@ const subjectName = (target: Target) => target.kind === "issue" ? `issue ${targe
  */
 const poll = (client: JiraClient["Service"], site: JiraSite, target: Target, state: PollState) => {
   const { cursor } = state
-  const attempt = (route: JiraSite) =>
-    read(client, route, target, cursor).pipe(Effect.map((result) => ({ route, ...result })))
-  const resolved = (recovered: boolean) =>
-    client.resolveRoute(site).pipe(Effect.flatMap(attempt), Effect.map((result) => ({ ...result, recovered })))
+  /** Route and recovery as this poll leaves them, kept by every outcome that does not end the run. */
+  let reached: Pick<PollState, "route" | "recovered"> = { route: state.route, recovered: state.recovered }
+  const attempt = (route: JiraSite) => read(client, route, target, cursor)
+  const resolved = client.resolveRoute(site).pipe(
+    Effect.tap((route) => Effect.sync(() => (reached = { ...reached, route }))),
+    Effect.flatMap(attempt)
+  )
   const routed = state.route === undefined
-    ? resolved(state.recovered)
+    ? resolved
     : attempt(state.route).pipe(
-      Effect.map((result) => ({ ...result, recovered: state.recovered })),
-      Effect.catchTag("CredentialRejected", (rejected) => state.recovered ? Effect.fail(rejected) : resolved(true))
+      Effect.catchTag("CredentialRejected", (rejected) => {
+        if (state.recovered) return Effect.fail(rejected)
+        reached = { ...reached, recovered: true }
+        return resolved
+      })
     )
   return routed.pipe(
-    Effect.map(({ cursor: after, events, recovered, route }): Poll => {
+    Effect.map(({ cursor: after, events }): Poll => {
       const next = encodeCursor(after)
       const items = events.map(toItem)
       return {
         items: next === cursor ? items : [...items, Plugin.cursor(next)],
-        next: { route, cursor: next, wait: defaultPollInterval, ended: false, recovered }
+        next: { ...reached, cursor: next, wait: defaultPollInterval, ended: false }
       }
     }),
     Effect.catchTags({
@@ -82,6 +88,7 @@ const poll = (client: JiraClient["Service"], site: JiraSite, target: Target, sta
           items: [],
           next: {
             ...state,
+            ...reached,
             wait: retryAfterSeconds === undefined ? defaultPollInterval : Duration.seconds(retryAfterSeconds),
           }
         }).pipe(Effect.tap(Effect.logWarning("Jira is rate limiting this plugin; waiting before the next poll"))),

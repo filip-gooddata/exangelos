@@ -10,7 +10,7 @@
  */
 import { BunServices } from "@effect/platform-bun"
 import { Config, Effect, FileSystem, Layer, Redacted } from "effect"
-import { FetchHttpClient } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { diffIssue } from "../src/Diff.ts"
 import { JiraClient, layer } from "../src/JiraClient.ts"
 import { makeSite } from "../src/Site.ts"
@@ -69,9 +69,9 @@ const shape = (value: unknown): unknown => {
   return typeof value
 }
 
-const shownHeaders = (headers: Headers) =>
+const shownHeaders = (headers: Readonly<Record<string, string>>) =>
   Object.fromEntries(
-    [...headers.entries()].filter(([name]) =>
+    Object.entries(headers).filter(([name]) =>
       ["etag", "last-modified", "cache-control", "retry-after"].includes(name) || name.startsWith("x-ratelimit-")
     )
   )
@@ -83,33 +83,54 @@ const print = (label: string, lines: Record<string, unknown>) => {
   }
 }
 
-const get = async (base: string, path: string, headers: Record<string, string> = { Authorization: authorization }) => {
+const http = await Effect.runPromise(
+  Effect.gen(function*() {
+    return yield* HttpClient.HttpClient
+  }).pipe(Effect.provide(FetchHttpClient.layer))
+)
+
+const parse = (text: string): unknown => {
   try {
-    const response = await fetch(`${base}${path}`, { method: "GET", headers: { Accept: "application/json", ...headers } })
-    const request = `GET ${path}`
-    const text = await response.text()
-    let body: unknown = undefined
-    try {
-      body = text === "" ? undefined : JSON.parse(text)
-    } catch {
-      body = undefined
-    }
-    return { request, response, text, body }
-  } catch (error) {
-    return { request: `GET ${path}`, failure: redact(error instanceof Error ? error.message : String(error)) }
+    return text === "" ? undefined : JSON.parse(text)
+  } catch {
+    return undefined
   }
 }
 
-type Got = Awaited<ReturnType<typeof get>>
+type Got =
+  | {
+    readonly request: string
+    readonly status: number
+    readonly headers: Readonly<Record<string, string>>
+    readonly text: string
+    readonly body: unknown
+  }
+  | { readonly request: string; readonly failure: string }
 
-const ok = (got: Got) => "response" in got && got.response.ok
+const get = (base: string, path: string, headers: Record<string, string> = { Authorization: authorization }) => {
+  const request = `GET ${path}`
+  return Effect.runPromise(
+    http.execute(
+      HttpClientRequest.get(`${base}${path}`).pipe(HttpClientRequest.setHeaders({ Accept: "application/json", ...headers }))
+    ).pipe(
+      Effect.flatMap((response) =>
+        response.text.pipe(
+          Effect.map((text): Got => ({ request, status: response.status, headers: response.headers, text, body: parse(text) }))
+        )
+      ),
+      Effect.catch((error) => Effect.succeed<Got>({ request, failure: redact(error.message) }))
+    )
+  )
+}
+
+const ok = (got: Got) => "status" in got && got.status >= 200 && got.status < 300
 
 const report = (label: string, got: Got, extra: (body: unknown) => Record<string, unknown> = () => ({})) => {
-  if (!("response" in got)) return print(label, { request: got.request, failure: got.failure })
+  if (!("status" in got)) return print(label, { request: got.request, failure: got.failure })
   print(label, {
     request: got.request,
-    status: got.response.status,
-    headers: shownHeaders(got.response.headers),
+    status: got.status,
+    headers: shownHeaders(got.headers),
     shape: shape(got.body),
     ...extra(got.body)
   })
@@ -125,14 +146,14 @@ const serverInfo = await get(site.url, "/rest/api/3/serverInfo")
 report("1. serverInfo", serverInfo)
 results.push(ok(serverInfo))
 
-const statusOf = (got: Got) => "response" in got ? got.response.status : got.failure
+const statusOf = (got: Got) => "status" in got ? got.status : got.failure
 
 /** The base that accepts the credential: /myself on the site URL, else through the gateway by cloud id. */
 const resolveRoute = async () => {
   const direct = await get(site.url, "/rest/api/3/myself")
   const attempts: Record<string, unknown> = { "GET /rest/api/3/myself on the site": statusOf(direct) }
   if (ok(direct)) return { route: "site", base: site.url, attempts }
-  if (!("response" in direct) || direct.response.status !== 401) return { route: "none", base: site.url, attempts }
+  if (!("status" in direct) || direct.status !== 401) return { route: "none", base: site.url, attempts }
   const tenant = await get(site.url, "/_edge/tenant_info", {})
   attempts["GET /_edge/tenant_info on the site, no credential"] = statusOf(tenant)
   const cloudId = field("body" in tenant ? tenant.body : undefined, "cloudId")
@@ -167,20 +188,20 @@ report("5. comments, first page", comments)
 results.push(ok(comments))
 
 const wrong = await get(base, `${issuePath}?fields=summary`, { Authorization: basic("not-a-valid-api-token") })
-if ("response" in wrong) {
+if ("status" in wrong) {
   print("6. issue with a wrong token", {
     request: wrong.request,
-    status: wrong.response.status,
-    headers: shownHeaders(wrong.response.headers),
+    status: wrong.status,
+    headers: shownHeaders(wrong.headers),
     body: wrong.text
   })
 } else {
   print("6. issue with a wrong token", { request: wrong.request, failure: wrong.failure })
 }
 
-if ("response" in issue) {
-  const etag = issue.response.headers.get("etag")
-  const lastModified = issue.response.headers.get("last-modified")
+if ("status" in issue) {
+  const etag = issue.headers["etag"]
+  const lastModified = issue.headers["last-modified"]
   const condition = etag !== null
     ? { "If-None-Match": etag }
     : lastModified !== null
@@ -194,11 +215,11 @@ if ("response" in issue) {
     print("7. conditional issue request", {
       request: again.request,
       sent: Object.keys(condition)[0],
-      ...("response" in again
-        ? { status: again.response.status, answered304: again.response.status === 304, headers: shownHeaders(again.response.headers) }
+      ...("status" in again
+        ? { status: again.status, answered304: again.status === 304, headers: shownHeaders(again.headers) }
         : { failure: again.failure })
     })
-    results.push("response" in again && (again.response.status === 304 || again.response.ok))
+    results.push("status" in again && (again.status === 304 || ok(again)))
   }
 } else {
   print("7. conditional issue request", { skipped: "step 3 failed" })
