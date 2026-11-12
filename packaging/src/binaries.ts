@@ -1,6 +1,7 @@
-import { execFileSync } from "node:child_process"
 import { copyFileSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
+import { Effect } from "effect"
+import { run } from "./command.ts"
 import type { OfficialPlugin } from "./plugin-archives.ts"
 import { bun } from "./plugin-archives.ts"
 import { binaryArchiveName, platformOf, type Target } from "./release-files.ts"
@@ -21,40 +22,38 @@ export interface BuiltBinary {
   readonly sidecar: string
 }
 
-const adHocSign = (binary: string, target: Target): void => {
-  if (target.os === "darwin" && process.platform === "darwin") {
-    execFileSync("codesign", ["--sign", "-", "--force", binary], { stdio: ["ignore", "ignore", "inherit"] })
-  }
-}
+const adHocSign = (binary: string, target: Target) =>
+  target.os === "darwin" && process.platform === "darwin" ? run("codesign", ["--sign", "-", "--force", binary]) : Effect.void
 
-export const buildBinaries = (build: BinaryBuild): ReadonlyArray<BuiltBinary> => {
-  const binaries = join(build.outDirectory, "binaries")
-  const sidecars = join(build.outDirectory, "sidecars")
-  mkdirSync(build.outDirectory, { recursive: true })
-  mkdirSync(sidecars, { recursive: true })
-  return build.targets.map((target) => {
-    const directory = join(binaries, platformOf(target))
-    mkdirSync(directory, { recursive: true })
-    const binary = join(directory, "exangelos")
-    execFileSync(
-      bun,
-      [
-        build.buildScript,
-        `--target=${target.bunTarget}`,
-        "--version",
-        build.version,
-        "--official-plugins",
-        JSON.stringify(build.officialPlugins),
-        "--outfile",
-        binary
-      ],
-      { stdio: ["ignore", "ignore", "inherit"] }
-    )
-    adHocSign(binary, target)
-    const archive = join(build.outDirectory, binaryArchiveName(build.version, target))
-    createTarGz(archive, directory, ["exangelos"])
-    const sidecar = join(sidecars, `exangelos-${target.rustTriple}`)
-    copyFileSync(binary, sidecar)
-    return { target, binary, archive, sidecar }
+export const buildBinaries = (build: BinaryBuild) =>
+  Effect.gen(function*() {
+    const binaries = join(build.outDirectory, "binaries")
+    const sidecars = join(build.outDirectory, "sidecars")
+    yield* Effect.sync(() => {
+      mkdirSync(build.outDirectory, { recursive: true })
+      mkdirSync(sidecars, { recursive: true })
+    })
+    return yield* Effect.forEach(build.targets, (target) =>
+      Effect.gen(function*() {
+        const directory = join(binaries, platformOf(target))
+        yield* Effect.sync(() => mkdirSync(directory, { recursive: true }))
+        const binary = join(directory, "exangelos")
+        yield* run(bun, [
+          build.buildScript,
+          `--target=${target.bunTarget}`,
+          "--version",
+          build.version,
+          "--official-plugins",
+          JSON.stringify(build.officialPlugins),
+          "--outfile",
+          binary
+        ])
+        yield* adHocSign(binary, target)
+        const archive = join(build.outDirectory, binaryArchiveName(build.version, target))
+        yield* createTarGz(archive, directory, ["exangelos"])
+        const sidecar = join(sidecars, `exangelos-${target.rustTriple}`)
+        yield* Effect.sync(() => copyFileSync(binary, sidecar))
+        const built: BuiltBinary = { target, binary, archive, sidecar }
+        return built
+      }))
   })
-}
