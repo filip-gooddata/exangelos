@@ -6,7 +6,9 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+    "build": "bun build src/main.ts --target=bun --outfile=dist/main.js",
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
   },
   "dependencies": {
     "@exangelos/plugin-sdk": "workspace:*",
