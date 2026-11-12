@@ -1,24 +1,10 @@
+import type { Emitted } from "./Events.ts"
 import type { Check, Comment, Review, Snapshot, Thread } from "./Snapshot.ts"
 
-export type EventType =
-  | "head.changed"
-  | "base.changed"
-  | "conflict.detected"
-  | "checks.failed"
-  | "checks.passed"
-  | "review.submitted"
-  | "review.thread"
-  | "comment.added"
-  | "merge.ready"
+export type { Emitted, EventType } from "./Events.ts"
 
-export interface Emitted {
-  readonly type: EventType
-  readonly occurredAt: string
-  readonly summary: string
-  readonly payload: Record<string, unknown>
-  readonly link: string | null
-  readonly dedupeKey: string
-}
+type Draft = Emitted extends infer E ? E extends Emitted ? Omit<E, "occurredAt"> & { readonly occurredAt?: string | null } : never
+  : never
 
 export type EndReason = "merged" | "closed"
 
@@ -96,8 +82,7 @@ const isFailure = (check: Check) => check.outcome === "failed" || check.outcome 
  */
 export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: Filters, now: string): Step => {
   const events: Array<Emitted> = []
-  const emit = (event: Omit<Emitted, "occurredAt"> & { readonly occurredAt?: string | null }) =>
-    events.push({ ...event, occurredAt: event.occurredAt ?? now })
+  const emit = (event: Draft) => events.push({ ...event, occurredAt: event.occurredAt ?? now } as Emitted)
   const { head, base } = snapshot
   const headChanged = previous !== undefined && previous.head !== head
   const baseChanged = previous !== undefined && (previous.base.oid !== base.oid || previous.base.name !== base.name)
@@ -143,7 +128,7 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
       type: "checks.failed",
       occurredAt: check.completedAt,
       summary: `Check ${check.name} ${check.outcome === "cancelled" ? "was cancelled" : "failed"}`,
-      payload: { name: check.name, outcome: check.outcome, required: check.required, head },
+      payload: { name: check.name, outcome: check.outcome === "cancelled" ? "cancelled" : "failed", required: check.required, head },
       link: check.url ?? snapshot.url,
       dedupeKey: `checks.failed/${head}/${check.id}`
     })
