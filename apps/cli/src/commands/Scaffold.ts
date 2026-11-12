@@ -23,18 +23,17 @@ const templateFiles = Effect.gen(function*() {
 const identifier = (name: string): string =>
   name.split("-").map((part) => part.charAt(0).toUpperCase() + part.slice(1)).join("")
 
+const placeholders = /@exangelos\/plugin-template|Template|template/g
+
+const rename = (name: string) => (placeholder: string): string =>
+  placeholder === "Template" ? identifier(name) : placeholder === "template" ? name : `@exangelos/plugin-${name}`
+
 export const renamed = (
   files: Readonly<Record<string, string>>,
   name: string
 ): Readonly<Record<string, string>> =>
   Object.fromEntries(
-    Object.entries(files).map(([file, text]) => [
-      file.replaceAll("Template", identifier(name)),
-      text
-        .replaceAll("@exangelos/plugin-template", `@exangelos/plugin-${name}`)
-        .replaceAll("Template", identifier(name))
-        .replaceAll("template", name)
-    ])
+    Object.entries(files).map(([file, text]) => [file.replace(placeholders, rename(name)), text.replace(placeholders, rename(name))])
   )
 
 const refuse = (tag: string, message: string) =>

@@ -54,6 +54,27 @@ const abandonSocket = async (path: string) => {
   await listener.exited
 }
 
+const mcpReplies = async (request: unknown) => {
+  const mcp = Bun.spawn([exangelos, "mcp"], { env: env(), stdin: "pipe", stdout: "pipe", stderr: "pipe" })
+  const frames = [
+    { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "0" } } },
+    { jsonrpc: "2.0", method: "notifications/initialized" },
+    request
+  ]
+  mcp.stdin.write(frames.map((frame) => `${JSON.stringify(frame)}\n`).join(""))
+  await mcp.stdin.flush()
+  const reader = mcp.stdout.getReader()
+  let output = ""
+  while (output.split("\n").filter((line) => line !== "").length < 2) {
+    const chunk = await reader.read()
+    if (chunk.done) break
+    output += new TextDecoder().decode(chunk.value)
+  }
+  mcp.kill("SIGTERM")
+  await mcp.exited
+  return output.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line))
+}
+
 const stop = async (child: Bun.Subprocess) => {
   child.kill("SIGTERM")
   const exited = await Promise.race([child.exited.then(() => true), Bun.sleep(10_000).then(() => false)])
@@ -107,6 +128,13 @@ describe("the exangelos binary", () => {
     expect(await serviceCalls()).toMatch(/^(launchctl|systemctl) /)
   })
 
+  it("answers an MCP call with the no-daemon text when the start fails", async () => {
+    const replies = await mcpReplies({ jsonrpc: "2.0", id: 2, method: "tools/call", params: { name: "list", arguments: {} } })
+    expect(replies.map((reply) => reply.id)).toEqual([1, 2])
+    expect(replies[1].result.isError).toBe(true)
+    expect(replies[1].result.content[0].text).toMatch(/^No Exangelos daemon is running, and starting it failed: .*fake service manager refused/s)
+  }, 15_000)
+
   it("serves the template plugin's catalogue from a daemon that replaced a stale socket", async () => {
     await abandonSocket(join(home, "daemon.sock"))
     daemon = startDaemon()
@@ -137,24 +165,7 @@ describe("the exangelos binary", () => {
   })
 
   it("serves the agent tools over MCP with only frames on stdout", async () => {
-    const mcp = Bun.spawn([exangelos, "mcp"], { env: env(), stdin: "pipe", stdout: "pipe", stderr: "pipe" })
-    const frames = [
-      { jsonrpc: "2.0", id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "e2e", version: "0" } } },
-      { jsonrpc: "2.0", method: "notifications/initialized" },
-      { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} }
-    ]
-    mcp.stdin.write(frames.map((frame) => `${JSON.stringify(frame)}\n`).join(""))
-    await mcp.stdin.flush()
-    const reader = mcp.stdout.getReader()
-    let output = ""
-    while (output.split("\n").filter((line) => line !== "").length < 2) {
-      const chunk = await reader.read()
-      if (chunk.done) break
-      output += new TextDecoder().decode(chunk.value)
-    }
-    mcp.kill("SIGTERM")
-    await mcp.exited
-    const replies = output.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line))
+    const replies = await mcpReplies({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} })
     expect(replies.map((reply) => reply.id)).toEqual([1, 2])
     expect(replies[0].result.serverInfo).toMatchObject({ name: "exangelos", version })
     const tools = replies[1].result.tools.map((tool: { name: string }) => tool.name)
@@ -178,10 +189,12 @@ describe("the exangelos binary", () => {
   }, 15_000)
 
   it("scaffolds a renamed copy of the plugin template", async () => {
-    expect(run(exangelos, "plugin", "scaffold", "demo-feed").status).toBe(0)
-    expect(JSON.parse(await readFile(join(root, "demo-feed", "plugin.json"), "utf8")).name).toBe("demo-feed")
-    expect(await readFile(join(root, "demo-feed", "src", "DemoFeed.ts"), "utf8")).toContain("export const plugin")
-    expect(run(exangelos, "plugin", "scaffold", "demo-feed").status).toBe(1)
+    expect(run(exangelos, "plugin", "scaffold", "template-feed").status).toBe(0)
+    const directory = join(root, "template-feed")
+    expect(JSON.parse(await readFile(join(directory, "plugin.json"), "utf8")).name).toBe("template-feed")
+    expect(JSON.parse(await readFile(join(directory, "package.json"), "utf8")).name).toBe("@exangelos/plugin-template-feed")
+    expect(await readFile(join(directory, "src", "index.ts"), "utf8")).toBe(`export * as TemplateFeed from "./TemplateFeed.ts"\n`)
+    expect(run(exangelos, "plugin", "scaffold", "template-feed").status).toBe(1)
   })
 
   it("cross-compiles for Linux x64 into an ELF executable", async () => {
