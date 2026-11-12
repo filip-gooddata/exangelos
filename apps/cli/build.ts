@@ -1,7 +1,8 @@
 import { $ } from "bun"
+import { readdirSync, readFileSync } from "node:fs"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { join, relative, resolve, sep } from "node:path"
 import { parseArgs } from "node:util"
 
 const { values } = parseArgs({
@@ -16,7 +17,18 @@ const { values } = parseArgs({
 const outfile = values.outfile === undefined
   ? join(import.meta.dir, "dist", values.target === undefined ? "exangelos" : `exangelos-${values.target}`)
   : resolve(values.outfile)
+const templateDirectory = join(import.meta.dir, "../../plugins/template")
+const skipped = new Set(["node_modules", ".turbo", "dist"])
+const template = Object.fromEntries(
+  readdirSync(templateDirectory, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .map((entry) => relative(templateDirectory, join(entry.parentPath, entry.name)))
+    .filter((file) => !file.split(sep).some((segment) => skipped.has(segment)))
+    .map((file) => [file, readFileSync(join(templateDirectory, file), "utf8")])
+)
 const defines = [
+  "--define",
+  `EXANGELOS_PLUGIN_TEMPLATE=${JSON.stringify(template)}`,
   ...(values.version === undefined ? [] : ["--define", `EXANGELOS_VERSION=${JSON.stringify(values.version)}`]),
   ...(values["official-plugins"] === undefined ? [] : ["--define", `EXANGELOS_OFFICIAL_PLUGINS=${values["official-plugins"]}`])
 ]
