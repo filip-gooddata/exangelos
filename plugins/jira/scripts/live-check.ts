@@ -200,11 +200,11 @@ if ("status" in wrong) {
 }
 
 if ("status" in issue) {
-  const etag = issue.headers["etag"]
-  const lastModified = issue.headers["last-modified"]
-  const condition = etag !== null
+  const etag: string | undefined = issue.headers["etag"]
+  const lastModified: string | undefined = issue.headers["last-modified"]
+  const condition = etag !== undefined
     ? { "If-None-Match": etag }
-    : lastModified !== null
+    : lastModified !== undefined
     ? { "If-Modified-Since": lastModified }
     : undefined
   if (condition === undefined) {
