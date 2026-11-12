@@ -90,22 +90,28 @@ describe("in-memory repositories", () => {
 })
 
 describe("PluginRuntimeFake", () => {
-  it.effect("streams scripted items and fails the stream when the plugin crashes", () =>
+  it.effect("streams scripted items to the picked watch and fails the rest when the plugin crashes", () =>
     Effect.scoped(Effect.gen(function*() {
       const runtime = yield* PluginRuntime.PluginRuntime
       const fake = yield* PluginRuntimeFake
+      const watching = (subject: string) => (request: { readonly parameters: { readonly [k: string]: unknown } }) =>
+        request.parameters["name"] === subject
       yield* fake.define(name, { catalogue })
-      yield* fake.emit(name, { _tag: "Cursor", cursor: "c1" })
+      yield* fake.emit(name, { _tag: "Cursor", cursor: "c1" }, watching("x"))
 
       const process = yield* runtime.start({ name, directory: "/plugins/template", entry: { _tag: "Bundle", path: "main.js" }, dev: false })
-      const items = yield* Stream.runCollect(process.watch({ parameters: { name: "x" }, eventTypes: [] })).pipe(Effect.forkChild)
+      const x = yield* Stream.runCollect(process.watch({ parameters: { name: "x" }, eventTypes: [] })).pipe(Effect.forkChild)
+      const y = yield* Stream.runCollect(process.watch({ parameters: { name: "y" }, eventTypes: [] })).pipe(Effect.forkChild)
       yield* Effect.yieldNow
+      yield* fake.emit(name, { _tag: "End", reason: "merged" }, watching("x"))
+
+      expect(yield* Fiber.join(x)).toEqual([{ _tag: "Cursor", cursor: "c1" }, { _tag: "End", reason: "merged" }])
+      expect(yield* fake.openStreams(name)).toBe(1)
+
       yield* fake.crash(name, "killed")
 
-      const exit = yield* Fiber.await(items)
-      expect(Exit.isFailure(exit)).toBe(true)
+      expect(Exit.isFailure(yield* Fiber.await(y))).toBe(true)
       expect((yield* process.exited).reason).toBe("killed")
-      expect((yield* fake.watches(name)).length).toBe(1)
     })).pipe(Effect.provide(layerPluginRuntime)))
 })
 

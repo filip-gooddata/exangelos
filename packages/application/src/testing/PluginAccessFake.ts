@@ -25,7 +25,7 @@ export const layerPluginAccess: Layer.Layer<PluginAccess | PluginAccessFake> = L
   const watched = yield* Ref.make<ReadonlyArray<Ids.SubscriptionId>>([])
   return Layer.merge(
     Layer.succeed(PluginAccess, {
-      describe: (plugin, parameters) =>
+      describe: (_actor, plugin, parameters) =>
         Effect.gen(function*() {
           const describe = (yield* Ref.get(plugins)).get(plugin)
           if (describe === undefined) {

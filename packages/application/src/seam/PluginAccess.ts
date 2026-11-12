@@ -1,6 +1,6 @@
 import { Context, Schema } from "effect"
 import type { Effect } from "effect"
-import { Catalogue, Ids } from "@exangelos/domain"
+import { Catalogue, Ids, Session } from "@exangelos/domain"
 import type { OfficialFetchFailed } from "../ports/OfficialPluginSource.ts"
 
 export const Described = Schema.Struct({
@@ -29,9 +29,10 @@ export class ParametersInvalid extends Schema.TaggedError<ParametersInvalid>()("
 export class PluginAccess extends Context.Service<PluginAccess, {
   /**
    * Makes the plugin ready, fetching an official plugin on first use and starting it, then asks
-   * it to validate and normalise the parameters and name the subject.
+   * it to validate and normalise the parameters and name the subject. A fetch records the actor.
    */
   readonly describe: (
+    actor: Session.Actor,
     plugin: Ids.PluginName,
     parameters: Catalogue.Parameters
   ) => Effect.Effect<Described, PluginNotFound | PluginUnavailable | OfficialFetchFailed | ParametersInvalid>

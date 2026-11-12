@@ -17,6 +17,11 @@ import {
 type WatchError = PluginCrashed | CredentialsRejected | SourceFailed
 type WatchQueue = Queue.Queue<Event.WatchItem, WatchError | Cause.Done>
 
+/** Picks the Watch streams an item or failure reaches, by the request that opened each. */
+export type Where = (request: WatchRequest) => boolean
+
+const everyStream: Where = () => true
+
 export interface Script {
   readonly catalogue: Catalogue.Catalogue
   /** How `start` answers; it succeeds when omitted. */
@@ -34,13 +39,13 @@ export interface Script {
 
 interface Running {
   readonly exited: Deferred.Deferred<PluginCrashed>
-  readonly streams: Ref.Ref<ReadonlySet<WatchQueue>>
+  readonly streams: Ref.Ref<ReadonlyMap<WatchQueue, WatchRequest>>
 }
 
 interface Plugin {
   readonly script: Script
   readonly running: ReadonlyArray<Running>
-  readonly buffered: ReadonlyArray<Event.WatchItem>
+  readonly buffered: ReadonlyArray<{ readonly item: Event.WatchItem; readonly where: Where }>
   readonly launches: ReadonlyArray<Launch>
   readonly watches: ReadonlyArray<WatchRequest>
   readonly configured: ReadonlyArray<Catalogue.ConfigurationValues>
@@ -50,12 +55,16 @@ export class PluginRuntimeFake extends Context.Service<PluginRuntimeFake, {
   /** Installs a scripted plugin under the name, keeping what was recorded for it. */
   readonly define: (name: Ids.PluginName, script: Script) => Effect.Effect<void>
   /**
-   * Sends the item to every open Watch stream of the plugin, or keeps it for the next stream that
-   * opens. An End item also ends the streams it reaches.
+   * Sends the item to the plugin's open Watch streams that `where` picks (all by default), or
+   * keeps it for the next such stream that opens. An End item also ends the streams it reaches.
    */
-  readonly emit: (name: Ids.PluginName, item: Event.WatchItem) => Effect.Effect<void>
-  /** Fails every open Watch stream of the plugin with the error; the process keeps running. */
-  readonly fail: (name: Ids.PluginName, error: CredentialsRejected | SourceFailed) => Effect.Effect<void>
+  readonly emit: (name: Ids.PluginName, item: Event.WatchItem, where?: Where) => Effect.Effect<void>
+  /** Fails the plugin's open Watch streams that `where` picks; the process keeps running. */
+  readonly fail: (
+    name: Ids.PluginName,
+    error: CredentialsRejected | SourceFailed,
+    where?: Where
+  ) => Effect.Effect<void>
   /** Kills every running process of the plugin: its streams and calls fail and `exited` completes. */
   readonly crash: (name: Ids.PluginName, reason: string) => Effect.Effect<void>
   readonly launches: (name: Ids.PluginName) => Effect.Effect<ReadonlyArray<Launch>>
@@ -85,21 +94,23 @@ export const layerPluginRuntime: Layer.Layer<PluginRuntime | PluginRuntimeFake> 
       })
     const recorded = <A>(name: Ids.PluginName, f: (plugin: Plugin) => ReadonlyArray<A>) =>
       Effect.map(lookup(name), (plugin) => plugin === undefined ? [] : f(plugin))
-    const openQueues = (name: Ids.PluginName) =>
+    const openQueues = (name: Ids.PluginName, where: Where = everyStream) =>
       Effect.flatMap(
         recorded(name, (plugin) => plugin.running),
-        (running) => Effect.map(Effect.forEach(running, (r) => Ref.get(r.streams)), (sets) => sets.flatMap((set) => [...set]))
+        (running) =>
+          Effect.map(Effect.forEach(running, (r) => Ref.get(r.streams)), (maps) =>
+            maps.flatMap((map) => [...map].filter(([, request]) => where(request)).map(([queue]) => queue)))
       )
 
     const startProcess = (launch: Launch, plugin: Plugin) =>
       Effect.gen(function*() {
         const { name } = launch
-        const running: Running = { exited: yield* Deferred.make<PluginCrashed>(), streams: yield* Ref.make<ReadonlySet<WatchQueue>>(new Set()) }
+        const running: Running = { exited: yield* Deferred.make<PluginCrashed>(), streams: yield* Ref.make<ReadonlyMap<WatchQueue, WatchRequest>>(new Map()) }
         yield* change(name, (p) => ({ ...p, running: [...p.running, running], launches: [...p.launches, launch] }))
         yield* Effect.addFinalizer(() =>
           Effect.gen(function*() {
             yield* change(name, (p) => ({ ...p, running: p.running.filter((r) => r !== running) }))
-            yield* Effect.forEach(yield* Ref.get(running.streams), Queue.end, { discard: true })
+            yield* Effect.forEach((yield* Ref.get(running.streams)).keys(), Queue.end, { discard: true })
           })
         )
         const call = <A>(answer: () => A) =>
@@ -122,13 +133,15 @@ export const layerPluginRuntime: Layer.Layer<PluginRuntime | PluginRuntimeFake> 
               const queue = yield* Queue.unbounded<Event.WatchItem, WatchError | Cause.Done>()
               const buffered = yield* Ref.modify(plugins, (all) => {
                 const p = all.get(name)!
-                return [p.buffered, new Map(all).set(name, { ...p, buffered: [], watches: [...p.watches, request] })]
+                const picked = p.buffered.filter((entry) => entry.where(request))
+                const kept = p.buffered.filter((entry) => !entry.where(request))
+                return [picked, new Map(all).set(name, { ...p, buffered: kept, watches: [...p.watches, request] })]
               })
-              yield* Ref.update(running.streams, (set) => new Set(set).add(queue))
-              yield* Effect.forEach(buffered, (item) => deliver(queue, item), { discard: true })
+              yield* Ref.update(running.streams, (map) => new Map(map).set(queue, request))
+              yield* Effect.forEach(buffered, (entry) => deliver(queue, entry.item), { discard: true })
               return Stream.fromQueue(queue).pipe(
-                Stream.ensuring(Ref.update(running.streams, (set) => {
-                  const next = new Set(set)
+                Stream.ensuring(Ref.update(running.streams, (map) => {
+                  const next = new Map(map)
                   next.delete(queue)
                   return next
                 }))
@@ -177,16 +190,16 @@ export const layerPluginRuntime: Layer.Layer<PluginRuntime | PluginRuntimeFake> 
             configured: earlier?.configured ?? []
           })
         }),
-      emit: (name, item) =>
+      emit: (name, item, where = everyStream) =>
         Effect.gen(function*() {
-          const queues = yield* openQueues(name)
+          const queues = yield* openQueues(name, where)
           if (queues.length === 0) {
-            return yield* change(name, (p) => ({ ...p, buffered: [...p.buffered, item] }))
+            return yield* change(name, (p) => ({ ...p, buffered: [...p.buffered, { item, where }] }))
           }
           yield* Effect.forEach(queues, (queue) => deliver(queue, item), { discard: true })
         }),
-      fail: (name, error) =>
-        Effect.flatMap(openQueues(name), (queues) => Effect.forEach(queues, (queue) => Queue.fail(queue, error), { discard: true })),
+      fail: (name, error, where) =>
+        Effect.flatMap(openQueues(name, where), (queues) => Effect.forEach(queues, (queue) => Queue.fail(queue, error), { discard: true })),
       crash: (name, reason) =>
         Effect.gen(function*() {
           const running = yield* recorded(name, (plugin) => plugin.running)
@@ -194,7 +207,7 @@ export const layerPluginRuntime: Layer.Layer<PluginRuntime | PluginRuntimeFake> 
           yield* Effect.forEach(running, (r) =>
             Effect.gen(function*() {
               yield* Deferred.succeed(r.exited, crashed)
-              yield* Effect.forEach(yield* Ref.get(r.streams), (queue) => Queue.fail(queue, crashed), { discard: true })
+              yield* Effect.forEach((yield* Ref.get(r.streams)).keys(), (queue) => Queue.fail(queue, crashed), { discard: true })
             }), { discard: true })
           yield* change(name, (p) => ({ ...p, running: [] }))
         }),
