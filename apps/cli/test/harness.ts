@@ -92,6 +92,16 @@ const defaults = {
   ServiceStatus: () => Effect.succeed({ version: "0.1.0", startMethod: "foreground" as const })
 } satisfies HandlerMap
 
+export const daemonServer = (path: string) =>
+  RpcServer.layer(DaemonContract.DaemonContract).pipe(
+    Layer.provide(
+      DaemonContract.DaemonContract.toLayer(defaults) as Layer.Layer<
+        Rpc.ToHandler<RpcGroup.Rpcs<DaemonContract.DaemonContract>>
+      >
+    ),
+    Layer.provide(DaemonServer.layer(path))
+  )
+
 const terminal = Terminal.make({
   columns: Effect.succeed(80),
   rows: Effect.succeed(24),
