@@ -48,7 +48,17 @@ const daemon = DaemonContract.AgentGroup.toLayer({
   Show: notFaked,
   Events: notFaked,
   Ack: notFaked,
-  Wait: notFaked,
+  Wait: ({ id }) =>
+    Effect.succeed({
+      subscription: id,
+      plugin: "github-pr",
+      subject: "acme/app#123",
+      why: { _tag: "Events" as const },
+      pending: [
+        { number: 4, type: "checks.failed", summary: "build and e2e failed" },
+        { number: 5, type: "review.submitted", summary: "alice requested changes" }
+      ]
+    }),
   Pause: notFaked,
   Resume: notFaked,
   Retarget: notFaked,
@@ -104,6 +114,22 @@ describe("MCP server", () => {
       }])
     }))
 
+  it.effect("waits and returns the wake text", () =>
+    Effect.gen(function*() {
+      const mcp = yield* client({})
+      const result = yield* mcp.callTool({ name: "wait", arguments: { id: "sub_7f3k" } })
+      expect(result.structuredContent).toMatchObject({
+        text: [
+          "2 events on sub_7f3k (github-pr, acme/app#123)",
+          "  #4 checks.failed      build and e2e failed",
+          "  #5 review.submitted   alice requested changes",
+          "Read  exangelos events sub_7f3k",
+          "Ack   exangelos ack sub_7f3k --through 5"
+        ].join("\n"),
+        wake: { subscription: "sub_7f3k", pending: [{ number: 4 }, { number: 5 }] }
+      })
+    }))
+
   it.effect("sends the calling session in the request headers", () =>
     Effect.gen(function*() {
       const mcp = yield* client({ CLAUDE_CODE_SESSION_ID: "c-42", CODEX_THREAD_ID: "x-1" })
@@ -113,7 +139,8 @@ describe("MCP server", () => {
       })
       expect(result.isError).toBe(false)
       expect(result.structuredContent).toMatchObject({
-        subscription: { id: "sub_9q2m", wakeTarget: { harness: "claude-code", sessionId: "c-42" } }
+        id: "sub_9q2m",
+        wakeTarget: { harness: "claude-code", sessionId: "c-42" }
       })
     }))
 })

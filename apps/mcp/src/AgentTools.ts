@@ -29,8 +29,6 @@ const limits = {
   )
 }
 
-const SubscriptionResult = Schema.Struct({ subscription: Subscription.Subscription })
-
 const tool = <const Name extends string, Parameters extends Schema.Struct.Fields, Success extends Schema.Top>(
   name: Name,
   description: string,
@@ -64,13 +62,13 @@ export const toolkit = Toolkit.make(
       ...target,
       similarOk: Schema.optionalKey(Schema.Array(Ids.SubscriptionId))
     },
-    SubscriptionResult
+    Subscription.Subscription
   ),
   tool(
     "update",
     "Change a subscription's event types, limits, intent or parameters; a change of subject is refused.",
     { ...id, intent: Schema.optionalKey(Schema.NonEmptyString), ...limits, parameters: Schema.optionalKey(Catalogue.Parameters) },
-    SubscriptionResult
+    Subscription.Subscription
   ),
   tool(
     "list",
@@ -94,7 +92,7 @@ export const toolkit = Toolkit.make(
     "ack",
     "Acknowledge a subscription's events up to and including the number in through.",
     { ...id, through: Ids.AckedThrough },
-    SubscriptionResult
+    Subscription.Subscription
   ),
   tool(
     "wait",
@@ -102,20 +100,20 @@ export const toolkit = Toolkit.make(
     id,
     Schema.Struct({ text: Schema.String, wake: Wake.WakeContent })
   ),
-  tool("pause", "Pause a subscription; nothing is watched until it is resumed.", id, SubscriptionResult),
+  tool("pause", "Pause a subscription; nothing is watched until it is resumed.", id, Subscription.Subscription),
   tool(
     "resume",
     "Resume a paused subscription with a fresh expiry; acknowledge a backlog over the limit first.",
     id,
-    SubscriptionResult
+    Subscription.Subscription
   ),
   tool(
     "retarget",
     "Change which session a subscription wakes: target for a specific session, pullOnly for none, neither for yours.",
     { ...id, ...target },
-    SubscriptionResult
+    Subscription.Subscription
   ),
-  tool("cancel", "Cancel a subscription for good.", id, SubscriptionResult)
+  tool("cancel", "Cancel a subscription for good.", id, Subscription.Subscription)
 )
 
 const fail = (failure: AgentFailure) => new ToolFailure({ message: failureMessage(failure) })
@@ -159,7 +157,6 @@ export const handlers = toolkit.toLayer(Effect.gen(function*() {
         .pipe(
           Effect.flatMap(([choice, time]) =>
             client.Subscribe({ ...rest, ...time, target: choice, similarOk: similarOk ?? [] }).pipe(
-              Effect.map((subscription) => ({ subscription })),
               Effect.mapError(fail)
             )
           )
@@ -168,7 +165,6 @@ export const handlers = toolkit.toLayer(Effect.gen(function*() {
       untilTime(until).pipe(
         Effect.flatMap((time) =>
           client.Update({ ...rest, ...time }).pipe(
-            Effect.map((subscription) => ({ subscription })),
             Effect.mapError(fail)
           )
         )
@@ -182,26 +178,25 @@ export const handlers = toolkit.toLayer(Effect.gen(function*() {
     events: (input) =>
       client.Events(input).pipe(Effect.map((events) => ({ events })), Effect.mapError(fail)),
     ack: (input) =>
-      client.Ack(input).pipe(Effect.map((subscription) => ({ subscription })), Effect.mapError(fail)),
+      client.Ack(input).pipe(Effect.mapError(fail)),
     wait: (input) =>
       client.Wait(input).pipe(
         Effect.map((wake) => ({ text: WakeText.render(wake), wake })),
         Effect.mapError(fail)
       ),
     pause: (input) =>
-      client.Pause(input).pipe(Effect.map((subscription) => ({ subscription })), Effect.mapError(fail)),
+      client.Pause(input).pipe(Effect.mapError(fail)),
     resume: (input) =>
-      client.Resume(input).pipe(Effect.map((subscription) => ({ subscription })), Effect.mapError(fail)),
+      client.Resume(input).pipe(Effect.mapError(fail)),
     retarget: ({ id, ...choice }) =>
       targetChoice(choice).pipe(
         Effect.flatMap((target) =>
           client.Retarget({ id, target }).pipe(
-            Effect.map((subscription) => ({ subscription })),
             Effect.mapError(fail)
           )
         )
       ),
     cancel: (input) =>
-      client.Cancel(input).pipe(Effect.map((subscription) => ({ subscription })), Effect.mapError(fail))
+      client.Cancel(input).pipe(Effect.mapError(fail))
   }
 }))
