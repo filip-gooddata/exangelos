@@ -10,7 +10,8 @@ const { values } = parseArgs({
     target: { type: "string" },
     outfile: { type: "string" },
     version: { type: "string" },
-    "official-plugins": { type: "string" }
+    "official-plugins": { type: "string" },
+    "release-url": { type: "string" }
   }
 })
 
@@ -30,7 +31,8 @@ const defines = [
   "--define",
   `EXANGELOS_PLUGIN_TEMPLATE=${JSON.stringify(template)}`,
   ...(values.version === undefined ? [] : ["--define", `EXANGELOS_VERSION=${JSON.stringify(values.version)}`]),
-  ...(values["official-plugins"] === undefined ? [] : ["--define", `EXANGELOS_OFFICIAL_PLUGINS=${values["official-plugins"]}`])
+  ...(values["official-plugins"] === undefined ? [] : ["--define", `EXANGELOS_OFFICIAL_PLUGINS=${values["official-plugins"]}`]),
+  ...(values["release-url"] === undefined ? [] : ["--define", `EXANGELOS_RELEASE_URL=${JSON.stringify(values["release-url"])}`])
 ]
 const target = values.target === undefined ? [] : [`--target=${values.target}`]
 const scratch = await mkdtemp(join(tmpdir(), "exangelos-build-"))
