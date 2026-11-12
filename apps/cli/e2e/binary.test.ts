@@ -194,6 +194,7 @@ describe("the exangelos binary", () => {
     expect(JSON.parse(await readFile(join(directory, "plugin.json"), "utf8")).name).toBe("template-feed")
     expect(JSON.parse(await readFile(join(directory, "package.json"), "utf8")).name).toBe("@exangelos/plugin-template-feed")
     expect(await readFile(join(directory, "src", "index.ts"), "utf8")).toBe(`export * as TemplateFeed from "./TemplateFeed.ts"\n`)
+    expect(await readFile(join(directory, "README.md"), "utf8")).toContain("builds only inside the Exangelos monorepo")
     expect(run(exangelos, "plugin", "scaffold", "template-feed").status).toBe(1)
   })
 
