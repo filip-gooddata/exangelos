@@ -64,4 +64,33 @@ describe("Tree", () => {
 
       expect(error.reason._tag).toBe("PermissionDenied")
     }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
+
+  it.effect("descends without limit for a recursive alternative", () =>
+    Effect.gen(function*() {
+      const { root, write } = yield* fixture
+      yield* write("dist/nested/deep/x.txt", "a")
+      const glob = Result.getOrThrow(FileGlob.parse({ path: `${root}/dist/{**,top}/*.txt` }, "/home/ada"))
+
+      expect([...(yield* Tree.scan(glob)).keys()]).toEqual(["nested/deep/x.txt"])
+    }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
+
+  it.effect("discards a directory swapped for a symbolic link while it is read", () =>
+    Effect.gen(function*() {
+      const { fs, root, write } = yield* fixture
+      yield* write("dist/child/inside.txt", "a")
+      yield* write("outside/child/secret.txt", "b")
+      const swapping = FileSystem.FileSystem.of({
+        ...fs,
+        readDirectory: (path, options) =>
+          path === `${root}/dist/child`
+            ? fs.remove(path, { recursive: true }).pipe(
+              Effect.andThen(fs.symlink(`${root}/outside/child`, path)),
+              Effect.andThen(fs.readDirectory(path, options))
+            )
+            : fs.readDirectory(path, options)
+      })
+      const glob = Result.getOrThrow(FileGlob.parse({ path: `${root}/dist/**` }, "/home/ada"))
+
+      expect((yield* Tree.scan(glob).pipe(Effect.provideService(FileSystem.FileSystem, swapping))).size).toBe(0)
+    }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
 })

@@ -76,7 +76,7 @@ export const parse = (
   return Result.succeed({
     glob: `/${segments.join("/")}`,
     base,
-    depth: rest.includes("**") ? Number.POSITIVE_INFINITY : rest.length,
+    depth: rest.some((segment) => segment.includes("**")) ? Number.POSITIVE_INFINITY : rest.length,
     includes: (relative) => Glob.match(pattern, relative),
     ignores: (relative) =>
       ignored.length > 0 &&
