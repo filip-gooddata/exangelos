@@ -1,0 +1,125 @@
+# Exangelos
+
+Exangelos lets AI coding agents subscribe to events from outside systems and wakes the right agent session when one arrives. One person runs it on one machine and supervises it.
+
+## Language
+
+### Sources
+
+**Plugin**:
+An installed package that watches one kind of external source and reports events.
+_Avoid_: Source, integration, connector, provider
+
+**Catalogue**:
+What a plugin declares: its event types, its subscription parameters and its configuration fields.
+_Avoid_: Schema, manifest, capabilities
+
+**Event type**:
+A named kind of event in a catalogue, such as `checks.failed`.
+_Avoid_: Trigger, topic, hook
+
+**Subject**:
+The one thing a subscription watches, such as `acme/app#123`, named by the plugin from the subscription's parameters.
+_Avoid_: Target, resource, entity
+
+**Trust**:
+Whether a plugin may run: inert, enabled, or dev.
+_Avoid_: Status, permission
+
+**Inert**:
+A plugin that is installed and not allowed to run until you enable it.
+_Avoid_: Disabled, untrusted, pending
+
+**Available**:
+A plugin that is enabled or dev, has its configuration set and has a running process.
+_Avoid_: Healthy, ready, online
+
+### Subscriptions
+
+**Subscription**:
+A standing request to be told about selected event types on one subject.
+_Avoid_: Watch, watcher, listener, monitor
+
+**Intent**:
+The agent's one-line statement of why it subscribed, required when subscribing and written for you.
+_Avoid_: Note, description, reason, comment
+
+**Event**:
+One occurrence a plugin reported for a subscription.
+_Avoid_: Message, update, notification
+
+**Pending**:
+An event that no one has acknowledged yet.
+_Avoid_: Unread, unseen, new
+
+**Acknowledge**:
+To declare every event of a subscription up to a given number as dealt with.
+_Avoid_: Dismiss, mark read, consume
+
+**Backlog**:
+The pending events of one subscription.
+_Avoid_: Queue, inbox
+
+**Cursor**:
+The plugin's bookmark for a subscription, from which watching continues after any interruption.
+_Avoid_: Checkpoint, offset, state
+
+**Active**:
+An open subscription that is watched.
+_Avoid_: Running, live
+
+**Suspended**:
+An active subscription whose plugin is unavailable; it continues by itself when the plugin returns.
+_Avoid_: Paused, stalled, blocked
+
+**Paused**:
+An open subscription that is not watched, because its backlog hit the limit or an actor paused it.
+_Avoid_: Suspended, stopped
+
+**Expired**:
+An open subscription that is not watched because its expiry time passed.
+_Avoid_: Timed out, stale
+
+**Ended**:
+A closed subscription that finished because the plugin ended it or it reached its number of events.
+_Avoid_: Completed, done
+
+**Cancelled**:
+A closed subscription that an actor stopped.
+_Avoid_: Deleted, removed
+
+### Delivery
+
+**Harness**:
+A program that runs agent sessions and can deliver a message into one, such as T3 Code, Claude Code or Codex.
+_Avoid_: Client, host, agent runner
+
+**Session**:
+One agent conversation inside a harness.
+_Avoid_: Thread, conversation, agent
+
+**Wake target**:
+The session a subscription wakes; a subscription has one, or none when it is pull-only.
+_Avoid_: Recipient, destination, subscriber
+
+**Pull-only**:
+A subscription with no wake target, whose events an agent collects by asking.
+_Avoid_: Silent, passive, polling
+
+**Wake**:
+A message the daemon sends to a wake target, pointing at the stored events.
+_Avoid_: Notification, nudge, ping, alert
+
+**Alert**:
+A desktop notification for you, sent only when something needs you.
+_Avoid_: Wake, notification, warning
+
+### People and agents
+
+**Actor**:
+Who made a change to a subscription or plugin: a session, or you.
+_Avoid_: User, caller, author
+
+**You**:
+The one person who runs Exangelos on their machine and supervises it.
+_Avoid_: User, admin, operator, human
