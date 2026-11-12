@@ -23,6 +23,7 @@
   "devDependencies": {
     "@effect/platform-bun": "catalog:",
     "@effect/vitest": "catalog:",
+    "@exangelos/daemon": "workspace:*",
     "@exangelos/daemon-client": "workspace:*",
     "@exangelos/paths": "workspace:*",
     "@tauri-apps/cli": "catalog:",

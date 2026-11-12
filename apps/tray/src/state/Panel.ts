@@ -15,28 +15,30 @@ export type PanelState = Data.TaggedEnum<{
 }>
 export const PanelState = Data.taggedEnum<PanelState>()
 
-export const needsYou = (plugins: ReadonlyArray<Plugin.Plugin>): ReadonlyArray<Alert.Alert> =>
-  plugins.flatMap((plugin): ReadonlyArray<Alert.Alert> => {
-    const alerts: Array<Alert.Alert> = []
-    if (plugin.trust === "inert") {
-      alerts.push(
-        plugin.origin._tag === "Official"
-          ? { _tag: "DigestMismatch", plugin: plugin.name }
-          : { _tag: "WaitsForEnable", plugin: plugin.name }
-      )
-    }
-    if (plugin.process === "failing") alerts.push({ _tag: "Failing", plugin: plugin.name, reason: "it keeps failing" })
-    if (plugin.configuration._tag === "Rejected") {
-      alerts.push({ _tag: "CredentialsRejected", plugin: plugin.name, reason: plugin.configuration.reason })
-    }
-    return alerts
-  })
+export const needsYou = (
+  plugins: ReadonlyArray<Plugin.Plugin>,
+  trustAlerts: ReadonlyArray<Alert.Alert>
+): ReadonlyArray<Alert.Alert> => [
+  ...trustAlerts,
+  ...plugins.flatMap((plugin): ReadonlyArray<Alert.Alert> => [
+    ...(plugin.process === "failing" ? [{ _tag: "Failing", plugin: plugin.name, reason: "it keeps failing" } as const] : []),
+    ...(plugin.configuration._tag === "Rejected"
+      ? [{ _tag: "CredentialsRejected", plugin: plugin.name, reason: plugin.configuration.reason } as const]
+      : [])
+  ])
+]
 
 export const fromLoad = <R>(
   load: Effect.Effect<Snapshot, DaemonNotRunning | DaemonUnreachable, R>
 ): Effect.Effect<PanelState, never, R> =>
   load.pipe(
-    Effect.map(({ plugins, subscriptions }) => PanelState.Ready({ subscriptions, plugins, needsYou: Result.map(plugins, needsYou) })),
+    Effect.map(({ plugins, subscriptions, trustAlerts }) =>
+      PanelState.Ready({
+        subscriptions,
+        plugins,
+        needsYou: Result.flatMap(plugins, (loaded) => Result.map(trustAlerts, (alerts) => needsYou(loaded, alerts)))
+      })
+    ),
     Effect.catchTags({
       DaemonNotRunning: ({ message }) => Effect.succeed(PanelState.DaemonNotRunning({ message })),
       DaemonUnreachable: ({ message }) => Effect.succeed(PanelState.DaemonUnreachable({ message }))

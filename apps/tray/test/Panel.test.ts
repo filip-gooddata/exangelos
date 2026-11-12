@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Ids } from "@exangelos/domain"
-import { Effect, Ref, Result } from "effect"
+import { Ids, PluginRules } from "@exangelos/domain"
+import { Effect, Option, Ref, Result } from "effect"
 import { TestClock } from "effect/testing"
 import { DaemonClient, Host, Panel } from "../src/index.ts"
 import { plugin, subscription } from "./fixtures.ts"
@@ -10,7 +10,12 @@ type Answer = Effect.Effect<DaemonClient.Snapshot, DaemonClient.DaemonNotRunning
 const loaded = (
   subscriptions: ReadonlyArray<ReturnType<typeof subscription>>,
   plugins: ReadonlyArray<ReturnType<typeof plugin>>
-): Answer => Effect.succeed({ subscriptions: Result.succeed(subscriptions), plugins: Result.succeed(plugins) })
+): Answer =>
+  Effect.succeed({
+    subscriptions: Result.succeed(subscriptions),
+    plugins: Result.succeed(plugins),
+    trustAlerts: Result.succeed(plugins.flatMap((p) => Option.toArray(PluginRules.trustAlert(p, Option.none()))))
+  })
 
 const healthy = loaded([subscription()], [plugin()])
 const failing = loaded([], [plugin({ process: "failing" })])
@@ -95,7 +100,8 @@ describe("panel state", () => {
     Effect.gen(function*() {
       const { panel, sent } = yield* start(Effect.succeed({
         subscriptions: Result.fail("NotImplemented: List"),
-        plugins: Result.succeed([plugin({ process: "failing" })])
+        plugins: Result.succeed([plugin({ process: "failing" })]),
+        trustAlerts: Result.succeed([])
       }))
       const state = yield* panel.current
       if (state._tag !== "Ready") return expect.fail(state._tag)
