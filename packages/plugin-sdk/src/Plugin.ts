@@ -59,8 +59,9 @@ export const make = <Params extends Parameters<any>, R = never, E = never, RB = 
     parameters: definition.parameters.spec,
     configuration: definition.configuration
   }
-  const decode = Schema.decodeUnknownEffect(definition.parameters.schema)
-  const encode = Schema.encodeEffect(definition.parameters.schema)
+  const codec = Schema.toCodecJson(definition.parameters.schema)
+  const decode = Schema.decodeUnknownEffect(codec)
+  const encode = Schema.encodeEffect(codec)
 
   const layer = PluginProtocol.PluginProtocol.toLayer(
     Effect.gen(function*() {

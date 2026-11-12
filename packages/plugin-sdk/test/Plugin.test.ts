@@ -126,4 +126,32 @@ describe("Plugin", () => {
         event: { payload: { title: "acme/app", at: "2026-11-12T10:00:00.000Z" } }
       })
     }).pipe(Effect.scoped))
+
+  it.effect("reads and returns parameters in their JSON encoding", () =>
+    Effect.gen(function*() {
+      const since = Plugin.make({
+        events: [closed],
+        parameters: Catalogue.parameters({ main: "since", schema: Schema.Struct({ since: Schema.DateTimeUtc }) }),
+        configuration: [],
+        handlers: Effect.succeed({
+          configure: () => Effect.void,
+          describe: ({ since }) => Effect.succeed({ subject: DateTime.formatIso(since), label: "Since" }),
+          watch: () => Stream.empty
+        })
+      })
+      const client = yield* PluginTest.makeClient(since)
+
+      expect(yield* client.Describe({ parameters: { since: "2026-11-12T10:00:00Z" } })).toEqual({
+        _tag: "Described",
+        parameters: { since: "2026-11-12T10:00:00.000Z" },
+        subject: "2026-11-12T10:00:00.000Z",
+        label: "Since"
+      })
+    }).pipe(Effect.scoped))
+
+  it("refuses a main parameter that is not a required property", () => {
+    expect(() =>
+      Catalogue.parameters({ main: "label", schema: Schema.Struct({ label: Schema.optionalKey(Schema.String) }) })
+    ).toThrow('The main parameter "label" must be a required property of an object schema')
+  })
 })

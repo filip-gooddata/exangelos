@@ -50,13 +50,20 @@ export const event = <S extends Schema.Codec<any, any>>(
   }
 }
 
-export const parameters = <S extends Schema.Codec<any, any>>(options: {
+/**
+ * Declares the subscription parameters. Throws when `main` is not a required property of the object schema.
+ */
+export const parameters = <S extends Schema.Codec<object, any>>(options: {
   readonly main: keyof S["Type"] & string
   readonly schema: S
-}): Parameters<S["Type"]> => ({
-  schema: options.schema,
-  spec: { main: options.main, schema: toJsonSchema(options.schema) }
-})
+}): Parameters<S["Type"]> => {
+  const schema = toJsonSchema(options.schema)
+  const required = Array.isArray(schema.required) ? schema.required : []
+  if (schema.type !== "object" || !required.includes(options.main)) {
+    throw new Error(`The main parameter "${options.main}" must be a required property of an object schema`)
+  }
+  return { schema: options.schema, spec: { main: options.main, schema } }
+}
 
 interface FieldOptions {
   readonly label: string
