@@ -828,23 +828,49 @@ importers:
         specifier: 'catalog:'
         version: 4.1.4
 
-  plugins/file-watch:
+  packaging:
     dependencies:
-      '@exangelos/plugin-sdk':
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@exangelos/plugin-directory':
         specifier: workspace:*
-        version: link:../../packages/plugin-sdk
+        version: link:../adapters/plugin-directory
       effect:
         specifier: 'catalog:'
         version: 4.1.4
 
-  plugins/github-pr:
+  plugins/file-watch:
     dependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
       '@exangelos/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+
+  plugins/github-pr:
+    dependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@exangelos/plugin-sdk':
+        specifier: workspace:*
+        version: link:../../packages/plugin-sdk
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.4
+    devDependencies:
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
 
   plugins/jira:
     dependencies:
