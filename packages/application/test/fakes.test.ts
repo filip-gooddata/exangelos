@@ -3,6 +3,7 @@ import { DateTime, Effect, Exit, Fiber, Option, Stream } from "effect"
 import { Event, Ids, Session, Subscription, Wake } from "@exangelos/domain"
 import {
   EventRepository,
+  PluginAccess,
   PluginDirectory,
   PluginImportSource,
   PluginRuntime,
@@ -11,10 +12,12 @@ import {
   WakeTarget
 } from "@exangelos/application"
 import {
+  layerPluginAccess,
   layerPluginFiles,
   layerPluginRuntime,
   layerRepositories,
   layerWakeTarget,
+  PluginAccessFake,
   PluginFilesFake,
   PluginRuntimeFake,
   WakeTargetFake
@@ -150,4 +153,21 @@ describe("PluginFilesFake", () => {
       expect((yield* directory.list).map((p) => p.name)).toEqual(["template"])
       expect((yield* directory.read(placed)).digest).toBe("d2")
     }).pipe(Effect.provide(layerPluginFiles([]))))
+})
+
+describe("PluginAccessFake", () => {
+  it.effect("joins the positional main parameter and refuses a conflicting one", () =>
+    Effect.gen(function*() {
+      const access = yield* PluginAccess.PluginAccess
+      const fake = yield* PluginAccessFake
+      yield* fake.define(name, catalogue, (parameters) =>
+        Effect.succeed({ catalogue, parameters, subject: String(parameters["name"]), label: "x" }))
+      const you = { _tag: "You" } as const
+
+      const described = yield* access.describe(you, name, { parameters: {}, main: Option.some("x") })
+      const refused = yield* Effect.flip(access.describe(you, name, { parameters: { name: "y" }, main: Option.some("x") }))
+
+      expect(described.subject).toBe("x")
+      expect(refused._tag).toBe("ParametersInvalid")
+    }).pipe(Effect.provide(layerPluginAccess)))
 })
