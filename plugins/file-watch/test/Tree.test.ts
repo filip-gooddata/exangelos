@@ -180,7 +180,6 @@ describe("Tree", () => {
 })
 
 
-/** Whether a path names the same directory as `directory` did when this was made, however it is spelt. */
 const sameDirectory = (fs: FileSystem.FileSystem, directory: string) => {
   let original: FileSystem.File.Info | undefined
   return (path: string) =>

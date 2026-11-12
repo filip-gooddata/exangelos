@@ -46,11 +46,6 @@ const open = (path: string, flags: number) =>
     (fd) => Effect.sync(() => NodeFs.closeSync(fd))
   )
 
-/**
- * Names the open directory by identity and checks that the name reaches it,
- * so a volume without `/.vol` support or a missing `/proc` fails rather than
- * reading as empty. A directory deleted after it was opened gives none.
- */
 const bind = (fd: number) =>
   Effect.gen(function*() {
     const own = yield* Effect.try({
@@ -66,7 +61,6 @@ const bind = (fd: number) =>
     return yield* failure("open", path, undefined, "cannot reach an open directory by identity")
   })
 
-/** Opens each component of a Linux path in turn without following a symbolic link, keeping only the last one open. */
 const walkFromRoot = (realBase: string) => {
   const flags = O_PATH | NodeFs.constants.O_DIRECTORY | NodeFs.constants.O_NOFOLLOW
   let fd = NodeFs.openSync("/", O_PATH | NodeFs.constants.O_DIRECTORY)

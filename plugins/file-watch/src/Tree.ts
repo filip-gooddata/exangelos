@@ -30,11 +30,6 @@ const ifMissing = <A>(fallback: A) => (error: PlatformError) =>
 const lstat = (fs: FileSystem.FileSystem, path: string) =>
   fs.lstat(path).pipe(Effect.asSome, Effect.catch(ifMissing(Option.none<FileSystem.File.Info>())))
 
-/**
- * Reads one open directory and descends into its subdirectories. Names and
- * metadata come through the directory's identity path, so a directory swapped
- * for a symbolic link at its name, even briefly, is never read through.
- */
 const walk = (
   fs: FileSystem.FileSystem,
   glob: FileGlob,
