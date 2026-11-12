@@ -22,7 +22,6 @@ const checks = `commits(last: 1) { nodes { commit { statusCheckRollup { contexts
   }
 } } } } }`
 
-/** One request carries the whole snapshot unless a connection overflows a page. */
 export const pullRequest = `query PullRequest($owner: String!, $repo: String!, $number: Int!,
   $reviews: String, $comments: String, $threads: String, $checks: String) {
   repository(owner: $owner, name: $repo) {
@@ -41,12 +40,10 @@ export const pullRequest = `query PullRequest($owner: String!, $repo: String!, $
   }
 }`
 
-/** Fetches further pages of the connections that overflowed. */
 export type Connection = "reviews" | "comments" | "threads" | "checks"
 
 const selections: Record<Connection, string> = { reviews, comments, threads, checks }
 
-/** Fetches the next page of each connection that overflowed. GraphQL refuses unused variables, so each is declared only when selected. */
 export const morePages = (connections: ReadonlyArray<Connection>) =>
   `query PullRequestPages($owner: String!, $repo: String!, $number: Int!${
     connections.map((c) => `, $${c}: String`).join("")

@@ -3,10 +3,6 @@ import type { Memory } from "./Diff.ts"
 
 const Mark = Schema.Struct({ at: Schema.NullOr(Schema.String), ids: Schema.Array(Schema.String) })
 
-/**
- * Version 1 of the cursor: the diff's memory as JSON. A cursor in a version
- * this plugin does not know reads as none, so the next poll is a new baseline.
- */
 const V1 = Schema.Struct({
   v: Schema.Literal(1),
   head: Schema.String,

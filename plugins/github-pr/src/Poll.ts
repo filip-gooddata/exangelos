@@ -13,19 +13,12 @@ import {
 } from "./GitHub.ts"
 import type { PullRequestRef } from "./PullRequestRef.ts"
 
-/**
- * One poll a minute. A poll is one GraphQL query worth one point of the
- * 5,000 an hour a token gets, so fifty watched pull requests use 3,000 and
- * leave room for the person's own use of the token.
- */
 export const interval = Duration.minutes(1)
 
-/** Attempts at a poll GitHub cannot answer before the watch fails and the daemon retries it. */
 const attempts = 4
 
 const transientBackoff = (failures: number) => Duration.seconds(15 * 2 ** failures)
 
-/** Waits at least as long as GitHub asks, doubling from a minute on each refusal in a row, up to 15 minutes. */
 const limitBackoff = (refusals: number, asked: Duration.Duration) =>
   refusals === 0 ? asked : Duration.max(asked, Duration.min(Duration.minutes(2 ** refusals), Duration.minutes(15)))
 
@@ -45,11 +38,6 @@ const nextDelay = (quota: Option.Option<Quota>, now: number) =>
       remaining > 0 ? interval : Duration.max(interval, Duration.millis(resetAt - now))
   })
 
-/**
- * Polls one pull request from the given cursor until it is merged or closed.
- * Rate limits are waited out, other failures retried a few times, and a
- * refused token or a missing pull request fails the stream.
- */
 export const watch = (
   connection: Connection,
   ref: PullRequestRef,

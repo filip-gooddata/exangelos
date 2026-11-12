@@ -1,12 +1,15 @@
 import { describe, expect, it } from "@effect/vitest"
-import { type Filters, type Memory, noFilters, type Step, step } from "../src/Diff.ts"
-import type { Snapshot } from "../src/Snapshot.ts"
+import { Diff, type Snapshot } from "../src/index.ts"
+
+const { noFilters, step } = Diff
+type Filters = Diff.Filters
+type Memory = Diff.Memory
+type Step = Diff.Step
 import { check, comment, review, snapshot, thread } from "./fixtures.ts"
 
 const now = "2026-11-12T12:00:00Z"
 
-/** Runs polls in order and returns the event types and dedupe keys of the last one. */
-const poll = (snapshots: ReadonlyArray<Snapshot>, filters: Filters = noFilters) => {
+const poll = (snapshots: ReadonlyArray<Snapshot.Snapshot>, filters: Filters = noFilters) => {
   let memory: Memory | undefined
   let last: Step | undefined
   for (const next of snapshots) {
@@ -16,7 +19,7 @@ const poll = (snapshots: ReadonlyArray<Snapshot>, filters: Filters = noFilters) 
   return last!
 }
 
-const keys = (snapshots: ReadonlyArray<Snapshot>, filters?: Filters) =>
+const keys = (snapshots: ReadonlyArray<Snapshot.Snapshot>, filters?: Filters) =>
   poll(snapshots, filters).events.map((e) => e.dedupeKey)
 
 const head = "a".repeat(40)

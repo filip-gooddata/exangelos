@@ -1,10 +1,6 @@
 import { Effect, Layer, Ref } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 
-/**
- * Answers written by hand in the shapes api.github.com returned to a
- * read-only probe on 2026-11-12. No test reaches GitHub.
- */
 export interface Answer {
   readonly status: number
   readonly body: unknown
@@ -86,7 +82,6 @@ export interface PullRequestFields {
   readonly checks?: ReadonlyArray<{ readonly id: string; readonly name: string; readonly conclusion: string | null }>
 }
 
-/** The `PullRequest` query's answer for acme/api#7. */
 export const pullRequest = (fields: PullRequestFields = {}): Answer =>
   ok({
     repository: {
@@ -102,7 +97,6 @@ export const pullRequest = (fields: PullRequestFields = {}): Answer =>
         baseRefOid: "b".repeat(40),
         mergeable: fields.mergeable ?? "MERGEABLE",
         reviewDecision: fields.reviewDecision === undefined ? "REVIEW_REQUIRED" : fields.reviewDecision,
-        // A branch governed by a ruleset: no protection rule, the required contexts come from refUpdateRule.
         baseRef: {
           refUpdateRule: { requiredStatusCheckContexts: ["build"] },
           branchProtectionRule: null
@@ -135,13 +129,11 @@ export const pullRequest = (fields: PullRequestFields = {}): Answer =>
     }
   }, fields.headers)
 
-/** A follow-up page of comments, as `morePages(["comments"])` gets it. */
 export const commentsPage = (comments: ReadonlyArray<CommentFields>, older: string | null, headers?: Record<string, string>) =>
   ok({ repository: { pullRequest: { comments: page(comments.map(commentNode), older) } } }, headers)
 
 export const viewer = ok({ viewer: { login: "octocat" } })
 
-/** The global `Response`, typed through the one function that takes it: the base config has no DOM library. */
 const WebResponse = (globalThis as unknown as {
   readonly Response: new(
     body: string,
@@ -149,10 +141,6 @@ const WebResponse = (globalThis as unknown as {
   ) => Parameters<typeof HttpClientResponse.fromWeb>[1]
 }).Response
 
-/**
- * A stub HTTP client that answers each request with the next answer in turn,
- * repeating the last one, and records what was sent.
- */
 export const make = (answers: ReadonlyArray<Answer>) =>
   Effect.gen(function*() {
     const sent = yield* Ref.make<ReadonlyArray<Sent>>([])

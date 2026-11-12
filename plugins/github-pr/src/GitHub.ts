@@ -1,38 +1,29 @@
-import { Clock, Context, Data, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
 import type { PullRequestRef } from "./PullRequestRef.ts"
 import * as Query from "./Query.ts"
 import type { Check, CheckOutcome, Snapshot } from "./Snapshot.ts"
 
 export interface Connection {
-  /** `github.com` or a GitHub Enterprise Server host name. */
   readonly host: string
   readonly token: Redacted.Redacted<string>
 }
 
-/** The token was refused, or it may not read what the query asks for. */
-export class Unauthorized extends Data.TaggedError("Unauthorized")<{ readonly reason: string }> {}
+export class Unauthorized extends Schema.TaggedError<Unauthorized>()("Unauthorized", { reason: Schema.String }) {}
 
-/** GitHub answers the same for a missing repository and one the token may not see. */
-export class NotFound extends Data.TaggedError("NotFound")<{ readonly reason: string }> {}
+export class NotFound extends Schema.TaggedError<NotFound>()("NotFound", { reason: Schema.String }) {}
 
-export class RateLimited extends Data.TaggedError("RateLimited")<{ readonly retryAfter: Duration.Duration }> {}
+export class RateLimited extends Schema.TaggedError<RateLimited>()("RateLimited", { retryAfter: Schema.Duration }) {}
 
-export class Unavailable extends Data.TaggedError("Unavailable")<{ readonly reason: string }> {}
+export class Unavailable extends Schema.TaggedError<Unavailable>()("Unavailable", { reason: Schema.String }) {}
 
 export type GitHubError = Unauthorized | NotFound | RateLimited | Unavailable
 
-/** The primary quota as the last response reported it. */
 export interface Quota {
   readonly remaining: number
   readonly resetAt: number
 }
 
-/**
- * The creation time of the newest review, comment and thread the last poll
- * saw, so paging stops once it reaches them. Without it only the newest page
- * of each is read.
- */
 export interface Since {
   readonly reviews: string | null
   readonly comments: string | null
@@ -159,7 +150,6 @@ const quotaOf = (headers: Readonly<Record<string, string | undefined>>): Option.
   return remaining === undefined || reset === undefined ? Option.none() : Option.some({ remaining, resetAt: reset * 1000 })
 }
 
-/** How long a refusal asks to wait: `retry-after`, else the quota reset, else a minute. */
 const waitOf = (headers: Readonly<Record<string, string | undefined>>, now: number) => {
   const retryAfter = header(headers, "retry-after")
   if (retryAfter !== undefined) return Duration.seconds(retryAfter)
@@ -246,7 +236,6 @@ export const layer = Layer.effect(
         )
         const now = yield* Clock.currentTimeMillis
         const secret = Redacted.value(connection.token)
-        // A server or proxy could echo the token in a message; none leaves this function with it.
         const scrub = (text: string) => secret === "" ? text : text.replaceAll(secret, "[token]")
         const message = response.json.pipe(
           Effect.flatMap(Schema.decodeUnknownEffect(ErrorMessage)),
@@ -327,7 +316,6 @@ export const layer = Layer.effect(
         }
 
         let next = collect(pr)
-        // Paging back stops at what the last poll saw, so even a long pause ends in a bounded number of pages.
         while (Object.keys(next).length > 0) {
           if (Option.isSome(quota) && quota.value.remaining === 0) {
             const now = yield* Clock.currentTimeMillis
@@ -335,7 +323,6 @@ export const layer = Layer.effect(
           }
           const connections = Object.keys(next) as Array<Query.Connection>
           const request = post(connection, PagesData, Query.morePages(connections), { ...variables, ...next })
-          // A secondary limit mid-catch-up waits and asks for the same page, keeping the pages already read.
           const more = yield* request.pipe(
             Effect.catchTag("RateLimited", ({ retryAfter }) => Effect.sleep(retryAfter).pipe(Effect.andThen(request))),
             Effect.catchTag("RateLimited", ({ retryAfter }) => Effect.sleep(retryAfter).pipe(Effect.andThen(request)))

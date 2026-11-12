@@ -8,16 +8,11 @@ type Draft = Emitted extends infer E ? E extends Emitted ? Omit<E, "occurredAt">
 
 export type EndReason = "merged" | "closed"
 
-/**
- * The newest creation time seen in a connection and the ids created at that
- * instant, so an item sharing the timestamp is still told apart.
- */
 export interface Mark {
   readonly at: string | null
   readonly ids: ReadonlyArray<string>
 }
 
-/** What the diff remembers between polls. Flags and ids are scoped to `head`. */
 export interface Memory {
   readonly head: string
   readonly base: { readonly name: string; readonly oid: string }
@@ -57,11 +52,6 @@ const advance = <A extends { readonly id: string }>(mark: Mark, items: ReadonlyA
     return m
   }, mark)
 
-/**
- * The current run of each check, told apart by kind and name since a check
- * run and a commit status may share a name: one still running wins, else the
- * last to complete.
- */
 const latestByName = (checks: ReadonlyArray<Check>): ReadonlyArray<Check> => {
   const byName = new Map<string, Check>()
   for (const check of checks) {
@@ -80,11 +70,6 @@ const latestByName = (checks: ReadonlyArray<Check>): ReadonlyArray<Check> => {
 
 const isFailure = (check: Check) => check.outcome === "failed" || check.outcome === "cancelled"
 
-/**
- * Compares a poll with what earlier polls saw. Without `previous` the poll is
- * the baseline: history before it raises nothing, while the state it shows
- * (a conflict, failed or passed checks, readiness) does.
- */
 export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: Filters, now: string): Step => {
   const events: Array<Emitted> = []
   const emit = (event: Draft) => events.push({ ...event, occurredAt: event.occurredAt ?? now } as Emitted)
@@ -207,7 +192,6 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     })
   }
 
-  // Ignore patterns quiet notifications only: GitHub still blocks the merge on an ignored required check.
   const required = current.filter((c) => c.required || snapshot.requiredChecks.includes(c.name))
   const requiredPassed = required.every((c) => c.outcome === "passed") &&
     snapshot.requiredChecks.every((name) => current.some((c) => c.name === name))

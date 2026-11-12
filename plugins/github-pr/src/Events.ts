@@ -2,7 +2,6 @@ import { Schema } from "effect"
 
 const Branch = Schema.Struct({ name: Schema.String, oid: Schema.String })
 
-/** Payload schemas, one per event type, shared by the diff and the catalogue. */
 export const payloads = {
   "head.changed": Schema.Struct({ previous: Schema.String, head: Schema.String }),
   "base.changed": Schema.Struct({ previous: Branch, base: Branch }),

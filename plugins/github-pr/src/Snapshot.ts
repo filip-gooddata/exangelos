@@ -1,4 +1,3 @@
-/** What one poll knows about a pull request. */
 export interface Snapshot {
   readonly url: string
   readonly title: string
@@ -11,9 +10,7 @@ export interface Snapshot {
   readonly mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN"
   readonly reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null
   readonly checks: ReadonlyArray<Check>
-  /** Check names the base branch requires, whether or not they have posted. */
   readonly requiredChecks: ReadonlyArray<string>
-  /** The newest reviews, comments and threads, oldest first, reaching back at least to what the last poll saw. */
   readonly reviews: ReadonlyArray<Review>
   readonly comments: ReadonlyArray<Comment>
   readonly threads: ReadonlyArray<Thread>
@@ -23,7 +20,6 @@ export type CheckOutcome = "pending" | "passed" | "failed" | "cancelled"
 
 export interface Check {
   readonly id: string
-  /** A check run or a commit status. */
   readonly kind: "run" | "status"
   readonly name: string
   readonly outcome: CheckOutcome
@@ -49,7 +45,6 @@ export interface Comment {
   readonly url: string
 }
 
-/** A review thread, dated and attributed by its first comment. */
 export interface Thread {
   readonly id: string
   readonly isResolved: boolean

@@ -7,7 +7,6 @@ export interface PullRequestRef {
 const shorthand = /^([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\/([A-Za-z0-9._-]+)#([1-9][0-9]*)$/
 const link = /^https?:\/\/[^/\s]+\/([A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?)\/([A-Za-z0-9._-]+)\/pull\/([1-9][0-9]*)\/?$/
 
-/** Reads `owner/repo#number` or a pull request link. */
 export const parse = (input: string): PullRequestRef | undefined => {
   const match = shorthand.exec(input.trim()) ?? link.exec(input.trim())
   if (match === null) return undefined
