@@ -63,6 +63,8 @@ describe("plugin supervision", () => {
       yield* settle
       yield* wakeWindow(7)
       yield* settle
+      yield* wakeWindow(7)
+      yield* settle
 
       expect((yield* runtime.watches(acme)).map((request) => Duration.toSeconds(request.wakeWindow))).toEqual([2, 7])
       expect(yield* runtime.openStreams(acme)).toBe(1)

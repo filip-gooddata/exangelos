@@ -1,4 +1,4 @@
-import { DateTime, Duration, Effect, Option, Redacted, Schema } from "effect"
+import { DateTime, Effect, Option, Redacted, Schema } from "effect"
 import { Catalogue, Ids, Plugin, PluginRules, Refusal, Session, Settings } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
 import { PluginDirectory } from "../ports/PluginDirectory.ts"
@@ -238,14 +238,8 @@ export const getSettings = SettingsStore.use((store) => store.read)
 /** Writes the settings. A changed wake window reaches open Watch streams through a rewatch. */
 export const setSettings = (settings: Settings.Settings) =>
   Effect.gen(function*() {
-    const store = yield* SettingsStore
-    const before = yield* Effect.option(store.read)
-    yield* store.write(settings)
-    const changed = Option.match(before, {
-      onNone: () => true,
-      onSome: (previous) => !Duration.equals(previous.limits.wakeWindow, settings.limits.wakeWindow)
-    })
-    if (changed) yield* (yield* PluginSupervisor).rewatchAll
+    yield* (yield* SettingsStore).write(settings)
+    yield* (yield* PluginSupervisor).settingsChanged
     return settings
   })
 
