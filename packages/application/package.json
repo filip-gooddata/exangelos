@@ -13,5 +13,8 @@
   "dependencies": {
     "@exangelos/domain": "workspace:*",
     "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@exangelos/contracts": "workspace:*"
   }
 }

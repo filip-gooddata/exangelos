@@ -544,6 +544,10 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
 
   packages/contracts:
     dependencies:
