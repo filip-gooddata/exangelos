@@ -141,12 +141,12 @@ describe("subscription use cases", () => {
       expect(yield* wakeReasons(subscription.id)).toEqual([])
     }).pipe(Effect.provide(layerHarness)))
 
-  it.effect("wait reports a plugin outage once it lasted long enough, with no change to the subscription", () =>
+  it.effect("wait reports a plugin outage that began while waiting once it lasted long enough", () =>
     Effect.gen(function*() {
       const subscription = yield* subscribed({ target: { _tag: "PullOnly" } })
-      yield* (yield* PluginRepository).store({ ...plugin("github-pr"), process: "failing", unavailableSince: yield* DateTime.now })
-
       const waiting = yield* Effect.forkChild(wait(ownActor, { id: subscription.id }))
+      yield* TestClock.adjust(Duration.minutes(5))
+      yield* (yield* PluginRepository).store({ ...plugin("github-pr"), process: "failing", unavailableSince: yield* DateTime.now })
       yield* TestClock.adjust(Duration.minutes(30))
       expect(waiting.pollUnsafe()).toBeUndefined()
       yield* TestClock.adjust(Duration.minutes(31))

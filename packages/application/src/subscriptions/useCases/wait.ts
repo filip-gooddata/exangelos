@@ -7,7 +7,7 @@ import { currentLimits } from "../Limits.ts"
 import { SubscriptionSignals } from "../Signals.ts"
 import { load } from "./shared.ts"
 
-/** A plugin's outage becomes worth reporting without any change to the subscription. */
+/** A plugin outage becomes worth reporting with no change to the subscription, so waits recheck. */
 const suspensionRecheck = Duration.minutes(1)
 
 /** Blocks until the subscription has something to say and returns what its wake would contain. */
@@ -28,7 +28,6 @@ export const wait = (_actor: Session.Actor, request: { readonly id: Ids.Subscrip
       )
       const content = Delivery.waitContent(subscription, pending, suspension)
       if (Option.isSome(content)) return content.value
-      const suspended = Option.exists(plugin, (plugin) => Lifecycle.isSuspended(subscription, plugin))
-      yield* suspended ? Effect.race(changes.next, Effect.sleep(suspensionRecheck)) : changes.next
+      yield* Effect.race(changes.next, Effect.sleep(suspensionRecheck))
     }
   }))
