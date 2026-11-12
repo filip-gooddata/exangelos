@@ -50,6 +50,16 @@ export const layerSystemd = (options: {
       const unit = (label: string) => `${label}.service`
       const unitFile = (label: string) => path.join(options.directory, unit(label))
       const systemctl = (...args: ReadonlyArray<string>) => run.succeed("systemctl", ["--user", ...args])
+      const isActive = (label: string) =>
+        Effect.gen(function*() {
+          const args = ["--user", "is-active", unit(label)]
+          const output = yield* run.output("systemctl", args)
+          const state = output.stdout.trim()
+          if (state === "") {
+            return yield* commandFailed("systemctl", args, output)
+          }
+          return state === "active" || state === "reloading"
+        })
 
       return makeUserService({
         install: (definition) =>
@@ -63,22 +73,19 @@ export const layerSystemd = (options: {
         stop: (label) => Effect.asVoid(systemctl("stop", unit(label))),
         uninstall: (label) =>
           Effect.gen(function*() {
-            if (!(yield* fs.exists(unitFile(label)))) {
+            if (yield* fs.exists(unitFile(label))) {
+              yield* systemctl("disable", "--now", unit(label))
+              yield* fs.remove(unitFile(label), { force: true })
+            } else if (yield* isActive(label)) {
+              yield* systemctl("stop", unit(label))
+            } else {
               return
             }
-            yield* systemctl("disable", "--now", unit(label))
-            yield* fs.remove(unitFile(label), { force: true })
             yield* systemctl("daemon-reload")
           }),
         status: (label) =>
           Effect.gen(function*() {
-            const args = ["--user", "is-active", unit(label)]
-            const active = yield* run.output("systemctl", args)
-            const state = active.stdout.trim()
-            if (state === "") {
-              return yield* commandFailed("systemctl", args, active)
-            }
-            if (state === "active" || state === "reloading") {
+            if (yield* isActive(label)) {
               const shown = yield* systemctl("show", "-p", "MainPID", "--value", unit(label))
               const pid = Number(shown.stdout.trim())
               return ServiceStatus.Running(Number.isInteger(pid) && pid > 0 ? { pid } : {})

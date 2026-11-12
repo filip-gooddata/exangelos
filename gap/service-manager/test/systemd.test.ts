@@ -81,4 +81,35 @@ describe("layerSystemd", () => {
         })
       })
     ))
+
+  it.effect("uninstall stops a service still running after its unit file is gone", () =>
+    inTempDirectory((directory) =>
+      Effect.gen(function*() {
+        const fake = FakeSpawner.make(({ args }) => args[1] === "is-active" ? { stdout: "active\n" } : {})
+        yield* UserService.use((service) => service.uninstall("exangelos.daemon")).pipe(
+          provide(layerSystemd({ directory }), fake)
+        )
+        expect(fake.ran.map(FakeSpawner.line)).toEqual([
+          "systemctl --user is-active exangelos.daemon.service",
+          "systemctl --user stop exangelos.daemon.service",
+          "systemctl --user daemon-reload"
+        ])
+      })
+    ))
+
+  it.effect("refuses a log path that would continue onto the next unit line", () =>
+    inTempDirectory((directory) =>
+      Effect.gen(function*() {
+        const fake = FakeSpawner.make()
+        const error = yield* UserService.use((service) =>
+          service.install({ ...awkward, stdoutPath: "/tmp/out\\" })
+        ).pipe(provide(layerSystemd({ directory }), fake), Effect.flip)
+        expect(error).toMatchObject({
+          _tag: "ServiceFailed",
+          operation: "install",
+          reason: "stdoutPath has a line break or a trailing backslash"
+        })
+        expect(fake.ran).toEqual([])
+      })
+    ))
 })

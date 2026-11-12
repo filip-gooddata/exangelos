@@ -99,11 +99,13 @@ export const makeUserService = (operations: {
       : Effect.fail(new ServiceFailed({ operation, reason: `invalid service label: ${JSON.stringify(label)}` }))
   return UserService.of({
     install: (definition) => {
-      const multiline = (["program", "description", "stdoutPath", "stderrPath"] as const)
-        .find((field) => /[\r\n]/.test(definition[field]))
-      return multiline === undefined
+      const unsafe = (["program", "description", "stdoutPath", "stderrPath"] as const)
+        .find((field) => /[\r\n]|\\$/.test(definition[field]))
+      return unsafe === undefined
         ? checked("install", definition.label, () => operations.install(definition))
-        : Effect.fail(new ServiceFailed({ operation: "install", reason: `${multiline} contains a line break` }))
+        : Effect.fail(
+          new ServiceFailed({ operation: "install", reason: `${unsafe} has a line break or a trailing backslash` })
+        )
     },
     start: (label) => checked("start", label, () => operations.start(label)),
     stop: (label) => checked("stop", label, () => operations.stop(label)),
