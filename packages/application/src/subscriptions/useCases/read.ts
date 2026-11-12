@@ -14,7 +14,7 @@ export const list = (actor: Session.Actor, request: { readonly all: boolean }) =
     return subscriptions.filter((subscription) => Subscribe.isOwn(subscription, actor.session))
   })
 
-export const show = (request: { readonly id: Ids.SubscriptionId }) =>
+export const show = (_actor: Session.Actor, request: { readonly id: Ids.SubscriptionId }) =>
   Effect.gen(function*() {
     const subscription = yield* load(request.id)
     return {
@@ -25,7 +25,10 @@ export const show = (request: { readonly id: Ids.SubscriptionId }) =>
     }
   })
 
-export const events = (request: { readonly id: Ids.SubscriptionId; readonly after?: Ids.AckedThrough }) =>
+export const events = (
+  _actor: Session.Actor,
+  request: { readonly id: Ids.SubscriptionId; readonly after?: Ids.AckedThrough }
+) =>
   Effect.gen(function*() {
     const subscription = yield* load(request.id)
     return yield* (yield* EventRepository).list(subscription.id, request.after)

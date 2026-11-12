@@ -125,7 +125,7 @@ describe("subscription use cases", () => {
     Effect.gen(function*() {
       const subscription = yield* subscribed({ target: { _tag: "PullOnly" } })
 
-      const waiting = yield* Effect.forkChild(wait({ id: subscription.id }))
+      const waiting = yield* Effect.forkChild(wait(ownActor, { id: subscription.id }))
       yield* TestClock.adjust(Duration.minutes(1))
       expect(waiting.pollUnsafe()).toBeUndefined()
 
@@ -137,7 +137,7 @@ describe("subscription use cases", () => {
         pending: [{ number: 1, type: "tick", summary: "tick 1" }]
       })
 
-      expect((yield* wait({ id: subscription.id })).pending).toHaveLength(1)
+      expect((yield* wait(ownActor, { id: subscription.id })).pending).toHaveLength(1)
       expect(yield* wakeReasons(subscription.id)).toEqual([])
     }).pipe(Effect.provide(layerHarness)))
 
@@ -146,7 +146,7 @@ describe("subscription use cases", () => {
       const subscription = yield* subscribed({ target: { _tag: "PullOnly" } })
       yield* (yield* PluginRepository).store({ ...plugin("github-pr"), process: "failing", unavailableSince: yield* DateTime.now })
 
-      const waiting = yield* Effect.forkChild(wait({ id: subscription.id }))
+      const waiting = yield* Effect.forkChild(wait(ownActor, { id: subscription.id }))
       yield* TestClock.adjust(Duration.minutes(30))
       expect(waiting.pollUnsafe()).toBeUndefined()
       yield* TestClock.adjust(Duration.minutes(31))

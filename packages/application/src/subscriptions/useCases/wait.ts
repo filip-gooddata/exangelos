@@ -1,6 +1,6 @@
 import { DateTime, Duration, Effect, Option } from "effect"
 import { Delivery, Lifecycle } from "@exangelos/domain"
-import type { Ids, Wake } from "@exangelos/domain"
+import type { Ids, Session, Wake } from "@exangelos/domain"
 import { EventRepository } from "../../ports/EventRepository.ts"
 import { PluginRepository } from "../../ports/PluginRepository.ts"
 import { currentLimits } from "../Limits.ts"
@@ -11,7 +11,7 @@ import { load } from "./shared.ts"
 const suspensionRecheck = Duration.minutes(1)
 
 /** Blocks until the subscription has something to say and returns what its wake would contain. */
-export const wait = (request: { readonly id: Ids.SubscriptionId }) =>
+export const wait = (_actor: Session.Actor, request: { readonly id: Ids.SubscriptionId }) =>
   Effect.scoped(Effect.gen(function*() {
     const changes = yield* (yield* SubscriptionSignals).listen(request.id)
     const events = yield* EventRepository
