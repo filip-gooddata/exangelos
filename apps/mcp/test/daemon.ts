@@ -57,7 +57,9 @@ export const handlers = DaemonContract.AgentGroup.toLayer({
     }),
   Pause: notFaked,
   Resume: ({ id }) =>
-    Effect.succeed({
+    id === "sub_full"
+      ? Effect.fail(new DaemonContract.BacklogOverLimit({ pending: 3, limit: 20, through: 27, reason: "age" }))
+      : Effect.succeed({
       ...existing,
       id,
       wakeTarget: { harness: id === "sub_cc" ? "claude-code" as const : "t3" as const, sessionId: "s-1" }

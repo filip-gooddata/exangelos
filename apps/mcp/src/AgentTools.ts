@@ -123,7 +123,8 @@ export const toolkit = Toolkit.make(
   tool("cancel", "Cancel a subscription for good.", id, Subscription.Subscription)
 )
 
-const fail = (failure: AgentFailure) => new ToolFailure({ message: failureMessage(failure) })
+const fail = (failure: AgentFailure, subscription?: string) =>
+  new ToolFailure({ message: failureMessage(failure, subscription) })
 
 const targetChoice = (input: {
   readonly target?: typeof SessionTarget.Type | undefined
@@ -155,8 +156,8 @@ const untilTime = (until: string | undefined): Effect.Effect<{ readonly until?: 
 
 export const handlers = toolkit.toLayer(Effect.gen(function*() {
   const { connect } = yield* AgentClient.AgentClient
-  const call = <A>(use: (client: AgentClient.AgentRpcs) => Effect.Effect<A, AgentFailure>) =>
-    Effect.scoped(Effect.flatMap(connect, use)).pipe(Effect.mapError(fail))
+  const call = <A>(use: (client: AgentClient.AgentRpcs) => Effect.Effect<A, AgentFailure>, subscription?: string) =>
+    Effect.scoped(Effect.flatMap(connect, use)).pipe(Effect.mapError((failure) => fail(failure, subscription)))
   return {
     list_plugins: () => call((client) => client.ListPlugins()).pipe(Effect.map((plugins) => ({ plugins }))),
     subscribe: ({ target, pullOnly, until, similarOk, ...rest }) =>
@@ -176,7 +177,7 @@ export const handlers = toolkit.toLayer(Effect.gen(function*() {
     wait: (input) =>
       call((client) => client.Wait(input)).pipe(Effect.map((wake) => ({ text: WakeText.render(wake), wake }))),
     pause: (input) => call((client) => client.Pause(input)),
-    resume: (input) => call((client) => client.Resume(input)).pipe(Effect.map(withHint)),
+    resume: (input) => call((client) => client.Resume(input), input.id).pipe(Effect.map(withHint)),
     retarget: ({ id, ...choice }) =>
       targetChoice(choice).pipe(Effect.flatMap((target) => call((client) => client.Retarget({ id, target })))),
     cancel: (input) => call((client) => client.Cancel(input))

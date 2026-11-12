@@ -11,7 +11,6 @@ export type AnyRefusal =
   | Refusal.ParametersInvalid
   | Refusal.SimilarSubscriptions
   | Refusal.SubjectChanged
-  | Refusal.BacklogOverLimit
   | Refusal.NotAllowed
 
 export type AgentFailure =
@@ -69,14 +68,12 @@ export const refusalMessage = (refusal: AnyRefusal): string => {
       ].join("\n")
     case "SubjectChanged":
       return `Nothing was updated: the new parameters change the subject from ${refusal.subject} to ${refusal.reported}. Cancel this subscription and subscribe again for the new subject.`
-    case "BacklogOverLimit":
-      return `Not resumed: ${refusal.pending} events are pending. Acknowledge them first with ack through ${refusal.through}, then call resume.`
     case "NotAllowed":
       return `A ${refusal.state} subscription cannot ${refusal.action}. Call show to see its state.`
   }
 }
 
-export const failureMessage = (failure: AgentFailure): string => {
+export const failureMessage = (failure: AgentFailure, subscription = "<subscription>"): string => {
   switch (failure._tag) {
     case "PluginNotFound":
       return `No plugin named "${failure.plugin}" is installed. Call list_plugins to see the installed plugins, or ask the user to import this one.`
@@ -103,7 +100,9 @@ export const failureMessage = (failure: AgentFailure): string => {
     case "TransitionRefused":
       return `The subscription is ${failure.state._tag}, so this was refused: ${failure.message}. Call show to see its state.`
     case "BacklogOverLimit":
-      return `Not resumed: ${failure.pending} events are pending, over the limit of ${failure.limit}. Call events to find the last number, acknowledge through it with ack, then call resume.`
+      return `Not resumed: ${failure.pending} events are pending, ${
+        failure.reason === "count" ? `over the limit of ${failure.limit}` : "and the oldest is older than the backlog allows"
+      }. Acknowledge them first: call ack with id: "${subscription}", through: ${failure.through}, then call resume.`
     case "RpcClientError":
       return connectionFailedMessage(failure.message)
     case "DaemonNotRunning":
