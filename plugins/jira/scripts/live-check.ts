@@ -5,8 +5,8 @@
  *
  * Sends GET requests only, for the one issue named, and writes nothing to disk. Prints statuses,
  * selected headers and response shapes (key names, value types and array lengths, never values).
- * Never prints the token, the email or an Authorization header. Exits 0 when steps 1–5 and 8
- * succeed, 1 when one of them fails, and 2 when the input is missing or unreadable.
+ * Never prints the token, the email or an Authorization header. Exits 0 when every step but 6 (the
+ * wrong token) succeeds, 1 when one of them fails, and 2 when the input is missing or unreadable.
  */
 import { Effect, Layer, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
@@ -83,6 +83,7 @@ const print = (label: string, lines: Record<string, unknown>) => {
 const get = async (base: string, path: string, headers: Record<string, string> = { Authorization: authorization }) => {
   try {
     const response = await fetch(`${base}${path}`, { method: "GET", headers: { Accept: "application/json", ...headers } })
+    const request = `GET ${path}`
     const text = await response.text()
     let body: unknown = undefined
     try {
@@ -90,9 +91,9 @@ const get = async (base: string, path: string, headers: Record<string, string> =
     } catch {
       body = undefined
     }
-    return { response, text, body }
+    return { request, response, text, body }
   } catch (error) {
-    return { failure: redact(error instanceof Error ? error.message : String(error)) }
+    return { request: `GET ${path}`, failure: redact(error instanceof Error ? error.message : String(error)) }
   }
 }
 
@@ -101,8 +102,9 @@ type Got = Awaited<ReturnType<typeof get>>
 const ok = (got: Got) => "response" in got && got.response.ok
 
 const report = (label: string, got: Got, extra: (body: unknown) => Record<string, unknown> = () => ({})) => {
-  if (!("response" in got)) return print(label, { failure: got.failure })
+  if (!("response" in got)) return print(label, { request: got.request, failure: got.failure })
   print(label, {
+    request: got.request,
     status: got.response.status,
     headers: shownHeaders(got.response.headers),
     shape: shape(got.body),
@@ -110,7 +112,7 @@ const report = (label: string, got: Got, extra: (body: unknown) => Record<string
   })
 }
 
-function field(body: unknown, name: string): unknown =>
+const field = (body: unknown, name: string): unknown =>
   typeof body === "object" && body !== null && name in body ? (body as Record<string, unknown>)[name] : undefined
 
 const issuePath = `/rest/api/3/issue/${encodeURIComponent(key)}`
@@ -125,11 +127,11 @@ const statusOf = (got: Got) => "response" in got ? got.response.status : got.fai
 /** The base that accepts the credential: /myself on the site URL, else through the gateway by cloud id. */
 const resolveRoute = async () => {
   const direct = await get(site.url, "/rest/api/3/myself")
-  const attempts: Record<string, unknown> = { "site /myself": statusOf(direct) }
+  const attempts: Record<string, unknown> = { "GET /rest/api/3/myself on the site": statusOf(direct) }
   if (ok(direct)) return { route: "site", base: site.url, attempts }
   if (!("response" in direct) || direct.response.status !== 401) return { route: "none", base: site.url, attempts }
   const tenant = await get(site.url, "/_edge/tenant_info", {})
-  attempts["site /_edge/tenant_info (no credential)"] = statusOf(tenant)
+  attempts["GET /_edge/tenant_info on the site, no credential"] = statusOf(tenant)
   const cloudId = field("body" in tenant ? tenant.body : undefined, "cloudId")
   if (typeof cloudId !== "string" || !/^[0-9a-zA-Z-]+$/.test(cloudId)) {
     attempts.cloudId = "absent"
@@ -137,7 +139,7 @@ const resolveRoute = async () => {
   }
   const base = `https://api.atlassian.com/ex/jira/${cloudId}`
   const gateway = await get(base, "/rest/api/3/myself")
-  attempts["gateway /myself"] = statusOf(gateway)
+  attempts["GET /rest/api/3/myself on the gateway"] = statusOf(gateway)
   return ok(gateway) ? { route: "gateway", base, attempts } : { route: "none", base: site.url, attempts }
 }
 
@@ -152,13 +154,8 @@ results.push(ok(issue))
 const changelog = await get(base, `${issuePath}/changelog?startAt=0&maxResults=100`)
 report("4. changelog, first page", changelog, (body) => {
   const values = field(body, "values")
-  const fieldIds = Array.isArray(values)
-    ? [...new Set(values.flatMap((history) => {
-      const items = field(history, "items")
-      return Array.isArray(items) ? items.map((item) => String(field(item, "fieldId") ?? "(none)")) : []
-    }))]
-    : []
-  return { fieldIds }
+  const items = Array.isArray(values) ? values.flatMap((history) => field(history, "items") ?? []) : []
+  return { histories: Array.isArray(values) ? values.length : 0, items: Array.isArray(items) ? items.length : 0 }
 })
 results.push(ok(changelog))
 
@@ -169,12 +166,13 @@ results.push(ok(comments))
 const wrong = await get(base, `${issuePath}?fields=summary`, { Authorization: basic("not-a-valid-api-token") })
 if ("response" in wrong) {
   print("6. issue with a wrong token", {
+    request: wrong.request,
     status: wrong.response.status,
     headers: shownHeaders(wrong.response.headers),
     body: wrong.text
   })
 } else {
-  print("6. issue with a wrong token", { failure: wrong.failure })
+  print("6. issue with a wrong token", { request: wrong.request, failure: wrong.failure })
 }
 
 if ("response" in issue) {
@@ -187,19 +185,24 @@ if ("response" in issue) {
     : undefined
   if (condition === undefined) {
     print("7. conditional issue request", { skipped: "step 3 returned neither ETag nor Last-Modified" })
+    results.push(true)
   } else {
     const again = await get(base, `${issuePath}?fields=summary`, { Authorization: authorization, ...condition })
     print("7. conditional issue request", {
+      request: again.request,
       sent: Object.keys(condition)[0],
       ...("response" in again
         ? { status: again.response.status, answered304: again.response.status === 304, headers: shownHeaders(again.response.headers) }
         : { failure: again.failure })
     })
+    results.push("response" in again && (again.response.status === 304 || again.response.ok))
   }
 } else {
   print("7. conditional issue request", { skipped: "step 3 failed" })
+  results.push(false)
 }
 
+const pluginLabel = "8. plugin path: checkSite, readIssue from no position, baseline diff"
 const pluginPath = Effect.gen(function*() {
   const client = yield* JiraClient
   const routed = yield* client.checkSite(site)
@@ -216,12 +219,12 @@ const pluginPath = Effect.gen(function*() {
 
 const plugin = await Effect.runPromise(Effect.result(pluginPath))
 if (plugin._tag === "Success") {
-  print("8. plugin path: checkSite, readIssue from no position, baseline diff", plugin.success)
+  print(pluginLabel, plugin.success)
 } else {
-  print("8. plugin path: checkSite, readIssue from no position, baseline diff", { failure: plugin.failure })
+  print(pluginLabel, { failure: plugin.failure })
 }
 results.push(plugin._tag === "Success")
 
 const passed = results.every(Boolean)
-console.log(`\n${passed ? "PASS" : "FAIL"}: steps 1–5 and 8 ${passed ? "succeeded" : "did not all succeed"}.`)
+console.log(`\n${passed ? "PASS" : "FAIL"}: steps 1–5, 7 and 8 ${passed ? "succeeded" : "did not all succeed"}.`)
 process.exit(passed ? 0 : 1)
