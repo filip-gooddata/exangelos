@@ -1,0 +1,36 @@
+name: Release build
+
+# Builds every release file and checks it. Nothing is published: the owner has not
+# approved a release, a tap or signing. The publishing steps go at the end of the
+# `build` job (attach packaging/dist/release/* to a GitHub release, push the rendered
+# formula and cask to the tap) once the owner says so.
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.10.1
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck packaging
+        run: pnpm --filter @exangelos/packaging run typecheck
+      - name: Test packaging
+        run: pnpm --filter @exangelos/packaging run test
+      - name: Build official plugin archives and the four binaries
+        run: pnpm --filter @exangelos/packaging run build:release
+      - name: Render the Homebrew formula and cask
+        run: pnpm --filter @exangelos/packaging run render:homebrew
