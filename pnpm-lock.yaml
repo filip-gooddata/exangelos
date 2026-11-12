@@ -259,6 +259,9 @@ importers:
       '@effect/platform-bun':
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)
+      '@exangelos/application':
+        specifier: workspace:*
+        version: link:../../packages/application
       '@exangelos/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -564,6 +567,9 @@ importers:
       '@effect/platform-bun':
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)
+      '@exangelos/application':
+        specifier: workspace:*
+        version: link:../../packages/application
       '@exangelos/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -582,10 +588,16 @@ importers:
       '@exangelos/paths':
         specifier: workspace:*
         version: link:../../adapters/paths
+      '@exangelos/service':
+        specifier: workspace:*
+        version: link:../../adapters/service
       effect:
         specifier: 'catalog:'
         version: 4.1.4
     devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
       '@types/bun':
         specifier: 'catalog:'
         version: 1.4.2
@@ -668,6 +680,13 @@ importers:
       effect:
         specifier: 'catalog:'
         version: 4.1.4
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
+      vitest:
+        specifier: 'catalog:'
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
 
   apps/tray:
     dependencies:
