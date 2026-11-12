@@ -8,6 +8,7 @@ import { SecretStore } from "../ports/SecretStore.ts"
 import { SettingsStore } from "../ports/SettingsStore.ts"
 import { SubscriptionRepository } from "../ports/SubscriptionRepository.ts"
 import { SubscriptionIntake } from "../seam/SubscriptionIntake.ts"
+import { redact } from "./redact.ts"
 
 /**
  * Restarts after a crash wait 1 s, doubling per consecutive failure up to 5 min. The fifth
@@ -191,10 +192,7 @@ export const layerPluginSupervisor: Layer.Layer<
 
   /** Replaces every stored secret value in text a plugin wrote, such as a rejection reason. */
   const scrub = (text: string, present: ReadonlyArray<readonly [string, Redacted.Redacted<string>]>) =>
-    present.reduce((out, [, value]) => {
-      const revealed = Redacted.value(value)
-      return revealed === "" ? out : out.split(revealed).join("[secret]")
-    }, text)
+    redact(text, present.map(([, value]) => Redacted.value(value)))
 
   /** Counts Configure calls per plugin, so a stream's late rejection cannot undo a newer configuration. */
   const generations = yield* Ref.make<ReadonlyMap<Ids.PluginName, number>>(new Map())

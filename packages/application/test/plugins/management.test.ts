@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Layer, Option, Redacted } from "effect"
 import { TestClock } from "effect/testing"
 import { DaemonContract } from "@exangelos/contracts"
+import { redact } from "../../src/plugins/redact.ts"
 import {
   configurePlugin,
   enablePlugin,
@@ -191,6 +192,10 @@ describe("a secret store that refuses a secret", () => {
     get: () => Effect.succeedNone,
     delete: () => Effect.void
   }))
+
+  it("leaves no fragment of overlapping secrets", () => {
+    expect(redact("cannot store abcdef or xabc", ["abc", "abcdef", "xab"])).toBe("cannot store [secret] or [secret]")
+  })
 
   it.effect("fails the configure call without the secret in the error", () =>
     withPluginsOver(refusing)(Effect.gen(function*() {

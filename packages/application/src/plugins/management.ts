@@ -9,6 +9,7 @@ import { ServiceManager } from "../ports/ServiceManager.ts"
 import { SettingsStore } from "../ports/SettingsStore.ts"
 import { PluginNotFound } from "../seam/PluginAccess.ts"
 import { PluginSupervisor } from "./PluginSupervisor.ts"
+import { redact } from "./redact.ts"
 
 export class DigestMismatch extends Schema.TaggedError<DigestMismatch>()("DigestMismatch", {
   plugin: Ids.PluginName,
@@ -177,12 +178,12 @@ export const configurePlugin = (actor: Session.Actor, name: Ids.PluginName, valu
       }
     })
     // The store's own reason could quote the value it refused, so every given secret is replaced first.
-    const given = Object.entries(values).filter(([key, value]) => secretKeys.includes(key) && value !== "")
+    const given = Object.entries(values).filter(([key]) => secretKeys.includes(key)).map(([, value]) => value)
     yield* Effect.mapError(storeSecrets, (e: SecretStoreFailed) =>
       new ConfigurationInvalid({
         plugin: name,
         reason: `the secret store refused it: ${
-          given.reduce((text, [, value]) => text.split(value).join("[secret]"), e.reason)
+          redact(e.reason, given)
         }`
       }))
     yield* repository.storeValues(name, after)
