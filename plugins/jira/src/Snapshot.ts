@@ -70,6 +70,8 @@ export interface ListPosition {
   readonly consumed: number
   readonly recent: ReadonlyArray<string>
   readonly lastCreated: string
+  /** Every id consumed with the `lastCreated` time, so ties survive deletions. */
+  readonly atLast: ReadonlyArray<string>
 }
 
 export interface IssuePosition {

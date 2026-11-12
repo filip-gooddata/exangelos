@@ -46,8 +46,8 @@ const seenUpTo100: IssueCursor = {
   v: 1,
   target: "issue",
   issueId: "10042",
-  changelog: { consumed: 1, recent: ["100"], lastCreated: "2026-11-12T10:00:00.000Z" },
-  comments: { consumed: 1, recent: ["200"], lastCreated: "2026-11-12T10:00:00.000Z" }
+  changelog: { consumed: 1, recent: ["100"], lastCreated: "2026-11-12T10:00:00.000Z", atLast: ["100"] },
+  comments: { consumed: 1, recent: ["200"], lastCreated: "2026-11-12T10:00:00.000Z", atLast: ["200"] }
 }
 
 describe("diffIssue", () => {
@@ -57,9 +57,15 @@ describe("diffIssue", () => {
     expect(poll.cursor.changelog).toEqual({
       consumed: 3,
       recent: ["100", "101", "102"],
-      lastCreated: "2026-11-12T10:03:00.000Z"
+      lastCreated: "2026-11-12T10:03:00.000Z",
+      atLast: ["102"]
     })
-    expect(poll.cursor.comments).toEqual({ consumed: 2, recent: ["200", "201"], lastCreated: "2026-11-12T10:02:00.000Z" })
+    expect(poll.cursor.comments).toEqual({
+      consumed: 2,
+      recent: ["200", "201"],
+      lastCreated: "2026-11-12T10:02:00.000Z",
+      atLast: ["201"]
+    })
   })
 
   it("maps each change and comment to its event type, oldest first", () => {
@@ -95,6 +101,15 @@ describe("diffIssue", () => {
     }
     const poll = diffIssue({ siteUrl, previous: seenUpTo100, snapshot: deletedAnchor })
     expect(poll.events.map((event) => event.dedupeKey)).toEqual(["10042:comment:202"])
+  })
+
+  it("tells seen from unseen comments sharing a time after the remembered ones are deleted", () => {
+    const sameTime = Array.from({ length: 51 }, (_, index) => ({ id: String(300 + index), created: at(4), author: mia, body: null }))
+    const withComments = (items: typeof sameTime) => ({ ...snapshot, comments: { start: 0, items } })
+    const baseline = diffIssue({ siteUrl, previous: undefined, snapshot: withComments(sameTime) })
+    const survivors = [sameTime[0]!, { id: "999", created: at(4), author: mia, body: null }]
+    const poll = diffIssue({ siteUrl, previous: baseline.cursor, snapshot: withComments(survivors) })
+    expect(poll.events.map((event) => event.dedupeKey)).toEqual(["10042:comment:999"])
   })
 })
 

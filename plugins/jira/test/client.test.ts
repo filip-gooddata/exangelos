@@ -62,8 +62,8 @@ describe("JiraClient", () => {
         v: 1,
         target: "issue",
         issueId: "10042",
-        changelog: { consumed, recent: ["10001"], lastCreated: "2026-11-12T09:00:00.000Z" },
-        comments: { consumed: 1, recent: ["20001"], lastCreated: "2026-11-12T09:05:00.000Z" }
+        changelog: { consumed, recent: ["10001"], lastCreated: "2026-11-12T09:00:00.000Z", atLast: ["10001"] },
+        comments: { consumed: 1, recent: ["20001"], lastCreated: "2026-11-12T09:05:00.000Z", atLast: ["20001"] }
       }))
 
       const snapshot = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: issuePosition(stored) })
@@ -78,7 +78,8 @@ describe("JiraClient", () => {
       expect(poll.cursor.changelog).toEqual({
         consumed: 5,
         recent: ["10001", "10002", "10003", "10004", "10005"],
-        lastCreated: "2026-11-12T09:40:00.000Z"
+        lastCreated: "2026-11-12T09:40:00.000Z",
+        atLast: ["10005"]
       })
       expect(calls.filter((call) => call.path.endsWith("/changelog")).map((call) => call.param("startAt"))).toEqual(startAts)
 
@@ -161,4 +162,18 @@ describe("JiraClient", () => {
       )
       expect(error._tag).toBe("JqlResultTooLarge")
     }))
+
+  it.effect("keeps Jira's text out of the error for an unreadable time", () =>
+    Effect.gen(function*() {
+      const jira = yield* JiraClient
+      const jiraSite = yield* site
+      const error = yield* Effect.flip(jira.readIssue({ site: jiraSite, key: "DEMO-7", position: undefined }))
+      expect(error._tag).toBe("DecodeFailure")
+      expect(JSON.stringify(error)).not.toContain(token)
+      expect(String(error)).not.toContain(token)
+    }).pipe(Effect.provide(jiraWith((call) =>
+      call.path.endsWith("/changelog")
+        ? { status: 200, body: { startAt: 0, total: 1, values: [history(1, `soon ${token}`, [])] } }
+        : { status: 200, body: { id: "10042", key: "DEMO-7", fields: { summary: "Fix login" } } }
+    ))))
 })

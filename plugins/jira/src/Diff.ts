@@ -52,18 +52,24 @@ const documentText = (node: unknown): string => {
 /**
  * Splits a tail into the items the previous position had not seen and the position after it.
  * New items are those after the last item whose id the position remembers. When none of those
- * ids is left (all deleted), items created at or after the remembered time count as new; any
- * item seen at that time would have been among the remembered ids.
+ * ids is left (all deleted), new items are those created after the remembered time, or at it
+ * with an id the position does not hold among the ids seen at that time.
  */
 const advance = <A extends { readonly id: string; readonly created: DateTime.Utc }>(
   previous: ListPosition | undefined,
   tail: ListTail<A>
 ): { readonly fresh: ReadonlyArray<A>; readonly position: ListPosition } => {
   const last = tail.items.at(-1)
+  const lastCreated = last === undefined ? previous?.lastCreated ?? "" : DateTime.formatIso(last.created)
+  const atLastTime = last === undefined
+    ? []
+    : tail.items.filter((item) => DateTime.Equivalence(item.created, last.created)).map((item) => item.id)
+  const carried = previous !== undefined && previous.lastCreated === lastCreated ? previous.atLast : []
   const position: ListPosition = {
     consumed: tail.start + tail.items.length,
     recent: tail.items.slice(-overlap).map((item) => item.id),
-    lastCreated: last === undefined ? previous?.lastCreated ?? "" : DateTime.formatIso(last.created)
+    lastCreated,
+    atLast: [...new Set([...carried, ...atLastTime])]
   }
   if (previous === undefined) return { fresh: [], position }
   const seen = new Set(previous.recent)
@@ -71,7 +77,12 @@ const advance = <A extends { readonly id: string; readonly created: DateTime.Utc
   if (anchor >= 0) return { fresh: tail.items.slice(anchor + 1), position }
   if (previous.lastCreated === "") return { fresh: tail.items, position }
   const after = DateTime.toEpochMillis(DateTime.makeUnsafe(previous.lastCreated))
-  return { fresh: tail.items.filter((item) => DateTime.toEpochMillis(item.created) >= after), position }
+  const seenAtLast = new Set(previous.atLast)
+  const fresh = tail.items.filter((item) => {
+    const created = DateTime.toEpochMillis(item.created)
+    return created > after || (created === after && !seenAtLast.has(item.id))
+  })
+  return { fresh, position }
 }
 
 const typeOfChange = (change: FieldChange): JiraEventType => {
