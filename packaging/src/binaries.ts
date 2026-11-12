@@ -43,7 +43,7 @@ export const buildBinaries = (build: BinaryBuild): ReadonlyArray<BuiltBinary> =>
     const binary = join(directory, "exangelos")
     execFileSync(
       bun,
-      ["build", "--compile", `--target=${target.bunTarget}`, ...compileDefines(build.version, build.officialPlugins), build.entry, `--outfile=${binary}`],
+      ["build", "--compile", "--no-compile-autoload-dotenv", "--no-compile-autoload-bunfig", `--target=${target.bunTarget}`, ...compileDefines(build.version, build.officialPlugins), build.entry, `--outfile=${binary}`],
       { cwd: directory, stdio: ["ignore", "ignore", "inherit"] }
     )
     adHocSign(binary, target)

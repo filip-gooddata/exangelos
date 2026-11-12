@@ -8,7 +8,7 @@ export const packagingDirectory = resolve(import.meta.dirname, "..")
 export const repositoryDirectory = resolve(packagingDirectory, "..")
 export const defaultOfficialPluginsDirectory = join(packagingDirectory, "dist", "official-plugins")
 export const defaultReleaseDirectory = join(packagingDirectory, "dist", "release")
-export const defaultEntry = join(repositoryDirectory, "apps", "daemon", "src", "index.ts")
+export const defaultEntry = join(repositoryDirectory, "apps", "cli", "src", "main.ts")
 
 export const packagingVersion = (): string =>
   (JSON.parse(readFileSync(join(packagingDirectory, "package.json"), "utf8")) as { readonly version: string }).version
