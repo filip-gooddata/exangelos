@@ -39,33 +39,30 @@ describe("PluginRules", () => {
     expect(Lifecycle.isSuspended(subscription({ state: { _tag: "Expired" } }), plugin({ trust: "inert" }))).toBe(false)
   })
 
-  it("rule 19: file changes make third-party plugins inert, re-check official ones and restart dev ones", () => {
+  it("rule 19: a third-party plugin starts inert, an official one is enabled by checksum, file changes make both inert and restart dev ones", () => {
     const name = Ids.PluginName.make("github-pr")
-    expect(PluginRules.trustAlert(plugin({ trust: "inert" }), Option.none())).toEqual(
-      Option.some({ _tag: "WaitingToBeEnabled", plugin: name })
-    )
-    expect(PluginRules.filesChanged(plugin(), "sha256-b", Option.none())).toMatchObject({
-      plugin: { trust: "inert", digest: "sha256-b", process: "stopped" },
-      restart: false,
-      alert: Option.some({ _tag: "WaitingToBeEnabled", plugin: name })
-    })
-
     const official = plugin({ origin: { _tag: "Official", version: "1.0.0" } })
+    expect(PluginRules.initialTrust(plugin().origin, "sha256-a", Option.none())).toBe("inert")
     expect(PluginRules.initialTrust(official.origin, "sha256-ok", Option.some("sha256-ok"))).toBe("enabled")
-    expect(PluginRules.filesChanged(official, "sha256-ok", Option.some("sha256-ok"))).toMatchObject({
-      plugin: { trust: "enabled" },
-      restart: true,
-      alert: Option.none()
+    expect(PluginRules.trustAlert({ ...official, trust: "inert", digest: "sha256-bad" }, Option.some("sha256-ok")))
+      .toEqual(Option.some({ _tag: "DigestMismatch", plugin: name }))
+    expect(PluginRules.trustAlert(plugin({ trust: "inert" }), Option.none())).toEqual(
+      Option.some({ _tag: "WaitsForEnable", plugin: name })
+    )
+
+    expect(PluginRules.filesChanged(plugin(), "sha256-b")).toEqual({
+      plugin: plugin({ trust: "inert", digest: "sha256-b", process: "stopped" }),
+      restart: false,
+      alert: Option.some({ _tag: "WaitsForEnable", plugin: name })
     })
-    expect(PluginRules.filesChanged(official, "sha256-bad", Option.some("sha256-ok"))).toMatchObject({
-      plugin: { trust: "inert" },
-      alert: Option.some({ _tag: "ChecksumMismatch", plugin: name })
+    expect(PluginRules.filesChanged(official, "sha256-ok")).toMatchObject({
+      plugin: { trust: "inert", process: "stopped" },
+      restart: false,
+      alert: Option.some({ _tag: "DigestMismatch", plugin: name })
     })
-    expect(PluginRules.filesChanged({ ...official, trust: "inert" }, "sha256-ok", Option.some("sha256-ok")).plugin.trust)
-      .toBe("inert")
 
     const dev = plugin({ trust: "dev", origin: { _tag: "DevLink", path: "/src/p" } })
-    expect(PluginRules.filesChanged(dev, "sha256-c", Option.none())).toMatchObject({ plugin: { trust: "dev" }, restart: true })
+    expect(PluginRules.filesChanged(dev, "sha256-c")).toMatchObject({ plugin: { trust: "dev" }, restart: true })
   })
 
   it("rule 21: alerts when a plugin keeps failing or its credentials are rejected, and on events only when turned on", () => {
@@ -76,14 +73,14 @@ describe("PluginRules", () => {
         plugin({ process: "failing", configuration: { _tag: "Rejected", reason: "401" } })
       )
     ).toEqual([
-      { _tag: "KeepsFailing", plugin: name },
+      { _tag: "Failing", plugin: name, reason: "it keeps failing" },
       { _tag: "CredentialsRejected", plugin: name, reason: "401" }
     ])
     expect(PluginRules.alerts(Option.some(plugin({ process: "failing" })), plugin({ process: "failing" }))).toEqual([])
     expect(PluginRules.alerts(Option.some(plugin()), plugin({ trust: "inert" }))).toEqual([])
     expect(Alert.forEvent(Settings.initial, subscription(), event(1))).toEqual(Option.none())
     expect(Alert.forEvent(Settings.initial, subscription({ eventAlerts: true }), event(1))).toEqual(
-      Option.some({ _tag: "Event", subscription: "sub_7f3k", number: 1, summary: "event 1" })
+      Option.some({ _tag: "Event", subscription: "sub_7f3k", plugin: "github-pr", subject: "acme/app#123", event: event(1) })
     )
   })
 

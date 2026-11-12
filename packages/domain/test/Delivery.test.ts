@@ -52,6 +52,26 @@ describe("Delivery", () => {
     ])
   })
 
+  it("rule 11: a stop wake replaces the undelivered wake and is due at once", () => {
+    const stopped = later(now, "1 minute")
+    expect(
+      Delivery.plan(Option.some(wake()), {
+        id: Ids.WakeId.make("wake_2"),
+        why: { _tag: "Expired" },
+        subscription: subscription({ lastNumber: 1, state: { _tag: "Expired" } }),
+        now: stopped
+      }, limits)
+    ).toEqual([
+      wake({ state: "replaced" }),
+      wake({
+        id: Ids.WakeId.make("wake_2"),
+        reason: "expired",
+        createdAt: stopped,
+        attempts: { count: 0, nextAttemptAt: stopped }
+      })
+    ])
+  })
+
   it("rule 10: retries at most 10 minutes apart until nothing is left to say", () =>
     Effect.gen(function*() {
       const step = yield* Schedule.toStep(Delivery.retrySchedule(limits))

@@ -37,10 +37,10 @@ export const initialTrust = (origin: Origin, digest: string, officialChecksum: O
 
 export const trustAlert = (plugin: Plugin, officialChecksum: Option.Option<string>): Option.Option<Alert> => {
   if (plugin.trust !== "inert") return Option.none()
-  if (plugin.origin._tag !== "Official") return Option.some({ _tag: "WaitingToBeEnabled", plugin: plugin.name })
+  if (plugin.origin._tag !== "Official") return Option.some({ _tag: "WaitsForEnable", plugin: plugin.name })
   return Option.contains(officialChecksum, plugin.digest)
     ? Option.none()
-    : Option.some({ _tag: "ChecksumMismatch", plugin: plugin.name })
+    : Option.some({ _tag: "DigestMismatch", plugin: plugin.name })
 }
 
 export interface FilesChanged {
@@ -49,22 +49,23 @@ export interface FilesChanged {
   readonly alert: Option.Option<Alert>
 }
 
-export const filesChanged = (plugin: Plugin, digest: string, officialChecksum: Option.Option<string>): FilesChanged => {
-  const trust = plugin.trust === "enabled" ? initialTrust(plugin.origin, digest, officialChecksum) : plugin.trust
-  const restart = trust !== "inert"
-  const changed: Plugin = { ...plugin, digest, trust, process: restart ? plugin.process : "stopped" }
-  return {
-    plugin: changed,
-    restart,
-    alert: plugin.trust === "inert" ? Option.none() : trustAlert(changed, officialChecksum)
-  }
+export const filesChanged = (plugin: Plugin, digest: string): FilesChanged => {
+  if (plugin.trust === "dev") return { plugin: { ...plugin, digest }, restart: true, alert: Option.none() }
+  const alert: Option.Option<Alert> = plugin.trust === "inert"
+    ? Option.none()
+    : Option.some(
+      plugin.origin._tag === "Official"
+        ? { _tag: "DigestMismatch", plugin: plugin.name }
+        : { _tag: "WaitsForEnable", plugin: plugin.name }
+    )
+  return { plugin: { ...plugin, digest, trust: "inert", process: "stopped" }, restart: false, alert }
 }
 
 export const alerts = (before: Option.Option<Plugin>, after: Plugin): ReadonlyArray<Alert> => {
   const was = Option.getOrUndefined(before)
   const result: Array<Alert> = []
   if (after.process === "failing" && was?.process !== "failing") {
-    result.push({ _tag: "KeepsFailing", plugin: after.name })
+    result.push({ _tag: "Failing", plugin: after.name, reason: "it keeps failing" })
   }
   if (after.configuration._tag === "Rejected" && was?.configuration._tag !== "Rejected") {
     result.push({ _tag: "CredentialsRejected", plugin: after.name, reason: after.configuration.reason })
