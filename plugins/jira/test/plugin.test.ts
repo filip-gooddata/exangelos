@@ -178,10 +178,12 @@ describe("Jira plugin", () => {
   it.effect("reports a revoked token that Jira answers with 404 as a rejected credential", () =>
     Effect.gen(function*() {
       let revoked = false
+      let checks = 0
       const client = yield* jira((call) => {
         if (!revoked) return site(call)
         if (call.path === "/rest/api/3/serverInfo") return cloud
         if (call.path === "/_edge/tenant_info") return { status: 200, body: { cloudId: "cloud-1" } }
+        if (call.path === "/rest/api/3/myself" && checks++ === 0) return site(call)
         if (call.path.endsWith("/rest/api/3/myself")) return { status: 401, body: { message: "Client must be authenticated" } }
         return { status: 404, body: { errorMessages: ["Issue does not exist or you do not have permission to see it."] } }
       })
