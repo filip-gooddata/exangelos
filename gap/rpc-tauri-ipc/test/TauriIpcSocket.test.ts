@@ -201,4 +201,29 @@ describe("TauriIpcSocket", () => {
       expect(error.reason).toMatchObject({ _tag: "SocketCloseError", code: 1000 })
       expect(closed).toEqual([7])
     }))
+
+  it.effect("holds a close written while disconnected until the next connection", () =>
+    Effect.gen(function*() {
+      const closed: Array<number> = []
+      const socket = TauriIpcSocket.make({
+        makeChannel: (onMessage) => onMessage,
+        invoke: (command, args) => {
+          if (command === "relay_open") return Promise.resolve(3)
+          if (command === "relay_close") closed.push((args as { readonly connection: number }).connection)
+          return Promise.resolve(null)
+        }
+      })
+      const writer = yield* socket.writer
+      const closing = yield* writer.write(new Socket.CloseEvent(4001, "bye")).pipe(Effect.forkChild)
+      yield* Effect.yieldNow
+      expect(closing.pollUnsafe()).toBeUndefined()
+
+      const error = yield* Effect.gen(function*() {
+        const { pull } = yield* socket.reader
+        yield* Fiber.join(closing)
+        return yield* Effect.flip(pull)
+      }).pipe(Effect.scoped)
+      expect(error.reason).toMatchObject({ _tag: "SocketCloseError", code: 4001, closeReason: "bye" })
+      expect(closed[0]).toBe(3)
+    }))
 })
