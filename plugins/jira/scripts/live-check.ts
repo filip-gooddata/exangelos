@@ -80,12 +80,9 @@ const print = (label: string, lines: Record<string, unknown>) => {
   }
 }
 
-const get = async (path: string, headers: Record<string, string> = {}) => {
+const get = async (base: string, path: string, headers: Record<string, string> = { Authorization: authorization }) => {
   try {
-    const response = await fetch(`${site.url}${path}`, {
-      method: "GET",
-      headers: { Accept: "application/json", Authorization: authorization, ...headers }
-    })
+    const response = await fetch(`${base}${path}`, { method: "GET", headers: { Accept: "application/json", ...headers } })
     const text = await response.text()
     let body: unknown = undefined
     try {
@@ -113,25 +110,46 @@ const report = (label: string, got: Got, extra: (body: unknown) => Record<string
   })
 }
 
-const field = (body: unknown, name: string): unknown =>
+function field(body: unknown, name: string): unknown =>
   typeof body === "object" && body !== null && name in body ? (body as Record<string, unknown>)[name] : undefined
 
 const issuePath = `/rest/api/3/issue/${encodeURIComponent(key)}`
 const results: Array<boolean> = []
 
-const serverInfo = await get("/rest/api/3/serverInfo")
+const serverInfo = await get(site.url, "/rest/api/3/serverInfo")
 report("1. serverInfo", serverInfo, (body) => ({ deploymentType: field(body, "deploymentType") ?? "(absent)" }))
 results.push(ok(serverInfo))
 
-const myself = await get("/rest/api/3/myself")
-print("2. myself", "response" in myself ? { status: myself.response.status } : { failure: myself.failure })
-results.push(ok(myself))
+const statusOf = (got: Got) => "response" in got ? got.response.status : got.failure
 
-const issue = await get(`${issuePath}?fields=summary`)
+/** The base that accepts the credential: /myself on the site URL, else through the gateway by cloud id. */
+const resolveRoute = async () => {
+  const direct = await get(site.url, "/rest/api/3/myself")
+  const attempts: Record<string, unknown> = { "site /myself": statusOf(direct) }
+  if (ok(direct)) return { route: "site", base: site.url, attempts }
+  if (!("response" in direct) || direct.response.status !== 401) return { route: "none", base: site.url, attempts }
+  const tenant = await get(site.url, "/_edge/tenant_info", {})
+  attempts["site /_edge/tenant_info (no credential)"] = statusOf(tenant)
+  const cloudId = field("body" in tenant ? tenant.body : undefined, "cloudId")
+  if (typeof cloudId !== "string" || !/^[0-9a-zA-Z-]+$/.test(cloudId)) {
+    attempts.cloudId = "absent"
+    return { route: "none", base: site.url, attempts }
+  }
+  const base = `https://api.atlassian.com/ex/jira/${cloudId}`
+  const gateway = await get(base, "/rest/api/3/myself")
+  attempts["gateway /myself"] = statusOf(gateway)
+  return ok(gateway) ? { route: "gateway", base, attempts } : { route: "none", base: site.url, attempts }
+}
+
+const { attempts, base, route } = await resolveRoute()
+print("2. route for the credential (/myself)", { ...attempts, route })
+results.push(route !== "none")
+
+const issue = await get(base, `${issuePath}?fields=summary`)
 report("3. issue", issue)
 results.push(ok(issue))
 
-const changelog = await get(`${issuePath}/changelog?startAt=0&maxResults=100`)
+const changelog = await get(base, `${issuePath}/changelog?startAt=0&maxResults=100`)
 report("4. changelog, first page", changelog, (body) => {
   const values = field(body, "values")
   const fieldIds = Array.isArray(values)
@@ -144,11 +162,11 @@ report("4. changelog, first page", changelog, (body) => {
 })
 results.push(ok(changelog))
 
-const comments = await get(`${issuePath}/comment?startAt=0&maxResults=100&orderBy=created`)
+const comments = await get(base, `${issuePath}/comment?startAt=0&maxResults=100&orderBy=created`)
 report("5. comments, first page", comments)
 results.push(ok(comments))
 
-const wrong = await get(`${issuePath}?fields=summary`, { Authorization: basic("not-a-valid-api-token") })
+const wrong = await get(base, `${issuePath}?fields=summary`, { Authorization: basic("not-a-valid-api-token") })
 if ("response" in wrong) {
   print("6. issue with a wrong token", {
     status: wrong.response.status,
@@ -170,7 +188,7 @@ if ("response" in issue) {
   if (condition === undefined) {
     print("7. conditional issue request", { skipped: "step 3 returned neither ETag nor Last-Modified" })
   } else {
-    const again = await get(`${issuePath}?fields=summary`, condition)
+    const again = await get(base, `${issuePath}?fields=summary`, { Authorization: authorization, ...condition })
     print("7. conditional issue request", {
       sent: Object.keys(condition)[0],
       ...("response" in again
@@ -184,10 +202,11 @@ if ("response" in issue) {
 
 const pluginPath = Effect.gen(function*() {
   const client = yield* JiraClient
-  yield* client.checkSite(site)
-  const snapshot = yield* client.readIssue({ site, key, position: undefined })
-  const { cursor, events } = diffIssue({ siteUrl: site.url, previous: undefined, snapshot })
+  const routed = yield* client.checkSite(site)
+  const snapshot = yield* client.readIssue({ site: routed, key, position: undefined })
+  const { cursor, events } = diffIssue({ siteUrl: routed.url, previous: undefined, snapshot })
   return {
+    route: routed.api === routed.url ? "site" : "gateway",
     events: events.length,
     cursorKeys: Object.keys(cursor),
     changelog: { consumed: cursor.changelog.consumed, recentIds: cursor.changelog.recent.length, atLastIds: cursor.changelog.atLast.length },
