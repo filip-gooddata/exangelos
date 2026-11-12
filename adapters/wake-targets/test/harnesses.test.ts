@@ -34,18 +34,11 @@ describe("T3 Code", () => {
     expect(T3.interpret(timedOut)).toEqual({ _tag: "Failed", reason: "t3 did not finish within 30s" })
   })
 
-  it.effect("sends the text on stdin", () =>
+  it.effect("passes an id that starts with a dash after --, with the text on stdin", () =>
     Effect.gen(function*() {
-      const { exit, spawned } = yield* deliverTo({ harness: "t3", sessionId: "thread:delegated-task:abc" })
+      const { exit, spawned } = yield* deliverTo({ harness: "t3", sessionId: "-x:1" })
       expect(Exit.isSuccess(exit)).toBe(true)
-      expect(spawned).toEqual([{ program: "t3", args: ["thread", "send", "thread:delegated-task:abc", "-"], stdin: text }])
-    }))
-
-  it.effect("refuses a thread id t3 would read as a flag, without running t3", () =>
-    Effect.gen(function*() {
-      const { exit, spawned } = yield* deliverTo({ harness: "t3", sessionId: "--help:x" })
-      expect(Exit.isFailure(exit)).toBe(true)
-      expect(spawned).toEqual([])
+      expect(spawned).toEqual([{ program: "t3", args: ["thread", "send", "--", "-x:1", "-"], stdin: text }])
     }))
 })
 

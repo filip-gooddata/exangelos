@@ -24,12 +24,6 @@ export type Verdict =
 export const delivered = (note?: string): Verdict => note === undefined ? { _tag: "Delivered" } : { _tag: "Delivered", note }
 export const failed = (reason: string): Verdict => ({ _tag: "Failed", reason })
 
-/** An attempt that must not run, such as a session id the tool would read as a flag. */
-export interface Refused {
-  readonly _tag: "Refused"
-  readonly reason: string
-}
-
 const longest = 300
 
 /** How much of each output stream an attempt keeps. The rest is read and dropped. */

@@ -1,17 +1,19 @@
-import type { Invocation, Outcome, Refused, Verdict } from "./Attempt.ts"
+import type { Invocation, Outcome, Verdict } from "./Attempt.ts"
 import { delivered, exitReason, failed, timedOutReason } from "./Attempt.ts"
 
 /**
- * `t3 thread send <thread> -` with the wake text on stdin. A busy thread gets it as its next turn.
+ * `t3 thread send -- <thread> -` with the wake text on stdin. A busy thread gets it as its next turn.
  *
- * The thread id is a positional argument, and whether t3 honours `--` is not known, so an id that
- * starts with a dash is refused instead of being read as a flag. T3 thread ids are UUIDs or start
- * with `thread:`.
+ * t3's parser is the Effect CLI, whose lexer hands every word after `--` to the command as a
+ * positional argument (effect 4.1.4 `cli/internal/lexer.ts` and `parser.ts`; the t3 binary carries
+ * the same lexer). So a thread id that starts with a dash stays an id. Unverified against t3 itself.
+ * Hand check: `t3 thread send -- <thread> -` into a real idle thread.
  */
-export const invocation = (sessionId: string, text: string): Invocation | Refused =>
-  sessionId.startsWith("-")
-    ? { _tag: "Refused", reason: `t3 would read the thread id ${JSON.stringify(sessionId)} as a flag` }
-    : { program: "t3", args: ["thread", "send", sessionId, "-"], stdin: text }
+export const invocation = (sessionId: string, text: string): Invocation => ({
+  program: "t3",
+  args: ["thread", "send", "--", sessionId, "-"],
+  stdin: text
+})
 
 export const interpret = (outcome: Outcome): Verdict => {
   switch (outcome._tag) {

@@ -3,7 +3,7 @@ import { ChildProcessSpawner } from "effect/process"
 import { WakeTarget } from "@exangelos/application"
 import { WakeText } from "@exangelos/contracts"
 import type { Session } from "@exangelos/domain"
-import type { Invocation, Outcome, Refused, Verdict } from "./Attempt.ts"
+import type { Invocation, Outcome, Verdict } from "./Attempt.ts"
 import { run } from "./Attempt.ts"
 import * as ClaudeCode from "./ClaudeCode.ts"
 import * as Codex from "./Codex.ts"
@@ -19,18 +19,17 @@ const defaultLimit = Duration.seconds(30)
 
 const attempt = (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
-  planned: Invocation | Refused,
+  planned: Invocation,
   interpret: (outcome: Outcome) => Verdict,
   limit: Duration.Duration
 ): Effect.Effect<void, WakeTarget.DeliveryFailed> =>
   Effect.gen(function*() {
-    if ("_tag" in planned) return yield* new WakeTarget.DeliveryFailed({ reason: planned.reason })
     const verdict = interpret(yield* run(spawner, planned, limit))
     if (verdict._tag === "Failed") return yield* new WakeTarget.DeliveryFailed({ reason: verdict.reason })
     if (verdict.note !== undefined) yield* Effect.logWarning(verdict.note)
   })
 
-const plan = (session: Session.Session, text: string): readonly [Invocation | Refused, (outcome: Outcome) => Verdict] => {
+const plan = (session: Session.Session, text: string): readonly [Invocation, (outcome: Outcome) => Verdict] => {
   switch (session.harness) {
     case "t3":
       return [T3.invocation(session.sessionId, text), T3.interpret]
