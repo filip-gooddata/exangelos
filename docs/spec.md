@@ -134,11 +134,12 @@ Driven adapters, one package each:
 - Plugin directory: discovers installed plugins by name, computes their digests and watches their files.
 - Plugin import sources: archive file, https link, local directory, git repository at a ref.
 - Official plugin source: fetches official plugin archives from release files, or from a local folder when a setting points there.
-- Wake targets: T3 Code, Claude Code, Codex, and a generic command adapter.
+- Wake targets: T3 Code, Codex, a generic command adapter, and a Claude Code adapter that fails every attempt because a standalone Claude Code session has no push route in version 1.
 - Alerts over the notifications gap package.
 - Service manager over the service gap package.
 - Settings file.
 - Paths (XDG resolution and the single-directory override).
+- Daemon client: the daemon's RPC transport over its unix socket. The client side serves the CLI and the MCP server and reports a distinct error when no daemon runs. The server side sets the socket's mode to 0600, removes a stale socket file and refuses to start beside a live daemon.
 
 Gap packages that fill holes in the Effect ecosystem. Each is general-purpose, has no dependency on Exangelos packages, has its own tests, and stays private to the workspace in version 1 so it can be published later:
 
@@ -165,7 +166,7 @@ Plugins live in the monorepo as their own packages: `github-pr`, `jira`, `file-w
 | PluginDirectory | list installed plugins, read manifests, compute digests, report file changes | file system |
 | PluginImportSource | place a plugin in the plugin directory from a source, inert | archive file, https link, local directory, git repository at a ref |
 | OfficialPluginSource | fetch an official plugin archive by name and version | release files, local folder |
-| WakeTarget | deliver wake text to one session of one harness | T3 Code, Claude Code, Codex, command |
+| WakeTarget | deliver wake text to one session of one harness | T3 Code, Codex, command; Claude Code fails each attempt with a fixed reason |
 | AlertSink | show a desktop alert | desktop notifications; recording fake for tests |
 | ServiceManager | install, start and report the daemon service | Homebrew service, own LaunchAgent, own systemd user unit |
 | SettingsStore | read and write the settings file | file in the config directory |
@@ -347,7 +348,7 @@ Each change to a subscription or plugin records its actor: the session the CLI o
 ### Wake targets and session detection
 
 - Wake targets are built into the daemon behind the WakeTarget port, with adapters for T3 Code, Claude Code and Codex and a generic command adapter.
-- Known delivery commands, to verify at implementation: T3 Code `t3 thread send <thread> <message>` (a busy thread gets it as its next turn); Claude Code `--resume <session-id>` with `--bg` or `-p`; Codex `codex queue` or `codex exec resume`.
+- Known delivery commands, to verify at implementation: T3 Code `t3 thread send <thread> <message>` (a busy thread gets it as its next turn); Codex `codex queue` or `codex exec resume`. Claude Code has none: no local command reaches a running standalone Claude Code session, and `claude --bg --resume` starts a paid copy. Its wake target fails each attempt with a fixed reason and starts no process. The agent runs `exangelos wait <subscription>` in the background instead, and CLI and MCP results for that harness carry a hint line saying so. Claude Code inside T3 Code gets wakes through T3 Code.
 - The CLI and the MCP server detect the harness session id from environment variables. A T3 Code thread wins when sessions are nested. The exact Claude Code and Codex environment variables are verified at implementation.
 - A subscription has one wake target or none, and any actor can retarget it.
 
@@ -471,6 +472,12 @@ Pinned exactly:
 | Bun | 1.4.2 |
 | pnpm | 12.10.1 |
 | Rust toolchain for the tray app | stable, cargo 1.99.1 (Tauri 2.12 needs Rust 1.90 or later) |
+| Turborepo (turbo) | 2.11.11 |
+| Vitest | 5.1.0 |
+| Vite | 8.3.8 |
+| @effect/tsgo (Effect-aware tsgo, binary `effect-tsgo`) with typescript | 0.68.1 with 7.0.2 |
+| @foldkit/vite-plugin | 0.29.0 |
+| tauri-nspanel (Rust crate) | 2.1.1 |
 
 The other tools (Turborepo, Vitest, tsgo, the Foldkit Vite plugin, tauri-nspanel) are pinned exactly to their current release when the repository is scaffolded, and the pins are recorded in this table then.
 

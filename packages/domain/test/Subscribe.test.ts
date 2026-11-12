@@ -66,4 +66,17 @@ describe("Subscribe", () => {
     expect(Subscribe.isOwn(subscription(), alice)).toBe(true)
     expect(Subscribe.isOwn(subscription(), bob)).toBe(false)
   })
+
+  it("puts the main parameter under the catalogue's main key and refuses a different value under that key", () => {
+    expect(Subscribe.withMain({ state: "open" }, "pr", Option.some("acme/app#1"))).toEqual(
+      Result.succeed({ state: "open", pr: "acme/app#1" })
+    )
+    expect(Subscribe.withMain({ pr: "acme/app#1" }, "pr", Option.some("acme/app#1"))).toEqual(
+      Result.succeed({ pr: "acme/app#1" })
+    )
+    expect(Subscribe.withMain({ pr: "acme/app#2" }, "pr", Option.none())).toEqual(Result.succeed({ pr: "acme/app#2" }))
+    expect(failure(Subscribe.withMain({ pr: "acme/app#2" }, "pr", Option.some("acme/app#1")))?._tag).toBe(
+      "ParametersInvalid"
+    )
+  })
 })
