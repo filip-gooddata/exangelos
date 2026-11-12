@@ -1,0 +1,33 @@
+import { execFileSync } from "node:child_process"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { parseArgs } from "node:util"
+
+const { values } = parseArgs({
+  options: {
+    target: { type: "string" },
+    outfile: { type: "string" },
+    version: { type: "string" },
+    "official-plugins": { type: "string" }
+  }
+})
+
+const scratch = mkdtempSync(join(tmpdir(), "xng-stand-in-build-"))
+try {
+  execFileSync(
+    process.execPath,
+    [
+      "build",
+      join(import.meta.dirname, "stand-in-entry.ts"),
+      "--compile",
+      `--target=${values.target}`,
+      `--define=EXANGELOS_VERSION=${JSON.stringify(values.version)}`,
+      `--define=EXANGELOS_OFFICIAL_PLUGINS=${values["official-plugins"]}`,
+      `--outfile=${values.outfile}`
+    ],
+    { cwd: scratch, stdio: ["ignore", "ignore", "inherit"] }
+  )
+} finally {
+  rmSync(scratch, { recursive: true, force: true })
+}
