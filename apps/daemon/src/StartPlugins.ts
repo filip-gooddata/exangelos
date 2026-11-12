@@ -32,7 +32,6 @@ const start = (installed: PluginDirectory.Installed) =>
     )
   })
 
-/** First cut: starts every installed plugin for as long as the layer lives and records its catalogue. */
 export const layer = Layer.effectDiscard(
   Effect.gen(function*() {
     const directory = yield* PluginDirectory.PluginDirectory

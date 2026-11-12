@@ -10,7 +10,6 @@ interface State {
 
 const byName = Order.mapInput(Order.String, (plugin: Plugin.Plugin) => plugin.name)
 
-/** First cut: keeps plugin records in memory until the sqlite repositories land. */
 export const layer = Layer.effect(
   PluginRepository.PluginRepository,
   Effect.gen(function*() {
