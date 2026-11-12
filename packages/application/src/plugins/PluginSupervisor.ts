@@ -1,5 +1,5 @@
 import { Context, DateTime, Deferred, Duration, Effect, FiberMap, Layer, Option, Redacted, Ref, Semaphore, Stream } from "effect"
-import { Catalogue, Ids, Plugin, PluginRules, Settings } from "@exangelos/domain"
+import { Catalogue, Ids, Plugin, PluginRules, Refusal, Settings } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
 import { PluginDirectory } from "../ports/PluginDirectory.ts"
 import { PluginRepository, type PluginChange } from "../ports/PluginRepository.ts"
@@ -7,7 +7,6 @@ import { PluginRuntime, type Launch, type PluginProcess } from "../ports/PluginR
 import { SecretStore } from "../ports/SecretStore.ts"
 import { SettingsStore } from "../ports/SettingsStore.ts"
 import { SubscriptionRepository } from "../ports/SubscriptionRepository.ts"
-import { PluginUnavailable } from "../seam/PluginAccess.ts"
 import { SubscriptionIntake } from "../seam/SubscriptionIntake.ts"
 
 /**
@@ -54,7 +53,7 @@ export class PluginSupervisor extends Context.Service<PluginSupervisor, {
    */
   readonly reconfigure: (name: Ids.PluginName) => Effect.Effect<Plugin.Configuration>
   /** The running process of an available plugin, waiting while it starts. */
-  readonly ready: (name: Ids.PluginName) => Effect.Effect<PluginProcess, PluginUnavailable>
+  readonly ready: (name: Ids.PluginName) => Effect.Effect<PluginProcess, Refusal.PluginUnavailable>
   readonly watch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly unwatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
 }>()("@exangelos/application/PluginSupervisor") {}
@@ -113,11 +112,7 @@ export const layerPluginSupervisor: Layer.Layer<
       )
       yield* Effect.sleep(Duration.max(wait, Duration.zero))
       const current = yield* plugins.find(name)
-      const problem = Option.match(current, {
-        onNone: () => "it was removed",
-        onSome: (plugin) => Option.getOrElse(PluginRules.problem(plugin), () => "it is unavailable")
-      })
-      yield* intake.suspended(name, since, problem)
+      if (Option.isSome(current)) yield* intake.pluginChanged(current.value)
     }))
 
   /**
@@ -141,10 +136,11 @@ export const layerPluginSupervisor: Layer.Layer<
       if (after.unavailableSince !== undefined && (wasNew || !wasOut)) {
         yield* suspendAfter(after.name, after.unavailableSince)
         yield* closeStreams(after.name)
+        yield* intake.pluginChanged(after)
       }
       if (after.unavailableSince === undefined && wasOut) {
         yield* FiberMap.remove(timers, after.name)
-        if (!wasNew) yield* intake.restored(after.name)
+        yield* intake.pluginChanged(after)
         yield* openStreams(after.name)
       }
       yield* signal
@@ -487,20 +483,20 @@ export const layerPluginSupervisor: Layer.Layer<
         const wake = yield* Ref.get(changed)
         const plugin = yield* plugins.find(name)
         if (Option.isNone(plugin)) {
-          return yield* new PluginUnavailable({ plugin: name, reason: "it is not installed" })
+          return yield* new Refusal.PluginUnavailable({ plugin: name, problem: "it is not installed" })
         }
         const running = (yield* Ref.get(processes)).get(name)
         if (PluginRules.isAvailable(plugin.value) && running !== undefined) return running
         if (!starting(plugin.value)) {
           const reason = Option.getOrElse(PluginRules.problem(plugin.value), () => "it is not running")
-          return yield* new PluginUnavailable({ plugin: name, reason })
+          return yield* new Refusal.PluginUnavailable({ plugin: name, problem: reason })
         }
         yield* Deferred.await(wake)
       }
     }).pipe(
       Effect.timeoutOption(startTimeout),
       Effect.flatMap(Option.match({
-        onNone: () => Effect.fail(new PluginUnavailable({ plugin: name, reason: "it did not start in time" })),
+        onNone: () => Effect.fail(new Refusal.PluginUnavailable({ plugin: name, problem: "it did not start in time" })),
         onSome: Effect.succeed
       }))
     )

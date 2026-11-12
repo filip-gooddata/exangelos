@@ -10,7 +10,8 @@ import {
   layerServiceManager,
   layerSettingsStore,
   layerSubscriptionIntake,
-  pluginRoot
+  pluginRoot,
+  SubscriptionIntakeFake
 } from "@exangelos/application/testing"
 
 export const you: Session.Actor = { _tag: "You" }
@@ -51,6 +52,13 @@ export const pluginOf = (plugin: string) =>
 export const changeKinds = (plugin: string) =>
   Effect.flatMap(PluginRepository.PluginRepository, (r) =>
     Effect.map(r.changes(name(plugin)), (all) => all.map((change) => [change.kind, change.actor._tag])))
+
+/** How many times the intake heard that the plugin is unavailable: once per episode, again at the wake limit. */
+export const unavailableReports = (plugin: string) =>
+  Effect.gen(function*() {
+    const changes = yield* (yield* SubscriptionIntakeFake).pluginChanges
+    return changes.filter((p) => p.name === plugin && p.unavailableSince !== undefined).length
+  })
 
 export const storePlugin = (plugin: Plugin.Plugin) =>
   Effect.flatMap(PluginRepository.PluginRepository, (r) => r.store(plugin))
@@ -93,5 +101,9 @@ const ports = Layer.mergeAll(
 export const layer = layerPlugins.pipe(Layer.provideMerge(ports))
 
 export const withPlugins = <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.provide(effect, layer)
+
+/** The plugin half over the fakes, with some ports replaced. */
+export const withPluginsOver = <ROut>(replaced: Layer.Layer<ROut>) => <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.provide(effect, layerPlugins.pipe(Layer.provideMerge(Layer.merge(ports, replaced))))
 
 export const optionValue = Option.getOrThrow

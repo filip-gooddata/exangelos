@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { TestClock } from "effect/testing"
 import { devLink, enablePlugin, importPlugin, PluginAccess } from "@exangelos/application"
 import { AlertSinkFake, PluginFilesFake, PluginRuntimeFake, SubscriptionIntakeFake } from "@exangelos/application/testing"
-import { activeSubscription, catalogue, installed, name, pluginOf, settle, tick, withPlugins, you } from "./harness.ts"
+import { activeSubscription, catalogue, installed, name, pluginOf, settle, tick, unavailableReports, withPlugins, you } from "./harness.ts"
 
 /** Alerts other than the one an import raises while it waits to be enabled. */
 const failingAlerts = Effect.gen(function*() {
@@ -73,6 +73,7 @@ describe("plugin supervision", () => {
   it.effect("marks a plugin that keeps failing, alerts you and suspends its subscriptions after an hour", () =>
     withPlugins(Effect.gen(function*() {
       yield* running
+      const before = yield* unavailableReports("acme")
       const runtime = yield* PluginRuntimeFake
       yield* runtime.define(acme, { catalogue: catalogue(), start: { _tag: "Fail", reason: "exec format error" } })
       yield* runtime.crash(acme, "segfault")
@@ -84,10 +85,10 @@ describe("plugin supervision", () => {
       yield* minutes(1)
       expect(yield* pluginOf("acme")).toMatchObject({ process: "failing" })
       expect(yield* failingAlerts).toEqual([expect.objectContaining({ plugin: "acme" })])
-      expect(yield* (yield* SubscriptionIntakeFake).suspensions).toEqual([])
+      expect(yield* unavailableReports("acme")).toBe(before + 1)
 
       yield* minutes(60)
-      expect(yield* (yield* SubscriptionIntakeFake).suspensions).toEqual([expect.objectContaining({ plugin: "acme" })])
+      expect(yield* unavailableReports("acme")).toBe(before + 2)
       expect(yield* failingAlerts).toHaveLength(1)
     })))
 

@@ -1,10 +1,10 @@
 import { DateTime, Effect, Layer, Option } from "effect"
-import { type Ids, type Plugin, PluginRules, type Session } from "@exangelos/domain"
+import { type Ids, type Plugin, PluginRules, Refusal, type Session, Subscribe } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
 import { OfficialPluginSource } from "../ports/OfficialPluginSource.ts"
 import { PluginDirectory } from "../ports/PluginDirectory.ts"
 import { PluginRepository } from "../ports/PluginRepository.ts"
-import { ParametersInvalid, PluginAccess, PluginNotFound, PluginUnavailable } from "../seam/PluginAccess.ts"
+import { PluginAccess, PluginNotFound } from "../seam/PluginAccess.ts"
 import { PluginSupervisor } from "./PluginSupervisor.ts"
 
 /**
@@ -19,7 +19,7 @@ export const fetchOfficial = (actor: Session.Actor, name: Ids.PluginName) =>
     const placed = yield* source.fetch(official)
     const installed = yield* Effect.mapError(
       (yield* PluginDirectory).read(placed),
-      (e) => new PluginUnavailable({ plugin: name, reason: `its archive is unreadable: ${e.reason}` })
+      (e) => new Refusal.PluginUnavailable({ plugin: name, problem: `its archive is unreadable: ${e.reason}` })
     )
     const checksum = Option.some(official.digest)
     const origin = { _tag: "Official", version: official.version } as const
@@ -37,7 +37,10 @@ export const fetchOfficial = (actor: Session.Actor, name: Ids.PluginName) =>
     const alert = PluginRules.trustAlert(plugin, checksum)
     if (Option.isSome(alert)) {
       yield* Effect.ignore((yield* AlertSink).show(alert.value))
-      return yield* new PluginUnavailable({ plugin: name, reason: "its checksum does not match the one this binary carries" })
+      return yield* new Refusal.PluginUnavailable({
+        plugin: name,
+        problem: "its checksum does not match the one this binary carries"
+      })
     }
     yield* supervisor.restart(name)
   })
@@ -52,17 +55,20 @@ export const layerPluginAccess: Layer.Layer<
   const repository = yield* PluginRepository
   const context = yield* Effect.context<OfficialPluginSource | PluginDirectory | AlertSink | PluginSupervisor | PluginRepository>()
   return PluginAccess.of({
-    describe: (actor, name, parameters) =>
+    describe: (actor, name, request) =>
       Effect.gen(function*() {
         if (Option.isNone(yield* repository.find(name))) {
           yield* Effect.provide(fetchOfficial(actor, name), context)
         }
         const process = yield* supervisor.ready(name)
+        const parameters = yield* Effect.fromResult(
+          Subscribe.withMain(request.parameters, process.catalogue.parameters.main, request.main)
+        )
         const answer = yield* Effect.mapError(
           process.describe(parameters),
-          (crash) => new PluginUnavailable({ plugin: name, reason: crash.reason })
+          (crash) => new Refusal.PluginUnavailable({ plugin: name, problem: crash.reason })
         )
-        if (answer._tag === "Invalid") return yield* new ParametersInvalid({ plugin: name, reason: answer.reason })
+        if (answer._tag === "Invalid") return yield* new Refusal.ParametersInvalid({ reason: answer.reason })
         return {
           catalogue: process.catalogue,
           parameters: answer.parameters,

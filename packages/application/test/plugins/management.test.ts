@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Exit, Option, Redacted } from "effect"
+import { Effect, Exit, Layer, Option, Redacted } from "effect"
 import { TestClock } from "effect/testing"
 import { DaemonContract } from "@exangelos/contracts"
 import {
@@ -16,8 +16,7 @@ import {
   AlertSinkFake,
   PluginFilesFake,
   PluginRuntimeFake,
-  pluginRoot,
-  SubscriptionIntakeFake
+  pluginRoot
 } from "@exangelos/application/testing"
 import {
   activeSubscription,
@@ -29,7 +28,9 @@ import {
   officialDigest,
   pluginOf,
   settle,
+  unavailableReports,
   withPlugins,
+  withPluginsOver,
   you
 } from "./harness.ts"
 
@@ -95,7 +96,7 @@ describe("official plugins on first use", () => {
       yield* (yield* PluginRuntimeFake).define(name("github-pr"), { catalogue: catalogue() })
       yield* (yield* PluginFilesFake).publish(installed("github-pr", officialDigest))
 
-      const described = yield* (yield* PluginAccess.PluginAccess).describe(you, name("github-pr"), { name: "acme/app#1" })
+      const described = yield* (yield* PluginAccess.PluginAccess).describe(you, name("github-pr"), { parameters: { name: "acme/app#1" }, main: Option.none() })
 
       expect(described.subject).toBe("acme/app#1")
       expect(yield* pluginOf("github-pr")).toMatchObject({ trust: "enabled", origin: { _tag: "Official" } })
@@ -108,7 +109,7 @@ describe("official plugins on first use", () => {
       yield* (yield* PluginFilesFake).publish(installed("github-pr", "sha256-tampered"))
 
       const result = yield* Effect.exit(
-        (yield* PluginAccess.PluginAccess).describe(you, name("github-pr"), { name: "acme/app#1" })
+        (yield* PluginAccess.PluginAccess).describe(you, name("github-pr"), { parameters: { name: "acme/app#1" }, main: Option.none() })
       )
 
       expect(Exit.isFailure(result)).toBe(true)
@@ -176,11 +177,32 @@ describe("configure", () => {
       expect(yield* (yield* AlertSinkFake).shown).toContainEqual(expect.objectContaining({ _tag: "CredentialsRejected" }))
       yield* settle
       expect(yield* runtime.openStreams(name("acme"))).toBe(0)
+      const episode = yield* unavailableReports("acme")
       yield* TestClock.adjust("1 hour")
       yield* settle
-      expect(yield* (yield* SubscriptionIntakeFake).suspensions).toEqual([
-        expect.objectContaining({ plugin: "acme" })
-      ])
+      expect(yield* unavailableReports("acme")).toBe(episode + 1)
+    })))
+})
+
+describe("a secret store that refuses a secret", () => {
+  const refusing = Layer.succeed(SecretStore.SecretStore, SecretStore.SecretStore.of({
+    set: (plugin, _field, value) =>
+      Effect.fail(new SecretStore.SecretStoreFailed({ plugin, reason: `cannot store ${Redacted.value(value)}` })),
+    get: () => Effect.succeedNone,
+    delete: () => Effect.void
+  }))
+
+  it.effect("fails the configure call without the secret in the error", () =>
+    withPluginsOver(refusing)(Effect.gen(function*() {
+      const imported = yield* importAcme()
+      yield* enablePlugin(you, name("acme"), imported.digest)
+      yield* settle
+
+      const result = yield* Effect.exit(configurePlugin(you, name("acme"), { host: "github.com", token: "s3cret\u00e9" }))
+
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(JSON.stringify(result)).toContain("ConfigurationInvalid")
+      expect(JSON.stringify(result)).not.toContain("s3cret")
     })))
 })
 

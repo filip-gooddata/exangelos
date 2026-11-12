@@ -1,5 +1,5 @@
 import { DateTime, Effect, Option, Redacted, Schema } from "effect"
-import { Catalogue, Ids, Plugin, PluginRules, Session, Settings } from "@exangelos/domain"
+import { Catalogue, Ids, Plugin, PluginRules, Refusal, Session, Settings } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
 import { PluginDirectory } from "../ports/PluginDirectory.ts"
 import { ImportFailed, PluginImportSource, type Source } from "../ports/PluginImportSource.ts"
@@ -7,7 +7,7 @@ import { PluginRepository, type PluginChange, type PluginChangeKind } from "../p
 import { SecretStore, type SecretStoreFailed } from "../ports/SecretStore.ts"
 import { ServiceManager } from "../ports/ServiceManager.ts"
 import { SettingsStore } from "../ports/SettingsStore.ts"
-import { PluginNotFound, PluginUnavailable } from "../seam/PluginAccess.ts"
+import { PluginNotFound } from "../seam/PluginAccess.ts"
 import { PluginSupervisor } from "./PluginSupervisor.ts"
 
 export class DigestMismatch extends Schema.TaggedError<DigestMismatch>()("DigestMismatch", {
@@ -159,7 +159,7 @@ export const configurePlugin = (actor: Session.Actor, name: Ids.PluginName, valu
     const plugin = yield* found(name)
     const catalogue = plugin.catalogue
     if (catalogue === undefined) {
-      return yield* new PluginUnavailable({ plugin: name, reason: "it has not run yet, so its form is unknown" })
+      return yield* new Refusal.PluginUnavailable({ plugin: name, problem: "it has not run yet, so its form is unknown" })
     }
     yield* validate(name, catalogue, values)
     const secretKeys = secretFields(plugin)
@@ -173,8 +173,15 @@ export const configurePlugin = (actor: Session.Actor, name: Ids.PluginName, valu
         if (secretKeys.includes(key)) yield* secrets.set(name, key, Redacted.make(value))
       }
     })
+    // The store's own reason could quote the value it refused, so every given secret is replaced first.
+    const given = Object.entries(values).filter(([key, value]) => secretKeys.includes(key) && value !== "")
     yield* Effect.mapError(storeSecrets, (e: SecretStoreFailed) =>
-      new ConfigurationInvalid({ plugin: name, reason: `the secret store failed: ${e.reason}` }))
+      new ConfigurationInvalid({
+        plugin: name,
+        reason: `the secret store refused it: ${
+          given.reduce((text, [, value]) => text.split(value).join("[secret]"), e.reason)
+        }`
+      }))
     yield* repository.storeValues(name, after)
     const fields = Object.keys(values).sort().join(", ")
     yield* supervisor.update(
