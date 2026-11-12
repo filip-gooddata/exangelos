@@ -2,7 +2,7 @@ import { copyFileSync, readFileSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { buildBinaries, type BuiltBinary } from "./binaries.ts"
 import { buildPluginArchives, officialPluginNames, type OfficialPlugin } from "./plugin-archives.ts"
-import { pluginArchiveName, targets, type Target, writeChecksums } from "./release-files.ts"
+import { clearReleaseFiles, pluginArchiveName, targets, type Target, writeChecksums } from "./release-files.ts"
 
 export const packagingDirectory = resolve(import.meta.dirname, "..")
 export const repositoryDirectory = resolve(packagingDirectory, "..")
@@ -33,6 +33,7 @@ export interface Release {
 
 // Plugin archives come first: their digests are compiled into the binaries.
 export const buildRelease = (build: ReleaseBuild): Release => {
+  clearReleaseFiles(build.releaseDirectory)
   const officialPlugins = buildPluginArchives(build.pluginDirectories, build.officialPluginsDirectory)
   const binaries = buildBinaries({
     entry: build.entry,

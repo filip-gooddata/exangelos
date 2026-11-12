@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { copyFileSync, mkdirSync, rmSync } from "node:fs"
+import { copyFileSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import type { OfficialPlugin } from "./plugin-archives.ts"
 import { bun } from "./plugin-archives.ts"
@@ -39,8 +39,6 @@ export const buildBinaries = (build: BinaryBuild): ReadonlyArray<BuiltBinary> =>
   const binaries = join(build.outDirectory, "binaries")
   const sidecars = join(build.outDirectory, "sidecars")
   mkdirSync(build.outDirectory, { recursive: true })
-  rmSync(binaries, { recursive: true, force: true })
-  rmSync(sidecars, { recursive: true, force: true })
   mkdirSync(sidecars, { recursive: true })
   return build.targets.map((target) => {
     const directory = join(binaries, platformOf(target))
@@ -49,7 +47,7 @@ export const buildBinaries = (build: BinaryBuild): ReadonlyArray<BuiltBinary> =>
     execFileSync(
       bun,
       ["build", "--compile", `--target=${target.bunTarget}`, ...compileDefines(build.version, build.officialPlugins), build.entry, `--outfile=${binary}`],
-      { stdio: ["ignore", "ignore", "inherit"] }
+      { cwd: directory, stdio: ["ignore", "ignore", "inherit"] }
     )
     adHocSign(binary, target)
     const archive = join(build.outDirectory, binaryArchiveName(build.version, target))

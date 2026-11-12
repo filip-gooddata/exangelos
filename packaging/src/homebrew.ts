@@ -48,8 +48,6 @@ ${binaryResource(release, "linux-x64", "      ")}    end
     run [opt_bin/"exangelos", "daemon"]
     keep_alive true
     environment_variables PATH: std_service_path_env
-    log_path var/"log/exangelos.log"
-    error_log_path var/"log/exangelos.log"
   end
 
   test do

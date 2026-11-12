@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto"
-import { readFileSync, writeFileSync } from "node:fs"
+import { existsSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { basename, join } from "node:path"
 
 export type Os = "darwin" | "linux"
@@ -71,6 +71,17 @@ export const writeChecksums = (directory: string, files: ReadonlyArray<string>):
   const path = join(directory, checksumFileName)
   writeFileSync(path, formatChecksums(files.map((file) => ({ sha256: sha256File(file), file: basename(file) }))))
   return path
+}
+
+// Removes what an earlier build left, so SHA256SUMS covers every archive beside it,
+// without deleting anything else in a directory the caller named.
+export const clearReleaseFiles = (directory: string): void => {
+  if (!existsSync(directory)) return
+  for (const name of readdirSync(directory)) {
+    if (name.endsWith(".tar.gz") || name === checksumFileName || name === "official-plugins.json" || name === "binaries" || name === "sidecars") {
+      rmSync(join(directory, name), { recursive: true, force: true })
+    }
+  }
 }
 
 export const readChecksums = (directory: string): ReadonlyArray<ChecksumLine> =>

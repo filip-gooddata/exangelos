@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process"
 const macOnlyFlags = process.platform === "darwin" ? ["--no-mac-metadata", "--no-xattrs"] : []
 
 export const createTarGz = (archive: string, root: string, entries: ReadonlyArray<string>): void => {
-  execFileSync("tar", [...macOnlyFlags, "-czf", archive, "-C", root, "--", ...entries], {
+  execFileSync("tar", [...macOnlyFlags, "--format=ustar", "-czf", archive, "-C", root, "--", ...entries], {
     env: { ...process.env, COPYFILE_DISABLE: "1" },
     stdio: ["ignore", "ignore", "inherit"]
   })

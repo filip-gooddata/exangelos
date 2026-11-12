@@ -3,7 +3,7 @@ import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync,
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { digestDirectory } from "./digest.ts"
-import { pluginArchiveName, writeChecksums } from "./release-files.ts"
+import { clearReleaseFiles, pluginArchiveName, writeChecksums } from "./release-files.ts"
 import { createTarGz, extractTarGz } from "./tar.ts"
 
 export const officialPluginNames: ReadonlyArray<string> = ["github-pr", "jira", "file-watch"]
@@ -57,7 +57,7 @@ export const buildPluginArchive = (pluginDirectory: string, outDirectory: string
 }
 
 export const buildPluginArchives = (pluginDirectories: ReadonlyArray<string>, outDirectory: string): ReadonlyArray<OfficialPlugin> => {
-  rmSync(outDirectory, { recursive: true, force: true })
+  clearReleaseFiles(outDirectory)
   mkdirSync(outDirectory, { recursive: true })
   const built = pluginDirectories.map((directory) => buildPluginArchive(directory, outDirectory))
   writeChecksums(outDirectory, built.map((plugin) => plugin.archive))
