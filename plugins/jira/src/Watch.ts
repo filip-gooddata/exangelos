@@ -16,6 +16,8 @@ interface PollState {
   readonly cursor: string | undefined
   readonly wait: Duration.Duration | undefined
   readonly ended: boolean
+  /** Whether this run already re-resolved the route after a 401; the next 401 ends it. */
+  readonly recovered: boolean
 }
 
 interface Poll {
@@ -49,24 +51,29 @@ const subjectName = (target: Target) => target.kind === "issue" ? `issue ${targe
 /**
  * One poll from the state's cursor: the new events, then the cursor after them when it moved. The
  * cursor moves only once the whole read has paged to the end, since the client returns nothing
- * before then. The first poll resolves the route; a 401 on a resolved route resolves it once more,
- * in case the token was swapped for one that takes the other route.
+ * before then. The first poll resolves the route; the first 401 on a resolved route resolves it
+ * once more, in case the token was swapped for one that takes the other route. Any later 401 in
+ * the same run ends it.
  */
 const poll = (client: JiraClient["Service"], site: JiraSite, target: Target, state: PollState) => {
   const { cursor } = state
   const attempt = (route: JiraSite) =>
     read(client, route, target, cursor).pipe(Effect.map((result) => ({ route, ...result })))
-  const resolved = client.resolveRoute(site).pipe(Effect.flatMap(attempt))
+  const resolved = (recovered: boolean) =>
+    client.resolveRoute(site).pipe(Effect.flatMap(attempt), Effect.map((result) => ({ ...result, recovered })))
   const routed = state.route === undefined
-    ? resolved
-    : attempt(state.route).pipe(Effect.catchTag("CredentialRejected", () => resolved))
+    ? resolved(state.recovered)
+    : attempt(state.route).pipe(
+      Effect.map((result) => ({ ...result, recovered: state.recovered })),
+      Effect.catchTag("CredentialRejected", (rejected) => state.recovered ? Effect.fail(rejected) : resolved(true))
+    )
   return routed.pipe(
-    Effect.map(({ cursor: after, events, route }): Poll => {
+    Effect.map(({ cursor: after, events, recovered, route }): Poll => {
       const next = encodeCursor(after)
       const items = events.map(toItem)
       return {
         items: next === cursor ? items : [...items, Plugin.cursor(next)],
-        next: { route, cursor: next, wait: defaultPollInterval, ended: false }
+        next: { route, cursor: next, wait: defaultPollInterval, ended: false, recovered }
       }
     }),
     Effect.catchTags({
@@ -104,7 +111,7 @@ export const watch = (input: {
   readonly cursor: string | undefined
 }) =>
   Stream.unfold<PollState, ReadonlyArray<WatchItem>, Plugin.CredentialsRejected | Plugin.SourceFailed, never>(
-    { route: undefined, cursor: input.cursor, wait: undefined, ended: false },
+    { route: undefined, cursor: input.cursor, wait: undefined, ended: false, recovered: false },
     (state) =>
       state.ended
         ? Effect.undefined

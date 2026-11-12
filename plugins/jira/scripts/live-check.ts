@@ -8,9 +8,9 @@
  * Never prints the token, the email or an Authorization header. Exits 0 when every step but 6 (the
  * wrong token) succeeds, 1 when one of them fails, and 2 when the input is missing or unreadable.
  */
-import { Effect, Layer, Redacted } from "effect"
+import { BunServices } from "@effect/platform-bun"
+import { Config, Effect, FileSystem, Layer, Redacted } from "effect"
 import { FetchHttpClient } from "effect/http"
-import { readFileSync } from "node:fs"
 import { diffIssue } from "../src/Diff.ts"
 import { JiraClient, layer } from "../src/JiraClient.ts"
 import { makeSite } from "../src/Site.ts"
@@ -24,30 +24,33 @@ const refuse = (message: string): never => {
 }
 
 const variables = ["JIRA_SITE", "JIRA_EMAIL", "JIRA_TOKEN_FILE"] as const
-const missing = variables.filter((name) => (process.env[name] ?? "").trim() === "")
-if (missing.length > 0) refuse(`Missing environment variable: ${missing.join(", ")}`)
 
-const key = (process.argv[2] ?? "").trim().toUpperCase()
-if (process.argv.length !== 3 || !/^[A-Z][A-Z0-9_]*-[1-9][0-9]*$/.test(key)) {
-  refuse("Give exactly one issue key, such as PROJECT-123, as the only argument.")
-}
+const inputs = Effect.gen(function*() {
+  const values = yield* Config.all(variables.map((name) => Config.String(name).pipe(Config.withDefault(""))))
+  const [siteUrl, email, tokenFile] = values.map((value) => value.trim())
+  const missing = variables.filter((_, index) => values[index]?.trim() === "")
+  if (missing.length > 0) refuse(`Missing environment variable: ${missing.join(", ")}`)
 
-const readToken = (): string => {
-  try {
-    return readFileSync(process.env.JIRA_TOKEN_FILE ?? "", "utf8").trim()
-  } catch (error) {
-    const code = typeof error === "object" && error !== null && "code" in error ? String(error.code) : "unknown error"
-    return refuse(`Cannot read the file JIRA_TOKEN_FILE names (${code}).`)
+  const key = (process.argv[2] ?? "").trim().toUpperCase()
+  if (process.argv.length !== 3 || !/^[A-Z][A-Z0-9_]*-[1-9][0-9]*$/.test(key)) {
+    refuse("Give exactly one issue key, such as PROJECT-123, as the only argument.")
   }
-}
-const token = readToken()
-if (token === "") refuse("The file JIRA_TOKEN_FILE names is empty.")
 
-const email = (process.env.JIRA_EMAIL ?? "").trim()
-const site = await Effect.runPromise(
-  makeSite({ url: process.env.JIRA_SITE ?? "", email, token: Redacted.make(token) }).pipe(
+  const fs = yield* FileSystem.FileSystem
+  const token = yield* fs.readFileString(tokenFile ?? "").pipe(
+    Effect.map((text) => text.trim()),
+    Effect.catch((error) => Effect.sync(() => refuse(`Cannot read the file JIRA_TOKEN_FILE names (${error.reason._tag}).`)))
+  )
+  if (token === "") refuse("The file JIRA_TOKEN_FILE names is empty.")
+
+  const site = yield* makeSite({ url: siteUrl ?? "", email: email ?? "", token: Redacted.make(token) }).pipe(
     Effect.catch((error) => Effect.sync(() => refuse(`JIRA_SITE is not usable: ${error.reason}`)))
   )
+  return { key, site, email: email ?? "", token }
+})
+
+const { email, key, site, token } = await Effect.runPromise(
+  inputs.pipe(Effect.catch((error) => Effect.sync(() => refuse(`Cannot read the environment (${error._tag}).`))), Effect.provide(BunServices.layer))
 )
 
 const basic = (secret: string) => `Basic ${Buffer.from(`${email}:${secret}`).toString("base64")}`
@@ -184,8 +187,8 @@ if ("response" in issue) {
     ? { "If-Modified-Since": lastModified }
     : undefined
   if (condition === undefined) {
-    print("7. conditional issue request", { skipped: "step 3 returned neither ETag nor Last-Modified" })
-    results.push(true)
+    print("7. conditional issue request", { failure: "step 3 returned neither ETag nor Last-Modified, so no conditional request was possible" })
+    results.push(false)
   } else {
     const again = await get(base, `${issuePath}?fields=summary`, { Authorization: authorization, ...condition })
     print("7. conditional issue request", {

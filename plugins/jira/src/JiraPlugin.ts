@@ -54,10 +54,24 @@ export const plugin = Plugin.make({
           )
         ),
       describe: (input) =>
-        parseTarget(input).pipe(
-          Effect.map((target) => ({ subject: subject(target), label: label(target), parameters: normalise(target) })),
-          Effect.mapError(({ reason }) => new Plugin.ParametersInvalid({ reason }))
-        ),
+        Effect.gen(function*() {
+          const target = yield* parseTarget(input).pipe(
+            Effect.mapError(({ reason }) => new Plugin.ParametersInvalid({ reason }))
+          )
+          const site = Option.getOrUndefined(yield* Ref.get(configured))
+          if (target.kind === "jql" && site !== undefined) {
+            yield* client.checkJql({ site, jql: target.jql }).pipe(
+              Effect.mapError((error) =>
+                new Plugin.ParametersInvalid({
+                  reason: error._tag === "HttpFailure" && error.status === 400
+                    ? "Jira refused the JQL query. Check its syntax and the fields it names."
+                    : `Could not check the JQL query with Jira. ${refusal(site, error)}`
+                })
+              )
+            )
+          }
+          return { subject: subject(target), label: label(target), parameters: normalise(target) }
+        }),
       watch: ({ cursor, parameters: input }) =>
         Stream.unwrap(Effect.gen(function*() {
           const site = yield* Ref.get(configured).pipe(

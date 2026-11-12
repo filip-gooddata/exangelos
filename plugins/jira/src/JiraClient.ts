@@ -59,6 +59,8 @@ export class JiraClient extends Context.Service<JiraClient, {
   }) => Effect.Effect<IssueSnapshot, JiraError>
   /** Every issue the query matches now. Fails with JqlResultTooLarge above `membershipLimit`. */
   readonly readJql: (input: { readonly site: JiraSite; readonly jql: string }) => Effect.Effect<JqlSnapshot, JiraError>
+  /** Asks Jira for one match of the query; a query Jira cannot run fails with HttpFailure status 400. */
+  readonly checkJql: (input: { readonly site: JiraSite; readonly jql: string }) => Effect.Effect<void, JiraError>
 }>()("@exangelos/plugin-jira/JiraClient") {}
 
 const PersonWire = Schema.Struct({
@@ -305,6 +307,9 @@ export const layer = Layer.effect(
           const comments = yield* readTail(position?.comments, commentPage(site, key))
           return { id: issue.id, key: issue.key, summary: issue.fields?.summary ?? "", changelog, comments }
         }),
+
+      checkJql: ({ jql, site }) =>
+        get(site, "/rest/api/3/search/jql", { jql, fields: "summary", maxResults: "1" }, SearchPageWire).pipe(Effect.asVoid),
 
       readJql: ({ jql, site }) =>
         Effect.gen(function*() {

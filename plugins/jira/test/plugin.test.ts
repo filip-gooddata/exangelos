@@ -111,6 +111,16 @@ describe("Jira plugin", () => {
       expect(described).toEqual({ _tag: "Invalid", reason: "\"status = Open\" is not an issue key such as PROJECT-123." })
     }).pipe(Effect.scoped))
 
+  it.effect("refuses a JQL query Jira cannot run", () =>
+    Effect.gen(function*() {
+      const client = yield* jira((call) =>
+        call.path === "/rest/api/3/search/jql" ? { status: 400, body: { errorMessages: ["Error in JQL"] } } : site(call)
+      )
+      yield* client.Configure({ values })
+      const described = yield* client.Describe({ parameters: { target: "project =", kind: "jql" } })
+      expect(described).toEqual({ _tag: "Invalid", reason: "Jira refused the JQL query. Check its syntax and the fields it names." })
+    }).pipe(Effect.scoped))
+
   it.effect("rejects a credential Jira answers 401 to, without repeating the token", () =>
     Effect.gen(function*() {
       const client = yield* jira((call) =>
