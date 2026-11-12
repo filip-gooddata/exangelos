@@ -7,7 +7,9 @@
   },
   "scripts": {
     "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
-    "test": "bun run --bun vitest run"
+    "test": "bun run --bun vitest run test",
+    "build": "bun build.ts",
+    "e2e": "bun run --bun vitest run e2e"
   },
   "dependencies": {
     "@exangelos/contracts": "workspace:*",

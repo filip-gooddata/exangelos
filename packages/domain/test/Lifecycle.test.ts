@@ -127,6 +127,16 @@ describe("Lifecycle", () => {
     ).toEqual(Option.none())
   })
 
+  it("active -> active: a removed plugin's outage wakes its sessions once after 1 hour", () => {
+    const outage = Option.some({ since: start, problem: "it was removed" })
+    expect(Lifecycle.isSuspendedWhen(subscription(), false)).toBe(true)
+    expect(Lifecycle.suspensionWakeWhen(subscription(), outage, Option.none(), later(start, "59 minutes"), limits))
+      .toEqual(Option.none())
+    expect(Lifecycle.suspensionWakeWhen(subscription(), outage, Option.none(), later(start, "1 hour"), limits)).toEqual(
+      Option.some({ _tag: "Suspended", since: start, problem: "it was removed" })
+    )
+  })
+
   it("rule 15: only an active subscription with an available plugin is watched", () => {
     expect(Lifecycle.isWatched(subscription(), plugin())).toBe(true)
     expect(Lifecycle.isWatched(subscription({ state: { _tag: "Expired" } }), plugin())).toBe(false)
