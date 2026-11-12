@@ -1,5 +1,5 @@
 import { resolve } from "node:path"
-import { Duration, Effect, Layer, Stream } from "effect"
+import { Duration, Effect, Exit, Layer, Scope, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { RpcClient } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc"
@@ -44,7 +44,7 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
   const commandFor = options?.commandFor ?? defaultCommand
   const startTimeout = Duration.fromInputUnsafe(options?.startTimeout ?? "30 seconds")
 
-  const start = Effect.fnUntraced(function*(launch: PluginRuntime.Launch) {
+  const acquire = Effect.fnUntraced(function*(launch: PluginRuntime.Launch) {
     const plugin = launch.name
     const startFailed = (reason: string) => new PluginRuntime.PluginStartFailed({ plugin, reason })
     const crashed = (reason: string) => new PluginRuntime.PluginCrashed({ plugin, reason })
@@ -74,8 +74,7 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
       Effect.filterOrFail(
         ({ version }) => supportedVersions.includes(version),
         ({ version }) => new PluginRuntime.IncompatibleProtocol({ plugin, version, supported: supportedVersions })
-      ),
-      Effect.onError(() => Effect.ignore(child.kill()))
+      )
     )
 
     return {
@@ -101,6 +100,14 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
       )
     } satisfies PluginRuntime.PluginProcess
   }, Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner))
+
+  const start = Effect.fnUntraced(function*(launch: PluginRuntime.Launch) {
+    const scope = yield* Scope.fork(yield* Scope.Scope)
+    return yield* acquire(launch).pipe(
+      Scope.provide(scope),
+      Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause)))
+    )
+  })
 
   return PluginRuntime.PluginRuntime.of({ start })
 })

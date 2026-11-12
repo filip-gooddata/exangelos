@@ -18,8 +18,9 @@ export interface Options {
  * the same error. The protocol never respawns the child; observe its exit through
  * the handle's `exitCode`.
  *
- * The protocol is created once the child answers a first ping, so it waits for
- * the child to start without a deadline; bound it with a timeout if needed. From
+ * The protocol sends a first ping and is created once the child writes its first
+ * output, so it waits for the child to start without a deadline; bound it with a
+ * timeout if needed. From
  * then on the client pings every `pingInterval` (default 5 seconds), and if no
  * frame arrives within `pingTimeout` (default `pingInterval`), calls fail with a
  * `SocketReadError` reason.

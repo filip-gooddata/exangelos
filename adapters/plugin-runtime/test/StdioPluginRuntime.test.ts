@@ -39,6 +39,8 @@ const recordingSpawner = Layer.effect(
 
 const runtime = StdioPluginRuntime.layer().pipe(Layer.provide(recordingSpawner))
 
+const impatientRuntime = StdioPluginRuntime.layer({ startTimeout: "1 millis" }).pipe(Layer.provide(recordingSpawner))
+
 const start = Effect.fnUntraced(function*(target: PluginRuntime.Launch) {
   const plugins = yield* PluginRuntime.PluginRuntime
   return yield* plugins.start(target)
@@ -81,6 +83,13 @@ describe("StdioPluginRuntime", () => {
       expect(yield* Effect.flip(plugin.describe({ ticks: 1 }))).toMatchObject(crashed)
       expect(yield* plugin.exited).toMatchObject(crashed)
     }).pipe(Effect.scoped, Effect.provide(runtime)))
+
+  it.live("stops a plugin that does not answer the handshake in time", () =>
+    Effect.gen(function*() {
+      const error = yield* Effect.flip(start(template))
+      expect(error).toMatchObject({ _tag: "PluginStartFailed", plugin: "template" })
+      expect(yield* Effect.flip(spawned.at(-1)!.exitCode)).toMatchObject({ _tag: "PlatformError" })
+    }).pipe(Effect.scoped, Effect.provide(impatientRuntime)))
 
   it.live("refuses a plugin that speaks another protocol version", () =>
     Effect.gen(function*() {
