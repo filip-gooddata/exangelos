@@ -30,21 +30,20 @@ const readManifest = (pluginDirectory: string): Manifest => {
 
 export const bun = process.env["BUN"] ?? "bun"
 
-// Stages plugin.json and the bundle of src/index.ts at the manifest's entry path,
-// archives them at the archive root, and digests the unpacked archive the way the
-// daemon digests an installed plugin.
+// Runs the plugin's own `build` script, archives plugin.json and the entry it names
+// at the archive root, and digests the unpacked archive the way the daemon digests
+// an installed plugin.
 export const buildPluginArchive = (pluginDirectory: string, outDirectory: string): OfficialPlugin & { readonly archive: string } => {
   const manifest = readManifest(pluginDirectory)
   if (manifest.entry._tag !== "Bundle") throw new Error(`${manifest.name}: only bundle entries are packaged`)
   const entryPath = manifest.entry.path
   const work = mkdtempSync(join(tmpdir(), `xng-plugin-${manifest.name}-`))
   try {
+    execFileSync(bun, ["run", "build"], { cwd: pluginDirectory, stdio: ["ignore", "ignore", "inherit"] })
     const stage = join(work, "stage")
     mkdirSync(dirname(join(stage, entryPath)), { recursive: true })
     copyFileSync(join(pluginDirectory, "plugin.json"), join(stage, "plugin.json"))
-    execFileSync(bun, ["build", join(pluginDirectory, "src", "index.ts"), "--target=bun", "--format=esm", `--outfile=${join(stage, entryPath)}`], {
-      stdio: ["ignore", "ignore", "inherit"]
-    })
+    copyFileSync(join(pluginDirectory, entryPath), join(stage, entryPath))
     const archive = join(outDirectory, pluginArchiveName(manifest.name, manifest.version))
     createTarGz(archive, stage, ["plugin.json", entryPath])
     const unpacked = join(work, "unpacked")
