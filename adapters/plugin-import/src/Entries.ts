@@ -71,23 +71,41 @@ export const preflight = (entries: ReadonlyArray<Entry>): ReadonlyArray<Entry> =
   return checked
 }
 
-/**
- * Walks a staged tree without following links and refuses links, special files and trees over the
- * limits. Every source passes this before its files move into the plugin directory.
- */
-export const inspectTree = async (root: string): Promise<void> => {
+/** Counts files and bytes against the limits while a tree is copied or walked. */
+const budget = () => {
   let count = 0
   let total = 0
+  return {
+    entry: () => {
+      if (++count > limits.entries) throw new Refused({ reason: `the plugin has more than ${limits.entries} files` })
+    },
+    bytes: (size: number) => {
+      total += size
+      if (total > limits.extractedBytes) throw new Refused({ reason: `the plugin is larger than ${limits.extractedBytes} bytes` })
+    }
+  }
+}
+
+/**
+ * Walks a staged tree without following links, refuses links, special files and trees over the
+ * limits, and sets modes to 0755 for directories and executables and 0644 for other files. Every
+ * source passes this before its files move into the plugin directory.
+ */
+export const inspectTree = async (root: string): Promise<void> => {
+  const limit = budget()
   const visit = async (relative: string): Promise<void> => {
     for (const name of await Fs.readdir(Path.join(root, relative))) {
       const path = relative === "" ? name : `${relative}/${name}`
-      const stat = await Fs.lstat(Path.join(root, path))
-      if (++count > limits.entries) throw new Refused({ reason: `the plugin has more than ${limits.entries} files` })
+      const absolute = Path.join(root, path)
+      const stat = await Fs.lstat(absolute)
+      limit.entry()
       if (stat.isSymbolicLink()) throw new Refused({ reason: `${path} is a link, and links are refused` })
-      if (stat.isDirectory()) await visit(path)
-      else if (stat.isFile()) {
-        total += stat.size
-        if (total > limits.extractedBytes) throw new Refused({ reason: `the plugin is larger than ${limits.extractedBytes} bytes` })
+      if (stat.isDirectory()) {
+        await Fs.chmod(absolute, 0o755)
+        await visit(path)
+      } else if (stat.isFile()) {
+        limit.bytes(stat.size)
+        await Fs.chmod(absolute, stat.mode & 0o111 ? 0o755 : 0o644)
       } else throw new Refused({ reason: `${path} is a device or another special file` })
     }
   }
@@ -95,24 +113,29 @@ export const inspectTree = async (root: string): Promise<void> => {
 }
 
 /**
- * Copies a local directory into the stage without following links, leaving out `.git`.
+ * Copies a local directory into the stage without following links, leaving out `.git`, and stops
+ * at the limits.
  */
 export const copyTree = async (source: string, target: string): Promise<void> => {
   const stat = await Fs.lstat(source).catch(() => undefined)
   if (stat === undefined || !stat.isDirectory()) throw new Refused({ reason: `${source} is not a directory` })
-  await Fs.mkdir(target, { recursive: true })
-  for (const name of await Fs.readdir(source)) {
-    if (name === ".git") continue
-    const from = Path.join(source, name)
-    const to = Path.join(target, name)
-    const entry = await Fs.lstat(from)
-    if (entry.isSymbolicLink()) throw new Refused({ reason: `${name} in ${source} is a link, and links are refused` })
-    if (entry.isDirectory()) await copyTree(from, to)
-    else if (entry.isFile()) {
-      await Fs.copyFile(from, to, Fs.constants.COPYFILE_EXCL)
-      await Fs.chmod(to, entry.mode & 0o111 ? 0o755 : 0o644)
-    } else throw new Refused({ reason: `${name} in ${source} is a device or another special file` })
+  const limit = budget()
+  const copy = async (from: string, to: string): Promise<void> => {
+    await Fs.mkdir(to, { recursive: true })
+    for (const name of await Fs.readdir(from)) {
+      if (name === ".git") continue
+      const child = Path.join(from, name)
+      const entry = await Fs.lstat(child)
+      limit.entry()
+      if (entry.isSymbolicLink()) throw new Refused({ reason: `${child} is a link, and links are refused` })
+      if (entry.isDirectory()) await copy(child, Path.join(to, name))
+      else if (entry.isFile()) {
+        limit.bytes(entry.size)
+        await Fs.copyFile(child, Path.join(to, name), Fs.constants.COPYFILE_EXCL)
+      } else throw new Refused({ reason: `${child} is a device or another special file` })
+    }
   }
+  await copy(source, target)
 }
 
 /** The directory that holds `plugin.json`: the root, or the one directory at the root. */

@@ -28,10 +28,14 @@ const resolveEntry = (directory: string, entry: Manifest.Entry) => {
   const path = insideDirectory(directory, relative)
   if (path === undefined) return Effect.fail(`the entry ${relative} is outside the plugin`)
   return Effect.tryPromise({
-    try: () => Fs.lstat(path),
+    try: async () => {
+      const [real, realDirectory] = await Promise.all([Fs.realpath(path), Fs.realpath(directory)])
+      return { real, inside: real.startsWith(realDirectory + Path.sep), stat: await Fs.stat(real) }
+    },
     catch: () => `the entry ${relative} does not exist`
   }).pipe(
-    Effect.filterOrFail((stat) => stat.isFile(), () => `the entry ${relative} is not a file`),
+    Effect.filterOrFail(({ inside }) => inside, () => `the entry ${relative} leads outside the plugin`),
+    Effect.filterOrFail(({ stat }) => stat.isFile(), () => `the entry ${relative} is not a file`),
     Effect.as({ _tag: entry._tag, path } as const)
   )
 }

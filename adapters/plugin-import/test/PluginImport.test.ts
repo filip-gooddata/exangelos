@@ -121,9 +121,17 @@ describe("PluginImportSource", () => {
       git("add", ".")
       git("commit", "--quiet", "-m", "two")
 
+      yield* Effect.promise(() => Fs.symlink("/etc/hosts", Path.join(repository, "leak")))
+      git("add", ".")
+      git("commit", "--quiet", "-m", "three")
+      git("tag", "linked")
+
       const directory = yield* place(s, { _tag: "GitRepository", url: repository, ref: "v1" })
+      const linked = yield* Effect.flip(place(s, { _tag: "GitRepository", url: repository, ref: "linked" }))
 
       expect(yield* listing(directory)).toEqual(["main.js", "plugin.json"])
+      expect(linked.reason).toMatch(/leak is a link/)
+      expect(yield* listing(s.plugins)).toEqual(["from-git"])
     }).pipe(Effect.scoped))
 
   const refusals: ReadonlyArray<[string, ReadonlyArray<ArchiveEntry>, RegExp]> = [

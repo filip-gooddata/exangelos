@@ -68,14 +68,19 @@ export const layer = Layer.effect(
       const moveIntoPlace = (directory: string, name: string, staging: string) =>
         attempt(async () => {
           const target = Path.join(root, name)
-          const previous = Path.join(staging, "previous")
+          const previous = Path.join(root, `.${name}.previous-${Path.basename(staging)}`)
           const replaced = await Fs.rename(target, previous).then(() => true, () => false)
           try {
             await Fs.rename(directory, target)
           } catch (error) {
-            if (replaced) await Fs.rename(previous, target)
+            if (replaced) {
+              await Fs.rename(previous, target).catch(() => {
+                throw new Refused({ reason: `${reasonOf(error)}; the earlier copy is kept at ${previous}` })
+              })
+            }
             throw error
           }
+          if (replaced) await Fs.rm(previous, { recursive: true, force: true })
           return target
         })
 
