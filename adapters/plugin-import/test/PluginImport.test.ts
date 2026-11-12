@@ -65,7 +65,11 @@ const listing = (directory: string) =>
 const archiveFile = (setup: Setup, name: string, content: Buffer) =>
   Effect.as(writeFile(Path.join(setup.root, "in", name), content), Path.join(setup.root, "in", name))
 
-/** The git test spawns about twenty git processes and a bundler run, so a loaded machine needs more than the default 5 s. */
+/**
+ * The git test spawns about twenty git processes and a bundler run, so a loaded machine needs more than the default 5 s.
+ * Its own git calls skip the user's config and background maintenance, which would otherwise keep writing into the
+ * repository while the temporary directory is removed.
+ */
 const gitTimeout = 30_000
 
 describe("PluginImportSource", () => {
@@ -113,7 +117,11 @@ describe("PluginImportSource", () => {
       const repository = Path.join(s.root, "repo")
       yield* Effect.promise(() => buildTemplate(repository))
       const git = (...args: Array<string>) =>
-        execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-C", repository, ...args])
+        execFileSync(
+          "git",
+          ["-c", "user.name=t", "-c", "user.email=t@t", "-c", "gc.auto=0", "-c", "maintenance.auto=false", "-C", repository, ...args],
+          { env: { PATH: process.env.PATH, GIT_CONFIG_GLOBAL: "/dev/null", GIT_CONFIG_NOSYSTEM: "1" } }
+        )
       git("init", "--quiet")
       git("add", ".")
       git("commit", "--quiet", "-m", "one")
