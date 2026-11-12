@@ -1,6 +1,6 @@
 import * as Fs from "node:fs/promises"
-import { Effect, Stream } from "effect"
-import { HttpClient } from "effect/http"
+import { Effect, Layer, Stream } from "effect"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { limits, Refused } from "./Entries.ts"
 
 const redirects = new Set([301, 302, 303, 307, 308])
@@ -61,3 +61,8 @@ export const download = (link: string, file: string) =>
       return
     }
   }).pipe(Effect.scoped)
+
+/** The fetch client for `download`: redirects come back to it instead of being followed. */
+export const layerFetchHttpClient = FetchHttpClient.layer.pipe(
+  Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))
+)

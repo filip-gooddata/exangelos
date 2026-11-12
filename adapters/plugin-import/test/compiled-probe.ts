@@ -3,7 +3,7 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { Effect, Layer } from "effect"
-import { FetchHttpClient } from "effect/http"
+import { layerFetchHttpClient } from "@exangelos/plugin-import"
 import { PluginImportSource } from "@exangelos/application"
 import * as PluginDirectoryLive from "@exangelos/plugin-directory"
 import * as PluginImportLive from "@exangelos/plugin-import"
@@ -27,6 +27,6 @@ const program = Effect.gen(function*() {
 
 await Effect.runPromise(program.pipe(Effect.provide(PluginImportLive.layer({ directory: plugins }).pipe(
   Layer.provide(PluginDirectoryLive.layer({ directory: plugins })),
-  Layer.provide(Layer.mergeAll(BunServices.layer, FetchHttpClient.layer))
+  Layer.provide(Layer.mergeAll(BunServices.layer, layerFetchHttpClient))
 ))))
 await Fs.rm(root, { recursive: true, force: true })
