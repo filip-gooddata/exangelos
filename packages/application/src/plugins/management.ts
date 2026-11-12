@@ -1,5 +1,6 @@
 import { DateTime, Effect, Option, Redacted, Schema } from "effect"
 import { Catalogue, Ids, Plugin, PluginRules, Session, Settings } from "@exangelos/domain"
+import { AlertSink } from "../ports/AlertSink.ts"
 import { PluginDirectory } from "../ports/PluginDirectory.ts"
 import { ImportFailed, PluginImportSource, type Source } from "../ports/PluginImportSource.ts"
 import { PluginRepository, type PluginChange, type PluginChangeKind } from "../ports/PluginRepository.ts"
@@ -13,6 +14,10 @@ export class DigestMismatch extends Schema.TaggedError<DigestMismatch>()("Digest
   plugin: Ids.PluginName,
   expected: Schema.String,
   actual: Schema.String
+}) {}
+
+export class HumanRequired extends Schema.TaggedError<HumanRequired>()("HumanRequired", {
+  plugin: Ids.PluginName
 }) {}
 
 export class ConfigurationInvalid extends Schema.TaggedError<ConfigurationInvalid>()("ConfigurationInvalid", {
@@ -67,6 +72,8 @@ export const importPlugin = (actor: Session.Actor, source: Source) =>
       })
     }
     yield* supervisor.store(plugin, yield* change(plugin.name, "import", actor, `${source._tag} ${installed.digest}`))
+    const alert = PluginRules.trustAlert(plugin, Option.none())
+    if (Option.isSome(alert)) yield* Effect.ignore((yield* AlertSink).show(alert.value))
     yield* supervisor.restart(plugin.name)
     return yield* stored(plugin.name)
   })
@@ -74,6 +81,7 @@ export const importPlugin = (actor: Session.Actor, source: Source) =>
 /** Enables the plugin after you saw its digest; refused when its files changed since. */
 export const enablePlugin = (actor: Session.Actor, name: Ids.PluginName, digest: string) =>
   Effect.gen(function*() {
+    if (actor._tag !== "You") return yield* new HumanRequired({ plugin: name })
     const supervisor = yield* PluginSupervisor
     const plugin = yield* found(name)
     if (plugin.digest !== digest) {

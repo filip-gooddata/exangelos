@@ -383,11 +383,18 @@ export const layerPluginSupervisor: Layer.Layer<
     Effect.gen(function*() {
       const installed = yield* Effect.option(directory.read(at))
       const plugin = yield* plugins.find(name)
-      if (Option.isNone(installed) || Option.isNone(plugin)) return
-      const same = installed.value.digest === plugin.value.digest
-      if (same && (onlyIfDigestDiffers || plugin.value.trust !== "dev")) return
-      const result = PluginRules.filesChanged(plugin.value, installed.value.digest)
-      yield* update(name, () => ({ ...result.plugin, version: installed.value.version }))
+      if (Option.isNone(plugin)) return
+      if (Option.isSome(installed)) {
+        const same = installed.value.digest === plugin.value.digest
+        if (same && (onlyIfDigestDiffers || plugin.value.trust !== "dev")) return
+      } else if (plugin.value.trust === "inert") {
+        return
+      }
+      // Files that can no longer be read count as changed; the digest stays the last one read.
+      const digest = Option.match(installed, { onNone: () => plugin.value.digest, onSome: (i) => i.digest })
+      const version = Option.match(installed, { onNone: () => plugin.value.version, onSome: (i) => i.version })
+      const result = PluginRules.filesChanged(plugin.value, digest)
+      yield* update(name, () => ({ ...result.plugin, version }))
       yield* Effect.forEach(Option.toArray(result.alert), (alert) => Effect.ignore(alerts.show(alert)), {
         discard: true
       })
@@ -453,7 +460,11 @@ export const layerPluginSupervisor: Layer.Layer<
       // A crash during Configure restarts the process, which configures it again.
       if (process !== undefined) {
         const answer = yield* Effect.option(configureProcess(name, process))
-        if (Option.isSome(answer)) return answer.value
+        if (Option.isSome(answer)) {
+          // Open streams belong to the previous configuration; reopen them under the new one.
+          if (answer.value._tag === "Set") yield* Effect.andThen(closeStreams(name), openStreams(name))
+          return answer.value
+        }
       }
       const plugin = yield* plugins.find(name)
       if (Option.isNone(plugin)) return { _tag: "Missing" } as Plugin.Configuration

@@ -5,6 +5,12 @@ import { devLink, enablePlugin, importPlugin, PluginAccess } from "@exangelos/ap
 import { AlertSinkFake, PluginFilesFake, PluginRuntimeFake, SubscriptionIntakeFake } from "@exangelos/application/testing"
 import { activeSubscription, catalogue, installed, name, pluginOf, settle, tick, withPlugins, you } from "./harness.ts"
 
+/** Alerts other than the one an import raises while it waits to be enabled. */
+const failingAlerts = Effect.gen(function*() {
+  const shown = yield* (yield* AlertSinkFake).shown
+  return shown.filter((alert) => alert._tag !== "WaitsForEnable")
+})
+
 const acme = name("acme")
 
 const running = Effect.gen(function*() {
@@ -61,7 +67,7 @@ describe("plugin supervision", () => {
       expect(yield* runtime.launches(acme)).toHaveLength(2)
       expect(yield* runtime.openStreams(acme)).toBe(1)
       expect(yield* pluginOf("acme")).toMatchObject({ process: "running" })
-      expect(yield* (yield* AlertSinkFake).shown).toEqual([])
+      expect(yield* failingAlerts).toEqual([])
     })))
 
   it.effect("marks a plugin that keeps failing, alerts you and suspends its subscriptions after an hour", () =>
@@ -77,12 +83,12 @@ describe("plugin supervision", () => {
 
       yield* minutes(1)
       expect(yield* pluginOf("acme")).toMatchObject({ process: "failing" })
-      expect(yield* (yield* AlertSinkFake).shown).toEqual([expect.objectContaining({ plugin: "acme" })])
+      expect(yield* failingAlerts).toEqual([expect.objectContaining({ plugin: "acme" })])
       expect(yield* (yield* SubscriptionIntakeFake).suspensions).toEqual([])
 
       yield* minutes(60)
       expect(yield* (yield* SubscriptionIntakeFake).suspensions).toEqual([expect.objectContaining({ plugin: "acme" })])
-      expect(yield* (yield* AlertSinkFake).shown).toHaveLength(1)
+      expect(yield* failingAlerts).toHaveLength(1)
     })))
 
   it.effect("restarts a dev-linked plugin when its files change", () =>

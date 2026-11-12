@@ -9,6 +9,7 @@ import {
   management,
   PluginAccess,
   PluginRepository,
+  PluginRuntime,
   SecretStore
 } from "@exangelos/application"
 import {
@@ -56,6 +57,18 @@ describe("plugin trust", () => {
       expect(yield* pluginOf("acme")).toMatchObject({ trust: "enabled", process: "running", configuration: { _tag: "Set" } })
       expect(yield* runtime.launches(name("acme"))).toHaveLength(1)
       expect(yield* changeKinds("acme")).toEqual([["import", "You"], ["enable", "You"]])
+    })))
+
+  it.effect("alerts you that an import waits to be enabled, and refuses an agent's enable", () =>
+    withPlugins(Effect.gen(function*() {
+      const imported = yield* importAcme([])
+      expect(yield* (yield* AlertSinkFake).shown).toEqual([{ _tag: "WaitsForEnable", plugin: "acme" }])
+
+      const agent = { _tag: "Session", session: {} } as never
+      const refused = yield* Effect.exit(enablePlugin(agent, name("acme"), imported.digest))
+
+      expect(Exit.isFailure(refused)).toBe(true)
+      expect(yield* pluginOf("acme")).toMatchObject({ trust: "inert" })
     })))
 
   it.effect("returns an enabled plugin to inert and stops it when its files change", () =>
@@ -168,6 +181,28 @@ describe("configure", () => {
       expect(yield* (yield* SubscriptionIntakeFake).suspensions).toEqual([
         expect.objectContaining({ plugin: "acme" })
       ])
+    })))
+})
+
+describe("credentials rejected by a stream", () => {
+  it.effect("still count after you reconfigure the plugin", () =>
+    withPlugins(Effect.gen(function*() {
+      const runtime = yield* PluginRuntimeFake
+      const imported = yield* importAcme()
+      yield* enablePlugin(you, name("acme"), imported.digest)
+      yield* settle
+      yield* configurePlugin(you, name("acme"), { host: "github.com", token: "first" })
+      yield* activeSubscription("acme", "sub_one")
+      yield* (yield* PluginAccess.PluginAccess).watch("sub_one" as never)
+      yield* settle
+      yield* configurePlugin(you, name("acme"), { token: "second" })
+      yield* settle
+
+      yield* runtime.fail(name("acme"), new PluginRuntime.CredentialsRejected({ plugin: name("acme"), reason: "second expired" }))
+      yield* settle
+
+      expect(yield* pluginOf("acme")).toMatchObject({ configuration: { _tag: "Rejected", reason: "[secret] expired" } })
+      expect(yield* (yield* AlertSinkFake).shown).toContainEqual(expect.objectContaining({ _tag: "CredentialsRejected" }))
     })))
 })
 
