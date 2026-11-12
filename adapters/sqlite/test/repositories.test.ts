@@ -23,10 +23,7 @@ const temporaryRepositories = () =>
   )
 
 repositoryContract("SQLite", temporaryRepositories)
-// The fake lists subscriptions in insertion order, not oldest first; reported to the foundation.
-repositoryContract("in-memory", () => layerRepositories, [
-  "subscriptions list oldest first by creation time"
-])
+repositoryContract("in-memory", () => layerRepositories)
 
 describe("SQLite repositories", () => {
   it.effect("reject a repeated dedupe key and keep the subscription as it was", () =>

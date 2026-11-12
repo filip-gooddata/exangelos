@@ -76,18 +76,10 @@ export const wake = (id: string, sub: Subscription.Subscription, minutes: number
  * One test body per repository rule, run against every implementation of the ports. Changes and
  * wakes come back in the order they were stored, which is what "oldest first" means for them.
  */
-export const repositoryContract = (
-  name: string,
-  layer: () => Layer.Layer<Repositories, unknown>,
-  /** Titles of rules this implementation is known to break; each must keep failing until fixed. */
-  knownGaps: ReadonlyArray<string> = []
-) =>
+export const repositoryContract = (name: string, layer: () => Layer.Layer<Repositories, unknown>) =>
   describe(`${name} repositories`, () => {
     const test = (title: string, body: Effect.Effect<void, never, Repositories>) =>
-      (knownGaps.includes(title) ? it.effect.fails : it.effect)(
-        title,
-        () => Effect.provide(body, layer()).pipe(Effect.orDie)
-      )
+      it.effect(title, () => Effect.provide(body, layer()).pipe(Effect.orDie))
 
     test(
       "plugins list by name, keep changes past removal and drop values with the plugin",
