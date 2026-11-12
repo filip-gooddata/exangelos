@@ -1,1 +1,1 @@
-export * as SecretsFile from "./SecretsFile.ts"
+export * as SecretStores from "./SecretStores.ts"

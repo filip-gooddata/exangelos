@@ -1,15 +1,6 @@
-import { Effect, FileSystem, Path, Random, Schema } from "effect"
+import { Effect, FileSystem, Layer, Path, Random, Schema } from "effect"
+import { SettingsStore } from "@exangelos/application"
 import { Settings } from "@exangelos/domain"
-
-export class SettingsFileUnreadable extends Schema.TaggedError<SettingsFileUnreadable>()("SettingsFileUnreadable", {
-  path: Schema.String,
-  reason: Schema.String
-}) {}
-
-export class SettingsFileWriteFailed extends Schema.TaggedError<SettingsFileWriteFailed>()("SettingsFileWriteFailed", {
-  path: Schema.String,
-  reason: Schema.String
-}) {}
 
 const Json = Schema.fromJsonString(Schema.Unknown)
 const Record = Schema.Record(Schema.String, Schema.Unknown)
@@ -26,10 +17,10 @@ const decode = (path: string, text: string) =>
   Schema.decodeEffect(Json)(text).pipe(
     Effect.map(withDefaults),
     Effect.flatMap(Schema.decodeUnknownEffect(Settings.Settings)),
-    Effect.mapError((error) => new SettingsFileUnreadable({ path, reason: error.message }))
+    Effect.mapError((error) => new SettingsStore.SettingsUnreadable({ path, reason: error.message }))
   )
 
-export const read = (path: string) =>
+const read = (path: string) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const text = yield* fs.readFileString(path).pipe(
@@ -37,12 +28,12 @@ export const read = (path: string) =>
         (error) => error.reason._tag === "NotFound",
         () => Effect.undefined
       ),
-      Effect.mapError((error) => new SettingsFileUnreadable({ path, reason: error.message }))
+      Effect.mapError((error) => new SettingsStore.SettingsUnreadable({ path, reason: error.message }))
     )
     return text === undefined ? Settings.initial : yield* decode(path, text)
   })
 
-export const write = (path: string, settings: Settings.Settings) =>
+const write = (path: string, settings: Settings.Settings) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const paths = yield* Path.Path
@@ -51,4 +42,15 @@ export const write = (path: string, settings: Settings.Settings) =>
     yield* fs.makeDirectory(paths.dirname(path), { recursive: true })
     yield* fs.writeFileString(temp, `${JSON.stringify(encoded, null, 2)}\n`)
     yield* fs.rename(temp, path)
-  }).pipe(Effect.mapError((error) => new SettingsFileWriteFailed({ path, reason: error.message })))
+  }).pipe(Effect.mapError((error) => new SettingsStore.SettingsWriteFailed({ path, reason: error.message })))
+
+export const layer = (path: string): Layer.Layer<SettingsStore.SettingsStore, never, FileSystem.FileSystem | Path.Path> =>
+  Layer.effect(SettingsStore.SettingsStore)(
+    Effect.gen(function*() {
+      const context = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
+      return {
+        read: read(path).pipe(Effect.provide(context)),
+        write: (settings) => write(path, settings).pipe(Effect.provide(context))
+      }
+    })
+  )
