@@ -141,6 +141,19 @@ describe("subscription use cases", () => {
       expect(yield* wakeReasons(subscription.id)).toEqual([])
     }).pipe(Effect.provide(layerHarness)))
 
+  it.effect("wait reports a plugin outage once it lasted long enough, with no change to the subscription", () =>
+    Effect.gen(function*() {
+      const subscription = yield* subscribed({ target: { _tag: "PullOnly" } })
+      yield* (yield* PluginRepository).store({ ...plugin("github-pr"), process: "failing", unavailableSince: yield* DateTime.now })
+
+      const waiting = yield* Effect.forkChild(wait({ id: subscription.id }))
+      yield* TestClock.adjust(Duration.minutes(30))
+      expect(waiting.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust(Duration.minutes(31))
+
+      expect((yield* Fiber.join(waiting)).why).toMatchObject({ _tag: "Suspended", problem: "it keeps failing" })
+    }).pipe(Effect.provide(layerHarness)))
+
   it.effect("pause by the own session stores no wake; by another actor it stores a paused wake", () =>
     Effect.gen(function*() {
       const mine = yield* subscribed()
