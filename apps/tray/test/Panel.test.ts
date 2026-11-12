@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Ids } from "@exangelos/domain"
 import { Effect, Ref } from "effect"
 import { TestClock } from "effect/testing"
-import { DaemonClient, Panel } from "../src/index.ts"
+import { DaemonClient, Host, Panel } from "../src/index.ts"
 import { plugin, subscription } from "./fixtures.ts"
 
 type Answer = Effect.Effect<DaemonClient.Snapshot, DaemonClient.DaemonNotRunning | DaemonClient.DaemonUnreachable>
@@ -11,14 +11,20 @@ const healthy: Answer = Effect.succeed({ subscriptions: [subscription()], plugin
 const failing: Answer = Effect.succeed({ subscriptions: [], plugins: [plugin({ process: "failing" })] })
 const absent: Answer = Effect.fail(new DaemonClient.DaemonNotRunning({ message: "SocketOpenError: no such file" }))
 
-const start = (first: Answer) =>
+const start = (first: Answer, refusals = 0) =>
   Effect.gen(function*() {
     const answer = yield* Ref.make(first)
     const sent: Array<boolean> = []
     const panel = yield* Panel.make({
       interval: "5 seconds",
       load: Effect.flatten(Ref.get(answer)),
-      setAttention: (needsYou) => Effect.sync(() => sent.push(needsYou))
+      setAttention: (needsYou) =>
+        Effect.suspend(() => {
+          sent.push(needsYou)
+          return sent.length <= refusals
+            ? Effect.fail(new Host.HostCommandFailed({ command: "tray_set_attention", message: "refused" }))
+            : Effect.void
+        })
     })
     yield* TestClock.adjust("1 millis")
     const next = (answer_: Answer) =>
@@ -70,5 +76,14 @@ describe("panel state", () => {
       const state = yield* panel.current
       expect(state._tag === "Ready" && state.subscriptions.length).toBe(1)
       expect(sent).toEqual([false])
+    }).pipe(Effect.scoped))
+  it.effect("keeps the icon while the daemon is gone and tells a refusing host again", () =>
+    Effect.gen(function*() {
+      const { next, panel, sent } = yield* start(failing, 1)
+      yield* next(absent)
+      expect((yield* panel.current)._tag).toBe("DaemonNotRunning")
+      yield* next(failing)
+      yield* next(failing)
+      expect(sent).toEqual([true, true])
     }).pipe(Effect.scoped))
 })

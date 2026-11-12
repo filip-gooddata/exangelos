@@ -1,7 +1,7 @@
 import type { Alert, Plugin, Subscription } from "@exangelos/domain"
 import { Context, Data, type Duration, Effect, Layer, Option, Ref, Schedule, type Scope, Semaphore, Stream, SubscriptionRef } from "effect"
 import { DaemonClient, type DaemonNotRunning, type DaemonUnreachable, type Snapshot, snapshot } from "../daemon/DaemonClient.ts"
-import { Host } from "../host/Host.ts"
+import { Host, type HostCommandFailed } from "../host/Host.ts"
 
 export type PanelState = Data.TaggedEnum<{
   Loading: {}
@@ -43,7 +43,8 @@ export const fromLoad = <R>(
     })
   )
 
-export const attention = (state: PanelState): boolean => state._tag === "Ready" && state.needsYou.length > 0
+export const attention = (state: PanelState): Option.Option<boolean> =>
+  state._tag === "Ready" ? Option.some(state.needsYou.length > 0) : Option.none()
 
 export class Panel extends Context.Service<Panel, {
   readonly current: Effect.Effect<PanelState>
@@ -53,11 +54,11 @@ export class Panel extends Context.Service<Panel, {
 
 export interface Options {
   readonly load: Effect.Effect<Snapshot, DaemonNotRunning | DaemonUnreachable>
-  readonly setAttention: (needsYou: boolean) => Effect.Effect<void>
+  readonly setAttention: (needsYou: boolean) => Effect.Effect<void, HostCommandFailed>
   readonly interval: Duration.Input
 }
 
-/** Loads now and then every `interval`, and tells the host whenever the needs-you list turns empty or non-empty. */
+/** Loads now and then every `interval`. After each load that reaches the daemon, tells the host when the needs-you list has turned empty or non-empty; a host that refuses is told again after the next load. */
 export const make = ({ interval, load, setAttention }: Options): Effect.Effect<Panel["Service"], never, Scope.Scope> =>
   Effect.gen(function*() {
     const state = yield* SubscriptionRef.make<PanelState>(PanelState.Loading())
@@ -67,9 +68,11 @@ export const make = ({ interval, load, setAttention }: Options): Effect.Effect<P
       const next = yield* fromLoad(load)
       yield* SubscriptionRef.set(state, next)
       const needed = attention(next)
-      if (!Option.contains(yield* Ref.get(sent), needed)) {
-        yield* setAttention(needed)
-        yield* Ref.set(sent, Option.some(needed))
+      if (Option.isSome(needed) && !Option.contains(yield* Ref.get(sent), needed.value)) {
+        yield* setAttention(needed.value).pipe(
+          Effect.andThen(Ref.set(sent, Option.some(needed.value))),
+          Effect.catchTag("HostCommandFailed", Effect.logWarning)
+        )
       }
     }).pipe(lock.withPermits(1))
     yield* Effect.forkScoped(Effect.repeat(refresh, Schedule.spaced(interval)))
