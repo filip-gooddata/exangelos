@@ -10,6 +10,7 @@
     "test": "bun run --bun vitest run"
   },
   "dependencies": {
+    "@exangelos/application": "workspace:*",
     "@effect/platform-bun": "catalog:",
     "@exangelos/contracts": "workspace:*",
     "@exangelos/domain": "workspace:*",

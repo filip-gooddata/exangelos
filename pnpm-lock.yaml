@@ -256,6 +256,9 @@ importers:
       '@effect/platform-bun':
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)
+      '@exangelos/application':
+        specifier: workspace:*
+        version: link:../../packages/application
       '@exangelos/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
