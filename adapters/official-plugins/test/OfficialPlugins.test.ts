@@ -90,6 +90,24 @@ describe("OfficialPluginSource", () => {
       expect(directory).toBe(Path.join(root, "plugins", "template"))
     }).pipe(Effect.scoped))
 
+  it.live("refuses an archive that holds another plugin and leaves that plugin as it was", () =>
+    Effect.gen(function*() {
+      const root = yield* workspace
+      const folder = Path.join(root, "dist")
+      const file = yield* buildArchive(root, folder)
+      const sentinel = Path.join(root, "plugins", "template", "keep.txt")
+      yield* Effect.promise(async () => {
+        await Fs.rename(file, Path.join(folder, "jira-0.1.0.tar.gz"))
+        await Fs.mkdir(Path.dirname(sentinel), { recursive: true })
+        await Fs.writeFile(sentinel, "installed")
+      })
+
+      const failed = yield* Effect.flip(fetch(root, "jira", { folder }))
+
+      expect(failed.reason).toBe("the import holds template, not jira")
+      expect(yield* Effect.promise(() => Fs.readFile(sentinel, "utf8"))).toBe("installed")
+    }).pipe(Effect.scoped))
+
   it.live("fails for a plugin missing from the folder or the release", () =>
     Effect.gen(function*() {
       const root = yield* workspace

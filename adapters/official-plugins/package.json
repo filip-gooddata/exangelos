@@ -12,6 +12,7 @@
   "dependencies": {
     "@exangelos/application": "workspace:*",
     "@exangelos/domain": "workspace:*",
+    "@exangelos/plugin-import": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
@@ -19,7 +20,6 @@
     "@effect/vitest": "catalog:",
     "@exangelos/paths": "workspace:*",
     "@exangelos/plugin-directory": "workspace:*",
-    "@exangelos/plugin-import": "workspace:*",
     "@types/bun": "catalog:",
     "tar": "catalog:",
     "vitest": "catalog:"

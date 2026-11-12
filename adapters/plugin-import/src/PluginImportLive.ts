@@ -1,6 +1,6 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { Effect, Layer, Semaphore } from "effect"
+import { Context, Effect, Layer, Semaphore } from "effect"
 import { PluginDirectory, PluginImportSource } from "@exangelos/application"
 import { Paths } from "@exangelos/paths"
 import { HttpClient } from "effect/http"
@@ -16,14 +16,23 @@ const attempt = <A>(f: () => Promise<A>) =>
   Effect.tryPromise({ try: f, catch: (cause) => (cause instanceof Refused ? cause : new Refused({ reason: reasonOf(cause) })) })
 
 /**
+ * Places an import only if its manifest names the expected plugin. The name is checked while the
+ * import is staged, so a mismatch never touches an installed plugin. `layer` provides it beside the port.
+ */
+export class NamedImport extends Context.Service<NamedImport, {
+  readonly place: (
+    source: PluginImportSource.Source,
+    name: string
+  ) => Effect.Effect<string, PluginImportSource.ImportFailed>
+}>()("@exangelos/plugin-import/NamedImport") {}
+
+/**
  * Places plugins from archives, https links, local directories and git repositories into the
  * plugin directory at `Paths.pluginDir`. Each import is staged in a new directory beside the plugin directory, checked,
  * and only then moved under the plugin's manifest name. A failed import leaves the plugin directory
  * as it was.
  */
-export const layer = Layer.effect(
-    PluginImportSource.PluginImportSource,
-    Effect.gen(function*() {
+const make = Effect.gen(function*() {
       const plugins = yield* PluginDirectory.PluginDirectory
       const context = yield* Effect.context<ChildProcessSpawner.ChildProcessSpawner | HttpClient.HttpClient>()
       const root = Path.resolve((yield* Paths.Paths).pluginDir)
@@ -84,7 +93,7 @@ export const layer = Layer.effect(
           return target
         })
 
-      const place = (source: PluginImportSource.Source) =>
+      const place = (source: PluginImportSource.Source, expected?: string) =>
         Effect.gen(function*() {
           const staging = yield* stage
           yield* bring(source, staging)
@@ -96,6 +105,9 @@ export const layer = Layer.effect(
           const plugin = yield* plugins.read(directory).pipe(
             Effect.mapError((invalid) => new Refused({ reason: invalid.reason }))
           )
+          if (expected !== undefined && plugin.name !== expected) {
+            return yield* new Refused({ reason: `the import holds ${plugin.name}, not ${expected}` })
+          }
           return yield* swap.withPermits(1)(moveIntoPlace(directory, plugin.name, staging))
         }).pipe(
           Effect.scoped,
@@ -103,6 +115,10 @@ export const layer = Layer.effect(
           Effect.mapError((refused) => new PluginImportSource.ImportFailed({ reason: refused.reason }))
         )
 
-      return { place }
+      return place
     })
-)
+
+export const layer = Layer.effectContext(Effect.map(make, (place) =>
+  Context.make(PluginImportSource.PluginImportSource, { place: (source) => place(source) }).pipe(
+    Context.add(NamedImport, { place })
+  )))
