@@ -48,6 +48,12 @@ export class PluginSupervisor extends Context.Service<PluginSupervisor, {
   /** Stops the process and the file watch; the record stays as it is. */
   readonly stop: (name: Ids.PluginName) => Effect.Effect<void>
   /**
+   * Stops the plugin, removes its record with the change, and tells the subscription half, now and
+   * again once the plugin has been gone for `limits.unavailableBeforeWake`. The change's detail
+   * keeps when the plugin became unavailable, so a daemon restart can set that timer again.
+   */
+  readonly remove: (name: Ids.PluginName, change: PluginChange, problem: string) => Effect.Effect<void>
+  /**
    * Sends the stored configuration to the running process and returns the resulting state. With no
    * process running it returns the state the stored values give.
    */
@@ -501,7 +507,49 @@ export const layerPluginSupervisor: Layer.Layer<
       }))
     )
 
+  const removedPrefix = "unavailable since "
+
+  const reportRemovedAfter = (name: Ids.PluginName, since: DateTime.Utc, problem: string) =>
+    FiberMap.run(timers, name, Effect.gen(function*() {
+      const elapsed = DateTime.toEpochMillis(yield* DateTime.now) - DateTime.toEpochMillis(since)
+      yield* Effect.sleep(Duration.max(Duration.subtract((yield* limits).unavailableBeforeWake, Duration.millis(elapsed)), Duration.zero))
+      if (Option.isNone(yield* plugins.find(name))) yield* intake.pluginRemoved(name, since, problem)
+    }))
+
+  const remove = (name: Ids.PluginName, change: PluginChange, problem: string) =>
+    Effect.gen(function*() {
+      yield* stop(name)
+      yield* writes.withPermit(Effect.gen(function*() {
+        const before = yield* plugins.find(name)
+        const since = Option.match(before, {
+          onNone: () => change.at,
+          onSome: (plugin) => plugin.unavailableSince ?? change.at
+        })
+        yield* plugins.remove(name, { ...change, detail: `${removedPrefix}${DateTime.formatIso(since)}; ${problem}` })
+        yield* FiberMap.remove(timers, name)
+        yield* closeStreams(name)
+        yield* intake.pluginRemoved(name, since, problem)
+        yield* reportRemovedAfter(name, since, problem)
+        yield* signal
+      }))
+    })
+
+  /** After a restart: the removal timer for each removed plugin that still has subscriptions. */
+  const rearmRemoved = Effect.gen(function*() {
+    const names = new Set((yield* subscriptions.list({ states: ["Active"] })).map((subscription) => subscription.plugin))
+    for (const name of names) {
+      if (Option.isSome(yield* plugins.find(name))) continue
+      const last = (yield* plugins.changes(name)).filter((c) => c.kind === "remove" || c.kind === "dev-unlink").at(-1)
+      const detail = last?.detail
+      if (detail === undefined || !detail.startsWith(removedPrefix)) continue
+      const [iso, ...rest] = detail.slice(removedPrefix.length).split("; ")
+      const since = DateTime.make(iso!)
+      if (Option.isSome(since)) yield* reportRemovedAfter(name, DateTime.toUtc(since.value), rest.join("; "))
+    }
+  })
+
   const startup = Effect.gen(function*() {
+    yield* rearmRemoved
     for (const stored of yield* plugins.list) {
       const at = yield* pluginPath(stored)
       if (Option.isSome(at)) yield* filesChanged(stored.name, at.value, true)
@@ -518,6 +566,7 @@ export const layerPluginSupervisor: Layer.Layer<
     update,
     restart,
     stop,
+    remove,
     reconfigure,
     ready,
     watch: openStream,

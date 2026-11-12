@@ -119,12 +119,15 @@ const secretFields = (plugin: Plugin.Plugin) =>
 const forget = (plugin: Plugin.Plugin, kind: "remove" | "dev-unlink", actor: Session.Actor) =>
   Effect.gen(function*() {
     const supervisor = yield* PluginSupervisor
-    yield* supervisor.stop(plugin.name)
     yield* Effect.ignore((yield* SecretStore).delete(plugin.name, secretFields(plugin)))
     if (plugin.origin._tag !== "DevLink") {
       yield* Effect.ignore((yield* PluginDirectory).remove(plugin.name))
     }
-    yield* PluginRepository.use((r) => Effect.flatMap(change(plugin.name, kind, actor), (c) => r.remove(plugin.name, c)))
+    yield* supervisor.remove(
+      plugin.name,
+      yield* change(plugin.name, kind, actor),
+      kind === "remove" ? "removed by you" : "unlinked by you"
+    )
   })
 
 /** Stops the plugin and deletes its files, record, configuration and secrets. Its change log stays. */
