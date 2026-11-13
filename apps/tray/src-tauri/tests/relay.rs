@@ -85,7 +85,7 @@ async fn close_during_a_read_sends_no_closed() {
 
     relay.close(id);
     drop(server);
-    tokio::time::sleep(Duration::from_millis(50)).await;
+    std::thread::sleep(Duration::from_millis(50));
     release.send(()).unwrap();
 
     let late = timeout(Duration::from_millis(300), events.recv()).await;
