@@ -26,6 +26,10 @@
   --mono: ui-monospace, "SF Mono", Menlo, monospace;
 }
 
+:root[data-theme="light"] {
+  color-scheme: light;
+}
+
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
     --panel: #29292c;
@@ -50,6 +54,7 @@
 }
 
 :root[data-theme="dark"] {
+  color-scheme: dark;
   --panel: #29292c;
   --text: #f3f3f5;
   --text-2: #a1a1a8;
@@ -167,17 +172,17 @@ select:focus-visible {
   text-overflow: ellipsis;
 }
 
-.bar-top:has(.back) {
-  display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) 64px;
-}
-
-.bar-top:has(.back) .bar-title {
+.back + .bar-title {
+  flex: 1 1 auto;
   text-align: center;
 }
 
+.back ~ .bar-spacer {
+  flex: 0 0 56px;
+}
+
 .back {
-  justify-self: start;
+  flex: 0 0 56px;
   color: var(--accent);
   white-space: nowrap;
   padding: 2px 4px 2px 0;
@@ -773,6 +778,12 @@ select:focus-visible {
 .fact-value {
   min-width: 0;
   overflow-wrap: anywhere;
+}
+
+.fact-value,
+.load-error,
+.notice-refused,
+.wake .line-quiet {
   user-select: text;
   -webkit-user-select: text;
 }
@@ -889,7 +900,8 @@ button.event:hover {
 }
 
 .retarget-choices .button {
-  justify-content: flex-start;
+  display: block;
+  text-align: left;
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100%;
