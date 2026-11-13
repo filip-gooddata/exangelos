@@ -1,8 +1,8 @@
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
+import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path"
 import { digestDirectory } from "@exangelos/connector-directory"
-import { unpack } from "@exangelos/connector-import"
+import { inspectTree, unpack } from "@exangelos/connector-import"
 import { Data, Effect } from "effect"
 import { run } from "./command.ts"
 import { clearReleaseFiles, connectorArchiveName, writeChecksums } from "./release-files.ts"
@@ -93,7 +93,8 @@ export const buildConnectorArchive = (connectorDirectory: string, outDirectory: 
     const work = yield* workDirectory(manifest.name)
     yield* run(bun, ["run", "build"], { cwd: connectorDirectory })
     const extra = yield* declaredFiles(connectorDirectory, manifest)
-    const entries = [...new Set(["connector.json", entryPath, ...extra])]
+    const packed = new Set(["connector.json", posix.normalize(entryPath)])
+    const entries = ["connector.json", entryPath, ...new Set(extra.filter((file) => !packed.has(file)))]
     const stage = join(work, "stage")
     yield* Effect.sync(() => {
       for (const entry of entries) {
@@ -105,7 +106,7 @@ export const buildConnectorArchive = (connectorDirectory: string, outDirectory: 
     yield* createTarGz(archive, stage, entries)
     const unpacked = join(work, "unpacked")
     yield* Effect.tryPromise({
-      try: () => unpack(archive, unpacked),
+      try: () => unpack(archive, unpacked).then(() => inspectTree(unpacked)),
       catch: (error) =>
         new ConnectorManifestInvalid({
           message: `${manifest.name}: the archive would be refused on import: ${

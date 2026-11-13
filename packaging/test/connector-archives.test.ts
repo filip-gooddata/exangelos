@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, readFileSync, statSync, symlinkSync, writeFileSyn
 import { join } from "node:path"
 import { beforeAll, describe, expect, it } from "@effect/vitest"
 import { digestDirectory } from "@exangelos/connector-directory"
+import { limits } from "@exangelos/connector-import"
 import { Effect } from "effect"
 import { buildConnectorArchive, buildConnectorArchives, type OfficialConnector, officialConnectorsFileName } from "../src/connector-archives.ts"
 import { extractTarGz, listTarGz } from "../src/tar.ts"
@@ -37,10 +38,10 @@ describe("official connector archives (contract test with the real bun and tar)"
   })
 })
 
-const writeConnector = (directory: string, files: ReadonlyArray<string>, build: string) => {
+const writeConnector = (directory: string, files: ReadonlyArray<string>, build: string, entry = "dist/main.js") => {
   writeFileSync(
     join(directory, "connector.json"),
-    JSON.stringify({ name: "extras", version: "0.0.1", entry: { _tag: "Bundle", path: "dist/main.js" }, files })
+    JSON.stringify({ name: "extras", version: "0.0.1", entry: { _tag: "Bundle", path: entry }, files })
   )
   writeFileSync(join(directory, "package.json"), JSON.stringify({ name: "extras-fixture", private: true, scripts: { build } }))
 }
@@ -106,6 +107,38 @@ describe("declared files in a connector archive (contract test with the real bun
       const error = yield* Effect.flip(buildConnectorArchive(directory, directory))
       expect(error._tag).toBe("ConnectorManifestInvalid")
       expect(error.message).toContain(message)
+    }).pipe(withRealPrograms))
+})
+
+describe("declared files that overlap or overflow", () => {
+  const prebuilt = (label: string) => {
+    const directory = temporaryDirectory(label)
+    mkdirSync(join(directory, "dist"))
+    writeFileSync(join(directory, "dist", "main.js"), "")
+    return directory
+  }
+
+  it.effect("packs the entry once when a listed folder holds it", () =>
+    Effect.gen(function*() {
+      const directory = prebuilt("extras-overlap")
+      writeFileSync(join(directory, "dist", "data.txt"), "data")
+      writeConnector(directory, ["dist", "dist/data.txt"], "true", "./dist/main.js")
+      const { archive } = yield* buildConnectorArchive(directory, directory)
+      const listing = yield* listTarGz(archive)
+      expect(listing.length).toBe(3)
+      expect(listing).toContain("dist/data.txt")
+    }).pipe(withRealPrograms))
+
+  it.effect("refuses an archive with more entries than an import takes", () =>
+    Effect.gen(function*() {
+      const directory = prebuilt("extras-many")
+      for (let index = 0; index <= limits.entries / 2; index++) {
+        mkdirSync(join(directory, "assets", `${index}`), { recursive: true })
+        writeFileSync(join(directory, "assets", `${index}`, "a"), "")
+      }
+      writeConnector(directory, ["assets"], "true")
+      const error = yield* Effect.flip(buildConnectorArchive(directory, directory))
+      expect(error.message).toContain("would be refused on import")
     }).pipe(withRealPrograms))
 })
 
