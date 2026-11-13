@@ -1,5 +1,5 @@
 import { homedir } from "node:os"
-import { Clock, DateTime, Duration, Effect, FileSystem, Option, Result, Schema, Stream } from "effect"
+import { Clock, DateTime, Effect, FileSystem, Option, Result, Schema, Stream } from "effect"
 import { Catalogue, Plugin } from "@exangelos/plugin-sdk"
 import type { Change } from "./Baseline.ts"
 import * as FileGlob from "./FileGlob.ts"
@@ -39,11 +39,6 @@ const parameters = Catalogue.parameters({
 type Parameters = typeof parameters.schema.Type
 
 export interface Options {
-  /**
-   * How long notices for one file gather into one event. The protocol does
-   * not pass the daemon's wake window, so the default matches its default.
-   */
-  readonly settle?: Duration.Duration
   readonly home?: string
 }
 
@@ -79,7 +74,10 @@ const toItems = (glob: FileGlob.FileGlob, home: string) => (batch: Watcher.Batch
     return batch.changes.map((change, index) => item(glob, home, change, now, index === last ? batch.cursor : undefined))
   })
 
-/** Builds the plugin. Tests pass a short settle interval. */
+/**
+ * Builds the plugin. Notices for one file gather into one event for the
+ * Watch request's wake window.
+ */
 export const make = (options: Options = {}) =>
   Plugin.make({
     events: [created, changed, deleted],
@@ -88,7 +86,6 @@ export const make = (options: Options = {}) =>
     handlers: Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const home = options.home ?? homedir()
-      const settle = options.settle ?? Duration.seconds(5)
       return {
         configure: () => Effect.void,
         describe: (input: Parameters) =>
@@ -107,10 +104,10 @@ export const make = (options: Options = {}) =>
               parameters: { path: glob.success.glob, ...(ignore.length === 0 ? {} : { ignore }) }
             }
           }),
-        watch: ({ parameters, cursor }) => {
+        watch: ({ parameters, cursor, wakeWindow }) => {
           const glob = FileGlob.parse(parameters, home)
           if (Result.isFailure(glob)) return Stream.fail(new Plugin.SourceFailed({ reason: glob.failure }))
-          return Watcher.watch(glob.success, cursor, { settle }).pipe(
+          return Watcher.watch(glob.success, cursor, { settle: wakeWindow }).pipe(
             Stream.mapEffect(toItems(glob.success, home)),
             Stream.flattenIterable,
             Stream.provideService(FileSystem.FileSystem, fs)

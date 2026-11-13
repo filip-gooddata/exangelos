@@ -22,7 +22,7 @@ const launch = (directory: string, path: string) =>
 const template = launch(templateDirectory, "src/main.ts")
 
 const watchTicks = (ticks: number) =>
-  Schema.decodeSync(PluginRuntime.WatchRequest)({ parameters: { ticks }, eventTypes: ["tick"] })
+  Schema.decodeSync(PluginRuntime.WatchRequest)({ parameters: { ticks }, eventTypes: ["tick"], wakeWindow: 1234 })
 
 const spawned: Array<ChildProcessHandle> = []
 
@@ -61,7 +61,7 @@ describe("StdioPluginRuntime", () => {
       expect(yield* plugin.configure({ token: "secret" })).toEqual({ _tag: "Accepted" })
       const items = yield* Stream.runCollect(plugin.watch(watchTicks(3)))
       expect(items.map((item) => item._tag)).toEqual(["Event", "Event", "Event", "End"])
-      expect(items.at(-1)).toEqual({ _tag: "End", reason: "Emitted 3 ticks" })
+      expect(items.at(-1)).toEqual({ _tag: "End", reason: "Emitted 3 ticks; wake window 1234 ms" })
     }).pipe(Effect.scoped, Effect.provide(runtime)))
 
   it.live("names the plugin when it rejects the credentials", () =>

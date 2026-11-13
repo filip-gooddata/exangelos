@@ -42,7 +42,7 @@ describe("template plugin", () => {
         event: { type: "tick", summary: "Tick 2 of 2", payload: { index: 2 }, dedupeKey: "tick-2" },
         cursor: "2"
       })
-      expect(items[2]).toEqual({ _tag: "End", reason: "Emitted 2 ticks" })
+      expect(items[2]).toEqual({ _tag: "End", reason: "Emitted 2 ticks; wake window 5000 ms" })
     }).pipe(Effect.scoped))
 
   it.effect("resumes after the cursor it was given", () =>

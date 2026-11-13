@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Schema, Stream } from "effect"
+import { DateTime, Duration, Effect, Schema, Stream } from "effect"
 import { Catalogue, Plugin, PluginTest } from "@exangelos/plugin-sdk"
 
 const opened = Catalogue.event("issue.opened", {
@@ -12,6 +12,17 @@ const closed = Catalogue.event("issue.closed", {
 })
 
 const occurredAt = DateTime.makeUnsafe("2026-11-12T10:00:00Z")
+
+const windowed = Plugin.make({
+  events: [closed],
+  parameters: Catalogue.parameters({ main: "repo", schema: Schema.Struct({ repo: Schema.String }) }),
+  configuration: [],
+  handlers: Effect.succeed({
+    configure: () => Effect.void,
+    describe: (parameters) => Effect.succeed({ subject: parameters.repo, label: parameters.repo }),
+    watch: ({ wakeWindow }) => Stream.make(Plugin.end(`${Duration.toMillis(wakeWindow)}`))
+  })
+})
 
 const issues = Plugin.make({
   events: [opened, closed],
@@ -111,6 +122,18 @@ describe("Plugin", () => {
         },
         { _tag: "End", reason: "Repository archived" }
       ])
+    }).pipe(Effect.scoped))
+
+  it.effect("hands the daemon's wake window to the Watch handler, 5 s when the daemon sends none", () =>
+    Effect.gen(function*() {
+      const client = yield* PluginTest.makeClient(windowed)
+      const watch = (wakeWindow?: Duration.Duration) =>
+        client.Watch({ parameters: { repo: "acme/app" }, eventTypes: [], ...(wakeWindow ? { wakeWindow } : {}) }).pipe(
+          Stream.runCollect
+        )
+
+      expect(yield* watch(Duration.millis(1234))).toEqual([{ _tag: "End", reason: "1234" }])
+      expect(yield* watch()).toEqual([{ _tag: "End", reason: "5000" }])
     }).pipe(Effect.scoped))
 
   it.effect("sends event payloads in their JSON encoding", () =>

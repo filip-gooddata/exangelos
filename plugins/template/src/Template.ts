@@ -43,7 +43,7 @@ export const plugin = Plugin.make({
           )
         ),
       describe: ({ ticks }) => Effect.succeed({ subject: `ticks:${ticks}`, label: `${ticks} ticks` }),
-      watch: ({ parameters: { ticks }, cursor }) =>
+      watch: ({ parameters: { ticks }, cursor, wakeWindow }) =>
         Stream.unwrap(
           Effect.gen(function*() {
             const { interval } = yield* Ref.get(configuration).pipe(
@@ -65,7 +65,7 @@ export const plugin = Plugin.make({
                 })
               )
             )
-            return Stream.concat(remaining, Stream.make(Plugin.end(`Emitted ${ticks} ticks`)))
+            return Stream.concat(remaining, Stream.make(Plugin.end(`Emitted ${ticks} ticks; wake window ${Duration.toMillis(wakeWindow)} ms`)))
           })
         )
     }
