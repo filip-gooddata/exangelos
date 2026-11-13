@@ -3,7 +3,6 @@ import type { Session } from "@exangelos/domain"
 import { Daemon } from "@exangelos/daemon"
 import { DaemonClient } from "@exangelos/daemon-client"
 import { AgentClient, Server } from "@exangelos/mcp"
-import * as Service from "@exangelos/service"
 import { Cause, Console, Effect, Layer, Logger, type Option } from "effect"
 import { CliError, Command } from "effect/cli"
 import * as Connection from "./commands/Connection.ts"
@@ -12,24 +11,7 @@ import * as Root from "./commands/Root.ts"
 import * as Scaffold from "./commands/Scaffold.ts"
 import { noDaemonMessage } from "./render/Messages.ts"
 
-const unavailable = (failure: ServiceManager.ServiceFailed) =>
-  ServiceManager.ServiceManager.of({ status: Effect.fail(failure), install: Effect.fail(failure), start: Effect.fail(failure) })
-
-export const serviceManager = (options: Service.ServiceManager.Options) =>
-  Service.ServiceManager.layer.pipe(
-    Layer.provide(Service.ServiceManager.layerUserService(options)),
-    Layer.provide(Service.ServiceManager.layerInstallation(options)),
-    Layer.catchTag("ConfigError", (error) =>
-      Layer.succeed(
-        ServiceManager.ServiceManager,
-        unavailable(
-          new ServiceManager.ServiceFailed({
-            method: options.platform === "darwin" ? "launch-agent" : "systemd-user",
-            reason: `the service settings could not be read: ${error.message}`
-          })
-        )
-      ))
-  )
+export const serviceManager = Daemon.serviceManager
 
 export const daemonClient = <R>(
   session: Option.Option<Session.Session>,
@@ -50,11 +32,12 @@ export const logger = Logger.layer([Logger.withConsoleError(Logger.formatSimple)
 export const run = <R>(options: {
   readonly version: string
   readonly client: Layer.Layer<DaemonClient.DaemonClient, DaemonClient.DaemonNotRunning, R>
+  readonly daemon: Daemon.Options
 }) =>
 (argv: ReadonlyArray<string>) =>
   Effect.gen(function*() {
     const client = Layer.provide(options.client, Layer.succeedContext(yield* Effect.context<R>()))
-    const daemon = Command.make("daemon", {}, () => Daemon.run).pipe(
+    const daemon = Command.make("daemon", {}, () => Daemon.run(options.daemon)).pipe(
       Command.withDescription("Run the daemon in the foreground, as the service definitions do")
     )
     const mcp = Command.make("mcp", {}, () =>

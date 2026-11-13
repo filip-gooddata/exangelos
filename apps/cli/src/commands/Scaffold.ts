@@ -36,6 +36,9 @@ export const renamed = (
     Object.entries(files).map(([file, text]) => [file.replace(placeholders, rename(name)), text.replace(placeholders, rename(name))])
   )
 
+const readme = (name: string): string =>
+  `# ${name}\n\nAn Exangelos plugin. In v1 it builds only inside the Exangelos monorepo, so keep this directory under \`plugins/\` there.\n`
+
 const refuse = (tag: string, message: string) =>
   Effect.gen(function*() {
     yield* (yield* Json) ? Console.log(JSON.stringify({ error: { _tag: tag, message } })) : Console.error(message)
@@ -59,7 +62,7 @@ export const command = Command.make(
       if (yield* fs.exists(directory)) {
         return yield* refuse("DirectoryExists", `Nothing was written: ${directory} already exists.`)
       }
-      const files = renamed(yield* templateFiles, name)
+      const files = { ...renamed(yield* templateFiles, name), "README.md": readme(name) }
       for (const [file, text] of Object.entries(files)) {
         const target = path.join(directory, file)
         yield* fs.makeDirectory(path.dirname(target), { recursive: true })

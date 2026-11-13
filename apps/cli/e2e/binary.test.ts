@@ -10,16 +10,16 @@ let root: string
 let home: string
 let exangelos: string
 let xng: string
+let template: string
 let daemon: Bun.Subprocess | undefined
 
+const hostVariable = /^(T3CODE_|CLAUDE_CODE_|CLAUDECODE|CODEX_|XDG_)/
+
 const env = () => ({
-  ...process.env,
+  ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !hostVariable.test(name))),
   EXANGELOS_HOME: home,
   HOME: join(root, "user"),
-  PATH: `${join(root, "fake-bin")}:${process.env.PATH}`,
-  T3CODE_THREAD_ID: "",
-  CLAUDE_CODE_SESSION_ID: "",
-  CODEX_THREAD_ID: ""
+  PATH: `${join(root, "fake-bin")}:${process.env.PATH}`
 })
 
 const serviceCalls = () => readFile(join(root, "service-calls.log"), "utf8").catch(() => "")
@@ -31,21 +31,31 @@ const run = (binary: string, ...args: Array<string>) => {
   return { status: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() }
 }
 
-const startDaemon = () =>
-  Bun.spawn([exangelos, "daemon"], { env: env(), stdout: "pipe", stderr: "pipe" })
+const json = (...args: Array<string>) => {
+  const result = run(exangelos, "--json", ...args)
+  if (result.status !== 0) throw new Error(`${args.join(" ")} failed: ${result.stdout}${result.stderr}`)
+  return JSON.parse(result.stdout)
+}
 
-const listUntilReady = async () => {
-  const deadline = Date.now() + 20_000
+const eventually = async <A>(check: () => A | Promise<A>, limit = 20_000): Promise<A> => {
+  const deadline = Date.now() + limit
   for (;;) {
-    const result = run(exangelos, "--json", "plugins")
-    if (result.status === 0) return result
-    if (Date.now() > deadline) throw new Error(`daemon never answered: ${result.stderr}`)
-    await Bun.sleep(200)
+    try {
+      return await check()
+    } catch (error) {
+      if (Date.now() > deadline) throw error
+      await Bun.sleep(200)
+    }
   }
 }
 
+const startDaemon = () =>
+  Bun.spawn([exangelos, "daemon"], { env: env(), stdout: "pipe", stderr: "pipe" })
+
+const listUntilReady = () => eventually(() => json("plugins"))
+
 const pluginRuns = () =>
-  Bun.spawnSync(["pgrep", "-f", join(home, "plugins", "template", "dist", "main.js")]).exitCode === 0
+  Bun.spawnSync(["pgrep", "-f", join(template, "dist", "main.js")]).exitCode === 0
 
 const abandonSocket = async (path: string) => {
   const listener = Bun.spawn(["bun", "-e", `require("node:net").createServer().listen(${JSON.stringify(path)})`])
@@ -61,18 +71,32 @@ const mcpReplies = async (request: unknown) => {
     { jsonrpc: "2.0", method: "notifications/initialized" },
     request
   ]
-  mcp.stdin.write(frames.map((frame) => `${JSON.stringify(frame)}\n`).join(""))
-  await mcp.stdin.flush()
-  const reader = mcp.stdout.getReader()
   let output = ""
-  while (output.split("\n").filter((line) => line !== "").length < 2) {
-    const chunk = await reader.read()
-    if (chunk.done) break
-    output += new TextDecoder().decode(chunk.value)
+  try {
+    mcp.stdin.write(frames.map((frame) => `${JSON.stringify(frame)}\n`).join(""))
+    await mcp.stdin.flush()
+    const reader = mcp.stdout.getReader()
+    while (output.split("\n").filter((line) => line !== "").length < 2) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      output += new TextDecoder().decode(chunk.value)
+    }
+  } finally {
+    mcp.kill("SIGTERM")
+    await mcp.exited
   }
-  mcp.kill("SIGTERM")
-  await mcp.exited
   return output.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line))
+}
+
+const mcpSubscribe = async (parameters: Record<string, unknown>, delivery: Record<string, unknown>) => {
+  const replies = await mcpReplies({
+    jsonrpc: "2.0",
+    id: 2,
+    method: "tools/call",
+    params: { name: "subscribe", arguments: { plugin: "template", parameters, intent: "Count ticks", ...delivery } }
+  })
+  expect(replies[1]).toMatchObject({ result: { structuredContent: { id: expect.any(String) } } })
+  return replies[1].result.structuredContent as { id: string }
 }
 
 const stop = async (child: Bun.Subprocess) => {
@@ -82,9 +106,92 @@ const stop = async (child: Bun.Subprocess) => {
   return exited
 }
 
+const servicePid = () => readFile(join(root, "service.pid"), "utf8").then(Number, () => undefined)
+
+const alive = (pid: number) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const stopServiceDaemon = async () => {
+  const pid = await servicePid()
+  if (pid === undefined || !alive(pid)) return true
+  process.kill(pid, "SIGTERM")
+  const deadline = Date.now() + 10_000
+  while (alive(pid) && Date.now() < deadline) await Bun.sleep(100)
+  if (!alive(pid)) return true
+  process.kill(-pid, "SIGKILL")
+  return false
+}
+
 const build = (...args: Array<string>) => {
   const result = Bun.spawnSync(["bun", ...args], { cwd: repo, stdout: "pipe", stderr: "pipe" })
   if (result.exitCode !== 0) throw new Error(result.stderr.toString())
+}
+
+const fake = async (name: string, body: string) => {
+  const path = join(root, "fake-bin", name)
+  await writeFile(path, `#!/bin/sh\n${body}\n`)
+  await chmod(path, 0o755)
+}
+
+const installFakes = async () => {
+  const at = (name: string) => JSON.stringify(join(root, name))
+  await mkdir(join(root, "fake-bin"))
+  const refuseUnlessAccepting = `[ -f ${at("service-accepts")} ] || { echo "fake service manager refused" >&2; exit 1; }`
+  const startDaemonOnce = [
+    `alive || {`,
+    `perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' ${JSON.stringify(exangelos)} daemon < /dev/null > ${at("service-daemon.log")} 2>&1 &`,
+    `echo $! > ${at("service.pid")};`,
+    `tries=0;`,
+    `until [ "$(ps -o pgid= -p $! | tr -d ' ')" = "$!" ]; do`,
+    `kill -0 $! 2>/dev/null && [ $tries -lt 100 ] || { echo "the daemon did not start in its own process group" >&2; exit 1; };`,
+    `tries=$((tries + 1)); sleep 0.05;`,
+    `done;`,
+    `}`
+  ].join(" ")
+  const aliveCheck = `alive() { [ -f ${at("service.pid")} ] && kill -0 "$(cat ${at("service.pid")})" 2>/dev/null; }`
+  await fake("launchctl", [
+    `echo "launchctl $*" >> ${at("service-calls.log")}`,
+    refuseUnlessAccepting,
+    aliveCheck,
+    `case "$1" in`,
+    `  print) alive || exit 113; printf '\\tstate = running\\n\\tpid = %s\\n' "$(cat ${at("service.pid")})" ;;`,
+    `  bootstrap|kickstart) ${startDaemonOnce} ;;`,
+    `  bootout) alive && kill "$(cat ${at("service.pid")})" ;;`,
+    `esac`,
+    `exit 0`
+  ].join("\n"))
+  await fake("systemctl", [
+    `echo "systemctl $*" >> ${at("service-calls.log")}`,
+    refuseUnlessAccepting,
+    aliveCheck,
+    `state() { alive && echo active || echo inactive; }`,
+    `case " $* " in`,
+    `  *" start "*|*" restart "*) ${startDaemonOnce} ;;`,
+    `  *" is-active "*) state; alive || exit 3 ;;`,
+    `  *" ActiveState "*) state ;;`,
+    `  *" MainPID "*) if alive; then cat ${at("service.pid")}; else echo 0; fi ;;`,
+    `esac`,
+    `exit 0`
+  ].join("\n"))
+  await fake("security", [
+    `echo "security $*" >> ${at("secret-calls.log")}`,
+    `case "$1" in`,
+    `  -i) cat >> ${at("secrets.log")} ;;`,
+    `  find-generic-password) [ -f ${at("secrets.log")} ] || exit 44; echo not-a-secret ;;`,
+    `esac`,
+    `exit 0`
+  ].join("\n"))
+  await fake("secret-tool", `echo "fake Secret Service is unreachable" >&2; exit 2`)
+  await fake("t3", `{ printf '%s\\n' "$*"; cat; printf '\\n'; } >> ${at("wakes.log")}`)
+  for (const notifier of ["osascript", "notify-send"]) {
+    await fake(notifier, `echo "${notifier} $*" >> ${at("notifications.log")}`)
+  }
 }
 
 beforeAll(async () => {
@@ -92,25 +199,19 @@ beforeAll(async () => {
   home = join(root, "h")
   exangelos = join(root, "bin", "exangelos")
   xng = join(root, "bin", "xng")
+  template = join(root, "sources", "template")
   build("apps/cli/build.ts", "--version", version, "--outfile", exangelos)
   await symlink(exangelos, xng)
-  await mkdir(join(root, "fake-bin"))
-  for (const tool of ["launchctl", "systemctl"]) {
-    const fake = join(root, "fake-bin", tool)
-    await writeFile(
-      fake,
-      `#!/bin/sh\necho "${tool} $*" >> ${JSON.stringify(join(root, "service-calls.log"))}\necho "fake service manager refused" >&2\nexit 1\n`
-    )
-    await chmod(fake, 0o755)
-  }
-  const template = join(home, "plugins", "template")
-  await mkdir(template, { recursive: true })
+  await installFakes()
   build("build", "plugins/template/src/main.ts", "--target=bun", `--outfile=${join(template, "dist", "main.js")}`)
   await copyFile(join(repo, "plugins/template/plugin.json"), join(template, "plugin.json"))
+  await writeFile(join(root, "token"), "not-a-secret")
 }, 120_000)
 
 afterAll(async () => {
   if (daemon !== undefined) await stop(daemon)
+  await stopServiceDaemon()
+  Bun.spawnSync(["pkill", "-f", join(template, "dist", "main.js")])
   await rm(root, { recursive: true, force: true })
 })
 
@@ -136,14 +237,20 @@ describe("the exangelos binary", () => {
   }, 15_000)
 
   it("serves the template plugin's catalogue from a daemon that replaced a stale socket", async () => {
+    await mkdir(home)
     await abandonSocket(join(home, "daemon.sock"))
     daemon = startDaemon()
-    const plugins = JSON.parse((await listUntilReady()).stdout)
+    expect(await listUntilReady()).toEqual([])
+    expect(run(exangelos, "plugin", "dev-link", template).status).toBe(0)
+    const plugins = await eventually(() => {
+      const listed = json("plugins")
+      expect(listed).toMatchObject([{ process: "running" }])
+      return listed
+    })
     expect(plugins).toMatchObject([
       {
         name: "template",
-        trust: "enabled",
-        process: "running",
+        trust: "dev",
         catalogue: { eventTypes: [{ type: "tick", description: "One tick of the countdown" }] }
       }
     ])
@@ -174,6 +281,40 @@ describe("the exangelos binary", () => {
     )
   }, 15_000)
 
+  it("wakes a subscriber through t3, then reads, acknowledges and waits on a pull-only subscription", async () => {
+    json("settings", "set", "limits.wakeWindow=0 millis")
+    await eventually(() =>
+      json("plugin", "configure", "template", "interval=0", "--secret-file", `token=${join(root, "token")}`)
+    )
+    if (process.platform === "darwin") {
+      expect(await readFile(join(root, "secret-calls.log"), "utf8")).toMatch(/^security -i$/m)
+    }
+
+    const woken = await mcpSubscribe({ ticks: 3 }, { target: { harness: "t3", sessionId: "e2e-thread" } })
+    const wakes = await eventually(async () => {
+      const text = await readFile(join(root, "wakes.log"), "utf8")
+      expect(text).toContain(woken.id)
+      return text
+    })
+    expect(wakes.split("\n")[0]).toBe("thread send -- e2e-thread -")
+
+    const events = await eventually(() => {
+      const read = json("events", woken.id)
+      expect(read).toHaveLength(3)
+      return read
+    })
+    expect(events.map((event: { payload: unknown }) => event.payload)).toEqual([{ index: 1 }, { index: 2 }, { index: 3 }])
+    expect(json("ack", woken.id, "--through", String(events[2].number))).toMatchObject({ ackedThrough: events[2].number })
+
+    const pulled = await mcpSubscribe({ ticks: 2 }, { pullOnly: true, similarOk: [woken.id] })
+    const waited = run(exangelos, "--json", "wait", pulled.id)
+    expect(waited.status).toBe(0)
+    const { wake } = JSON.parse(waited.stdout)
+    expect(wake.subscription).toBe(pulled.id)
+    expect(wake.pending.length).toBeGreaterThan(0)
+    expect(json("list").map((subscription: { id: string }) => subscription.id).sort()).toEqual([woken.id, pulled.id].sort())
+  }, 60_000)
+
   it("refuses a second daemon beside a live one", () => {
     const second = run(exangelos, "daemon")
     expect(second.status).toBe(1)
@@ -188,12 +329,31 @@ describe("the exangelos binary", () => {
     expect(run(exangelos, "plugins").stderr.trim()).toMatch(noDaemon)
   }, 15_000)
 
+  it("starts the daemon through the service manager on first use and reports its status", async () => {
+    await writeFile(join(root, "service-accepts"), "")
+    const listed = run(exangelos, "--json", "plugins")
+    expect(listed.stderr).toBe("")
+    expect(listed.status).toBe(0)
+    expect(JSON.parse(listed.stdout)).toMatchObject([{ name: "template", trust: "dev" }])
+    expect(alive((await servicePid())!)).toBe(true)
+
+    const status = run(exangelos, "service", "status")
+    expect(status.status).toBe(0)
+    expect(status.stdout).toMatch(/running/i)
+    expect(status.stderr).not.toMatch(/\n\s+at /)
+
+    expect(await stopServiceDaemon()).toBe(true)
+    expect(pluginRuns()).toBe(false)
+    await rm(join(root, "service-accepts"))
+  }, 30_000)
+
   it("scaffolds a renamed copy of the plugin template", async () => {
     expect(run(exangelos, "plugin", "scaffold", "template-feed").status).toBe(0)
     const directory = join(root, "template-feed")
     expect(JSON.parse(await readFile(join(directory, "plugin.json"), "utf8")).name).toBe("template-feed")
     expect(JSON.parse(await readFile(join(directory, "package.json"), "utf8")).name).toBe("@exangelos/plugin-template-feed")
     expect(await readFile(join(directory, "src", "index.ts"), "utf8")).toBe(`export * as TemplateFeed from "./TemplateFeed.ts"\n`)
+    expect(await readFile(join(directory, "README.md"), "utf8")).toContain("builds only inside the Exangelos monorepo")
     expect(run(exangelos, "plugin", "scaffold", "template-feed").status).toBe(1)
   })
 

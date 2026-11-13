@@ -5,6 +5,7 @@ import { afterAll, describe, expect, it } from "@effect/vitest"
 import { Effect, Layer, Option, Runtime } from "effect"
 import { TestConsole } from "effect/testing"
 import { ServiceManager } from "@exangelos/application"
+import { layerAlertSink, layerSecretStore, layerWakeTarget } from "@exangelos/application/testing"
 import { Paths } from "@exangelos/paths"
 import * as Entry from "../src/Entry.ts"
 import { daemonServer } from "./harness.ts"
@@ -52,7 +53,15 @@ const run = (
     )
     const exit = yield* Entry.run({
       version: "0.0.0-test",
-      client: Entry.daemonClient(Option.none(), manager)
+      client: Entry.daemonClient(Option.none(), manager),
+      daemon: {
+        alerts: layerAlertSink,
+        serviceManager: manager,
+        secretStore: layerSecretStore,
+        wakeTarget: layerWakeTarget,
+        officialPlugins: [],
+        releaseUrl: undefined
+      }
     })(argv).pipe(
       Effect.provide(Layer.mergeAll(BunServices.layer, pathsIn(home))),
       Effect.exit

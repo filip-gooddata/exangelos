@@ -23,6 +23,28 @@ describe("agent commands", () => {
     expect(result.stdout).toContain("Subscription:  sub_7f3k")
   })
 
+  it("names the ack command to run when resume is refused for a backlog over the limit", async () => {
+    const result = await run(["resume", "sub_7f3k"], {
+      handlers: { Resume: () => Effect.fail(new DaemonContract.BacklogOverLimit({ pending: 23, limit: 20, through: 27, reason: "count" })) }
+    })
+    expect(result.exit._tag).toBe("Failure")
+    expect(result.stderr).toBe(
+      "Nothing was resumed: 23 events are pending, over the backlog limit. Acknowledge them first with `exangelos ack sub_7f3k --through 27`, then resume."
+    )
+  })
+
+  it("tells the owner to use their own terminal when a session tries to enable a plugin", async () => {
+    const result = await run(["plugin", "enable", "github-pr", "--digest", "abc"], {
+      handlers: {
+        EnablePlugin: () => Effect.fail(new DaemonContract.HumanRequired({ plugin: Ids.PluginName.make("github-pr") }))
+      }
+    })
+    expect(result.exit._tag).toBe("Failure")
+    expect(result.stderr).toBe(
+      "Only you can do this for github-pr, and this terminal runs inside an agent session. Run the command again from your own terminal."
+    )
+  })
+
   it("refuses a malformed parameter before calling the daemon", async () => {
     const result = await run(["subscribe", "github-pr", "acme/app#123", "branch", "--intent", "x"])
     expect(result.exit._tag).toBe("Failure")
@@ -78,6 +100,14 @@ describe("agent commands", () => {
     expect(result.exit._tag).toBe("Success")
     expect(callOf(result, rpc)?.payload).toEqual(payload)
     expect(result.stdout).toContain(out)
+  })
+
+  it("turns event alerts off for one subscription and prints it", async () => {
+    const result = await run(["alerts", "sub_7f3k", "off"])
+    expect(result.exit._tag).toBe("Success")
+    expect(callOf(result, "SetEventAlerts")?.payload).toEqual({ id: "sub_7f3k", eventAlerts: false })
+    expect(result.stdout).toContain("Subscription:  sub_7f3k")
+    expect(result.stdout).toContain("Event alerts:  off")
   })
 
   it("tells a Claude Code session how to wait, and a T3 session nothing", async () => {

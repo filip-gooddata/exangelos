@@ -1,0 +1,3 @@
+declare const EXANGELOS_VERSION: string | undefined
+
+export const version: string = typeof EXANGELOS_VERSION === "string" ? EXANGELOS_VERSION : "0.0.0-dev"

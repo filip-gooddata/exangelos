@@ -59,11 +59,12 @@ type Chosen = Layer.Layer<
 
 /**
  * Uses the macOS Keychain on macOS, Secret Service on Linux when `secret-tool` reaches one,
- * and otherwise the 0600 file the Paths service names.
+ * and otherwise the 0600 file the Paths service names. Logs which store it picked.
  */
 export const layer = (platform: string): Chosen =>
   Layer.unwrap(
     Keychain.detect(platform).pipe(
+      Effect.tap((store) => Effect.logInfo(`Secrets go to the ${Option.getOrElse(store, () => "fallback file")}`)),
       Effect.map((store): Chosen =>
         Option.isSome(store)
           ? layerKeychain.pipe(Layer.provide(Keychain.layer(store.value)))

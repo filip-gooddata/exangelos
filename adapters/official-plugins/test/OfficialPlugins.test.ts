@@ -1,6 +1,7 @@
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
+import * as Url from "node:url"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { describe, expect, it } from "@effect/vitest"
 import { ConfigProvider, Effect, Layer } from "effect"
@@ -37,7 +38,11 @@ const buildArchive = (root: string, folder: string) =>
     return file
   })
 
-const fetch = (root: string, name: string, options: { folder?: string; served?: Map<string, Uint8Array> }) => {
+const fetch = (
+  root: string,
+  name: string,
+  options: { folder?: string; served?: Map<string, Uint8Array>; releaseUrl?: string | undefined }
+) => {
   const settings = Layer.succeed(SettingsStore.SettingsStore, {
     read: Effect.succeed<Settings.Settings>(
       options.folder === undefined ? Settings.initial : { ...Settings.initial, officialPluginFolder: options.folder }
@@ -62,7 +67,7 @@ const fetch = (root: string, name: string, options: { folder?: string; served?: 
   return Effect.gen(function*() {
     const source = yield* OfficialPluginSource.OfficialPluginSource
     return yield* source.fetch(official(name))
-  }).pipe(Effect.provide(OfficialPlugins.layer({ known: [official(name)], releaseUrl }).pipe(
+  }).pipe(Effect.provide(OfficialPlugins.layer({ known: [official(name)], releaseUrl: "releaseUrl" in options ? options.releaseUrl : releaseUrl }).pipe(
     Layer.provide(Layer.mergeAll(settings, imports))
   )))
 }
@@ -88,6 +93,26 @@ describe("OfficialPluginSource", () => {
       const directory = yield* fetch(root, "template", { served })
 
       expect(directory).toBe(Path.join(root, "plugins", "template"))
+    }).pipe(Effect.scoped))
+
+  it.live("reads the release files from a file:// release address", () =>
+    Effect.gen(function*() {
+      const root = yield* workspace
+      yield* buildArchive(root, Path.join(root, "release"))
+
+      const directory = yield* fetch(root, "template", { releaseUrl: Url.pathToFileURL(Path.join(root, "release")).href })
+
+      expect(directory).toBe(Path.join(root, "plugins", "template"))
+    }).pipe(Effect.scoped))
+
+  it.live("names the folder setting when the binary carries no release address", () =>
+    Effect.gen(function*() {
+      const root = yield* workspace
+
+      const error = yield* Effect.flip(fetch(root, "template", { releaseUrl: undefined }))
+
+      expect(error).toMatchObject({ _tag: "OfficialFetchFailed", plugin: "template" })
+      expect(error.reason).toContain("officialPluginFolder")
     }).pipe(Effect.scoped))
 
   it.live("refuses an archive that holds another plugin and leaves that plugin as it was", () =>

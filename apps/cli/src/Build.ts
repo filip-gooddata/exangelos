@@ -6,6 +6,10 @@ export const version: string = typeof EXANGELOS_VERSION === "string" ? EXANGELOS
 export const officialPlugins: ReadonlyArray<{ name: string; version: string; digest: string }> =
   typeof EXANGELOS_OFFICIAL_PLUGINS === "object" ? EXANGELOS_OFFICIAL_PLUGINS : []
 
+declare const EXANGELOS_RELEASE_URL: string | undefined
+
+export const releaseUrl: string | undefined = typeof EXANGELOS_RELEASE_URL === "string" ? EXANGELOS_RELEASE_URL : undefined
+
 declare const EXANGELOS_PLUGIN_TEMPLATE: Readonly<Record<string, string>> | undefined
 
 export const pluginTemplate: Readonly<Record<string, string>> | undefined = typeof EXANGELOS_PLUGIN_TEMPLATE === "object"

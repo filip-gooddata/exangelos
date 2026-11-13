@@ -1,7 +1,7 @@
 import { Console, Duration, Effect, Option, Path, Redacted, Schema } from "effect"
 import { Argument, Command, Flag, Prompt } from "effect/cli"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
-import { Plugin, Settings } from "@exangelos/domain"
+import { Plugin, Settings, Subscription } from "@exangelos/domain"
 import * as Text from "../render/Text.ts"
 import { Connection } from "./Connection.ts"
 import * as Input from "./Input.ts"
@@ -283,4 +283,22 @@ const service = Command.make("service").pipe(
   Command.withSubcommands([serviceStatus])
 )
 
-export const commands = [settings, service] as const
+const alerts = Command.make(
+  "alerts",
+  {
+    subscription: Argument.String("subscription").pipe(
+      Argument.withDescription("The subscription id, for example sub_7f3k")
+    ),
+    eventAlerts: Argument.ChoiceWithValue("on|off", [["on", true], ["off", false]] as const).pipe(
+      Argument.withDescription("Whether each event on this subscription also shows a notification")
+    )
+  },
+  ({ eventAlerts, subscription }) =>
+    Effect.gen(function*() {
+      const client = yield* Connection
+      const work = Effect.flatMap(Input.subscriptionId(subscription), (id) => client.SetEventAlerts({ id, eventAlerts }))
+      yield* respond(work, { schema: Subscription.Subscription, text: Text.subscription, subscription })
+    })
+).pipe(Command.withDescription("Turn event notifications for one subscription on or off"))
+
+export const commands = [settings, service, alerts] as const

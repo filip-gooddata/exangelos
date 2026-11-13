@@ -9,6 +9,7 @@ import { ServiceManager } from "../ports/ServiceManager.ts"
 import { SettingsStore } from "../ports/SettingsStore.ts"
 import { PluginNotFound } from "../seam/PluginAccess.ts"
 import { setEventAlerts } from "../subscriptions/useCases/control.ts"
+import { listPluginAlerts } from "./listPluginAlerts.ts"
 import { PluginSupervisor } from "./PluginSupervisor.ts"
 import { redact } from "./redact.ts"
 
@@ -256,6 +257,7 @@ export const management = {
   ConfigurePlugin: configurePlugin,
   DevLink: devLink,
   DevUnlink: devUnlink,
+  ListPluginAlerts: listPluginAlerts,
   GetSettings: getSettings,
   SetSettings: setSettings,
   ServiceStatus: serviceStatus,

@@ -38,6 +38,7 @@ const handlers = DaemonContract.DaemonContract.toLayer({
   ConfigurePlugin: unused,
   DevLink: unused,
   DevUnlink: unused,
+  ListPluginAlerts: unused,
   GetSettings: unused,
   SetSettings: unused
 })

@@ -1,6 +1,6 @@
 import { BunServices } from "@effect/platform-bun"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Effect, Exit, Fiber, Layer, Schema, Scope, Stream } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import type { ChildProcessHandle } from "effect/process/ChildProcessSpawner"
 import { dirname } from "node:path"
@@ -40,6 +40,8 @@ const recordingSpawner = Layer.effect(
 const runtime = StdioPluginRuntime.layer().pipe(Layer.provide(recordingSpawner))
 
 const impatientRuntime = StdioPluginRuntime.layer({ startTimeout: "1 millis" }).pipe(Layer.provide(recordingSpawner))
+
+const hastyRuntime = StdioPluginRuntime.layer({ stopTimeout: "200 millis" }).pipe(Layer.provide(recordingSpawner))
 
 const start = Effect.fnUntraced(function*(target: PluginRuntime.Launch) {
   const plugins = yield* PluginRuntime.PluginRuntime
@@ -90,6 +92,17 @@ describe("StdioPluginRuntime", () => {
       expect(error).toMatchObject({ _tag: "PluginStartFailed", plugin: "template" })
       expect(yield* Effect.flip(spawned.at(-1)!.exitCode)).toMatchObject({ _tag: "PlatformError" })
     }).pipe(Effect.scoped, Effect.provide(impatientRuntime)))
+
+  it.live("kills a plugin that ignores SIGTERM once the stop timeout passes", () =>
+    Effect.gen(function*() {
+      const scope = yield* Scope.make()
+      yield* start(launch(`${import.meta.dirname}/fixture`, "stubborn.ts")).pipe(Scope.provide(scope))
+      const stubborn = spawned.at(-1)!
+      yield* Effect.addFinalizer(() => Effect.ignore(stubborn.kill({ killSignal: "SIGKILL" })))
+      const closing = yield* Effect.forkDetach(Scope.close(scope, Exit.void))
+      yield* Fiber.join(closing).pipe(Effect.timeout("3 seconds"))
+      expect(yield* stubborn.isRunning).toBe(false)
+    }).pipe(Effect.scoped, Effect.provide(hastyRuntime)))
 
   it.live("refuses a plugin that speaks another protocol version", () =>
     Effect.gen(function*() {
