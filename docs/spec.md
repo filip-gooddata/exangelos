@@ -16,7 +16,7 @@ Agents reach the daemon through the `exangelos` command (alias `xng`) and throug
 
 Subscriptions cannot pile up unnoticed. Each one expires after at most 7 days unless resumed, pauses when its backlog grows past 20 events or 24 hours, and tells its session once when it stops for any reason the session did not cause.
 
-Version 1 ships three official connectors (github-pr, jira, file-watch) and a connector template, and it replaces pr-watch for you.
+Version 1 ships five official connectors (github-pr, jira, file-watch, slack, teams) and a connector template, and it replaces pr-watch for you.
 
 ## User stories
 
@@ -151,7 +151,7 @@ Gap packages that fill holes in the Effect ecosystem. Each is general-purpose, h
 
 Apps compose layers and contain no logic of their own: `daemon`, `cli`, `mcp` and `tray`. The first three ship as one multicall binary. The `cli` app is the binary's entry point, and `exangelos daemon` and `exangelos mcp` load the `daemon` and `mcp` compositions, so each app still only composes layers.
 
-Connectors live in the monorepo as their own packages: `github-pr`, `jira`, `file-watch` and `template`. None is compiled into the binary.
+Connectors live in the monorepo as their own packages: `github-pr`, `jira`, `file-watch`, `slack`, `teams` and `template`. None is compiled into the binary.
 
 ### Ports
 
@@ -344,6 +344,9 @@ Each change to a subscription or connector records its actor: the session the CL
   It ends a subscription when the pull request is merged or closed, with that as the reason. pr-watch's ignore lists become optional parameters: check names, authors and comments to ignore, each as a pattern.
 - `jira`. Uses the Jira Cloud REST API with site URL, email and API token (secret), by polling. A subscription targets one issue key or a JQL query. Event types: status changed (`status.changed`), comment added, assignee changed, other field changed, and an issue entering or leaving the JQL result.
 - `file-watch`. Watches files on disk. The main parameter is a path glob, such as `~/code/api-gateway/dist/**`, and an optional parameter lists globs to ignore. Event types are `file.created`, `file.changed` and `file.deleted`. Changes to one file inside the wake window become one event. It declares no configuration fields.
+- `slack` and `teams` both need the Bun bundle runtime that Exangelos supports, private connector configuration, and writable storage outside the installed connector folder. Neither needs its desktop app or Python to start. Without configuration, each one starts, completes its handshake, stays quiet and reads nothing from its app.
+- `slack`. It needs Python 3.10 or later as `python3` with SQLite support, and a supported local macOS Slack desktop cache that contains the selected conversation. Monitoring is delayed. Its data may be arbitrarily stale, and it may miss intermediate changes.
+- `teams`. It needs Python 3.9 or later as `python3` with SQLite and the Unix standard-library facilities it requires, a supported local Teams desktop cache, and a private conversation selection. Monitoring is best effort and was tested with Teams running, so keep Teams running. Live validation covers self-chat on macOS. Other platforms, account variants and channels are unverified.
 - `template`. The connector boilerplate described above.
 
 ### Wake targets and session detection
