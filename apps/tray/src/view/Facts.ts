@@ -317,8 +317,9 @@ export const filledValues = (
 ): Catalogue.ConfigurationValues =>
   Object.fromEntries(
     fields.flatMap((field) => {
-      const value = edits[field.key]
-      return value === undefined || value.trim() === "" ? [] : [[field.key, field._tag === "Text" && !field.secretDestination ? value.trim() : value] as const]
+      const edit = edits[field.key]
+      const value = field._tag === "Text" && !field.secretDestination ? edit?.trim() : edit
+      return value === undefined || value === "" ? [] : [[field.key, value] as const]
     })
   )
 
