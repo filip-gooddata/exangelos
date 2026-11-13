@@ -57,7 +57,8 @@ export class OfficialFetchFailed extends Schema.TaggedError<OfficialFetchFailed>
 
 /** The call is the owner's alone, and a session made it. */
 export class HumanRequired extends Schema.TaggedError<HumanRequired>()("HumanRequired", {
-  plugin: Ids.PluginName
+  plugin: Schema.optionalKey(Ids.PluginName),
+  subscription: Schema.optionalKey(Ids.SubscriptionId)
 }) {}
 
 export class ImportFailed extends Schema.TaggedError<ImportFailed>()("ImportFailed", {

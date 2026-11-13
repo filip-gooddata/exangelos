@@ -88,7 +88,9 @@ export const failureMessage = (failure: Failure, subscription?: string): string 
     case "DigestMismatch":
       return `The files of ${failure.plugin} changed: its checksum is ${failure.actual}, not ${failure.expected}. Nothing was enabled; run \`${command} plugin enable ${failure.plugin}\` to review the new checksum.`
     case "HumanRequired":
-      return `Only you can do this for ${failure.plugin}, and this terminal runs inside an agent session. Run the command again from your own terminal.`
+      return `Only you can do this${
+        failure.plugin !== undefined ? ` for ${failure.plugin}` : failure.subscription !== undefined ? ` for ${failure.subscription}` : ""
+      }, and this terminal runs inside an agent session. Run the command again from your own terminal.`
     case "ConfigurationInvalid":
       return `The configuration does not fit the plugin's catalogue: ${failure.reason}. Run \`${command} plugins <plugin>\` to see its fields.`
     case "ConfigurationRejected":
