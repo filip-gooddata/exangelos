@@ -1,6 +1,6 @@
 import { BunServices, BunSocket } from "@effect/platform-bun"
 import { describe, expect, it } from "@effect/vitest"
-import { Daemon } from "@exangelos/daemon"
+import * as DaemonTesting from "@exangelos/daemon/testing"
 import { Paths } from "@exangelos/paths"
 import { ConfigProvider, Effect, Layer, Result } from "effect"
 import { Socket } from "effect/socket"
@@ -15,7 +15,7 @@ const withHome = <A, E, R>(use: (home: string) => Effect.Effect<A, E, R>) =>
   )
 
 const daemon = (home: string) =>
-  Daemon.layer.pipe(
+  DaemonTesting.layerForTests.pipe(
     Layer.provide(Paths.layer),
     Layer.provide(BunServices.layer),
     Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({ EXANGELOS_HOME: home })))
