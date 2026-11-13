@@ -29,11 +29,11 @@ export type Notice = typeof Notice.Type
 
 export const Model = Schema.Struct({
   state: PanelStateSchema,
-  now: Schema.Number,
+  now: Schema.Finite,
   screen: Screen,
   closedOpen: Schema.Boolean,
   acknowledgedOpen: Schema.Boolean,
-  ackThrough: Schema.NullOr(Schema.Number),
+  ackThrough: Schema.NullOr(Schema.Finite),
   retargeting: Schema.Boolean,
   importing: Schema.NullOr(ImportKind),
   importLocation: Schema.String,
@@ -48,11 +48,11 @@ export type Model = typeof Model.Type
 
 export const Message = defineMessageUnion({
   Changed: { state: PanelStateSchema },
-  Ticked: { now: Schema.Number },
+  Ticked: { now: Schema.Finite },
   Navigated: { screen: Screen },
   ToggledClosed: {},
   ToggledAcknowledged: {},
-  ChoseAckThrough: { number: Schema.Number },
+  ChoseAckThrough: { number: Schema.Finite },
   ToggledRetarget: {},
   ChoseImport: { kind: Schema.NullOr(ImportKind) },
   EditedImportLocation: { value: Schema.String },
