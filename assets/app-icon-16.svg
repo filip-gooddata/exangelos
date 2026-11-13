@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16">
+<defs><linearGradient id="lift" gradientUnits="userSpaceOnUse" x1="0" y1="1" x2="0" y2="15"><stop offset="0" stop-color="#3A3A40"/><stop offset="1" stop-color="#232326"/></linearGradient></defs>
+<rect x="1" y="1" width="14" height="14" rx="3" fill="url(#lift)"/>
+<rect x="1.5" y="1.5" width="13" height="13" rx="2.5" fill="none" stroke="#FFFFFF" stroke-opacity="0.14"/>
+<g shape-rendering="crispEdges">
+<path fill="url(#lift)" d="M7 6h2v1h-2zM7 7h2v1h-2z"/>
+<path fill="#F3F3F5" d="M7 4h2v1h-2zM6 5h4v1h-4zM5 6h2v1h-2zM9 6h2v1h-2zM4 7h3v1h-3zM9 7h3v1h-3zM3 8h10v1h-10zM4 10h2v1h-2zM7 10h2v1h-2zM10 10h2v1h-2zM3 11h2v1h-2zM7 11h2v1h-2zM11 11h2v1h-2zM2 12h2v1h-2zM7 12h2v1h-2zM12 12h2v1h-2zM2 13h2v1h-2zM7 13h2v1h-2zM12 13h2v1h-2z"/>
+<path fill="#E2622B" d="M3 2h1v1h-1zM7 2h2v1h-2zM12 2h1v1h-1zM3 3h2v1h-2zM6 3h4v1h-4zM11 3h2v1h-2zM3 4h3v1h-3zM10 4h3v1h-3zM3 5h2v1h-2zM11 5h2v1h-2zM3 6h1v1h-1zM12 6h1v1h-1z"/>
+</g>
+</svg>

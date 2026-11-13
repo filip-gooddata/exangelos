@@ -65,7 +65,7 @@ Slate on Strip (4.37:1) and Ash and Soot everywhere fall below 4.5:1, so they ne
 
 ## Mark files
 
-Every file reuses the two paths of `icon.svg` unchanged. The first path is the flame band, the second the body.
+Every file except `app-icon-16.svg` reuses the two paths of `icon.svg` unchanged. The first path is the flame band, the second the body.
 
 | File | Flame | Body | For |
 |---|---|---|---|
@@ -74,22 +74,26 @@ Every file reuses the two paths of `icon.svg` unchanged. The first path is the f
 | `mark-on-dark.svg` | Bone | Bone | Dark backgrounds |
 | `mark-ember-flame-on-light.svg` | Ember deep | Ink | Coloured mark, light backgrounds |
 | `mark-ember-flame-on-dark.svg` | Ember | Bone | Coloured mark, dark backgrounds |
-| `app-icon.svg` | Ember | Bone | App icon, on a Night plate |
+| `app-icon.svg` | Ember | Bone | App icon, on the lifted plate described under App icon |
+| `app-icon-16.svg` | Ember | Bone | App icon at 16 px, redrawn as pixel art on the same plate |
 
 The brand's coloured version is the ember flame mark: flame band in ember, body neutral. The owner picked it on 2026-11-13 and dropped the all-ember variant. The README header uses the neutral pair. The menu bar uses `menu-bar-glyph.svg` as a template image, which macOS tints, so it stays uncoloured.
 
 ## App icon
 
-`app-icon.svg` is the app icon for Finder, the Dock and the installer. It is `mark-ember-flame-on-dark.svg` placed on a rounded plate. `apps/tray/icons/generate.sh` builds the app icon PNGs and `icon.icns` from it.
+`app-icon.svg` is the app icon for Finder, the Dock and the installer. It is `mark-ember-flame-on-dark.svg` placed on a rounded plate. `apps/tray/icons/generate.sh` builds the app icon PNGs and `icon.icns` from it, except the 16 px slot, which comes from `app-icon-16.svg`.
+
+The plate is not Night. The owner picked the lifted plate on 2026-11-13, knowing it moves the plate off the palette: a vertical gradient that is lighter than Night at the top and darker at the bottom, with a faint white edge. Night stays the panel colour.
 
 All sizes below are on the 1024 px canvas.
 
 | Part | Value |
 |---|---|
-| Plate | 824 px square, Night `#2A2A2E` |
+| Plate | 824 px square, gradient from `#3A3A40` at the top to `#232326` at the bottom |
+| Edge | 10 px white line at 14% opacity, inside the plate edge |
 | Corner radius | 185 px |
 | Margin around the plate | 100 px on each side |
 | Mark | Scaled to 0.74 and centred on the canvas, so it measures 417 × 607 px |
 | Space from mark to plate edge | 109 px above and below, about 203 px at the sides |
 
-At 16 px the mark shrinks to an ember crown over a light shape. From 32 px up it reads as the full mark.
+At 16 px the full mark shrinks to an ember crown over a light shape, so `app-icon-16.svg` redraws it as pixel art for a 16 px grid: ember wings over a white triangle with an eye, on three white legs. The owner picked this drawing on 2026-11-13. It sits on the same gradient plate, 14 px square with a 3 px corner radius, and its edge is one pixel of white at 14% opacity. The 32 px slot (16 px at 2x) uses `app-icon.svg`, where the full mark reads.
