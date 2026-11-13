@@ -4,30 +4,30 @@ import { SqlClient } from "effect/sql"
 export default Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
   yield* sql`
-    CREATE TABLE plugins (
+    CREATE TABLE connectors (
       name TEXT PRIMARY KEY NOT NULL,
       record TEXT NOT NULL
     ) STRICT
   `
   yield* sql`
-    CREATE TABLE plugin_values (
-      plugin TEXT PRIMARY KEY NOT NULL,
+    CREATE TABLE connector_values (
+      connector TEXT PRIMARY KEY NOT NULL,
       record TEXT NOT NULL
     ) STRICT
   `
   yield* sql`
-    CREATE TABLE plugin_changes (
+    CREATE TABLE connector_changes (
       position INTEGER PRIMARY KEY AUTOINCREMENT,
-      plugin TEXT NOT NULL,
+      connector TEXT NOT NULL,
       record TEXT NOT NULL
     ) STRICT
   `
-  yield* sql`CREATE INDEX plugin_changes_by_plugin ON plugin_changes (plugin, position)`
+  yield* sql`CREATE INDEX connector_changes_by_connector ON connector_changes (connector, position)`
   yield* sql`
     CREATE TABLE subscriptions (
       position INTEGER PRIMARY KEY AUTOINCREMENT,
       id TEXT NOT NULL UNIQUE,
-      plugin TEXT NOT NULL,
+      connector TEXT NOT NULL,
       state TEXT NOT NULL,
       target_harness TEXT,
       target_session TEXT,

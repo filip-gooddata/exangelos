@@ -1,0 +1,26 @@
+{
+  "name": "@exangelos/connector-runtime",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "bun run --bun vitest run"
+  },
+  "dependencies": {
+    "@exangelos/application": "workspace:*",
+    "@exangelos/domain": "workspace:*",
+    "@exangelos/contracts": "workspace:*",
+    "@exangelos/rpc-stdio": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/platform-bun": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@exangelos/connector-sdk": "workspace:*",
+    "@exangelos/connector-template": "workspace:*",
+    "vitest": "catalog:"
+  }
+}

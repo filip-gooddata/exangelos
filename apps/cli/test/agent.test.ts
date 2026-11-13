@@ -12,7 +12,7 @@ describe("agent commands", () => {
     expect(result.exit._tag).toBe("Success")
     const call = callOf(result, "Subscribe")
     expect(call?.payload).toMatchObject({
-      plugin: "github-pr",
+      connector: "github-pr",
       main: "acme/app#123",
       parameters: { branch: "main", depth: "2" },
       intent: "fix CI on PR 123",
@@ -33,10 +33,10 @@ describe("agent commands", () => {
     )
   })
 
-  it("tells the owner to use their own terminal when a session tries to enable a plugin", async () => {
-    const result = await run(["plugin", "enable", "github-pr", "--digest", "abc"], {
+  it("tells the owner to use their own terminal when a session tries to enable a connector", async () => {
+    const result = await run(["connector", "enable", "github-pr", "--digest", "abc"], {
       handlers: {
-        EnablePlugin: () => Effect.fail(new DaemonContract.HumanRequired({ plugin: Ids.PluginName.make("github-pr") }))
+        EnableConnector: () => Effect.fail(new DaemonContract.HumanRequired({ connector: Ids.ConnectorName.make("github-pr") }))
       }
     })
     expect(result.exit._tag).toBe("Failure")

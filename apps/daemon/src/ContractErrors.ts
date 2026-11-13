@@ -4,9 +4,9 @@ import type {
   DigestMismatch,
   HumanRequired,
   ConfigurationRejected,
-  OfficialPluginSource,
-  PluginAccess,
-  PluginImportSource,
+  OfficialConnectorSource,
+  ConnectorAccess,
+  ConnectorImportSource,
   SubscriptionNotFound,
   Subscriptions
 } from "@exangelos/application"
@@ -27,19 +27,19 @@ export const noWakeTarget = (_: Refusal.NoWakeTarget) =>
     })
   )
 
-export const pluginNotFound = (e: PluginAccess.PluginNotFound) => Effect.fail(new Contract.PluginNotFound({ plugin: e.plugin }))
+export const connectorNotFound = (e: ConnectorAccess.ConnectorNotFound) => Effect.fail(new Contract.ConnectorNotFound({ connector: e.connector }))
 
-export const pluginUnavailable = (e: Refusal.PluginUnavailable) =>
-  Effect.fail(new Contract.PluginUnavailable({ plugin: e.plugin, problem: e.problem }))
+export const connectorUnavailable = (e: Refusal.ConnectorUnavailable) =>
+  Effect.fail(new Contract.ConnectorUnavailable({ connector: e.connector, problem: e.problem }))
 
-export const pluginGoneOnUpdate = (e: PluginAccess.PluginNotFound) =>
-  Effect.fail(new Contract.PluginUnavailable({ plugin: e.plugin, problem: "it is not installed" }))
+export const connectorGoneOnUpdate = (e: ConnectorAccess.ConnectorNotFound) =>
+  Effect.fail(new Contract.ConnectorUnavailable({ connector: e.connector, problem: "it is not installed" }))
 
-export const officialFetchFailedOnUpdate = (e: OfficialPluginSource.OfficialFetchFailed) =>
-  Effect.fail(new Contract.PluginUnavailable({ plugin: e.plugin, problem: `its official files could not be fetched: ${e.reason}` }))
+export const officialFetchFailedOnUpdate = (e: OfficialConnectorSource.OfficialFetchFailed) =>
+  Effect.fail(new Contract.ConnectorUnavailable({ connector: e.connector, problem: `its official files could not be fetched: ${e.reason}` }))
 
-export const officialFetchFailed = (e: OfficialPluginSource.OfficialFetchFailed) =>
-  Effect.fail(new Contract.OfficialFetchFailed({ plugin: e.plugin, reason: e.reason }))
+export const officialFetchFailed = (e: OfficialConnectorSource.OfficialFetchFailed) =>
+  Effect.fail(new Contract.OfficialFetchFailed({ connector: e.connector, reason: e.reason }))
 
 export const parametersInvalid = (e: Refusal.ParametersInvalid) =>
   Effect.fail(new Contract.ParametersInvalid({ reason: e.reason }))
@@ -47,21 +47,21 @@ export const parametersInvalid = (e: Refusal.ParametersInvalid) =>
 export const subjectChanged = (e: Refusal.SubjectChanged) =>
   Effect.fail(new Contract.SubjectChanged({ from: e.subject, to: e.reported }))
 
-export const importFailed = (e: PluginImportSource.ImportFailed) => Effect.fail(new Contract.ImportFailed({ reason: e.reason }))
+export const importFailed = (e: ConnectorImportSource.ImportFailed) => Effect.fail(new Contract.ImportFailed({ reason: e.reason }))
 
-export const removedDuringCall = (plugin: Ids.PluginName) => (_: Cause.NoSuchElementError) =>
-  Effect.fail(new Contract.PluginNotFound({ plugin }))
+export const removedDuringCall = (connector: Ids.ConnectorName) => (_: Cause.NoSuchElementError) =>
+  Effect.fail(new Contract.ConnectorNotFound({ connector }))
 
 export const removedDuringImport = (_: Cause.NoSuchElementError) =>
-  Effect.fail(new Contract.ImportFailed({ reason: "Another call removed the plugin while it was being imported." }))
+  Effect.fail(new Contract.ImportFailed({ reason: "Another call removed the connector while it was being imported." }))
 
-export const humanRequired = (e: HumanRequired) => Effect.fail(new Contract.HumanRequired({ plugin: e.plugin }))
+export const humanRequired = (e: HumanRequired) => Effect.fail(new Contract.HumanRequired({ connector: e.connector }))
 
 export const ownerOnlySubscription = (e: Subscriptions.HumanRequired) =>
   Effect.fail(new Contract.HumanRequired({ subscription: e.subscription }))
 
 export const digestMismatch = (e: DigestMismatch) =>
-  Effect.fail(new Contract.DigestMismatch({ plugin: e.plugin, expected: e.expected, actual: e.actual }))
+  Effect.fail(new Contract.DigestMismatch({ connector: e.connector, expected: e.expected, actual: e.actual }))
 
 export const configurationInvalid = (e: ConfigurationInvalid) =>
   Effect.fail(new Contract.ConfigurationInvalid({ reason: e.reason }))

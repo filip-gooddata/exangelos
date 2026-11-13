@@ -1,5 +1,5 @@
 export * as DaemonContract from "./DaemonContract.ts"
 export * as Manifest from "./Manifest.ts"
-export * as PluginProtocol from "./PluginProtocol.ts"
+export * as ConnectorProtocol from "./ConnectorProtocol.ts"
 export * as SessionHeaders from "./Session.ts"
 export * as WakeText from "./WakeText.ts"

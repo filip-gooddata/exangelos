@@ -1,11 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
-import { EventRepository, PluginRepository, SubscriptionRepository, WakeRepository } from "@exangelos/application"
-import { Event, Ids, Plugin, Session, Subscription, Wake } from "@exangelos/domain"
+import { EventRepository, ConnectorRepository, SubscriptionRepository, WakeRepository } from "@exangelos/application"
+import { Event, Ids, Connector, Session, Subscription, Wake } from "@exangelos/domain"
 import { DateTime, Duration, Effect, Option } from "effect"
 import type { Layer } from "effect"
 
 export type Repositories =
-  | PluginRepository.PluginRepository
+  | ConnectorRepository.ConnectorRepository
   | SubscriptionRepository.SubscriptionRepository
   | EventRepository.EventRepository
   | WakeRepository.WakeRepository
@@ -16,8 +16,8 @@ export const at = (minutes: number) =>
 const you: Session.Actor = { _tag: "You" }
 export const session: Session.Session = { harness: "t3", sessionId: "thread-1" }
 
-export const plugin = (name: string): Plugin.Plugin => ({
-  name: Ids.PluginName.make(name),
+export const connector = (name: string): Connector.Connector => ({
+  name: Ids.ConnectorName.make(name),
   version: "1.0.0",
   origin: { _tag: "Official", version: "1.0.0" },
   digest: "sha256-abc",
@@ -33,7 +33,7 @@ export const subscription = (
   overrides: Partial<Subscription.Subscription> = {}
 ): Subscription.Subscription => ({
   id: Ids.SubscriptionId.make(id),
-  plugin: Ids.PluginName.make("github-pr"),
+  connector: Ids.ConnectorName.make("github-pr"),
   parameters: { repository: "owner/repo", number: 7, nested: { draft: false } },
   subject: "owner/repo#7",
   label: "PR 7",
@@ -82,29 +82,29 @@ export const repositoryContract = (name: string, layer: () => Layer.Layer<Reposi
       it.effect(title, () => Effect.provide(body, layer()).pipe(Effect.orDie))
 
     test(
-      "plugins list by name, keep changes past removal and drop values with the plugin",
+      "connectors list by name, keep changes past removal and drop values with the connector",
       Effect.gen(function*() {
-        const plugins = yield* PluginRepository.PluginRepository
-        const name = Ids.PluginName.make("jira")
-        const change = (kind: PluginRepository.PluginChangeKind, minutes: number): PluginRepository.PluginChange => ({
-          plugin: name,
+        const connectors = yield* ConnectorRepository.ConnectorRepository
+        const name = Ids.ConnectorName.make("jira")
+        const change = (kind: ConnectorRepository.ConnectorChangeKind, minutes: number): ConnectorRepository.ConnectorChange => ({
+          connector: name,
           kind,
           actor: you,
           at: at(minutes)
         })
-        yield* plugins.store(plugin("jira"), change("import", 1))
-        yield* plugins.store(plugin("file-watch"))
-        yield* plugins.store({ ...plugin("jira"), trust: "inert" }, { ...change("disable", 2), detail: "by hand" })
-        yield* plugins.storeValues(name, { site: "example.atlassian.net" })
+        yield* connectors.store(connector("jira"), change("import", 1))
+        yield* connectors.store(connector("file-watch"))
+        yield* connectors.store({ ...connector("jira"), trust: "inert" }, { ...change("disable", 2), detail: "by hand" })
+        yield* connectors.storeValues(name, { site: "example.atlassian.net" })
 
-        expect((yield* plugins.list).map((p) => p.name)).toEqual(["file-watch", "jira"])
-        expect(yield* plugins.find(name)).toEqual(Option.some({ ...plugin("jira"), trust: "inert" }))
-        expect(yield* plugins.values(name)).toEqual({ site: "example.atlassian.net" })
+        expect((yield* connectors.list).map((p) => p.name)).toEqual(["file-watch", "jira"])
+        expect(yield* connectors.find(name)).toEqual(Option.some({ ...connector("jira"), trust: "inert" }))
+        expect(yield* connectors.values(name)).toEqual({ site: "example.atlassian.net" })
 
-        yield* plugins.remove(name, change("remove", 3))
-        expect(yield* plugins.find(name)).toEqual(Option.none())
-        expect(yield* plugins.values(name)).toEqual({})
-        expect(yield* plugins.changes(name)).toEqual([
+        yield* connectors.remove(name, change("remove", 3))
+        expect(yield* connectors.find(name)).toEqual(Option.none())
+        expect(yield* connectors.values(name)).toEqual({})
+        expect(yield* connectors.changes(name)).toEqual([
           change("import", 1),
           { ...change("disable", 2), detail: "by hand" },
           change("remove", 3)
@@ -122,7 +122,7 @@ export const repositoryContract = (name: string, layer: () => Layer.Layer<Reposi
           state: { _tag: "Paused", reason: { _tag: "BacklogAge", limit: Duration.hours(24) } }
         })
         const other = subscription("sub_c", {
-          plugin: Ids.PluginName.make("jira"),
+          connector: Ids.ConnectorName.make("jira"),
           wakeTarget: { harness: "codex", sessionId: "thread-1" }
         })
         const created: Subscription.Change = { subscription: newer.id, kind: "create", actor: you, at: at(5) }
@@ -136,7 +136,7 @@ export const repositoryContract = (name: string, layer: () => Layer.Layer<Reposi
         expect(yield* ids({})).toEqual(["sub_a", "sub_b", "sub_c"])
         expect(yield* ids({ states: ["Active"] })).toEqual(["sub_b", "sub_c"])
         expect(yield* ids({ states: [] })).toEqual([])
-        expect(yield* ids({ plugin: Ids.PluginName.make("github-pr"), target: session })).toEqual(["sub_a", "sub_b"])
+        expect(yield* ids({ connector: Ids.ConnectorName.make("github-pr"), target: session })).toEqual(["sub_a", "sub_b"])
         expect(yield* subscriptions.find(older.id)).toEqual(Option.some(older))
         expect(yield* subscriptions.find(newer.id)).toEqual(Option.some({ ...newer, label: "renamed" }))
         expect((yield* subscriptions.changes(newer.id)).map((c) => c.kind)).toEqual(["create", "update"])

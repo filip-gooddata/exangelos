@@ -35,7 +35,7 @@ describe("SettingsFile", () => {
         const changed: Settings.Settings = {
           eventAlerts: true,
           limits: { ...Settings.initial.limits, backlogCount: 5, wakeWindow: Duration.seconds(30) },
-          officialPluginFolder: "/srv/plugins"
+          officialConnectorFolder: "/srv/connectors"
         }
         yield* store.write(changed)
         expect(yield* store.read).toEqual(changed)

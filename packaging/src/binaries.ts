@@ -2,8 +2,8 @@ import { copyFileSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
 import { Effect } from "effect"
 import { run } from "./command.ts"
-import type { OfficialPlugin } from "./plugin-archives.ts"
-import { bun } from "./plugin-archives.ts"
+import type { OfficialConnector } from "./connector-archives.ts"
+import { bun } from "./connector-archives.ts"
 import { binaryArchiveName, platformOf, type Target } from "./release-files.ts"
 import { createTarGz } from "./tar.ts"
 
@@ -11,7 +11,7 @@ export interface BinaryBuild {
   readonly buildScript: string
   readonly version: string
   readonly releaseUrl: string
-  readonly officialPlugins: ReadonlyArray<OfficialPlugin>
+  readonly officialConnectors: ReadonlyArray<OfficialConnector>
   readonly targets: ReadonlyArray<Target>
   readonly outDirectory: string
 }
@@ -44,8 +44,8 @@ export const buildBinaries = (build: BinaryBuild) =>
           `--target=${target.bunTarget}`,
           "--version",
           build.version,
-          "--official-plugins",
-          JSON.stringify(build.officialPlugins),
+          "--official-connectors",
+          JSON.stringify(build.officialConnectors),
           "--release-url",
           build.releaseUrl,
           "--outfile",

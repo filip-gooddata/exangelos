@@ -1,5 +1,5 @@
 import { Context, type DateTime, Effect, Layer, Ref } from "effect"
-import type { Event, Ids, Plugin } from "@exangelos/domain"
+import type { Event, Ids, Connector } from "@exangelos/domain"
 import { SubscriptionIntake, type Verdict } from "../seam/SubscriptionIntake.ts"
 
 export class SubscriptionIntakeFake extends Context.Service<SubscriptionIntakeFake, {
@@ -7,14 +7,14 @@ export class SubscriptionIntakeFake extends Context.Service<SubscriptionIntakeFa
   readonly ingested: (subscription: Ids.SubscriptionId) => Effect.Effect<ReadonlyArray<Event.WatchItem>>
   /** From now on `ingest` answers "stop" for the subscription, as when it reached a limit. */
   readonly stop: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
-  /** Plugin records passed to `pluginChanged`, in order. */
-  readonly pluginChanges: Effect.Effect<ReadonlyArray<Plugin.Plugin>>
-  /** Calls to `pluginRemoved`, in order. */
-  readonly pluginRemovals: Effect.Effect<ReadonlyArray<Removal>>
+  /** Connector records passed to `connectorChanged`, in order. */
+  readonly connectorChanges: Effect.Effect<ReadonlyArray<Connector.Connector>>
+  /** Calls to `connectorRemoved`, in order. */
+  readonly connectorRemovals: Effect.Effect<ReadonlyArray<Removal>>
 }>()("@exangelos/application/testing/SubscriptionIntakeFake") {}
 
 export interface Removal {
-  readonly plugin: Ids.PluginName
+  readonly connector: Ids.ConnectorName
   readonly since: DateTime.Utc
   readonly problem: string
 }
@@ -24,7 +24,7 @@ export const layerSubscriptionIntake: Layer.Layer<SubscriptionIntake | Subscript
   Effect.gen(function*() {
     const items = yield* Ref.make<ReadonlyArray<{ readonly subscription: Ids.SubscriptionId; readonly item: Event.WatchItem }>>([])
     const stopped = yield* Ref.make<ReadonlySet<Ids.SubscriptionId>>(new Set())
-    const pluginChanges = yield* Ref.make<ReadonlyArray<Plugin.Plugin>>([])
+    const connectorChanges = yield* Ref.make<ReadonlyArray<Connector.Connector>>([])
     const removals = yield* Ref.make<ReadonlyArray<Removal>>([])
     return Layer.merge(
       Layer.succeed(SubscriptionIntake, {
@@ -35,15 +35,15 @@ export const layerSubscriptionIntake: Layer.Layer<SubscriptionIntake | Subscript
             const verdict: Verdict = isStopped || item._tag === "End" ? "stop" : "continue"
             return verdict
           }),
-        pluginChanged: (plugin) => Ref.update(pluginChanges, (all) => [...all, plugin]),
-        pluginRemoved: (plugin, since, problem) => Ref.update(removals, (all) => [...all, { plugin, since, problem }])
+        connectorChanged: (connector) => Ref.update(connectorChanges, (all) => [...all, connector]),
+        connectorRemoved: (connector, since, problem) => Ref.update(removals, (all) => [...all, { connector, since, problem }])
       }),
       Layer.succeed(SubscriptionIntakeFake, {
         ingested: (subscription) =>
           Effect.map(Ref.get(items), (all) => all.filter((entry) => entry.subscription === subscription).map((entry) => entry.item)),
         stop: (subscription) => Ref.update(stopped, (all) => new Set(all).add(subscription)),
-        pluginChanges: Ref.get(pluginChanges),
-        pluginRemovals: Ref.get(removals)
+        connectorChanges: Ref.get(connectorChanges),
+        connectorRemovals: Ref.get(removals)
       })
     )
   })

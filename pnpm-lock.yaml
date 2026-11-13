@@ -260,6 +260,111 @@ importers:
         specifier: 'catalog:'
         version: 4.1.4
 
+  adapters/connector-directory:
+    dependencies:
+      '@exangelos/application':
+        specifier: workspace:*
+        version: link:../../packages/application
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@exangelos/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@exangelos/paths':
+        specifier: workspace:*
+        version: link:../paths
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.4
+    devDependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
+      '@types/bun':
+        specifier: 'catalog:'
+        version: 1.4.2
+      vitest:
+        specifier: 'catalog:'
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
+
+  adapters/connector-import:
+    dependencies:
+      '@exangelos/application':
+        specifier: workspace:*
+        version: link:../../packages/application
+      '@exangelos/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@exangelos/paths':
+        specifier: workspace:*
+        version: link:../paths
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.4
+      tar:
+        specifier: 'catalog:'
+        version: 7.5.23
+      yauzl:
+        specifier: 'catalog:'
+        version: 3.4.0
+    devDependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
+      '@exangelos/connector-directory':
+        specifier: workspace:*
+        version: link:../connector-directory
+      '@types/bun':
+        specifier: 'catalog:'
+        version: 1.4.2
+      '@types/yauzl':
+        specifier: 'catalog:'
+        version: 2.10.3
+      vitest:
+        specifier: 'catalog:'
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
+
+  adapters/connector-runtime:
+    dependencies:
+      '@exangelos/application':
+        specifier: workspace:*
+        version: link:../../packages/application
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@exangelos/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@exangelos/rpc-stdio':
+        specifier: workspace:*
+        version: link:../../gap/rpc-stdio
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.4
+    devDependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
+      '@exangelos/connector-sdk':
+        specifier: workspace:*
+        version: link:../../packages/connector-sdk
+      '@exangelos/connector-template':
+        specifier: workspace:*
+        version: link:../../connectors/template
+      vitest:
+        specifier: 'catalog:'
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
+
   adapters/daemon-client:
     dependencies:
       '@effect/platform-bun':
@@ -288,17 +393,17 @@ importers:
         specifier: 'catalog:'
         version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
 
-  adapters/official-plugins:
+  adapters/official-connectors:
     dependencies:
       '@exangelos/application':
         specifier: workspace:*
         version: link:../../packages/application
+      '@exangelos/connector-import':
+        specifier: workspace:*
+        version: link:../connector-import
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
-      '@exangelos/plugin-import':
-        specifier: workspace:*
-        version: link:../plugin-import
       effect:
         specifier: 'catalog:'
         version: 4.1.4
@@ -309,12 +414,12 @@ importers:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
+      '@exangelos/connector-directory':
+        specifier: workspace:*
+        version: link:../connector-directory
       '@exangelos/paths':
         specifier: workspace:*
         version: link:../paths
-      '@exangelos/plugin-directory':
-        specifier: workspace:*
-        version: link:../plugin-directory
       '@types/bun':
         specifier: 'catalog:'
         version: 1.4.2
@@ -334,111 +439,6 @@ importers:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
-      vitest:
-        specifier: 'catalog:'
-        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
-
-  adapters/plugin-directory:
-    dependencies:
-      '@exangelos/application':
-        specifier: workspace:*
-        version: link:../../packages/application
-      '@exangelos/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-      '@exangelos/domain':
-        specifier: workspace:*
-        version: link:../../packages/domain
-      '@exangelos/paths':
-        specifier: workspace:*
-        version: link:../paths
-      effect:
-        specifier: 'catalog:'
-        version: 4.1.4
-    devDependencies:
-      '@effect/platform-bun':
-        specifier: 'catalog:'
-        version: 4.1.4(effect@4.1.4)
-      '@effect/vitest':
-        specifier: 'catalog:'
-        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
-      '@types/bun':
-        specifier: 'catalog:'
-        version: 1.4.2
-      vitest:
-        specifier: 'catalog:'
-        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
-
-  adapters/plugin-import:
-    dependencies:
-      '@exangelos/application':
-        specifier: workspace:*
-        version: link:../../packages/application
-      '@exangelos/domain':
-        specifier: workspace:*
-        version: link:../../packages/domain
-      '@exangelos/paths':
-        specifier: workspace:*
-        version: link:../paths
-      effect:
-        specifier: 'catalog:'
-        version: 4.1.4
-      tar:
-        specifier: 'catalog:'
-        version: 7.5.23
-      yauzl:
-        specifier: 'catalog:'
-        version: 3.4.0
-    devDependencies:
-      '@effect/platform-bun':
-        specifier: 'catalog:'
-        version: 4.1.4(effect@4.1.4)
-      '@effect/vitest':
-        specifier: 'catalog:'
-        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
-      '@exangelos/plugin-directory':
-        specifier: workspace:*
-        version: link:../plugin-directory
-      '@types/bun':
-        specifier: 'catalog:'
-        version: 1.4.2
-      '@types/yauzl':
-        specifier: 'catalog:'
-        version: 2.10.3
-      vitest:
-        specifier: 'catalog:'
-        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
-
-  adapters/plugin-runtime:
-    dependencies:
-      '@exangelos/application':
-        specifier: workspace:*
-        version: link:../../packages/application
-      '@exangelos/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-      '@exangelos/domain':
-        specifier: workspace:*
-        version: link:../../packages/domain
-      '@exangelos/rpc-stdio':
-        specifier: workspace:*
-        version: link:../../gap/rpc-stdio
-      effect:
-        specifier: 'catalog:'
-        version: 4.1.4
-    devDependencies:
-      '@effect/platform-bun':
-        specifier: 'catalog:'
-        version: 4.1.4(effect@4.1.4)
-      '@effect/vitest':
-        specifier: 'catalog:'
-        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
-      '@exangelos/plugin-sdk':
-        specifier: workspace:*
-        version: link:../../packages/plugin-sdk
-      '@exangelos/plugin-template':
-        specifier: workspace:*
-        version: link:../../plugins/template
       vitest:
         specifier: 'catalog:'
         version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
@@ -622,6 +622,15 @@ importers:
       '@exangelos/application':
         specifier: workspace:*
         version: link:../../packages/application
+      '@exangelos/connector-directory':
+        specifier: workspace:*
+        version: link:../../adapters/connector-directory
+      '@exangelos/connector-import':
+        specifier: workspace:*
+        version: link:../../adapters/connector-import
+      '@exangelos/connector-runtime':
+        specifier: workspace:*
+        version: link:../../adapters/connector-runtime
       '@exangelos/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
@@ -634,21 +643,12 @@ importers:
       '@exangelos/notifications':
         specifier: workspace:*
         version: link:../../gap/notifications
-      '@exangelos/official-plugins':
+      '@exangelos/official-connectors':
         specifier: workspace:*
-        version: link:../../adapters/official-plugins
+        version: link:../../adapters/official-connectors
       '@exangelos/paths':
         specifier: workspace:*
         version: link:../../adapters/paths
-      '@exangelos/plugin-directory':
-        specifier: workspace:*
-        version: link:../../adapters/plugin-directory
-      '@exangelos/plugin-import':
-        specifier: workspace:*
-        version: link:../../adapters/plugin-import
-      '@exangelos/plugin-runtime':
-        specifier: workspace:*
-        version: link:../../adapters/plugin-runtime
       '@exangelos/secrets':
         specifier: workspace:*
         version: link:../../adapters/secrets
@@ -671,9 +671,9 @@ importers:
       '@effect/vitest':
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
-      '@exangelos/plugin-sdk':
+      '@exangelos/connector-sdk':
         specifier: workspace:*
-        version: link:../../packages/plugin-sdk
+        version: link:../../packages/connector-sdk
       '@types/bun':
         specifier: 'catalog:'
         version: 1.4.2
@@ -752,6 +752,66 @@ importers:
         specifier: 'catalog:'
         version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
 
+  connectors/file-watch:
+    dependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@exangelos/connector-sdk':
+        specifier: workspace:*
+        version: link:../../packages/connector-sdk
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.4
+    devDependencies:
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+
+  connectors/github-pr:
+    dependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@exangelos/connector-sdk':
+        specifier: workspace:*
+        version: link:../../packages/connector-sdk
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.4
+    devDependencies:
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+
+  connectors/jira:
+    dependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@exangelos/connector-sdk':
+        specifier: workspace:*
+        version: link:../../packages/connector-sdk
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.4
+    devDependencies:
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+
+  connectors/template:
+    dependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@exangelos/connector-sdk':
+        specifier: workspace:*
+        version: link:../../packages/connector-sdk
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.4
+
   gap/keychain:
     dependencies:
       effect:
@@ -813,6 +873,18 @@ importers:
         specifier: workspace:*
         version: link:../contracts
 
+  packages/connector-sdk:
+    dependencies:
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../contracts
+      '@exangelos/domain':
+        specifier: workspace:*
+        version: link:../domain
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.4
+
   packages/contracts:
     dependencies:
       '@exangelos/domain':
@@ -828,86 +900,14 @@ importers:
         specifier: 'catalog:'
         version: 4.1.4
 
-  packages/plugin-sdk:
-    dependencies:
-      '@exangelos/contracts':
-        specifier: workspace:*
-        version: link:../contracts
-      '@exangelos/domain':
-        specifier: workspace:*
-        version: link:../domain
-      effect:
-        specifier: 'catalog:'
-        version: 4.1.4
-
   packaging:
     dependencies:
       '@effect/platform-bun':
         specifier: 'catalog:'
         version: 4.1.4(effect@4.1.4)
-      '@exangelos/plugin-directory':
+      '@exangelos/connector-directory':
         specifier: workspace:*
-        version: link:../adapters/plugin-directory
-      effect:
-        specifier: 'catalog:'
-        version: 4.1.4
-
-  plugins/file-watch:
-    dependencies:
-      '@effect/platform-bun':
-        specifier: 'catalog:'
-        version: 4.1.4(effect@4.1.4)
-      '@exangelos/plugin-sdk':
-        specifier: workspace:*
-        version: link:../../packages/plugin-sdk
-      effect:
-        specifier: 'catalog:'
-        version: 4.1.4
-    devDependencies:
-      '@exangelos/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-
-  plugins/github-pr:
-    dependencies:
-      '@effect/platform-bun':
-        specifier: 'catalog:'
-        version: 4.1.4(effect@4.1.4)
-      '@exangelos/plugin-sdk':
-        specifier: workspace:*
-        version: link:../../packages/plugin-sdk
-      effect:
-        specifier: 'catalog:'
-        version: 4.1.4
-    devDependencies:
-      '@exangelos/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-
-  plugins/jira:
-    dependencies:
-      '@effect/platform-bun':
-        specifier: 'catalog:'
-        version: 4.1.4(effect@4.1.4)
-      '@exangelos/plugin-sdk':
-        specifier: workspace:*
-        version: link:../../packages/plugin-sdk
-      effect:
-        specifier: 'catalog:'
-        version: 4.1.4
-    devDependencies:
-      '@exangelos/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-
-  plugins/template:
-    dependencies:
-      '@effect/platform-bun':
-        specifier: 'catalog:'
-        version: 4.1.4(effect@4.1.4)
-      '@exangelos/plugin-sdk':
-        specifier: workspace:*
-        version: link:../../packages/plugin-sdk
+        version: link:../adapters/connector-directory
       effect:
         specifier: 'catalog:'
         version: 4.1.4

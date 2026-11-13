@@ -8,17 +8,17 @@ import { RpcServer } from "effect/rpc"
 import { Socket } from "effect/socket"
 import { mkdtempSync, rmSync } from "node:fs"
 import { DaemonClient, Host, Panel } from "../src/index.ts"
-import { plugin, subscription } from "./fixtures.ts"
+import { connector, subscription } from "./fixtures.ts"
 
 const unused = () => Effect.die("not served in this test")
 
-const handlers = (listDies: boolean, plugins: ReadonlyArray<ReturnType<typeof plugin>>) => DaemonContract.DaemonContract.toLayer({
+const handlers = (listDies: boolean, connectors: ReadonlyArray<ReturnType<typeof connector>>) => DaemonContract.DaemonContract.toLayer({
   ServiceStatus: (_, { headers }) =>
     Effect.succeed({
       version: Option.isSome(SessionHeaders.fromHeaders(headers)) ? "agent" : "you",
       startMethod: "foreground"
     }),
-  ListPlugins: () => Effect.succeed(plugins),
+  ListConnectors: () => Effect.succeed(connectors),
   SetEventAlerts: unused,
   List: ({ all }) =>
     listDies
@@ -35,20 +35,20 @@ const handlers = (listDies: boolean, plugins: ReadonlyArray<ReturnType<typeof pl
   Resume: unused,
   Retarget: unused,
   Cancel: () => Effect.die("NotImplemented: Cancel"),
-  ImportPlugin: unused,
-  EnablePlugin: unused,
-  DisablePlugin: unused,
-  RemovePlugin: unused,
-  ConfigurePlugin: unused,
+  ImportConnector: unused,
+  EnableConnector: unused,
+  DisableConnector: unused,
+  RemoveConnector: unused,
+  ConfigureConnector: unused,
   DevLink: unused,
   DevUnlink: unused,
-  ListPluginAlerts: unused,
+  ListConnectorAlerts: unused,
   GetSettings: unused,
   SetSettings: unused
 })
 
-const daemon = (path: string, listDies = false, plugins = [plugin()]) =>
-  RpcServer.layer(DaemonContract.DaemonContract, { disableFatalDefects: true }).pipe(Layer.provide(handlers(listDies, plugins)), Layer.provide(DaemonServer.layer(path)))
+const daemon = (path: string, listDies = false, connectors = [connector()]) =>
+  RpcServer.layer(DaemonContract.DaemonContract, { disableFatalDefects: true }).pipe(Layer.provide(handlers(listDies, connectors)), Layer.provide(DaemonServer.layer(path)))
 
 const client = (path: string) =>
   DaemonClient.layer.pipe(Layer.provide(Layer.effect(Socket.Socket, BunSocket.makeNet({ path }))))
@@ -61,13 +61,13 @@ const withHome = <A, E, R>(use: (socketPath: string) => Effect.Effect<A, E, R>) 
   )
 
 describe("daemon client over a unix socket", () => {
-  it.live("loads subscriptions and plugins and calls as you", () =>
+  it.live("loads subscriptions and connectors and calls as you", () =>
     withHome((path) =>
       Effect.gen(function*() {
         const loaded = yield* DaemonClient.snapshot
         expect(Result.getOrThrow(loaded.subscriptions).map((s) => s.id)).toEqual(["sub_7f3k", "sub_done"])
         expect(Result.getOrThrow(loaded.details).map((d) => d.subscription.id)).toEqual(["sub_7f3k", "sub_done"])
-        expect(Result.getOrThrow(loaded.plugins).map((p) => p.name)).toEqual(["github-pr"])
+        expect(Result.getOrThrow(loaded.connectors).map((p) => p.name)).toEqual(["github-pr"])
         expect(Result.getFailure(loaded.settings)).toEqual(Option.some("GetSettings: not served in this test"))
         expect(Result.getOrThrow(loaded.status)).toEqual({ version: "you", startMethod: "foreground" })
         expect((yield* (yield* DaemonClient.DaemonClient).ServiceStatus()).version).toBe("you")
@@ -81,7 +81,7 @@ describe("daemon client over a unix socket", () => {
         expect(before._tag).toBe("DaemonNotRunning")
         yield* Layer.build(daemon(path))
         const after = yield* DaemonClient.snapshot.pipe(Effect.retry({ schedule: Schedule.spaced("100 millis"), times: 50 }))
-        expect(Result.getOrThrow(after.plugins)).toHaveLength(1)
+        expect(Result.getOrThrow(after.connectors)).toHaveLength(1)
       }).pipe(Effect.provide(client(path)), Effect.scoped)
     ))
   it.live("fails only the section whose call the daemon answers with a defect", () =>
@@ -90,11 +90,11 @@ describe("daemon client over a unix socket", () => {
         const loaded = yield* DaemonClient.snapshot
         expect(Result.isFailure(loaded.subscriptions)).toBe(true)
         expect(Result.getFailure(loaded.details)).toEqual(Result.getFailure(loaded.subscriptions))
-        expect(Result.getOrThrow(loaded.plugins)).toHaveLength(2)
+        expect(Result.getOrThrow(loaded.connectors)).toHaveLength(2)
         expect(Result.isFailure(loaded.trustAlerts)).toBe(true)
       }).pipe(Effect.provide(client(path).pipe(Layer.provideMerge(daemon(path, true, [
-        plugin({ name: Ids.PluginName.make("new"), trust: "inert" }),
-        plugin({ name: Ids.PluginName.make("official"), trust: "inert", origin: { _tag: "Official", version: "1" } })
+        connector({ name: Ids.ConnectorName.make("new"), trust: "inert" }),
+        connector({ name: Ids.ConnectorName.make("official"), trust: "inert", origin: { _tag: "Official", version: "1" } })
       ])))))
     ))
   it.live("keeps the error a refused request declares and reports a defect as a failed call", () =>

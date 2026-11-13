@@ -1,25 +1,25 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Duration, Effect, Layer } from "effect"
-import { enablePlugin, importPlugin, PluginAccess } from "@exangelos/application"
-import { PluginFilesFake, PluginRuntimeFake } from "@exangelos/application/testing"
+import { enableConnector, importConnector, ConnectorAccess } from "@exangelos/application"
+import { ConnectorFilesFake, ConnectorRuntimeFake } from "@exangelos/application/testing"
 import { layerSubscriptionLocks } from "../../src/subscriptions/Locks.ts"
 import { layerSubscriptionSignals } from "../../src/subscriptions/Signals.ts"
 import { update } from "../../src/subscriptions/useCases/index.ts"
-import { activeSubscription, catalogue, installed, name, settle, tick, withPluginsOver, you } from "../plugins/harness.ts"
+import { activeSubscription, catalogue, installed, name, settle, tick, withConnectorsOver, you } from "../connectors/harness.ts"
 
 const acme = name("acme")
 
 describe("update of an active subscription", () => {
   it.effect("reopens its Watch stream with the new parameters from the stored cursor", () =>
-    withPluginsOver(Layer.merge(layerSubscriptionLocks, layerSubscriptionSignals))(Effect.gen(function*() {
-      const runtime = yield* PluginRuntimeFake
+    withConnectorsOver(Layer.merge(layerSubscriptionLocks, layerSubscriptionSignals))(Effect.gen(function*() {
+      const runtime = yield* ConnectorRuntimeFake
       yield* runtime.define(acme, { catalogue: catalogue() })
       const source = { _tag: "Directory", path: "/src/acme" } as const
-      yield* (yield* PluginFilesFake).offer(source, installed("acme"))
-      yield* enablePlugin(you, acme, (yield* importPlugin(you, source)).digest)
+      yield* (yield* ConnectorFilesFake).offer(source, installed("acme"))
+      yield* enableConnector(you, acme, (yield* importConnector(you, source)).digest)
       yield* settle
       const id = yield* activeSubscription("acme", "sub_one", "c1")
-      yield* (yield* PluginAccess.PluginAccess).watch(id)
+      yield* (yield* ConnectorAccess.ConnectorAccess).watch(id)
       yield* settle
 
       yield* update(you, { id, parameters: { name: "sub_one", branch: "dev" } })

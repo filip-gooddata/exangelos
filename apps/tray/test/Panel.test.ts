@@ -1,10 +1,10 @@
 import { describe, expect, it } from "@effect/vitest"
 import { DaemonContract } from "@exangelos/contracts"
-import { Ids, PluginRules, Settings } from "@exangelos/domain"
+import { Ids, ConnectorRules, Settings } from "@exangelos/domain"
 import { Effect, Option, Ref, Result } from "effect"
 import { TestClock } from "effect/testing"
 import { DaemonClient, Host, Panel } from "../src/index.ts"
-import { plugin, subscription } from "./fixtures.ts"
+import { connector, subscription } from "./fixtures.ts"
 
 type Answer = Effect.Effect<DaemonClient.Snapshot, DaemonClient.DaemonNotRunning>
 
@@ -16,17 +16,17 @@ const rest = {
 
 const loaded = (
   subscriptions: ReadonlyArray<ReturnType<typeof subscription>>,
-  plugins: ReadonlyArray<ReturnType<typeof plugin>>
+  connectors: ReadonlyArray<ReturnType<typeof connector>>
 ): Answer =>
   Effect.succeed({
     subscriptions: Result.succeed(subscriptions),
-    plugins: Result.succeed(plugins),
-    trustAlerts: Result.succeed(plugins.flatMap((p) => Option.toArray(PluginRules.trustAlert(p, Option.none())))),
+    connectors: Result.succeed(connectors),
+    trustAlerts: Result.succeed(connectors.flatMap((p) => Option.toArray(ConnectorRules.trustAlert(p, Option.none())))),
     ...rest
   })
 
-const healthy = loaded([subscription()], [plugin()])
-const failing = loaded([], [plugin({ process: "failing" })])
+const healthy = loaded([subscription()], [connector()])
+const failing = loaded([], [connector({ process: "failing" })])
 const absent: Answer = Effect.fail(new DaemonClient.DaemonNotRunning({ message: "SocketOpenError: no such file" }))
 
 const start = (
@@ -62,23 +62,23 @@ describe("panel state", () => {
       expect((yield* panel.current)._tag).toBe("Loading")
     }).pipe(Effect.scoped))
 
-  it.effect("loads subscriptions and plugins and lists what needs you", () =>
+  it.effect("loads subscriptions and connectors and lists what needs you", () =>
     Effect.gen(function*() {
       const { panel, sent } = yield* start(loaded(
         [subscription()],
         [
-          plugin({ name: Ids.PluginName.make("ok") }),
-          plugin({ name: Ids.PluginName.make("new"), trust: "inert" }),
-          plugin({ name: Ids.PluginName.make("official"), trust: "inert", origin: { _tag: "Official", version: "1" } }),
-          plugin({ name: Ids.PluginName.make("crashy"), process: "failing" }),
-          plugin({ name: Ids.PluginName.make("locked"), configuration: { _tag: "Rejected", reason: "401" } })
+          connector({ name: Ids.ConnectorName.make("ok") }),
+          connector({ name: Ids.ConnectorName.make("new"), trust: "inert" }),
+          connector({ name: Ids.ConnectorName.make("official"), trust: "inert", origin: { _tag: "Official", version: "1" } }),
+          connector({ name: Ids.ConnectorName.make("crashy"), process: "failing" }),
+          connector({ name: Ids.ConnectorName.make("locked"), configuration: { _tag: "Rejected", reason: "401" } })
         ]
       ))
       const state = yield* panel.current
       if (state._tag !== "Ready") return expect.fail(state._tag)
       expect(Result.getOrThrow(state.subscriptions).map((s) => s.id)).toEqual(["sub_7f3k"])
-      expect(Result.getOrThrow(state.plugins)).toHaveLength(5)
-      expect(Result.getOrThrow(state.needsYou).map((alert) => [alert._tag, "plugin" in alert ? alert.plugin : ""])).toEqual([
+      expect(Result.getOrThrow(state.connectors)).toHaveLength(5)
+      expect(Result.getOrThrow(state.needsYou).map((alert) => [alert._tag, "connector" in alert ? alert.connector : ""])).toEqual([
         ["WaitsForEnable", "new"],
         ["DigestMismatch", "official"],
         ["Failing", "crashy"],
@@ -115,18 +115,18 @@ describe("panel state", () => {
       yield* next(failing)
       expect(sent).toEqual([true, true])
     }).pipe(Effect.scoped))
-  it.effect("keeps the plugins and the icon when only the subscriptions fail", () =>
+  it.effect("keeps the connectors and the icon when only the subscriptions fail", () =>
     Effect.gen(function*() {
       const { panel, sent } = yield* start(Effect.succeed({
         subscriptions: Result.fail("NotImplemented: List"),
-        plugins: Result.succeed([plugin({ process: "failing" })]),
+        connectors: Result.succeed([connector({ process: "failing" })]),
         trustAlerts: Result.succeed([]),
         ...rest
       }))
       const state = yield* panel.current
       if (state._tag !== "Ready") return expect.fail(state._tag)
       expect(state.subscriptions).toStrictEqual(Result.fail("NotImplemented: List"))
-      expect(Result.getOrThrow(state.plugins)).toHaveLength(1)
+      expect(Result.getOrThrow(state.connectors)).toHaveLength(1)
       expect(sent).toEqual([true])
     }).pipe(Effect.scoped))
   it.effect("loads again after a request succeeds and not after a refusal", () =>
@@ -134,7 +134,7 @@ describe("panel state", () => {
       const refused = new DaemonContract.TransitionRefused({ state: { _tag: "Expired" }, message: "expired" })
       const { answer, panel } = yield* start(healthy, 0, (request) => request._tag === "Pause" ? Effect.fail(refused) : Effect.void)
       const count = (state: Panel.PanelState) => state._tag === "Ready" ? Result.getOrThrow(state.subscriptions).length : -1
-      yield* Ref.set(answer, loaded([subscription(), subscription()], [plugin()]))
+      yield* Ref.set(answer, loaded([subscription(), subscription()], [connector()]))
       const id = Ids.SubscriptionId.make("sub_7f3k")
       expect(yield* Effect.flip(panel.perform(Panel.Request.Pause({ id })))).toBe(refused)
       expect(count(yield* panel.current)).toBe(1)

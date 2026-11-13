@@ -1,6 +1,6 @@
 import { DateTime, Duration } from "effect"
 import type { DaemonContract } from "@exangelos/contracts"
-import type { Event, Plugin, Session, Settings, Subscription } from "@exangelos/domain"
+import type { Event, Connector, Session, Settings, Subscription } from "@exangelos/domain"
 import { parameterValue, parametersText, wakeHint } from "./Messages.ts"
 
 const time = (value: DateTime.Utc): string => DateTime.formatIso(value)
@@ -45,7 +45,7 @@ export const stateText = (state: Subscription.State): string => {
     case "Ended":
       return state.reason._tag === "MaxEvents"
         ? "ended (reached its number of events)"
-        : `ended by the plugin: ${state.reason.reason}`
+        : `ended by the connector: ${state.reason.reason}`
     case "Cancelled":
       return `cancelled by ${actorText(state.actor)}`
   }
@@ -56,7 +56,7 @@ const pending = (subscription: Subscription.Subscription): number =>
 
 const subscriptionRow = (subscription: Subscription.Subscription): Array<string> => [
   subscription.id,
-  subscription.plugin,
+  subscription.connector,
   subscription.subject,
   stateText(subscription.state),
   `${pending(subscription)} pending`
@@ -65,7 +65,7 @@ const subscriptionRow = (subscription: Subscription.Subscription): Array<string>
 export const subscription = (subscription: Subscription.Subscription): string =>
   fields([
     ["Subscription", subscription.id],
-    ["Plugin", subscription.plugin],
+    ["Connector", subscription.connector],
     ["Subject", subscription.subject],
     ["Intent", subscription.intent],
     ["Parameters", parametersText(subscription.parameters) || undefined],
@@ -117,7 +117,7 @@ export const details = (value: DaemonContract.Details): string => {
   ].join("\n")
 }
 
-export const origin = (origin: Plugin.Origin): string => {
+export const origin = (origin: Connector.Origin): string => {
   switch (origin._tag) {
     case "Official":
       return `official ${origin.version}`
@@ -134,7 +134,7 @@ export const origin = (origin: Plugin.Origin): string => {
   }
 }
 
-const configurationText = (configuration: Plugin.Configuration): string => {
+const configurationText = (configuration: Connector.Configuration): string => {
   switch (configuration._tag) {
     case "Missing":
       return "not configured"
@@ -145,29 +145,29 @@ const configurationText = (configuration: Plugin.Configuration): string => {
   }
 }
 
-export const plugins = (list: ReadonlyArray<Plugin.Plugin>): string =>
+export const connectors = (list: ReadonlyArray<Connector.Connector>): string =>
   list.length === 0
-    ? "No plugins installed."
-    : columns(list.map((plugin) => [
-      plugin.name,
-      plugin.version,
-      plugin.trust,
-      configurationText(plugin.configuration),
-      plugin.process,
-      plugin.catalogue === undefined ? "" : plugin.catalogue.eventTypes.map((spec) => spec.type).join(", ")
+    ? "No connectors installed."
+    : columns(list.map((connector) => [
+      connector.name,
+      connector.version,
+      connector.trust,
+      configurationText(connector.configuration),
+      connector.process,
+      connector.catalogue === undefined ? "" : connector.catalogue.eventTypes.map((spec) => spec.type).join(", ")
     ])).join("\n")
 
-export const plugin = (plugin: Plugin.Plugin): string => {
-  const catalogue = plugin.catalogue
+export const connector = (connector: Connector.Connector): string => {
+  const catalogue = connector.catalogue
   const lines = fields([
-    ["Plugin", `${plugin.name} ${plugin.version}`],
-    ["Origin", origin(plugin.origin)],
-    ["Checksum", plugin.digest],
-    ["Trust", plugin.trust],
-    ["Configuration", configurationText(plugin.configuration)],
-    ["Configured by", plugin.configuredBy === undefined ? undefined : actorText(plugin.configuredBy)],
-    ["Process", plugin.process],
-    ["Unavailable since", plugin.unavailableSince === undefined ? undefined : time(plugin.unavailableSince)],
+    ["Connector", `${connector.name} ${connector.version}`],
+    ["Origin", origin(connector.origin)],
+    ["Checksum", connector.digest],
+    ["Trust", connector.trust],
+    ["Configuration", configurationText(connector.configuration)],
+    ["Configured by", connector.configuredBy === undefined ? undefined : actorText(connector.configuredBy)],
+    ["Process", connector.process],
+    ["Unavailable since", connector.unavailableSince === undefined ? undefined : time(connector.unavailableSince)],
     ["Main parameter", catalogue?.parameters.main],
     [
       "Parameters schema",
@@ -198,7 +198,7 @@ export const settings = (value: Settings.Settings): string =>
     ...Object.entries(value.limits).map(([key, limit]) =>
       [`limits.${key}`, Duration.isDuration(limit) ? Duration.format(limit) : parameterValue(limit)] as const
     ),
-    ["officialPluginFolder", value.officialPluginFolder]
+    ["officialConnectorFolder", value.officialConnectorFolder]
   ]).join("\n")
 
 export const serviceStatus = (status: { readonly version: string; readonly startMethod: string }): string =>

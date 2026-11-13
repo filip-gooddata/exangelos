@@ -1,5 +1,5 @@
 import type { DaemonContract } from "@exangelos/contracts"
-import type { Alert, Catalogue, Event, Plugin, Session, Subscription, Wake } from "@exangelos/domain"
+import type { Alert, Catalogue, Event, Connector, Session, Subscription, Wake } from "@exangelos/domain"
 import { DateTime, Duration } from "effect"
 import type { Detail, ServiceStatus } from "../daemon/DaemonClient.ts"
 import type { Refusal } from "../state/Panel.ts"
@@ -45,13 +45,13 @@ export const pending = (subscription: Subscription.Subscription): number =>
 export const isOpen = (subscription: Subscription.Subscription): boolean =>
   subscription.state._tag === "Active" || subscription.state._tag === "Paused" || subscription.state._tag === "Expired"
 
-/** The plugin an active subscription waits on while that plugin is unavailable. */
+/** The connector an active subscription waits on while that connector is unavailable. */
 export const suspendedOn = (
   subscription: Subscription.Subscription,
-  plugins: ReadonlyArray<Plugin.Plugin>
-): Plugin.Plugin | undefined =>
+  connectors: ReadonlyArray<Connector.Connector>
+): Connector.Connector | undefined =>
   subscription.state._tag === "Active"
-    ? plugins.find((plugin) => plugin.name === subscription.plugin && plugin.unavailableSince !== undefined)
+    ? connectors.find((connector) => connector.name === subscription.connector && connector.unavailableSince !== undefined)
     : undefined
 
 /** The one-word tag next to a row's label, absent for a plain active subscription. */
@@ -82,7 +82,7 @@ const pauseReason = (reason: Subscription.PauseReason, subscription: Subscriptio
 }
 
 /** The state fact on a row's third line. */
-export const stateFact = (now: number, subscription: Subscription.Subscription, suspended?: Plugin.Plugin): string => {
+export const stateFact = (now: number, subscription: Subscription.Subscription, suspended?: Connector.Connector): string => {
   const { state, stateSince } = subscription
   switch (state._tag) {
     case "Active":
@@ -105,7 +105,7 @@ export const stateFact = (now: number, subscription: Subscription.Subscription, 
 }
 
 /** The state in whole sentences, for the top of one subscription. */
-export const stateSentence = (now: number, subscription: Subscription.Subscription, suspended?: Plugin.Plugin): string => {
+export const stateSentence = (now: number, subscription: Subscription.Subscription, suspended?: Connector.Connector): string => {
   const { state, stateSince } = subscription
   const expires = `Expires ${until(now, subscription.expiresAt)}.`
   switch (state._tag) {
@@ -114,7 +114,7 @@ export const stateSentence = (now: number, subscription: Subscription.Subscripti
         ? `Active. ${expires}`
         : `Active and suspended: ${suspended.name} is unavailable${
           suspended.unavailableSince === undefined ? "" : ` since ${ago(now, suspended.unavailableSince)}`
-        }. It continues by itself when the plugin returns. ${expires}`
+        }. It continues by itself when the connector returns. ${expires}`
     case "Paused":
       return `Paused ${ago(now, stateSince)}: ${pauseReason(state.reason, subscription)}. Nothing is watched while paused. ${expires}`
     case "Expired":
@@ -205,13 +205,13 @@ export const pendingEvents = (detail: Detail): ReadonlyArray<Event.Event> =>
 export const acknowledgedEvents = (detail: Detail): ReadonlyArray<Event.Event> =>
   detail.events.filter((event) => event.number <= detail.subscription.ackedThrough).sort((a, b) => b.number - a.number)
 
-export const pluginInitials = (name: string): string => {
+export const connectorInitials = (name: string): string => {
   const parts = name.split(/[^a-z0-9]+/i).filter((part) => part.length > 0)
   const letters = parts.length > 1 ? `${parts[0]![0]}${parts[1]![0]}` : name.slice(0, 2)
   return letters.toUpperCase()
 }
 
-export const originSummary = (origin: Plugin.Origin): string => {
+export const originSummary = (origin: Connector.Origin): string => {
   switch (origin._tag) {
     case "Official":
       return "Official release"
@@ -229,7 +229,7 @@ export const originSummary = (origin: Plugin.Origin): string => {
 }
 
 /** The origin as labelled rows, for the step where you read it before enabling. */
-export const originRows = (origin: Plugin.Origin): ReadonlyArray<readonly [string, string]> => {
+export const originRows = (origin: Connector.Origin): ReadonlyArray<readonly [string, string]> => {
   switch (origin._tag) {
     case "Official":
       return [["Source", "Official release"], ["Release", origin.version]]
@@ -248,16 +248,16 @@ export const originRows = (origin: Plugin.Origin): ReadonlyArray<readonly [strin
 
 const capitalized = (word: string) => `${word[0]!.toUpperCase()}${word.slice(1)}`
 
-export const trustText = (trust: Plugin.Trust): string => capitalized(trust)
+export const trustText = (trust: Connector.Trust): string => capitalized(trust)
 
-export const processText = (process: Plugin.ProcessState): string => capitalized(process)
+export const processText = (process: Connector.ProcessState): string => capitalized(process)
 
-export const configurationFields = (plugin: Plugin.Plugin): ReadonlyArray<Catalogue.ConfigurationField> =>
-  plugin.catalogue?.configuration ?? []
+export const configurationFields = (connector: Connector.Connector): ReadonlyArray<Catalogue.ConfigurationField> =>
+  connector.catalogue?.configuration ?? []
 
-export const configurationText = (plugin: Plugin.Plugin): string => {
-  if (configurationFields(plugin).length === 0 && plugin.configuration._tag !== "Rejected") return "None needed"
-  switch (plugin.configuration._tag) {
+export const configurationText = (connector: Connector.Connector): string => {
+  if (configurationFields(connector).length === 0 && connector.configuration._tag !== "Rejected") return "None needed"
+  switch (connector.configuration._tag) {
     case "Missing":
       return "Missing"
     case "Set":
@@ -272,11 +272,11 @@ export const isSecretField = (field: Catalogue.ConfigurationField): boolean =>
   field._tag === "Secret" || field.secretDestination
 
 /**
- * Whether a secret is stored, when the plugin record can tell: a required field of a complete configuration is set.
+ * Whether a secret is stored, when the connector record can tell: a required field of a complete configuration is set.
  * The record has no presence per field, so an optional secret, or any secret of an incomplete configuration, stays unknown.
  */
-export const secretStored = (plugin: Plugin.Plugin, field: Catalogue.ConfigurationField): true | undefined =>
-  plugin.configuration._tag !== "Missing" && field.required ? true : undefined
+export const secretStored = (connector: Connector.Connector, field: Catalogue.ConfigurationField): true | undefined =>
+  connector.configuration._tag !== "Missing" && field.required ? true : undefined
 
 export const knownSessions = (subscriptions: ReadonlyArray<Subscription.Subscription>): ReadonlyArray<Session.Session> =>
   subscriptions.reduce<ReadonlyArray<Session.Session>>((sessions, subscription) => {
@@ -336,56 +336,56 @@ export const startMethodText: Record<ServiceStatus["startMethod"], string> = {
 }
 
 export interface NeedsYouItem {
-  readonly plugin: string
+  readonly connector: string
   readonly title: string
   readonly detail: string
   readonly action: string
 }
 
-const suspendedCount = (plugin: string, subscriptions: ReadonlyArray<Subscription.Subscription>) => {
-  const count = subscriptions.filter((s) => s.plugin === plugin && s.state._tag === "Active").length
+const suspendedCount = (connector: string, subscriptions: ReadonlyArray<Subscription.Subscription>) => {
+  const count = subscriptions.filter((s) => s.connector === connector && s.state._tag === "Active").length
   return count === 0 ? "" : count === 1 ? " One subscription is suspended." : ` ${count} subscriptions are suspended.`
 }
 
 export const needsYouItem = (
   now: number,
   alert: Alert.Alert,
-  plugins: ReadonlyArray<Plugin.Plugin>,
+  connectors: ReadonlyArray<Connector.Connector>,
   subscriptions: ReadonlyArray<Subscription.Subscription>
 ): NeedsYouItem => {
-  const plugin = plugins.find((p) => p.name === alert.plugin)
-  const since = plugin?.unavailableSince === undefined ? "" : ` ${capitalized(ago(now, plugin.unavailableSince))}.`
+  const connector = connectors.find((p) => p.name === alert.connector)
+  const since = connector?.unavailableSince === undefined ? "" : ` ${capitalized(ago(now, connector.unavailableSince))}.`
   switch (alert._tag) {
     case "CredentialsRejected":
       return {
-        plugin: alert.plugin,
-        title: `The source rejected the ${alert.plugin} credentials.`,
-        detail: `${alert.reason}.${since}${suspendedCount(alert.plugin, subscriptions)}`.replace(/\.\./g, "."),
+        connector: alert.connector,
+        title: `The source rejected the ${alert.connector} credentials.`,
+        detail: `${alert.reason}.${since}${suspendedCount(alert.connector, subscriptions)}`.replace(/\.\./g, "."),
         action: "Enter credentials"
       }
     case "WaitsForEnable":
       return {
-        plugin: alert.plugin,
-        title: `${alert.plugin} waits to be enabled.`,
-        detail: `${plugin === undefined ? "Imported" : originSummary(plugin.origin)}. Inert until you enable it.`,
+        connector: alert.connector,
+        title: `${alert.connector} waits to be enabled.`,
+        detail: `${connector === undefined ? "Imported" : originSummary(connector.origin)}. Inert until you enable it.`,
         action: "Enable"
       }
     case "Failing":
       return {
-        plugin: alert.plugin,
-        title: `${alert.plugin} keeps failing.`,
-        detail: `${alert.reason}.${since}${suspendedCount(alert.plugin, subscriptions)}`.replace(/\.\./g, "."),
+        connector: alert.connector,
+        title: `${alert.connector} keeps failing.`,
+        detail: `${alert.reason}.${since}${suspendedCount(alert.connector, subscriptions)}`.replace(/\.\./g, "."),
         action: "Open"
       }
     case "DigestMismatch":
       return {
-        plugin: alert.plugin,
-        title: `${alert.plugin} does not match its official checksum.`,
+        connector: alert.connector,
+        title: `${alert.connector} does not match its official checksum.`,
         detail: "It stays inert. Remove it, and the daemon fetches it again when an agent needs it.",
         action: "Review"
       }
     case "Event":
-      return { plugin: alert.plugin, title: `${alert.subject}: ${alert.event}`, detail: alert.subscription, action: "Open" }
+      return { connector: alert.connector, title: `${alert.subject}: ${alert.event}`, detail: alert.subscription, action: "Open" }
   }
 }
 
@@ -404,12 +404,12 @@ export const refusalText = (refusal: Refusal): string => {
       return `The daemon has no subscription ${refusal.id}.`
     case "ImportFailed":
       return `The import failed: ${refusal.reason}`
-    case "PluginNotFound":
-      return `The daemon has no connector ${refusal.plugin}.`
-    case "PluginUnavailable":
-      return `${refusal.plugin} is unavailable: ${refusal.problem}`
+    case "ConnectorNotFound":
+      return `The daemon has no connector ${refusal.connector}.`
+    case "ConnectorUnavailable":
+      return `${refusal.connector} is unavailable: ${refusal.problem}`
     case "DigestMismatch":
-      return `${refusal.plugin} changed after you read its checksum, so it stays inert. Read the new checksum before you enable it.`
+      return `${refusal.connector} changed after you read its checksum, so it stays inert. Read the new checksum before you enable it.`
     case "ConfigurationInvalid":
       return `The configuration is not valid: ${refusal.reason}`
     case "ConfigurationRejected":

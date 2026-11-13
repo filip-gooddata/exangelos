@@ -1,6 +1,6 @@
 import { BunRuntime, BunStdio } from "@effect/platform-bun"
 import { DateTime, Duration, Effect, Layer, Schema, Stream } from "effect"
-import { Catalogue, Plugin } from "@exangelos/plugin-sdk"
+import { Catalogue, Connector } from "@exangelos/connector-sdk"
 import { Limits } from "@exangelos/domain"
 
 const opened = Catalogue.event("opened", {
@@ -8,7 +8,7 @@ const opened = Catalogue.event("opened", {
   payload: Schema.Struct({ wakeWindow: Schema.Number })
 })
 
-const plugin = Plugin.make({
+const connector = Connector.make({
   events: [opened],
   parameters: Catalogue.parameters({ main: "label", schema: Schema.Struct({ label: Schema.String }) }),
   configuration: [],
@@ -25,9 +25,9 @@ const plugin = Plugin.make({
           Stream.never
         )
       }
-      return Stream.make(Plugin.end(`wake window ${millis} ms`))
+      return Stream.make(Connector.end(`wake window ${millis} ms`))
     }
   })
 })
 
-Plugin.serve(plugin).pipe(Layer.provide(BunStdio.layer), Layer.launch, BunRuntime.runMain)
+Connector.serve(connector).pipe(Layer.provide(BunStdio.layer), Layer.launch, BunRuntime.runMain)

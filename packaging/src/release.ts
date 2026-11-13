@@ -2,33 +2,33 @@ import { copyFileSync, readFileSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { Effect } from "effect"
 import { buildBinaries, type BuiltBinary } from "./binaries.ts"
-import { buildPluginArchives, officialPluginNames, officialPluginsFileName, type OfficialPlugin } from "./plugin-archives.ts"
-import { clearReleaseFiles, pluginArchiveName, targets, type Target, writeChecksums } from "./release-files.ts"
+import { buildConnectorArchives, officialConnectorNames, officialConnectorsFileName, type OfficialConnector } from "./connector-archives.ts"
+import { clearReleaseFiles, connectorArchiveName, targets, type Target, writeChecksums } from "./release-files.ts"
 
 export const packagingDirectory = resolve(import.meta.dirname, "..")
 export const repositoryDirectory = resolve(packagingDirectory, "..")
-export const defaultOfficialPluginsDirectory = join(packagingDirectory, "dist", "official-plugins")
+export const defaultOfficialConnectorsDirectory = join(packagingDirectory, "dist", "official-connectors")
 export const defaultReleaseDirectory = join(packagingDirectory, "dist", "release")
 export const defaultBuildScript = join(repositoryDirectory, "apps", "cli", "build.ts")
 
 export const packagingVersion = (): string =>
   (JSON.parse(readFileSync(join(packagingDirectory, "package.json"), "utf8")) as { readonly version: string }).version
 
-export const officialPluginDirectories = (pluginsRoot = join(repositoryDirectory, "plugins")): ReadonlyArray<string> =>
-  officialPluginNames.map((name) => join(pluginsRoot, name))
+export const officialConnectorDirectories = (connectorsRoot = join(repositoryDirectory, "connectors")): ReadonlyArray<string> =>
+  officialConnectorNames.map((name) => join(connectorsRoot, name))
 
 export interface ReleaseBuild {
   readonly buildScript: string
   readonly version: string
   readonly releaseUrl: string
-  readonly pluginDirectories: ReadonlyArray<string>
-  readonly officialPluginsDirectory: string
+  readonly connectorDirectories: ReadonlyArray<string>
+  readonly officialConnectorsDirectory: string
   readonly releaseDirectory: string
   readonly targets?: ReadonlyArray<Target>
 }
 
 export interface Release {
-  readonly officialPlugins: ReadonlyArray<OfficialPlugin>
+  readonly officialConnectors: ReadonlyArray<OfficialConnector>
   readonly binaries: ReadonlyArray<BuiltBinary>
   readonly checksums: string
 }
@@ -36,35 +36,35 @@ export interface Release {
 export const buildRelease = (build: ReleaseBuild) =>
   Effect.gen(function*() {
     yield* Effect.sync(() => clearReleaseFiles(build.releaseDirectory))
-    const officialPlugins = yield* buildPluginArchives(build.pluginDirectories, build.officialPluginsDirectory)
+    const officialConnectors = yield* buildConnectorArchives(build.connectorDirectories, build.officialConnectorsDirectory)
     const binaries = yield* buildBinaries({
       buildScript: build.buildScript,
       version: build.version,
       releaseUrl: build.releaseUrl,
-      officialPlugins,
+      officialConnectors,
       targets: build.targets ?? targets,
       outDirectory: build.releaseDirectory
     })
     return yield* Effect.sync((): Release => {
-      const pluginArchives = officialPlugins.map((plugin) => {
-        const name = pluginArchiveName(plugin.name, plugin.version)
-        copyFileSync(join(build.officialPluginsDirectory, name), join(build.releaseDirectory, name))
+      const connectorArchives = officialConnectors.map((connector) => {
+        const name = connectorArchiveName(connector.name, connector.version)
+        copyFileSync(join(build.officialConnectorsDirectory, name), join(build.releaseDirectory, name))
         return join(build.releaseDirectory, name)
       })
-      const officialPluginsFile = join(build.releaseDirectory, officialPluginsFileName)
-      copyFileSync(join(build.officialPluginsDirectory, officialPluginsFileName), officialPluginsFile)
+      const officialConnectorsFile = join(build.releaseDirectory, officialConnectorsFileName)
+      copyFileSync(join(build.officialConnectorsDirectory, officialConnectorsFileName), officialConnectorsFile)
       const checksums = writeChecksums(build.releaseDirectory, [
         ...binaries.map((built) => built.archive),
-        ...pluginArchives,
-        officialPluginsFile
+        ...connectorArchives,
+        officialConnectorsFile
       ])
-      return { officialPlugins, binaries, checksums }
+      return { officialConnectors, binaries, checksums }
     })
   })
 
 export const describeRelease = (release: Release): string =>
   [
     ...release.binaries.map((built) => `${built.target.bunTarget}: ${basename(built.archive)}`),
-    ...release.officialPlugins.map((plugin) => `${plugin.name} ${plugin.version}: ${plugin.digest}`),
+    ...release.officialConnectors.map((connector) => `${connector.name} ${connector.version}: ${connector.digest}`),
     release.checksums
   ].join("\n")

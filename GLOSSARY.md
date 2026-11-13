@@ -6,12 +6,12 @@ Exangelos lets AI coding agents subscribe to events from outside systems and wak
 
 ### Sources
 
-**Plugin**:
+**Connector**:
 An installed package that watches one kind of external source and reports events.
-_Avoid_: Source, integration, connector, provider
+_Avoid_: Source, integration, plugin, provider
 
 **Catalogue**:
-What a plugin declares: its event types, its subscription parameters and its configuration fields.
+What a connector declares: its event types, its subscription parameters and its configuration fields.
 _Avoid_: Schema, manifest, capabilities
 
 **Event type**:
@@ -19,19 +19,19 @@ A named kind of event in a catalogue, such as `checks.failed`.
 _Avoid_: Trigger, topic, hook
 
 **Subject**:
-The one thing a subscription watches, such as `acme/app#123`, named by the plugin from the subscription's parameters.
+The one thing a subscription watches, such as `acme/app#123`, named by the connector from the subscription's parameters.
 _Avoid_: Target, resource, entity
 
 **Trust**:
-Whether a plugin may run: inert, enabled, or dev.
+Whether a connector may run: inert, enabled, or dev.
 _Avoid_: Status, permission
 
 **Inert**:
-A plugin that is installed and not allowed to run until you enable it.
+A connector that is installed and not allowed to run until you enable it.
 _Avoid_: Disabled, untrusted, pending
 
 **Available**:
-A plugin that is enabled or dev, has its configuration set and has a running process.
+A connector that is enabled or dev, has its configuration set and has a running process.
 _Avoid_: Healthy, ready, online
 
 ### Subscriptions
@@ -45,7 +45,7 @@ The agent's one-line statement of why it subscribed, required when subscribing a
 _Avoid_: Note, description, reason, comment
 
 **Event**:
-One occurrence a plugin reported for a subscription.
+One occurrence a connector reported for a subscription.
 _Avoid_: Message, update, notification
 
 **Pending**:
@@ -61,7 +61,7 @@ The pending events of one subscription.
 _Avoid_: Queue, inbox
 
 **Cursor**:
-The plugin's bookmark for a subscription, from which watching continues after any interruption.
+The connector's bookmark for a subscription, from which watching continues after any interruption.
 _Avoid_: Checkpoint, offset, state
 
 **Active**:
@@ -69,7 +69,7 @@ An open subscription that is watched.
 _Avoid_: Running, live
 
 **Suspended**:
-An active subscription whose plugin is unavailable; it continues by itself when the plugin returns.
+An active subscription whose connector is unavailable; it continues by itself when the connector returns.
 _Avoid_: Paused, stalled, blocked
 
 **Paused**:
@@ -81,7 +81,7 @@ An open subscription that is not watched because its expiry time passed.
 _Avoid_: Timed out, stale
 
 **Ended**:
-A closed subscription that finished because the plugin ended it or it reached its number of events.
+A closed subscription that finished because the connector ended it or it reached its number of events.
 _Avoid_: Completed, done
 
 **Cancelled**:
@@ -111,7 +111,7 @@ A message the daemon sends to a wake target, pointing at the stored events.
 _Avoid_: Notification, nudge, ping, alert
 
 **Wake window**:
-How long the daemon gathers a subscription's events after the first one before it sends one wake. Each Watch carries it to the plugin, which gathers a source's changes into one event over the same span.
+How long the daemon gathers a subscription's events after the first one before it sends one wake. Each Watch carries it to the connector, which gathers a source's changes into one event over the same span.
 _Avoid_: Debounce, settle interval
 
 **Alert**:
@@ -121,7 +121,7 @@ _Avoid_: Wake, notification, warning
 ### People and agents
 
 **Actor**:
-Who made a change to a subscription or plugin: a session, or you.
+Who made a change to a subscription or connector: a session, or you.
 _Avoid_: User, caller, author
 
 **You**:

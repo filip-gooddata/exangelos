@@ -2,7 +2,7 @@ packages:
   - packages/*
   - adapters/*
   - gap/*
-  - plugins/*
+  - connectors/*
   - apps/*
   - packaging
 

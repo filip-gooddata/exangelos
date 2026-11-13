@@ -40,7 +40,7 @@ export const findTarget = (platform: string): Target => {
 export const binaryArchiveName = (version: string, target: Target): string =>
   `exangelos-${version}-${target.os}-${target.arch}.tar.gz`
 
-export const pluginArchiveName = (name: string, version: string): string => `${name}-${version}.tar.gz`
+export const connectorArchiveName = (name: string, version: string): string => `${name}-${version}.tar.gz`
 
 export const checksumFileName = "SHA256SUMS"
 
@@ -76,7 +76,7 @@ export const writeChecksums = (directory: string, files: ReadonlyArray<string>):
 export const clearReleaseFiles = (directory: string): void => {
   if (!existsSync(directory)) return
   for (const name of readdirSync(directory)) {
-    if (name.endsWith(".tar.gz") || name === checksumFileName || name === "official-plugins.json" || name === "binaries" || name === "sidecars") {
+    if (name.endsWith(".tar.gz") || name === checksumFileName || name === "official-connectors.json" || name === "binaries" || name === "sidecars") {
       rmSync(join(directory, name), { recursive: true, force: true })
     }
   }

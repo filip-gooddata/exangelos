@@ -1,7 +1,7 @@
 import { DateTime, Effect, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
-import { Catalogue, Event, Ids, Plugin, Session, Subscription, Wake } from "@exangelos/domain"
+import { Catalogue, Event, Ids, Connector, Session, Subscription, Wake } from "@exangelos/domain"
 import * as AgentClient from "./AgentClient.ts"
 import { type AgentFailure, failureMessage, wakeHint } from "./Messages.ts"
 
@@ -51,18 +51,18 @@ const tool = <const Name extends string, Parameters extends Schema.Struct.Fields
   })
 
 export const toolkit = Toolkit.make(
-  Tool.make("list_plugins", {
-    description: "List the installed plugins with the event types and parameters each one offers.",
+  Tool.make("list_connectors", {
+    description: "List the installed connectors with the event types and parameters each one offers.",
     parameters: Tool.EmptyParams,
-    success: Schema.Struct({ plugins: Schema.Array(Plugin.Plugin) }),
+    success: Schema.Struct({ connectors: Schema.Array(Connector.Connector) }),
     failure: ToolFailure,
     failureMode: "error"
   }),
   tool(
     "subscribe",
-    "Subscribe to a plugin's events; you are woken when they arrive. Say in intent why you want them.",
+    "Subscribe to a connector's events; you are woken when they arrive. Say in intent why you want them.",
     {
-      plugin: Ids.PluginName,
+      connector: Ids.ConnectorName,
       parameters: Catalogue.Parameters,
       intent: Schema.NonEmptyString,
       ...limits,
@@ -159,7 +159,7 @@ export const handlers = toolkit.toLayer(Effect.gen(function*() {
   const call = <A>(use: (client: AgentClient.AgentRpcs) => Effect.Effect<A, AgentFailure>, subscription?: string) =>
     Effect.scoped(Effect.flatMap(connect, use)).pipe(Effect.mapError((failure) => fail(failure, subscription)))
   return {
-    list_plugins: () => call((client) => client.ListPlugins()).pipe(Effect.map((plugins) => ({ plugins }))),
+    list_connectors: () => call((client) => client.ListConnectors()).pipe(Effect.map((connectors) => ({ connectors }))),
     subscribe: ({ target, pullOnly, until, similarOk, ...rest }) =>
       Effect.all([targetChoice({ target, pullOnly }), untilTime(until)]).pipe(
         Effect.flatMap(([choice, time]) =>

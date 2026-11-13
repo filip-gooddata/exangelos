@@ -1,11 +1,11 @@
 import {
   type AlertSink,
-  layerPlugins,
-  layerRemovedPlugins,
+  layerConnectors,
+  layerRemovedConnectors,
   layerSubscriptionIntake,
   layerSubscriptionLocks,
   layerSubscriptionSignals,
-  OfficialPluginSource,
+  OfficialConnectorSource,
   runSubscriptionDaemon,
   type SecretStore,
   ServiceManager,
@@ -16,11 +16,11 @@ import * as Alerts from "@exangelos/alerts"
 import { DaemonContract } from "@exangelos/contracts"
 import { DaemonServer } from "@exangelos/daemon-client"
 import { layerLinux, layerMacOS } from "@exangelos/notifications"
-import * as OfficialPlugins from "@exangelos/official-plugins"
+import * as OfficialConnectors from "@exangelos/official-connectors"
 import { Paths } from "@exangelos/paths"
-import * as PluginDirectoryLive from "@exangelos/plugin-directory"
-import * as PluginImport from "@exangelos/plugin-import"
-import { StdioPluginRuntime } from "@exangelos/plugin-runtime"
+import * as ConnectorDirectoryLive from "@exangelos/connector-directory"
+import * as ConnectorImport from "@exangelos/connector-import"
+import { StdioConnectorRuntime } from "@exangelos/connector-runtime"
 import { SecretStores } from "@exangelos/secrets"
 import * as Service from "@exangelos/service"
 import { SettingsFile } from "@exangelos/settings"
@@ -44,9 +44,9 @@ export interface Choices {
 }
 
 export interface Options extends Choices {
-  readonly officialPlugins: ReadonlyArray<unknown>
+  readonly officialConnectors: ReadonlyArray<unknown>
   readonly releaseUrl: string | undefined
-  readonly runtime?: StdioPluginRuntime.Options | undefined
+  readonly runtime?: StdioConnectorRuntime.Options | undefined
 }
 
 const unavailable = (failure: ServiceManager.ServiceFailed) =>
@@ -87,24 +87,24 @@ const database = Layer.unwrap(
   })
 )
 
-const officialPlugins = (options: Options) =>
+const officialConnectors = (options: Options) =>
   Layer.unwrap(
     Effect.map(
-      Effect.orDie(Schema.decodeUnknownEffect(Schema.Array(OfficialPluginSource.Official))(options.officialPlugins)),
-      (known) => OfficialPlugins.layer({ known, releaseUrl: options.releaseUrl })
+      Effect.orDie(Schema.decodeUnknownEffect(Schema.Array(OfficialConnectorSource.Official))(options.officialConnectors)),
+      (known) => OfficialConnectors.layer({ known, releaseUrl: options.releaseUrl })
     )
-  ).pipe(Layer.provideMerge(PluginImport.layer), Layer.provide(PluginImport.layerFetchHttpClient))
+  ).pipe(Layer.provideMerge(ConnectorImport.layer), Layer.provide(ConnectorImport.layerFetchHttpClient))
 
 const ports = (options: Options) =>
   Layer.mergeAll(
-    officialPlugins(options),
+    officialConnectors(options),
     Repositories.layer.pipe(Layer.provide(database)),
     options.alerts,
     options.serviceManager,
     options.wakeTarget,
-    StdioPluginRuntime.layer(options.runtime)
+    StdioConnectorRuntime.layer(options.runtime)
   ).pipe(
-    Layer.provideMerge(Layer.mergeAll(SettingsFile.layer, options.secretStore, PluginDirectoryLive.layer))
+    Layer.provideMerge(Layer.mergeAll(SettingsFile.layer, options.secretStore, ConnectorDirectoryLive.layer))
   )
 
 const halves = Layer.effectContext(
@@ -112,17 +112,17 @@ const halves = Layer.effectContext(
     const slot = yield* Deferred.make<SubscriptionIntake.SubscriptionIntake["Service"]>()
     const late = SubscriptionIntake.SubscriptionIntake.of({
       ingest: (subscription, item) => Effect.flatMap(Deferred.await(slot), (intake) => intake.ingest(subscription, item)),
-      pluginChanged: (plugin) => Effect.flatMap(Deferred.await(slot), (intake) => intake.pluginChanged(plugin)),
-      pluginRemoved: (plugin, since, problem) =>
-        Effect.flatMap(Deferred.await(slot), (intake) => intake.pluginRemoved(plugin, since, problem))
+      connectorChanged: (connector) => Effect.flatMap(Deferred.await(slot), (intake) => intake.connectorChanged(connector)),
+      connectorRemoved: (connector, since, problem) =>
+        Effect.flatMap(Deferred.await(slot), (intake) => intake.connectorRemoved(connector, since, problem))
     })
-    const plugins = yield* Layer.build(
-      Layer.provide(layerPlugins, Layer.succeed(SubscriptionIntake.SubscriptionIntake, late))
+    const connectors = yield* Layer.build(
+      Layer.provide(layerConnectors, Layer.succeed(SubscriptionIntake.SubscriptionIntake, late))
     )
     yield* Effect.addFinalizer(() => Deferred.interrupt(slot))
-    const intake = yield* Layer.build(Layer.provide(layerSubscriptionIntake, Layer.succeedContext(plugins)))
+    const intake = yield* Layer.build(Layer.provide(layerSubscriptionIntake, Layer.succeedContext(connectors)))
     yield* Deferred.succeed(slot, Context.get(intake, SubscriptionIntake.SubscriptionIntake))
-    return Context.merge(plugins, intake)
+    return Context.merge(connectors, intake)
   })
 )
 
@@ -131,7 +131,7 @@ const loops = Layer.effectDiscard(Effect.forkScoped(runSubscriptionDaemon))
 const services = (options: Options) =>
   loops.pipe(
     Layer.provideMerge(halves),
-    Layer.provideMerge(Layer.mergeAll(layerSubscriptionLocks, layerSubscriptionSignals, layerRemovedPlugins)),
+    Layer.provideMerge(Layer.mergeAll(layerSubscriptionLocks, layerSubscriptionSignals, layerRemovedConnectors)),
     Layer.provideMerge(ports(options))
   )
 

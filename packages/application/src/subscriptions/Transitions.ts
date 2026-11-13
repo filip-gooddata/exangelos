@@ -4,7 +4,7 @@ import { EventRepository } from "../ports/EventRepository.ts"
 import type { SettingsStore } from "../ports/SettingsStore.ts"
 import { SubscriptionRepository } from "../ports/SubscriptionRepository.ts"
 import type { WakeRepository } from "../ports/WakeRepository.ts"
-import { PluginAccess } from "../seam/PluginAccess.ts"
+import { ConnectorAccess } from "../seam/ConnectorAccess.ts"
 import { SubscriptionSignals } from "./Signals.ts"
 import { requestWake } from "./Wakes.ts"
 
@@ -22,7 +22,7 @@ export type CommitServices =
   | EventRepository
   | WakeRepository
   | SettingsStore
-  | PluginAccess
+  | ConnectorAccess
   | SubscriptionSignals
 
 /**
@@ -49,7 +49,7 @@ export const commit = (
     if (Option.isSome(outcome.wake)) yield* requestWake(subscription, outcome.wake.value)
     const wasActive = Option.exists(before, (previous) => previous.state._tag === "Active")
     const isActive = subscription.state._tag === "Active"
-    const access = yield* PluginAccess
+    const access = yield* ConnectorAccess
     if (!wasActive && isActive) yield* access.watch(subscription.id)
     if (wasActive && !isActive) yield* access.unwatch(subscription.id)
     const signals = yield* SubscriptionSignals

@@ -272,7 +272,7 @@ select:focus-visible {
   color: var(--text-3);
 }
 
-.badge-plugin {
+.badge-connector {
   flex: none;
   display: inline-grid;
   place-items: center;
@@ -496,7 +496,7 @@ select:focus-visible {
   border-top: 1px solid var(--ember-line);
 }
 
-.needs-you-item .badge-plugin {
+.needs-you-item .badge-connector {
   grid-row: 1;
   grid-column: 1;
   margin-top: 1px;
@@ -590,7 +590,7 @@ select:focus-visible {
   background: var(--hover);
 }
 
-.row > .badge-plugin {
+.row > .badge-connector {
   margin-top: 1px;
 }
 
@@ -909,11 +909,11 @@ button.event:hover {
 
 /* Connectors */
 
-.plugin-list {
+.connector-list {
   padding: 4px 0;
 }
 
-.plugin-row .row-fact .mono {
+.connector-row .row-fact .mono {
   font-size: 10.5px;
 }
 

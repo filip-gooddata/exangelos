@@ -11,10 +11,10 @@ export type EventId = typeof EventId.Type
 export const WakeId = Schema.String.check(Schema.isPattern(/^wake_[a-z0-9]+$/)).pipe(Schema.brand("WakeId"))
 export type WakeId = typeof WakeId.Type
 
-export const PluginName = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]*$/)).pipe(
-  Schema.brand("PluginName")
+export const ConnectorName = Schema.String.check(Schema.isPattern(/^[a-z0-9][a-z0-9-]*$/)).pipe(
+  Schema.brand("ConnectorName")
 )
-export type PluginName = typeof PluginName.Type
+export type ConnectorName = typeof ConnectorName.Type
 
 export const EventType = Schema.String.check(Schema.isPattern(/^[a-z0-9]+(?:[._-][a-z0-9]+)*$/)).pipe(
   Schema.brand("EventType")

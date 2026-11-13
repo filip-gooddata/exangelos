@@ -31,11 +31,11 @@ export const subscriptionId = (raw: string): Effect.Effect<Ids.SubscriptionId, I
     )
   )
 
-export const pluginName = (raw: string): Effect.Effect<Ids.PluginName, InputInvalid> =>
-  Schema.decodeEffect(Ids.PluginName)(raw).pipe(
+export const connectorName = (raw: string): Effect.Effect<Ids.ConnectorName, InputInvalid> =>
+  Schema.decodeEffect(Ids.ConnectorName)(raw).pipe(
     Effect.mapError(() =>
       new InputInvalid({
-        message: `"${raw}" is not a plugin name. Names use lowercase letters, digits and dashes; run \`exangelos plugins\` to see them.`
+        message: `"${raw}" is not a connector name. Names use lowercase letters, digits and dashes; run \`exangelos connectors\` to see them.`
       })
     )
   )

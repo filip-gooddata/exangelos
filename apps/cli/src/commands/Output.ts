@@ -24,8 +24,8 @@ export const Json = GlobalFlag.Setting("json")({
 export class CommandFailed extends Data.TaggedError("CommandFailed")<{ readonly tag: string }> {}
 
 const ContractError = Schema.Union([
-  DaemonContract.PluginNotFound,
-  DaemonContract.PluginUnavailable,
+  DaemonContract.ConnectorNotFound,
+  DaemonContract.ConnectorUnavailable,
   DaemonContract.SubscriptionNotFound,
   DaemonContract.InvalidRequest,
   DaemonContract.NoWakeTarget,
@@ -57,10 +57,10 @@ export const failureMessage = (failure: Failure, subscription?: string): string 
       return noDaemonMessage(failure.reason)
     case "InputInvalid":
       return failure.message
-    case "PluginNotFound":
-      return `No plugin named ${failure.plugin} is installed. Run \`${command} plugins\` to see the installed plugins.`
-    case "PluginUnavailable":
-      return `${failure.plugin} is unavailable: ${failure.problem}. Run \`${command} plugins ${failure.plugin}\` to see its state.`
+    case "ConnectorNotFound":
+      return `No connector named ${failure.connector} is installed. Run \`${command} connectors\` to see the installed connectors.`
+    case "ConnectorUnavailable":
+      return `${failure.connector} is unavailable: ${failure.problem}. Run \`${command} connectors ${failure.connector}\` to see its state.`
     case "SubscriptionNotFound":
       return `No subscription ${failure.id}. Run \`${command} list --all\` to see every subscription.`
     case "InvalidRequest":
@@ -68,7 +68,7 @@ export const failureMessage = (failure: Failure, subscription?: string): string 
     case "NoWakeTarget":
       return noWakeTargetMessage
     case "ParametersInvalid":
-      return `The plugin refused the parameters: ${failure.reason}. Run \`${command} plugins <plugin>\` to see what it takes.`
+      return `The connector refused the parameters: ${failure.reason}. Run \`${command} connectors <connector>\` to see what it takes.`
     case "SimilarSubscriptions":
       return similarSubscriptionsMessage(
         failure.similar.map((similar) => ({ id: similar.id, parameters: similar.parameters }))
@@ -82,19 +82,19 @@ export const failureMessage = (failure: Failure, subscription?: string): string 
     case "BacklogOverLimit":
       return backlogOverLimitMessage(subscription ?? "<subscription>", failure)
     case "OfficialFetchFailed":
-      return `Fetching the official plugin ${failure.plugin} failed: ${failure.reason}. Check the network connection, then retry.`
+      return `Fetching the official connector ${failure.connector} failed: ${failure.reason}. Check the network connection, then retry.`
     case "ImportFailed":
       return `The import failed: ${failure.reason}. Check the source, then retry.`
     case "DigestMismatch":
-      return `The files of ${failure.plugin} changed: its checksum is ${failure.actual}, not ${failure.expected}. Nothing was enabled; run \`${command} plugin enable ${failure.plugin}\` to review the new checksum.`
+      return `The files of ${failure.connector} changed: its checksum is ${failure.actual}, not ${failure.expected}. Nothing was enabled; run \`${command} connector enable ${failure.connector}\` to review the new checksum.`
     case "HumanRequired":
       return `Only you can do this${
-        failure.plugin !== undefined ? ` for ${failure.plugin}` : failure.subscription !== undefined ? ` for ${failure.subscription}` : ""
+        failure.connector !== undefined ? ` for ${failure.connector}` : failure.subscription !== undefined ? ` for ${failure.subscription}` : ""
       }, and this terminal runs inside an agent session. Run the command again from your own terminal.`
     case "ConfigurationInvalid":
-      return `The configuration does not fit the plugin's catalogue: ${failure.reason}. Run \`${command} plugins <plugin>\` to see its fields.`
+      return `The configuration does not fit the connector's catalogue: ${failure.reason}. Run \`${command} connectors <connector>\` to see its fields.`
     case "ConfigurationRejected":
-      return `The plugin rejected the configuration: ${failure.reason}. Check the values, then run \`${command} plugin configure\` again.`
+      return `The connector rejected the configuration: ${failure.reason}. Check the values, then run \`${command} connector configure\` again.`
   }
 }
 

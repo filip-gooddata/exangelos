@@ -3,36 +3,36 @@ import { DateTime, Duration, Effect, Exit, Fiber, Option, Stream } from "effect"
 import { Event, Ids, Session, Subscription, Wake } from "@exangelos/domain"
 import {
   EventRepository,
-  OfficialPluginSource,
-  PluginAccess,
-  PluginDirectory,
-  PluginImportSource,
-  PluginRuntime,
+  OfficialConnectorSource,
+  ConnectorAccess,
+  ConnectorDirectory,
+  ConnectorImportSource,
+  ConnectorRuntime,
   SubscriptionRepository,
   WakeRepository,
   WakeTarget
 } from "@exangelos/application"
 import {
-  layerPluginAccess,
-  layerPluginFiles,
-  layerPluginRuntime,
+  layerConnectorAccess,
+  layerConnectorFiles,
+  layerConnectorRuntime,
   layerRepositories,
   layerWakeTarget,
-  PluginAccessFake,
-  PluginFilesFake,
-  PluginRuntimeFake,
+  ConnectorAccessFake,
+  ConnectorFilesFake,
+  ConnectorRuntimeFake,
   WakeTargetFake
 } from "@exangelos/application/testing"
 import { catalogue } from "./fixtures.ts"
 
 const at = DateTime.makeUnsafe("2026-11-12T10:00:00Z")
 const id = Ids.SubscriptionId.make("sub_abc")
-const name = Ids.PluginName.make("template")
+const name = Ids.ConnectorName.make("template")
 const session: Session.Session = { harness: "t3", sessionId: "thread-1" }
 
 const subscription: Subscription.Subscription = {
   id,
-  plugin: name,
+  connector: name,
   parameters: { name: "x" },
   subject: "x",
   label: "x",
@@ -69,7 +69,7 @@ const wake = (wakeId: string): Wake.Wake => ({
   createdAt: at
 })
 
-const content: Wake.WakeContent = { subscription: id, plugin: "template", subject: "x", why: { _tag: "Events" }, pending: [] }
+const content: Wake.WakeContent = { subscription: id, connector: "template", subject: "x", why: { _tag: "Events" }, pending: [] }
 
 describe("in-memory repositories", () => {
   it.effect("keep at most one undelivered wake and delete a subscription with its records", () =>
@@ -93,17 +93,17 @@ describe("in-memory repositories", () => {
     }).pipe(Effect.provide(layerRepositories)))
 })
 
-describe("PluginRuntimeFake", () => {
-  it.effect("streams scripted items to the picked watch and fails the rest when the plugin crashes", () =>
+describe("ConnectorRuntimeFake", () => {
+  it.effect("streams scripted items to the picked watch and fails the rest when the connector crashes", () =>
     Effect.scoped(Effect.gen(function*() {
-      const runtime = yield* PluginRuntime.PluginRuntime
-      const fake = yield* PluginRuntimeFake
+      const runtime = yield* ConnectorRuntime.ConnectorRuntime
+      const fake = yield* ConnectorRuntimeFake
       const watching = (subject: string) => (request: { readonly parameters: { readonly [k: string]: unknown } }) =>
         request.parameters["name"] === subject
       yield* fake.define(name, { catalogue })
       yield* fake.emit(name, { _tag: "Cursor", cursor: "c1" }, watching("x"))
 
-      const process = yield* runtime.start({ name, directory: "/plugins/template", entry: { _tag: "Bundle", path: "main.js" }, dev: false })
+      const process = yield* runtime.start({ name, directory: "/connectors/template", entry: { _tag: "Bundle", path: "main.js" }, dev: false })
       const x = yield* Stream.runCollect(process.watch({ parameters: { name: "x" }, eventTypes: [], wakeWindow: Duration.seconds(5) })).pipe(Effect.forkChild)
       const y = yield* Stream.runCollect(process.watch({ parameters: { name: "y" }, eventTypes: [], wakeWindow: Duration.seconds(5) })).pipe(Effect.forkChild)
       yield* Effect.yieldNow
@@ -116,7 +116,7 @@ describe("PluginRuntimeFake", () => {
 
       expect(Exit.isFailure(yield* Fiber.await(y))).toBe(true)
       expect((yield* process.exited).reason).toBe("killed")
-    })).pipe(Effect.provide(layerPluginRuntime)))
+    })).pipe(Effect.provide(layerConnectorRuntime)))
 })
 
 describe("WakeTargetFake", () => {
@@ -136,12 +136,12 @@ describe("WakeTargetFake", () => {
     }).pipe(Effect.provide(layerWakeTarget)))
 })
 
-describe("PluginFilesFake", () => {
-  it.effect("lists an imported plugin and reports a change to its files", () =>
+describe("ConnectorFilesFake", () => {
+  it.effect("lists an imported connector and reports a change to its files", () =>
     Effect.gen(function*() {
-      const directory = yield* PluginDirectory.PluginDirectory
-      const importer = yield* PluginImportSource.PluginImportSource
-      const fake = yield* PluginFilesFake
+      const directory = yield* ConnectorDirectory.ConnectorDirectory
+      const importer = yield* ConnectorImportSource.ConnectorImportSource
+      const fake = yield* ConnectorFilesFake
       const source = { _tag: "Directory", path: "/src/template" } as const
       yield* fake.offer(source, { name, version: "1.0.0", directory: "/src/template", entry: { _tag: "Bundle", path: "main.js" }, digest: "d1" })
 
@@ -153,22 +153,22 @@ describe("PluginFilesFake", () => {
 
       expect((yield* directory.list).map((p) => p.name)).toEqual(["template"])
       expect((yield* directory.read(placed)).digest).toBe("d2")
-    }).pipe(Effect.provide(layerPluginFiles([]))))
+    }).pipe(Effect.provide(layerConnectorFiles([]))))
 })
 
-describe("PluginAccessFake", () => {
-  it.effect("joins the positional main parameter after the plugin is ready", () =>
+describe("ConnectorAccessFake", () => {
+  it.effect("joins the positional main parameter after the connector is ready", () =>
     Effect.gen(function*() {
-      const access = yield* PluginAccess.PluginAccess
-      const fake = yield* PluginAccessFake
-      const official = Ids.PluginName.make("official")
+      const access = yield* ConnectorAccess.ConnectorAccess
+      const fake = yield* ConnectorAccessFake
+      const official = Ids.ConnectorName.make("official")
       yield* fake.define(name, {
         catalogue,
         describe: (parameters) => Effect.succeed({ catalogue, parameters, subject: String(parameters["name"]), label: "x" })
       })
       yield* fake.define(official, {
         catalogue,
-        ready: Effect.fail(new OfficialPluginSource.OfficialFetchFailed({ plugin: official, reason: "offline" })),
+        ready: Effect.fail(new OfficialConnectorSource.OfficialFetchFailed({ connector: official, reason: "offline" })),
         describe: () => Effect.die("not ready")
       })
       const you = { _tag: "You" } as const
@@ -181,5 +181,5 @@ describe("PluginAccessFake", () => {
       expect(described.subject).toBe("x")
       expect(refused._tag).toBe("ParametersInvalid")
       expect(unready._tag).toBe("OfficialFetchFailed")
-    }).pipe(Effect.provide(layerPluginAccess)))
+    }).pipe(Effect.provide(layerConnectorAccess)))
 })

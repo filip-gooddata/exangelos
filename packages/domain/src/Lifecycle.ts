@@ -1,9 +1,9 @@
 import { Array as Arr, DateTime, Option, Result } from "effect"
 import type { Parameters } from "./Catalogue.ts"
-import type { EventType, PluginName, SubscriptionId } from "./Ids.ts"
+import type { EventType, ConnectorName, SubscriptionId } from "./Ids.ts"
 import type { Limits } from "./Limits.ts"
-import type { Plugin } from "./Plugin.ts"
-import * as PluginRules from "./PluginRules.ts"
+import type { Connector } from "./Connector.ts"
+import * as ConnectorRules from "./ConnectorRules.ts"
 import { BacklogOverLimit, NotAllowed } from "./Refusal.ts"
 import { type Actor, sameSession, type Session } from "./Session.ts"
 import type { EndReason, PauseReason, State, Subscription } from "./Subscription.ts"
@@ -16,7 +16,7 @@ export interface Step {
 
 export interface NewSubscription {
   readonly id: SubscriptionId
-  readonly plugin: PluginName
+  readonly connector: ConnectorName
   readonly parameters: Parameters
   readonly subject: string
   readonly label: string
@@ -36,7 +36,7 @@ export const create = (input: NewSubscription, now: DateTime.Utc, limits: Limits
   const eventTypes = input.eventTypes ?? []
   return {
     id: input.id,
-    plugin: input.plugin,
+    connector: input.connector,
     parameters: input.parameters,
     subject: input.subject,
     label: input.label,
@@ -59,14 +59,14 @@ export const pendingCount = (subscription: Subscription): number => subscription
 export const isOpen = (subscription: Subscription): boolean =>
   subscription.state._tag === "Active" || subscription.state._tag === "Paused" || subscription.state._tag === "Expired"
 
-export const isWatched = (subscription: Subscription, plugin: Plugin): boolean =>
-  subscription.state._tag === "Active" && PluginRules.isAvailable(plugin)
+export const isWatched = (subscription: Subscription, connector: Connector): boolean =>
+  subscription.state._tag === "Active" && ConnectorRules.isAvailable(connector)
 
 export const isSuspendedWhen = (subscription: Subscription, available: boolean): boolean =>
   subscription.state._tag === "Active" && !available
 
-export const isSuspended = (subscription: Subscription, plugin: Plugin): boolean =>
-  isSuspendedWhen(subscription, PluginRules.isAvailable(plugin))
+export const isSuspended = (subscription: Subscription, connector: Connector): boolean =>
+  isSuspendedWhen(subscription, ConnectorRules.isAvailable(connector))
 
 export const isOwnSession = (subscription: Subscription, actor: Actor): boolean =>
   actor._tag === "Session" && subscription.wakeTarget !== undefined && sameSession(actor.session, subscription.wakeTarget)
@@ -181,14 +181,14 @@ export const suspensionWakeWhen = (
 
 export const suspensionWake = (
   subscription: Subscription,
-  plugin: Plugin,
+  connector: Connector,
   lastSuspensionWake: Option.Option<DateTime.Utc>,
   now: DateTime.Utc,
   limits: Limits
 ): Option.Option<Why> => {
-  const since = plugin.unavailableSince
-  const unavailable = since === undefined || PluginRules.isAvailable(plugin)
+  const since = connector.unavailableSince
+  const unavailable = since === undefined || ConnectorRules.isAvailable(connector)
     ? Option.none()
-    : Option.map(PluginRules.problem(plugin), (problem) => ({ since, problem }))
+    : Option.map(ConnectorRules.problem(connector), (problem) => ({ since, problem }))
   return suspensionWakeWhen(subscription, unavailable, lastSuspensionWake, now, limits)
 }

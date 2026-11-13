@@ -4,7 +4,7 @@ import type { Ids, Session, Subscription } from "@exangelos/domain"
 
 export interface Filter {
   readonly states?: ReadonlyArray<Subscription.State["_tag"]>
-  readonly plugin?: Ids.PluginName
+  readonly connector?: Ids.ConnectorName
   readonly target?: Session.Session
 }
 

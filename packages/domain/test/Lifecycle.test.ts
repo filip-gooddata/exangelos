@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Option, Result } from "effect"
 import { Ids, Lifecycle } from "../src/index.ts"
-import { alice, at, bob, later, limits, plugin, start, subscription } from "./fixtures.ts"
+import { alice, at, bob, later, limits, connector, start, subscription } from "./fixtures.ts"
 
 const now = at("2026-11-02T10:00:00Z")
 const byAlice = { _tag: "Session" as const, session: alice }
@@ -14,7 +14,7 @@ describe("Lifecycle", () => {
     const created = Lifecycle.create(
       {
         id: Ids.SubscriptionId.make("sub_7f3k"),
-        plugin: Ids.PluginName.make("github-pr"),
+        connector: Ids.ConnectorName.make("github-pr"),
         parameters: { pr: "acme/app#123" },
         subject: "acme/app#123",
         label: "acme/app#123",
@@ -30,7 +30,7 @@ describe("Lifecycle", () => {
   it("rule 4: expiry is 7 days after the start, or sooner when asked for an end time, and once means one event", () => {
     const base = {
       id: Ids.SubscriptionId.make("sub_7f3k"),
-      plugin: Ids.PluginName.make("github-pr"),
+      connector: Ids.ConnectorName.make("github-pr"),
       parameters: {},
       subject: "acme/app#123",
       label: "acme/app#123",
@@ -96,10 +96,10 @@ describe("Lifecycle", () => {
     expect(expired.wake).toEqual(Option.none())
   })
 
-  it("active -> ended: the plugin ending it wakes with the reason", () => {
-    const ended = step(Lifecycle.end(subscription(), { _tag: "Plugin", reason: "PR merged" }, now))
-    expect(ended.subscription.state).toEqual({ _tag: "Ended", reason: { _tag: "Plugin", reason: "PR merged" } })
-    expect(ended.wake).toEqual(Option.some({ _tag: "Ended", reason: { _tag: "Plugin", reason: "PR merged" } }))
+  it("active -> ended: the connector ending it wakes with the reason", () => {
+    const ended = step(Lifecycle.end(subscription(), { _tag: "Connector", reason: "PR merged" }, now))
+    expect(ended.subscription.state).toEqual({ _tag: "Ended", reason: { _tag: "Connector", reason: "PR merged" } })
+    expect(ended.wake).toEqual(Option.some({ _tag: "Ended", reason: { _tag: "Connector", reason: "PR merged" } }))
   })
 
   it("any open -> cancelled: a cancel wakes the session unless the session cancelled it", () => {
@@ -114,8 +114,8 @@ describe("Lifecycle", () => {
     ).toBe(true)
   })
 
-  it("active -> active: a plugin unavailable for 1 hour wakes its sessions once", () => {
-    const down = plugin({ process: "failing", unavailableSince: start })
+  it("active -> active: a connector unavailable for 1 hour wakes its sessions once", () => {
+    const down = connector({ process: "failing", unavailableSince: start })
     expect(Lifecycle.suspensionWake(subscription(), down, Option.none(), later(start, "59 minutes"), limits)).toEqual(
       Option.none()
     )
@@ -127,7 +127,7 @@ describe("Lifecycle", () => {
     ).toEqual(Option.none())
   })
 
-  it("active -> active: a removed plugin's outage wakes its sessions once after 1 hour", () => {
+  it("active -> active: a removed connector's outage wakes its sessions once after 1 hour", () => {
     const outage = Option.some({ since: start, problem: "it was removed" })
     expect(Lifecycle.isSuspendedWhen(subscription(), false)).toBe(true)
     expect(Lifecycle.suspensionWakeWhen(subscription(), outage, Option.none(), later(start, "59 minutes"), limits))
@@ -137,9 +137,9 @@ describe("Lifecycle", () => {
     )
   })
 
-  it("rule 15: only an active subscription with an available plugin is watched", () => {
-    expect(Lifecycle.isWatched(subscription(), plugin())).toBe(true)
-    expect(Lifecycle.isWatched(subscription({ state: { _tag: "Expired" } }), plugin())).toBe(false)
-    expect(Lifecycle.isWatched(subscription(), plugin({ trust: "inert" }))).toBe(false)
+  it("rule 15: only an active subscription with an available connector is watched", () => {
+    expect(Lifecycle.isWatched(subscription(), connector())).toBe(true)
+    expect(Lifecycle.isWatched(subscription({ state: { _tag: "Expired" } }), connector())).toBe(false)
+    expect(Lifecycle.isWatched(subscription(), connector({ trust: "inert" }))).toBe(false)
   })
 })

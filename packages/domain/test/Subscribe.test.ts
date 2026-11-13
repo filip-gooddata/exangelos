@@ -2,18 +2,18 @@ import { describe, expect, it } from "@effect/vitest"
 import { Option, Result } from "effect"
 import type { Subscription } from "../src/index.ts"
 import { Ids, Subscribe } from "../src/index.ts"
-import { alice, bob, later, limits, plugin, start, subscription } from "./fixtures.ts"
+import { alice, bob, later, limits, connector, start, subscription } from "./fixtures.ts"
 
 const failure = <A, E>(result: Result.Result<A, E>): E | undefined =>
   Result.isFailure(result) ? result.failure : undefined
 
 describe("Subscribe", () => {
-  it("rule 1: needs an available plugin and an intent of one non-empty line", () => {
-    expect(Subscribe.check(plugin(), "  Fix the build when CI fails ")).toEqual(Result.succeed("Fix the build when CI fails"))
-    expect(failure(Subscribe.check(plugin(), " "))).toMatchObject({ _tag: "IntentRequired" })
-    expect(failure(Subscribe.check(plugin(), "one\ntwo"))).toMatchObject({ _tag: "IntentRequired" })
-    expect(failure(Subscribe.check(plugin({ trust: "inert" }), "Watch"))).toMatchObject({
-      _tag: "PluginUnavailable",
+  it("rule 1: needs an available connector and an intent of one non-empty line", () => {
+    expect(Subscribe.check(connector(), "  Fix the build when CI fails ")).toEqual(Result.succeed("Fix the build when CI fails"))
+    expect(failure(Subscribe.check(connector(), " "))).toMatchObject({ _tag: "IntentRequired" })
+    expect(failure(Subscribe.check(connector(), "one\ntwo"))).toMatchObject({ _tag: "IntentRequired" })
+    expect(failure(Subscribe.check(connector({ trust: "inert" }), "Watch"))).toMatchObject({
+      _tag: "ConnectorUnavailable",
       problem: "it waits to be enabled"
     })
   })
@@ -36,7 +36,7 @@ describe("Subscribe", () => {
       subscription({ id: Ids.SubscriptionId.make("sub_c"), state: { _tag: "Ended", reason: { _tag: "MaxEvents" } } }),
       subscription({ id: Ids.SubscriptionId.make("sub_d"), subject: "acme/app#124" })
     ]
-    const candidate = { plugin: first.plugin, subject: first.subject, wakeTarget: Option.some(alice) }
+    const candidate = { connector: first.connector, subject: first.subject, wakeTarget: Option.some(alice) }
     expect(failure(Subscribe.similar(others, candidate, []))).toMatchObject({
       _tag: "SimilarSubscriptions",
       matches: [{ id: "sub_a", parameters: first.parameters }]
@@ -44,7 +44,7 @@ describe("Subscribe", () => {
     expect(Result.isSuccess(Subscribe.similar(others, candidate, [Ids.SubscriptionId.make("sub_a")]))).toBe(true)
   })
 
-  it("rule 5: an update applies while the plugin reports the same subject, within the lifetime", () => {
+  it("rule 5: an update applies while the connector reports the same subject, within the lifetime", () => {
     const context = { reportedSubject: "acme/app#123", lastStart: start, now: later(start, "1 day"), limits }
     const updated = Subscribe.update(
       subscription(),

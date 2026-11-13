@@ -9,9 +9,9 @@ describe("MCP tools", () => {
       const { tools } = yield* mcp.listTools({})
       const names = tools.map((tool) => tool.name).sort()
       expect(names).toEqual(
-        ["ack", "cancel", "events", "list", "list_plugins", "pause", "resume", "retarget", "show", "subscribe", "update", "wait"]
+        ["ack", "cancel", "events", "list", "list_connectors", "pause", "resume", "retarget", "show", "subscribe", "update", "wait"]
       )
-      expect(names.filter((name) => /plugin_|import|enable|disable|remove|configure|link|setting|status|service/.test(name)))
+      expect(names.filter((name) => /connector_|import|enable|disable|remove|configure|link|setting|status|service/.test(name)))
         .toEqual([])
     }))
 

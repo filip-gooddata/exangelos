@@ -1,13 +1,13 @@
 import { Schema } from "effect"
 import { Parameters } from "./Catalogue.ts"
-import { PluginName, SubscriptionId } from "./Ids.ts"
+import { ConnectorName, SubscriptionId } from "./Ids.ts"
 
 export class IntentRequired extends Schema.TaggedError<IntentRequired>()("IntentRequired", {
   message: Schema.String
 }) {}
 
-export class PluginUnavailable extends Schema.TaggedError<PluginUnavailable>()("PluginUnavailable", {
-  plugin: PluginName,
+export class ConnectorUnavailable extends Schema.TaggedError<ConnectorUnavailable>()("ConnectorUnavailable", {
+  connector: ConnectorName,
   problem: Schema.String
 }) {}
 

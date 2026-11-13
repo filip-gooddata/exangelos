@@ -2,7 +2,7 @@
 
 ## Packages
 
-- Each package is `@exangelos/<directory>`; plugins are `@exangelos/plugin-<directory>`. `exports` points at `./src/index.ts`, and nothing is built for the workspace.
+- Each package is `@exangelos/<directory>`; connectors are `@exangelos/connector-<directory>`. `exports` points at `./src/index.ts`, and nothing is built for the workspace.
 - `src/index.ts` re-exports each module as a namespace: `export * as Paths from "./Paths.ts"`.
 - `domain` performs no I/O. `application` depends on `domain` only. `gap/*` depends on no Exangelos package. Library packages import nothing from Bun; only apps and Bun-hosted adapters do.
 - Code carries no explanatory comments. A doc comment on a port method states the contract.
@@ -17,7 +17,7 @@
 ## Errors
 
 - Expected failures are `Schema.TaggedError` classes with a few named fields. They go in the error channel and in the RPC `error` schema; a domain rule returns `Result` with them.
-- Name the condition, not the operation: `PluginNotFound`, `BacklogOverLimit`, not `ListFailed`.
+- Name the condition, not the operation: `ConnectorNotFound`, `BacklogOverLimit`, not `ListFailed`.
 - Defects are bugs. Never catch them to turn them into expected errors.
 
 ## Tests
@@ -26,7 +26,7 @@
 |---|---|---|
 | Unit | domain rules and transitions, one test each | `pnpm --filter @exangelos/domain test` |
 | Use case | an application use case over the fakes from `@exangelos/application/testing` | `pnpm --filter @exangelos/application test` |
-| Contract | an adapter against its real dependency: SQLite file, template plugin child, unix socket | `pnpm --filter <adapter> test` |
+| Contract | an adapter against its real dependency: SQLite file, template connector child, unix socket | `pnpm --filter <adapter> test` |
 | End to end | the compiled binary in a temp `EXANGELOS_HOME`, outside `pnpm test` | `pnpm --filter @exangelos/cli e2e` |
 
 - `pnpm typecheck` and `pnpm test` run everything through Turborepo. A run that matches no package or no test counts as a failure.
@@ -41,7 +41,7 @@
 
 ## Standard output
 
-In a plugin and in the MCP server, stdout carries protocol frames only. Logs and diagnostics go to stderr. The CLI writes its answers to stdout and its errors to stderr.
+In a connector and in the MCP server, stdout carries protocol frames only. Logs and diagnostics go to stderr. The CLI writes its answers to stdout and its errors to stderr.
 
 ## Migrations
 

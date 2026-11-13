@@ -6,10 +6,10 @@ import { findTarget, targets } from "../release-files.ts"
 import {
   buildRelease,
   defaultBuildScript,
-  defaultOfficialPluginsDirectory,
+  defaultOfficialConnectorsDirectory,
   defaultReleaseDirectory,
   describeRelease,
-  officialPluginDirectories,
+  officialConnectorDirectories,
   packagingVersion
 } from "../release.ts"
 import { bunSpawner } from "../spawner.ts"
@@ -19,16 +19,16 @@ const { values } = parseArgs({
     "build-script": { type: "string" },
     version: { type: "string" },
     "release-url": { type: "string" },
-    plugins: { type: "string" },
+    connectors: { type: "string" },
     targets: { type: "string" },
-    "official-plugins-out": { type: "string", default: defaultOfficialPluginsDirectory },
+    "official-connectors-out": { type: "string", default: defaultOfficialConnectorsDirectory },
     out: { type: "string", default: defaultReleaseDirectory }
   }
 })
 
 const releaseUrl = values["release-url"]
 if (releaseUrl === undefined || releaseUrl === "") {
-  console.error("build-release needs --release-url <url>: the address the binary fetches official plugin archives from")
+  console.error("build-release needs --release-url <url>: the address the binary fetches official connector archives from")
   process.exit(2)
 }
 
@@ -36,9 +36,9 @@ buildRelease({
   releaseUrl,
   buildScript: values["build-script"] === undefined ? defaultBuildScript : resolve(values["build-script"]),
   version: values.version ?? packagingVersion(),
-  pluginDirectories:
-    values.plugins === undefined ? officialPluginDirectories() : values.plugins.split(",").filter((d) => d !== "").map((d) => resolve(d)),
-  officialPluginsDirectory: resolve(values["official-plugins-out"]),
+  connectorDirectories:
+    values.connectors === undefined ? officialConnectorDirectories() : values.connectors.split(",").filter((d) => d !== "").map((d) => resolve(d)),
+  officialConnectorsDirectory: resolve(values["official-connectors-out"]),
   releaseDirectory: resolve(values.out),
   targets: values.targets === undefined ? targets : values.targets.split(",").map(findTarget)
 }).pipe(

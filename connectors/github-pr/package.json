@@ -1,0 +1,21 @@
+{
+  "name": "@exangelos/connector-github-pr",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "bun build src/main.ts --target=bun --outfile=dist/main.js",
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "bun run --bun vitest run"
+  },
+  "dependencies": {
+    "@effect/platform-bun": "catalog:",
+    "@exangelos/connector-sdk": "workspace:*",
+    "effect": "catalog:"
+  },
+  "devDependencies": {
+    "@exangelos/contracts": "workspace:*"
+  }
+}

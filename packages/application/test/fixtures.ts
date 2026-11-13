@@ -1,4 +1,4 @@
-import { Catalogue, Ids, Plugin } from "@exangelos/domain"
+import { Catalogue, Ids, Connector } from "@exangelos/domain"
 
 export const catalogue: Catalogue.Catalogue = {
   eventTypes: [{ type: Ids.EventType.make("tick"), description: "a tick", payload: {} }],
@@ -6,8 +6,8 @@ export const catalogue: Catalogue.Catalogue = {
   configuration: []
 }
 
-export const plugin = (name: string): Plugin.Plugin => ({
-  name: Ids.PluginName.make(name),
+export const connector = (name: string): Connector.Connector => ({
+  name: Ids.ConnectorName.make(name),
   version: "1.0.0",
   origin: { _tag: "Official", version: "1.0.0" },
   digest: "sha256-test",

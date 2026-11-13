@@ -1,10 +1,10 @@
 import { Context } from "effect"
 import type { DateTime, Effect } from "effect"
-import type { Event, Ids, Plugin } from "@exangelos/domain"
+import type { Event, Ids, Connector } from "@exangelos/domain"
 
 export type Verdict = "continue" | "stop"
 
-/** What the subscription half offers the plugin half. */
+/** What the subscription half offers the connector half. */
 export class SubscriptionIntake extends Context.Service<SubscriptionIntake, {
   /**
    * Applies one Watch item to the subscription through `Intake.admit` and `Lifecycle.backlog`:
@@ -14,17 +14,17 @@ export class SubscriptionIntake extends Context.Service<SubscriptionIntake, {
    */
   readonly ingest: (subscription: Ids.SubscriptionId, item: Event.WatchItem) => Effect.Effect<Verdict>
   /**
-   * The plugin record after a change to its availability, and again once its unavailable time
-   * reaches `limits.unavailableBeforeWake`. Each active subscription of the plugin sends the one
+   * The connector record after a change to its availability, and again once its unavailable time
+   * reaches `limits.unavailableBeforeWake`. Each active subscription of the connector sends the one
    * suspended wake when `Lifecycle.suspensionWake` says so, and an undelivered suspended wake is
    * dropped once `Delivery.hasSomethingToSay` no longer holds.
    */
-  readonly pluginChanged: (plugin: Plugin.Plugin) => Effect.Effect<void>
+  readonly connectorChanged: (connector: Connector.Connector) => Effect.Effect<void>
   /**
-   * A plugin whose record was removed, by a removal or a dev unlink. It counts as unavailable from
-   * `since`: the plugin's `unavailableSince` when it was already unavailable, the removal time
+   * A connector whose record was removed, by a removal or a dev unlink. It counts as unavailable from
+   * `since`: the connector's `unavailableSince` when it was already unavailable, the removal time
    * otherwise. Called once on removal and again once `since` plus `limits.unavailableBeforeWake`
    * has passed, also after a daemon restart, so a repeat with the same `since` must store nothing new.
    */
-  readonly pluginRemoved: (plugin: Ids.PluginName, since: DateTime.Utc, problem: string) => Effect.Effect<void>
+  readonly connectorRemoved: (connector: Ids.ConnectorName, since: DateTime.Utc, problem: string) => Effect.Effect<void>
 }>()("@exangelos/application/SubscriptionIntake") {}

@@ -25,12 +25,12 @@ const client = (home: string) =>
   DaemonClient.layer.pipe(Layer.provide(Layer.effect(Socket.Socket, BunSocket.makeNet({ path: `${home}/daemon.sock` }))))
 
 describe("panel client against the real daemon", () => {
-  it.live("loads the plugins of an empty home", () =>
+  it.live("loads the connectors of an empty home", () =>
     withHome((home) =>
       Effect.gen(function*() {
         const state = yield* Panel.fromLoad(DaemonClient.snapshot)
         if (state._tag !== "Ready") return expect.fail(state._tag)
-        expect(Result.getOrThrow(state.plugins)).toEqual([])
+        expect(Result.getOrThrow(state.connectors)).toEqual([])
         expect(Result.getOrThrow(state.needsYou)).toEqual([])
       }).pipe(Effect.provide(client(home).pipe(Layer.provideMerge(daemon(home)))))
     ))

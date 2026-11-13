@@ -9,7 +9,7 @@ const at = DateTime.makeUnsafe("2026-11-12T09:00:00Z")
 
 export const existing: Subscription.Subscription = {
   id: Ids.SubscriptionId.make("sub_7f3k"),
-  plugin: Ids.PluginName.make("github-pr"),
+  connector: Ids.ConnectorName.make("github-pr"),
   parameters: { pr: "acme/app#123" },
   subject: "acme/app#123",
   label: "acme/app#123",
@@ -26,7 +26,7 @@ export const existing: Subscription.Subscription = {
 const notFaked = () => Effect.fail(new DaemonContract.InvalidRequest({ message: "not faked" }))
 
 export const handlers = DaemonContract.AgentGroup.toLayer({
-  ListPlugins: () => Effect.succeed([]),
+  ListConnectors: () => Effect.succeed([]),
   Subscribe: (payload, { headers }) =>
     payload.parameters["pr"] === existing.parameters["pr"] && payload.similarOk.length === 0
       ? Effect.fail(new DaemonContract.SimilarSubscriptions({ similar: [existing] }))
@@ -47,7 +47,7 @@ export const handlers = DaemonContract.AgentGroup.toLayer({
   Wait: ({ id }) =>
     Effect.succeed({
       subscription: id,
-      plugin: "github-pr",
+      connector: "github-pr",
       subject: "acme/app#123",
       why: { _tag: "Events" as const },
       pending: [
@@ -78,4 +78,4 @@ export const mcpClient = (agentClient: Layer.Layer<AgentClient.AgentClient>) =>
     { protocols: [McpProtocol.v2025_11_25] }
   )
 
-export const subscribeInput = { plugin: "github-pr", parameters: { pr: "acme/app#123" }, intent: "review comments" }
+export const subscribeInput = { connector: "github-pr", parameters: { pr: "acme/app#123" }, intent: "review comments" }

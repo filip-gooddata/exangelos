@@ -27,7 +27,7 @@ const pauseText = (reason: Subscription.PauseReason, pending: ReadonlyArray<Wake
 }
 
 const endText = (reason: Subscription.EndReason): string =>
-  reason._tag === "MaxEvents" ? "It reached its number of events." : `The plugin ended it: ${reason.reason}`
+  reason._tag === "MaxEvents" ? "It reached its number of events." : `The connector ended it: ${reason.reason}`
 
 const table = (rows: ReadonlyArray<readonly [string, string]>, indent: string, gap: number): Array<string> => {
   const width = Math.max(...rows.map(([left]) => left.length)) + gap
@@ -36,7 +36,7 @@ const table = (rows: ReadonlyArray<readonly [string, string]>, indent: string, g
 
 export const render = (content: Wake.WakeContent): string => {
   const { pending, subscription: id } = content
-  const where = `(${content.plugin}, ${content.subject})`
+  const where = `(${content.connector}, ${content.subject})`
   const through = pending.at(-1)?.number
   const read: readonly [string, string] = ["Read", `${command} events ${id}`]
   const ack: ReadonlyArray<readonly [string, string]> = through === undefined
@@ -71,7 +71,7 @@ export const render = (content: Wake.WakeContent): string => {
     case "Suspended":
       lines.push(
         `${id} is suspended ${where}`,
-        `${content.plugin} has been unavailable since ${DateTime.formatIso(why.since)}: ${why.problem}. It continues by itself when the plugin returns.`
+        `${content.connector} has been unavailable since ${DateTime.formatIso(why.since)}: ${why.problem}. It continues by itself when the connector returns.`
       )
       commands = through === undefined ? [] : [read, ...ack]
       break

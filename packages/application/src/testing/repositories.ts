@@ -1,15 +1,15 @@
 import { DateTime, Effect, Layer, Option, Ref } from "effect"
-import type { Catalogue, Event, Ids, Plugin, Subscription, Wake } from "@exangelos/domain"
+import type { Catalogue, Event, Ids, Connector, Subscription, Wake } from "@exangelos/domain"
 import { Delivery, Session } from "@exangelos/domain"
 import { EventRepository } from "../ports/EventRepository.ts"
-import { PluginRepository, type PluginChange } from "../ports/PluginRepository.ts"
+import { ConnectorRepository, type ConnectorChange } from "../ports/ConnectorRepository.ts"
 import { SubscriptionRepository } from "../ports/SubscriptionRepository.ts"
 import { WakeRepository } from "../ports/WakeRepository.ts"
 
 interface Store {
-  readonly plugins: ReadonlyMap<Ids.PluginName, Plugin.Plugin>
-  readonly values: ReadonlyMap<Ids.PluginName, Catalogue.ConfigurationValues>
-  readonly pluginChanges: ReadonlyArray<PluginChange>
+  readonly connectors: ReadonlyMap<Ids.ConnectorName, Connector.Connector>
+  readonly values: ReadonlyMap<Ids.ConnectorName, Catalogue.ConfigurationValues>
+  readonly connectorChanges: ReadonlyArray<ConnectorChange>
   readonly subscriptions: ReadonlyMap<Ids.SubscriptionId, Subscription.Subscription>
   readonly changes: ReadonlyArray<Subscription.Change>
   readonly events: ReadonlyArray<Event.Event>
@@ -17,9 +17,9 @@ interface Store {
 }
 
 const empty: Store = {
-  plugins: new Map(),
+  connectors: new Map(),
   values: new Map(),
-  pluginChanges: [],
+  connectorChanges: [],
   subscriptions: new Map(),
   changes: [],
   events: [],
@@ -37,29 +37,29 @@ const withoutEntry = <K, V>(map: ReadonlyMap<K, V>, key: K): ReadonlyMap<K, V> =
 
 /** The four repositories over one in-memory store, so writes that span them stay consistent. */
 export const layerRepositories: Layer.Layer<
-  PluginRepository | SubscriptionRepository | EventRepository | WakeRepository
+  ConnectorRepository | SubscriptionRepository | EventRepository | WakeRepository
 > = Layer.unwrap(Effect.gen(function*() {
   const store = yield* Ref.make(empty)
   const read = <A>(f: (store: Store) => A) => Effect.map(Ref.get(store), f)
   const write = (f: (store: Store) => Store) => Ref.update(store, f)
 
-  const plugins = Layer.succeed(PluginRepository, {
-    find: (name) => read((s) => Option.fromNullishOr(s.plugins.get(name))),
-    list: read((s) => [...s.plugins.values()].sort((a, b) => a.name.localeCompare(b.name))),
-    store: (plugin, change) =>
+  const connectors = Layer.succeed(ConnectorRepository, {
+    find: (name) => read((s) => Option.fromNullishOr(s.connectors.get(name))),
+    list: read((s) => [...s.connectors.values()].sort((a, b) => a.name.localeCompare(b.name))),
+    store: (connector, change) =>
       write((s) => ({
         ...s,
-        plugins: withEntry(s.plugins, plugin.name, plugin),
-        pluginChanges: change === undefined ? s.pluginChanges : [...s.pluginChanges, change]
+        connectors: withEntry(s.connectors, connector.name, connector),
+        connectorChanges: change === undefined ? s.connectorChanges : [...s.connectorChanges, change]
       })),
     remove: (name, change) =>
       write((s) => ({
         ...s,
-        plugins: withoutEntry(s.plugins, name),
+        connectors: withoutEntry(s.connectors, name),
         values: withoutEntry(s.values, name),
-        pluginChanges: [...s.pluginChanges, change]
+        connectorChanges: [...s.connectorChanges, change]
       })),
-    changes: (name) => read((s) => s.pluginChanges.filter((change) => change.plugin === name)),
+    changes: (name) => read((s) => s.connectorChanges.filter((change) => change.connector === name)),
     values: (name) => read((s) => s.values.get(name) ?? {}),
     storeValues: (name, values) => write((s) => ({ ...s, values: withEntry(s.values, name, values) }))
   })
@@ -70,7 +70,7 @@ export const layerRepositories: Layer.Layer<
       read((s) =>
         [...s.subscriptions.values()].filter((subscription) =>
           (filter.states === undefined || filter.states.includes(subscription.state._tag)) &&
-          (filter.plugin === undefined || filter.plugin === subscription.plugin) &&
+          (filter.connector === undefined || filter.connector === subscription.connector) &&
           (filter.target === undefined ||
             (subscription.wakeTarget !== undefined && Session.sameSession(filter.target, subscription.wakeTarget)))
         ).sort((a, b) => DateTime.toEpochMillis(a.createdAt) - DateTime.toEpochMillis(b.createdAt))
@@ -133,5 +133,5 @@ export const layerRepositories: Layer.Layer<
     listUndelivered: read((s) => s.wakes.filter(Delivery.isUndelivered))
   })
 
-  return Layer.mergeAll(plugins, subscriptions, events, wakes)
+  return Layer.mergeAll(connectors, subscriptions, events, wakes)
 }))

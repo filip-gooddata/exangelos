@@ -25,11 +25,11 @@ const expiryText = (now: number, subscription: Subscription.Subscription): strin
     : Facts.ago(now, subscription.expiresAt)
 
 const factsSection = (h: H, model: Model, subscription: Subscription.Subscription, state: Ready): Html => {
-  const suspended = Facts.suspendedOn(subscription, Result.getOrElse(state.plugins, () => []))
+  const suspended = Facts.suspendedOn(subscription, Result.getOrElse(state.connectors, () => []))
   return h.section([h.Class("section subscription-facts")], [
     h.p([h.Class("state-sentence")], [Facts.stateSentence(model.now, subscription, suspended)]),
     fact(h, "Subscription", subscription.id, { mono: true }),
-    fact(h, "Connector", subscription.plugin),
+    fact(h, "Connector", subscription.connector),
     fact(h, "Subject", subscription.subject, { mono: true }),
     fact(h, "Label", subscription.label === "" ? "None" : subscription.label),
     fact(h, "Intent", subscription.intent),

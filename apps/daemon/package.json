@@ -17,10 +17,10 @@
     "@exangelos/paths": "workspace:*",
     "@exangelos/sqlite": "workspace:*",
     "@exangelos/secrets": "workspace:*",
-    "@exangelos/plugin-runtime": "workspace:*",
-    "@exangelos/plugin-directory": "workspace:*",
-    "@exangelos/plugin-import": "workspace:*",
-    "@exangelos/official-plugins": "workspace:*",
+    "@exangelos/connector-runtime": "workspace:*",
+    "@exangelos/connector-directory": "workspace:*",
+    "@exangelos/connector-import": "workspace:*",
+    "@exangelos/official-connectors": "workspace:*",
     "@exangelos/wake-targets": "workspace:*",
     "@exangelos/alerts": "workspace:*",
     "@exangelos/service": "workspace:*",
@@ -34,6 +34,6 @@
     "@types/bun": "catalog:",
     "@effect/vitest": "catalog:",
     "vitest": "catalog:",
-    "@exangelos/plugin-sdk": "workspace:*"
+    "@exangelos/connector-sdk": "workspace:*"
   }
 }

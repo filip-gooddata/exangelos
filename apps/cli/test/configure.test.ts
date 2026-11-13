@@ -12,19 +12,19 @@ afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
 const fake = "fake-value-7Q2"
 
-describe("plugin configure", () => {
-  it("reads a secret from a command and sends it only in ConfigurePlugin values", async () => {
+describe("connector configure", () => {
+  it("reads a secret from a command and sends it only in ConfigureConnector values", async () => {
     const result = await run(
-      ["plugin", "configure", "github-pr", "host=github.example", "--secret-command", "token=pass show github"],
+      ["connector", "configure", "github-pr", "host=github.example", "--secret-command", "token=pass show github"],
       { commandOutput: `${fake}\n` }
     )
     expect(result.exit._tag).toBe("Success")
     expect(result.ran).toEqual(["sh -c pass show github"])
-    expect(callOf(result, "ConfigurePlugin")?.payload).toEqual({
+    expect(callOf(result, "ConfigureConnector")?.payload).toEqual({
       name: "github-pr",
       values: { host: "github.example", token: fake }
     })
-    const elsewhere = result.calls.filter((call) => call.rpc !== "ConfigurePlugin")
+    const elsewhere = result.calls.filter((call) => call.rpc !== "ConfigureConnector")
     expect(JSON.stringify([result.stdout, result.stderr, elsewhere])).not.toContain(fake)
     expect(result.stdout).toBe("github-pr is configured.")
   })
@@ -32,17 +32,17 @@ describe("plugin configure", () => {
   it("reads a secret from a file", async () => {
     const file = join(directory, "token")
     writeFileSync(file, `${fake}\n`)
-    const result = await run(["plugin", "configure", "github-pr", "--secret-file", `token=${file}`])
+    const result = await run(["connector", "configure", "github-pr", "--secret-file", `token=${file}`])
     expect(result.exit._tag).toBe("Success")
-    expect(callOf(result, "ConfigurePlugin")?.payload).toEqual({ name: "github-pr", values: { token: fake } })
+    expect(callOf(result, "ConfigureConnector")?.payload).toEqual({ name: "github-pr", values: { token: fake } })
   })
 
-  it("keeps a secret the plugin echoes in its rejection out of the output", async () => {
+  it("keeps a secret the connector echoes in its rejection out of the output", async () => {
     const file = join(directory, "rejected")
     writeFileSync(file, fake)
-    const result = await run(["plugin", "configure", "github-pr", "--secret-file", `token=${file}`, "--json"], {
+    const result = await run(["connector", "configure", "github-pr", "--secret-file", `token=${file}`, "--json"], {
       handlers: {
-        ConfigurePlugin: () => Effect.fail(new DaemonContract.ConfigurationRejected({ reason: `bad token ${fake}` }))
+        ConfigureConnector: () => Effect.fail(new DaemonContract.ConfigurationRejected({ reason: `bad token ${fake}` }))
       }
     })
     expect(result.exit._tag).toBe("Failure")
@@ -56,20 +56,20 @@ describe("plugin configure", () => {
     const file = join(directory, "tag")
     writeFileSync(file, "Rejected")
     const handlers = {
-      ConfigurePlugin: () => Effect.fail(new DaemonContract.ConfigurationRejected({ reason: "Rejected by GitHub" }))
+      ConfigureConnector: () => Effect.fail(new DaemonContract.ConfigurationRejected({ reason: "Rejected by GitHub" }))
     }
-    const text = await run(["plugin", "configure", "github-pr", "--secret-file", `token=${file}`], { handlers })
+    const text = await run(["connector", "configure", "github-pr", "--secret-file", `token=${file}`], { handlers })
     expect(text.exit._tag).toBe("Failure")
-    expect(text.stderr).toContain("The plugin rejected the configuration: [secret] by GitHub.")
-    const json = await run(["plugin", "configure", "github-pr", "--secret-file", `token=${file}`, "--json"], { handlers })
+    expect(text.stderr).toContain("The connector rejected the configuration: [secret] by GitHub.")
+    const json = await run(["connector", "configure", "github-pr", "--secret-file", `token=${file}`, "--json"], { handlers })
     expect(JSON.parse(json.stdout)).toMatchObject({ error: { _tag: "ConfigurationRejected", reason: "[secret] by GitHub" } })
   })
 
   it("refuses a secret field given as key=value and sends nothing", async () => {
-    const result = await run(["plugin", "configure", "github-pr", `token=${fake}`])
+    const result = await run(["connector", "configure", "github-pr", `token=${fake}`])
     expect(result.exit._tag).toBe("Failure")
     expect(result.stderr).toContain("token is a secret field")
     expect(result.stderr).not.toContain(fake)
-    expect(callOf(result, "ConfigurePlugin")).toBeUndefined()
+    expect(callOf(result, "ConfigureConnector")).toBeUndefined()
   })
 })

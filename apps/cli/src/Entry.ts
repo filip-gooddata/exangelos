@@ -44,7 +44,7 @@ export const run = <R>(options: {
       Layer.launch(Server.layer({ version: options.version }).pipe(Layer.provide(AgentClient.layer(client))))).pipe(
         Command.withDescription("Serve the agent tools over MCP on stdio")
       )
-    const root = Root.make({ commands: [daemon, mcp], pluginCommands: [Scaffold.command] })
+    const root = Root.make({ commands: [daemon, mcp], connectorCommands: [Scaffold.command] })
     yield* Command.runWith(root, { version: options.version })(argv).pipe(Effect.provide(Connection.layer(client)))
   }).pipe(
     Effect.tapCause((cause) => {

@@ -1,6 +1,6 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Request } from "../state/Panel.ts"
-import { pluginInitials } from "./Facts.ts"
+import { connectorInitials } from "./Facts.ts"
 import { Message, type Model, type Screen } from "./Model.ts"
 
 export type H = HtmlBuilder<Message>
@@ -10,8 +10,8 @@ export const go = (screen: Screen) => Message.Navigated({ screen })
 
 export const when = (condition: boolean, render: () => Html): Html => (condition ? render() : null)
 
-export const pluginBadge = (h: H, name: string): Html =>
-  h.span([h.Class("badge-plugin"), h.AriaHidden(true)], [pluginInitials(name)])
+export const connectorBadge = (h: H, name: string): Html =>
+  h.span([h.Class("badge-connector"), h.AriaHidden(true)], [connectorInitials(name)])
 
 export const pill = (h: H, text: string, tone: "quiet" | "ember" = "quiet"): Html =>
   h.span([h.Class(`pill pill-${tone}`)], [text])
@@ -57,15 +57,15 @@ export const header = (h: H, model: Model, title: string): Html =>
     h.span([h.Class("bar-spacer")], [])
   ])
 
-const backFrom = (screen: Screen): Screen => (screen._tag === "Plugin" ? { _tag: "Plugins" } : { _tag: "Main" })
+const backFrom = (screen: Screen): Screen => (screen._tag === "Connector" ? { _tag: "Connectors" } : { _tag: "Main" })
 
 const confirmText = (request: Request): string => {
   switch (request._tag) {
     case "Cancel":
       return "Cancel this subscription? It closes for good, and the agent hears no more about its subject."
-    case "RemovePlugin":
+    case "RemoveConnector":
       return `Remove ${request.name}? You would have to import it again to use it.`
-    case "DisablePlugin":
+    case "DisableConnector":
       return `Disable ${request.name}? It stops running, and its subscriptions wait until you enable it again.`
     default:
       return "Go ahead?"
@@ -73,7 +73,7 @@ const confirmText = (request: Request): string => {
 }
 
 const confirmLabel = (request: Request): string =>
-  request._tag === "Cancel" ? "Cancel subscription" : request._tag === "RemovePlugin" ? "Remove" : "Disable"
+  request._tag === "Cancel" ? "Cancel subscription" : request._tag === "RemoveConnector" ? "Remove" : "Disable"
 
 /** The refusal or the confirmation that sits above a screen's actions. */
 export const notices = (h: H, model: Model): ReadonlyArray<Html> => [

@@ -1,5 +1,5 @@
 import { DateTime, Duration } from "effect"
-import type { Event, Plugin, Session, Subscription } from "../src/index.ts"
+import type { Event, Connector, Session, Subscription } from "../src/index.ts"
 import { Ids, Limits } from "../src/index.ts"
 
 export const limits = Limits.defaults
@@ -14,8 +14,8 @@ export const start = at("2026-11-01T10:00:00Z")
 export const alice: Session.Session = { harness: "t3", sessionId: "thread-alice" }
 export const bob: Session.Session = { harness: "codex", sessionId: "bob" }
 
-export const plugin = (overrides: Partial<Plugin.Plugin> = {}): Plugin.Plugin => ({
-  name: Ids.PluginName.make("github-pr"),
+export const connector = (overrides: Partial<Connector.Connector> = {}): Connector.Connector => ({
+  name: Ids.ConnectorName.make("github-pr"),
   version: "1.0.0",
   origin: { _tag: "ArchiveFile", path: "/tmp/github-pr.tgz" },
   digest: "sha256-a",
@@ -27,7 +27,7 @@ export const plugin = (overrides: Partial<Plugin.Plugin> = {}): Plugin.Plugin =>
 
 export const subscription = (overrides: Partial<Subscription.Subscription> = {}): Subscription.Subscription => ({
   id: Ids.SubscriptionId.make("sub_7f3k"),
-  plugin: Ids.PluginName.make("github-pr"),
+  connector: Ids.ConnectorName.make("github-pr"),
   parameters: { pr: "acme/app#123" },
   subject: "acme/app#123",
   label: "acme/app#123",

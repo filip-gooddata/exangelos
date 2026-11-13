@@ -1,5 +1,5 @@
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
-import type { Alert, Plugin, Settings, Subscription } from "@exangelos/domain"
+import type { Alert, Connector, Settings, Subscription } from "@exangelos/domain"
 import { Context, Effect, Layer, Predicate, Result, Schema } from "effect"
 import { type Rpc, RpcClient, RpcSerialization } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
@@ -43,7 +43,7 @@ export type ServiceStatus = Rpc.Success<typeof DaemonContract.ServiceStatus>
 export interface Snapshot {
   readonly subscriptions: Section<ReadonlyArray<Subscription.Subscription>>
   readonly details: Section<ReadonlyArray<Detail>>
-  readonly plugins: Section<ReadonlyArray<Plugin.Plugin>>
+  readonly connectors: Section<ReadonlyArray<Connector.Connector>>
   readonly trustAlerts: Section<ReadonlyArray<Alert.Alert>>
   readonly settings: Section<Settings.Settings>
   readonly status: Section<ServiceStatus>
@@ -108,15 +108,15 @@ const listed = (client: DaemonClient["Service"]) =>
         )
     }))
 
-/** Loads every subscription, closed ones included, with the details of each, the plugins with their trust alerts, the settings and the service status. A call that fails or that the daemon answers with a defect fails only its own section; the details fail with the first failing `Show`, or with `List`. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */
+/** Loads every subscription, closed ones included, with the details of each, the connectors with their trust alerts, the settings and the service status. A call that fails or that the daemon answers with a defect fails only its own section; the details fail with the first failing `Show`, or with `List`. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */
 export const snapshot: Effect.Effect<Snapshot, DaemonNotRunning, DaemonClient> = Effect.flatMap(
   DaemonClient,
   (client) =>
     Effect.map(
       Effect.all({
         listed: listed(client),
-        plugins: section("ListPlugins", client.ListPlugins()),
-        trustAlerts: section("ListPluginAlerts", client.ListPluginAlerts()),
+        connectors: section("ListConnectors", client.ListConnectors()),
+        trustAlerts: section("ListConnectorAlerts", client.ListConnectorAlerts()),
         settings: section("GetSettings", client.GetSettings()),
         status: section("ServiceStatus", client.ServiceStatus())
       }, { concurrency: "unbounded" }),

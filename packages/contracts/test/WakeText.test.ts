@@ -5,7 +5,7 @@ import { WakeText } from "@exangelos/contracts"
 
 const base = {
   subscription: Ids.SubscriptionId.make("sub_7f3k"),
-  plugin: "github-pr",
+  connector: "github-pr",
   subject: "acme/app#123"
 }
 

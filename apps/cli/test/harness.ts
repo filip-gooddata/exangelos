@@ -6,7 +6,7 @@ import { ChildProcessSpawner } from "effect/process"
 import { type Rpc, type RpcGroup, RpcServer, RpcTest } from "effect/rpc"
 import { TestConsole } from "effect/testing"
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
-import { Catalogue, Ids, Plugin, Subscription } from "@exangelos/domain"
+import { Catalogue, Ids, Connector, Subscription } from "@exangelos/domain"
 import { DaemonClient, DaemonServer } from "@exangelos/daemon-client"
 import * as Connection from "../src/commands/Connection.ts"
 import * as Root from "../src/commands/Root.ts"
@@ -15,7 +15,7 @@ const at = DateTime.makeUnsafe("2026-11-12T10:00:00Z")
 
 export const subscription = (overrides: Partial<Subscription.Subscription> = {}): Subscription.Subscription => ({
   id: Ids.SubscriptionId.make("sub_7f3k"),
-  plugin: Ids.PluginName.make("github-pr"),
+  connector: Ids.ConnectorName.make("github-pr"),
   parameters: { pr: "acme/app#123" },
   subject: "acme/app#123",
   label: "acme/app#123",
@@ -40,8 +40,8 @@ const catalogue: Catalogue.Catalogue = {
   ]
 }
 
-export const plugin: Plugin.Plugin = {
-  name: Ids.PluginName.make("github-pr"),
+export const connector: Connector.Connector = {
+  name: Ids.ConnectorName.make("github-pr"),
   version: "1.0.0",
   origin: { _tag: "Official", version: "1.0.0" },
   digest: "sha256-abc",
@@ -60,7 +60,7 @@ export interface Call {
 type HandlerMap = RpcGroup.HandlersFrom<RpcGroup.Rpcs<DaemonContract.DaemonContract>>
 
 const defaults = {
-  ListPlugins: () => Effect.succeed([plugin]),
+  ListConnectors: () => Effect.succeed([connector]),
   Subscribe: () => Effect.succeed(subscription()),
   Update: () => Effect.succeed(subscription()),
   List: () => Effect.succeed([subscription()]),
@@ -70,7 +70,7 @@ const defaults = {
   Wait: () =>
     Effect.succeed({
       subscription: Ids.SubscriptionId.make("sub_7f3k"),
-      plugin: "github-pr",
+      connector: "github-pr",
       subject: "acme/app#123",
       why: { _tag: "Events" as const },
       pending: [{ number: 4, type: "checks.failed", summary: "build failed" }]
@@ -80,14 +80,14 @@ const defaults = {
   Resume: () => Effect.succeed(subscription()),
   Retarget: () => Effect.succeed(subscription()),
   Cancel: () => Effect.succeed(subscription({ state: { _tag: "Cancelled", actor: { _tag: "You" } } })),
-  ImportPlugin: () => Effect.succeed({ ...plugin, trust: "inert" as const }),
-  EnablePlugin: () => Effect.succeed(plugin),
-  DisablePlugin: () => Effect.succeed({ ...plugin, trust: "inert" as const }),
-  RemovePlugin: () => Effect.void,
-  ConfigurePlugin: () => Effect.succeed(plugin),
-  DevLink: () => Effect.succeed(plugin),
+  ImportConnector: () => Effect.succeed({ ...connector, trust: "inert" as const }),
+  EnableConnector: () => Effect.succeed(connector),
+  DisableConnector: () => Effect.succeed({ ...connector, trust: "inert" as const }),
+  RemoveConnector: () => Effect.void,
+  ConfigureConnector: () => Effect.succeed(connector),
+  DevLink: () => Effect.succeed(connector),
   DevUnlink: () => Effect.void,
-  ListPluginAlerts: () => Effect.succeed([]),
+  ListConnectorAlerts: () => Effect.succeed([]),
   GetSettings: () => Effect.die("unused"),
   SetSettings: () => Effect.die("unused"),
   ServiceStatus: () => Effect.succeed({ version: "0.1.0", startMethod: "foreground" as const }),

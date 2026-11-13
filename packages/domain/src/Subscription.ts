@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { Parameters } from "./Catalogue.ts"
-import { AckedThrough, EventType, PluginName, SubscriptionId } from "./Ids.ts"
+import { AckedThrough, EventType, ConnectorName, SubscriptionId } from "./Ids.ts"
 import { Actor, Session } from "./Session.ts"
 
 export const PauseReason = Schema.TaggedUnion({
@@ -11,7 +11,7 @@ export const PauseReason = Schema.TaggedUnion({
 export type PauseReason = typeof PauseReason.Type
 
 export const EndReason = Schema.TaggedUnion({
-  Plugin: { reason: Schema.String },
+  Connector: { reason: Schema.String },
   MaxEvents: {}
 })
 export type EndReason = typeof EndReason.Type
@@ -27,7 +27,7 @@ export type State = typeof State.Type
 
 export const Subscription = Schema.Struct({
   id: SubscriptionId,
-  plugin: PluginName,
+  connector: ConnectorName,
   parameters: Parameters,
   subject: Schema.NonEmptyString,
   label: Schema.String,

@@ -5,7 +5,7 @@ import { PanelState, type Refusal, type Request } from "../state/Panel.ts"
 import { main } from "./Main.ts"
 import { initial, makeUpdate, Message, Model, type Screen } from "./Model.ts"
 import type { H } from "./Parts.ts"
-import { plugin, plugins } from "./Plugins.ts"
+import { connector, connectors } from "./Connectors.ts"
 import { settings } from "./Settings.ts"
 import { subscription } from "./Subscription.ts"
 
@@ -27,10 +27,10 @@ const screen = (h: H, model: Model): ReadonlyArray<Html> => {
       return main(h, model)
     case "Subscription":
       return subscription(h, model, model.screen.id)
-    case "Plugins":
-      return plugins(h, model)
-    case "Plugin":
-      return plugin(h, model, model.screen.name)
+    case "Connectors":
+      return connectors(h, model)
+    case "Connector":
+      return connector(h, model, model.screen.name)
     case "Settings":
       return settings(h, model)
   }

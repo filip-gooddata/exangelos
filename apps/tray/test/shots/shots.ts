@@ -13,9 +13,9 @@ const shots: Record<string, Shot> = {
   "main-quiet": { state: Fixtures.quiet, screen: { _tag: "Main" } },
   "main-needs-you": { state: Fixtures.needsYou, screen: { _tag: "Main" } },
   subscription: { state: Fixtures.needsYou, screen: { _tag: "Subscription", id: "sub_7f3k" } },
-  plugins: { state: Fixtures.needsYou, screen: { _tag: "Plugins" } },
-  enable: { state: Fixtures.needsYou, screen: { _tag: "Plugin", name: Fixtures.inertPlugin.name } },
-  "jira-rejected": { state: Fixtures.needsYou, screen: { _tag: "Plugin", name: "jira" } },
+  connectors: { state: Fixtures.needsYou, screen: { _tag: "Connectors" } },
+  enable: { state: Fixtures.needsYou, screen: { _tag: "Connector", name: Fixtures.inertConnector.name } },
+  "jira-rejected": { state: Fixtures.needsYou, screen: { _tag: "Connector", name: "jira" } },
   settings: { state: Fixtures.quiet, screen: { _tag: "Settings" } },
   empty: { state: Fixtures.empty, screen: { _tag: "Main" } }
 }

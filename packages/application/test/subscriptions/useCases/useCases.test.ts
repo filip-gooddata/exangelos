@@ -3,8 +3,8 @@ import { DateTime, Duration, Effect, Fiber, Option, Result } from "effect"
 import { TestClock } from "effect/testing"
 import { Ids } from "@exangelos/domain"
 import type { Catalogue, Event, Session, Subscription } from "@exangelos/domain"
-import { PluginAccessFake } from "@exangelos/application/testing"
-import { PluginRepository } from "../../../src/ports/PluginRepository.ts"
+import { ConnectorAccessFake } from "@exangelos/application/testing"
+import { ConnectorRepository } from "../../../src/ports/ConnectorRepository.ts"
 import { SubscriptionIntake } from "../../../src/seam/SubscriptionIntake.ts"
 import { type Filter, SubscriptionRepository } from "../../../src/ports/SubscriptionRepository.ts"
 import { WakeRepository } from "../../../src/ports/WakeRepository.ts"
@@ -20,7 +20,7 @@ import {
   update,
   wait
 } from "../../../src/subscriptions/useCases/index.ts"
-import { catalogue, plugin } from "../../fixtures.ts"
+import { catalogue, connector } from "../../fixtures.ts"
 import { layer as layerWithIntake } from "../daemon/support.ts"
 import { layerHarness } from "../harness.ts"
 
@@ -28,11 +28,11 @@ const own: Session.Session = { harness: "t3", sessionId: "own" }
 const other: Session.Session = { harness: "codex", sessionId: "other" }
 const ownActor: Session.Actor = { _tag: "Session", session: own }
 const otherActor: Session.Actor = { _tag: "Session", session: other }
-const prs = Ids.PluginName.make("github-pr")
+const prs = Ids.ConnectorName.make("github-pr")
 
 const setup = Effect.gen(function*() {
-  yield* (yield* PluginRepository).store(plugin("github-pr"))
-  yield* (yield* PluginAccessFake).define(prs, {
+  yield* (yield* ConnectorRepository).store(connector("github-pr"))
+  yield* (yield* ConnectorAccessFake).define(prs, {
     catalogue,
     describe: (parameters: Catalogue.Parameters) =>
       Effect.succeed({ catalogue, parameters, subject: `pr ${String(parameters.pr)}`, label: "PR" })
@@ -40,7 +40,7 @@ const setup = Effect.gen(function*() {
 })
 
 const request = (overrides: Partial<SubscribeRequest> = {}): SubscribeRequest => ({
-  plugin: prs,
+  connector: prs,
   parameters: { pr: 7 },
   intent: "Merge once CI is green",
   target: { _tag: "Caller" },
@@ -94,7 +94,7 @@ describe("subscription use cases", () => {
         wakeTarget: own,
         subject: "pr 7"
       })
-      expect(yield* (yield* PluginAccessFake).watched).toEqual([subscription.id])
+      expect(yield* (yield* ConnectorAccessFake).watched).toEqual([subscription.id])
       const changes = yield* (yield* SubscriptionRepository).changes(subscription.id)
       expect(changes.map((change) => [change.kind, change.actor])).toEqual([["create", ownActor]])
     }).pipe(Effect.provide(layerHarness)))
@@ -164,12 +164,12 @@ describe("subscription use cases", () => {
       expect(yield* wakeReasons(subscription.id)).toEqual([])
     }).pipe(Effect.provide(layerHarness)))
 
-  it.effect("wait reports a plugin outage that began while waiting once it lasted long enough", () =>
+  it.effect("wait reports a connector outage that began while waiting once it lasted long enough", () =>
     Effect.gen(function*() {
       const subscription = yield* subscribed({ target: { _tag: "PullOnly" } })
       const waiting = yield* Effect.forkChild(wait(ownActor, { id: subscription.id }))
       yield* TestClock.adjust(Duration.minutes(5))
-      yield* (yield* PluginRepository).store({ ...plugin("github-pr"), process: "failing", unavailableSince: yield* DateTime.now })
+      yield* (yield* ConnectorRepository).store({ ...connector("github-pr"), process: "failing", unavailableSince: yield* DateTime.now })
       yield* TestClock.adjust(Duration.minutes(30))
       expect(waiting.pollUnsafe()).toBeUndefined()
       yield* TestClock.adjust(Duration.minutes(31))
@@ -177,18 +177,18 @@ describe("subscription use cases", () => {
       expect((yield* Fiber.join(waiting)).why).toMatchObject({ _tag: "Suspended", problem: "it keeps failing" })
     }).pipe(Effect.provide(layerHarness)))
 
-  it.effect("wait reports a removed plugin once it has been gone long enough", () =>
+  it.effect("wait reports a removed connector once it has been gone long enough", () =>
     Effect.gen(function*() {
       const subscription = yield* subscribed({ target: { _tag: "PullOnly" } })
       const now = yield* DateTime.now
-      yield* (yield* SubscriptionIntake).pluginRemoved(prs, now, "the plugin was removed")
-      yield* (yield* PluginRepository).remove(prs, { plugin: prs, kind: "remove", actor: ownActor, at: now })
+      yield* (yield* SubscriptionIntake).connectorRemoved(prs, now, "the connector was removed")
+      yield* (yield* ConnectorRepository).remove(prs, { connector: prs, kind: "remove", actor: ownActor, at: now })
       const waiting = yield* Effect.forkChild(wait(ownActor, { id: subscription.id }))
       yield* TestClock.adjust(Duration.minutes(59))
       expect(waiting.pollUnsafe()).toBeUndefined()
       yield* TestClock.adjust(Duration.minutes(2))
 
-      expect((yield* Fiber.join(waiting)).why).toMatchObject({ _tag: "Suspended", problem: "the plugin was removed" })
+      expect((yield* Fiber.join(waiting)).why).toMatchObject({ _tag: "Suspended", problem: "the connector was removed" })
     }).pipe(Effect.provide(layerWithIntake)))
 
   it.effect("only you turn event alerts on or off, and each change names you", () =>
@@ -218,7 +218,7 @@ describe("subscription use cases", () => {
 
       expect(yield* wakeReasons(mine.id)).toEqual([])
       expect(yield* wakeReasons(theirs.id)).toEqual(["paused"])
-      expect(yield* (yield* PluginAccessFake).watched).toEqual([])
+      expect(yield* (yield* ConnectorAccessFake).watched).toEqual([])
     }).pipe(Effect.provide(layerHarness)))
 
   it.effect("resume sets a fresh expiry and watches again from the kept cursor", () =>
@@ -234,7 +234,7 @@ describe("subscription use cases", () => {
       expect(resumed.state._tag).toBe("Active")
       expect(resumed.cursor).toBe("c-41")
       expect(resumed.expiresAt).toEqual(DateTime.addDuration(now, Duration.days(7)))
-      expect(yield* (yield* PluginAccessFake).watched).toEqual([subscription.id])
+      expect(yield* (yield* ConnectorAccessFake).watched).toEqual([subscription.id])
     }).pipe(Effect.provide(layerHarness)))
 
   it.effect("resume is refused while the backlog is over the limit", () =>
@@ -259,7 +259,7 @@ describe("subscription use cases", () => {
       expect(yield* wakeReasons(theirs.id)).toEqual(["cancelled"])
     }).pipe(Effect.provide(layerHarness)))
 
-  it.effect("update is refused when the plugin reports another subject", () =>
+  it.effect("update is refused when the connector reports another subject", () =>
     Effect.gen(function*() {
       const subscription = yield* subscribed()
 

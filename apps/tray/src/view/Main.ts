@@ -1,11 +1,11 @@
-import type { Plugin, Subscription } from "@exangelos/domain"
+import type { Connector, Subscription } from "@exangelos/domain"
 import { Option, Result } from "effect"
 import type { Html } from "foldkit/html"
 import type { Detail } from "../daemon/DaemonClient.ts"
 import { bySession, type PanelState, Request } from "../state/Panel.ts"
 import * as Facts from "./Facts.ts"
 import { Message, type Model } from "./Model.ts"
-import { button, count, go, type H, mono, notices, pill, pluginBadge, when } from "./Parts.ts"
+import { button, count, go, type H, mono, notices, pill, connectorBadge, when } from "./Parts.ts"
 
 type Ready = Extract<PanelState, { _tag: "Ready" }>
 
@@ -24,19 +24,19 @@ const needsYouStrip = (h: H, model: Model, state: Ready): Html => {
   if (Result.isFailure(state.needsYou)) return failure(h, "what needs you", state.needsYou)
   const alerts = state.needsYou.success
   if (alerts.length === 0) return null
-  const plugins = loaded(state.plugins)
+  const connectors = loaded(state.connectors)
   const subscriptions = loaded(state.subscriptions)
   return h.section([h.Class("needs-you"), h.AriaLabel("Needs you")], [
     h.div([h.Class("needs-you-head")], [h.h2([], ["Needs you"]), count(h, alerts.length, "ember")]),
     ...alerts.map((alert) => {
-      const item = Facts.needsYouItem(model.now, alert, plugins, subscriptions)
+      const item = Facts.needsYouItem(model.now, alert, connectors, subscriptions)
       return h.div([h.Class("needs-you-item")], [
-        pluginBadge(h, item.plugin),
+        connectorBadge(h, item.connector),
         h.div([h.Class("needs-you-text")], [
           h.p([h.Class("line-main")], [item.title]),
           h.p([h.Class("line-quiet")], [item.detail])
         ]),
-        button(h, item.action, go({ _tag: "Plugin", name: item.plugin }), { tone: "ember" })
+        button(h, item.action, go({ _tag: "Connector", name: item.connector }), { tone: "ember" })
       ])
     })
   ])
@@ -53,9 +53,9 @@ const row = (
   model: Model,
   subscription: Subscription.Subscription,
   detail: Detail | undefined,
-  plugins: ReadonlyArray<Plugin.Plugin>
+  connectors: ReadonlyArray<Connector.Connector>
 ): Html => {
-  const suspended = Facts.suspendedOn(subscription, plugins)
+  const suspended = Facts.suspendedOn(subscription, connectors)
   const tag = Facts.stateTag(subscription, suspended !== undefined)
   const waiting = subscription.state._tag === "Expired" || subscription.state._tag === "Paused" || subscription.state._tag === "Active"
     ? Facts.retryingWake(detail)
@@ -71,7 +71,7 @@ const row = (
     h.Class("row"),
     h.OnClick(go({ _tag: "Subscription", id: subscription.id }))
   ], [
-    pluginBadge(h, subscription.plugin),
+    connectorBadge(h, subscription.connector),
     h.span([h.Class("row-body")], [
       h.span([h.Class("row-line")], [
         h.span([h.Class("row-label")], [subscription.label]),
@@ -89,7 +89,7 @@ const row = (
 
 const groups = (h: H, model: Model, state: Ready, open: ReadonlyArray<Subscription.Subscription>): ReadonlyArray<Html> => {
   const details = detailsById(state)
-  const plugins = loaded(state.plugins)
+  const connectors = loaded(state.connectors)
   return bySession(open).map((group) => {
     const waiting = group.subscriptions.map((s) => Facts.retryingWake(details.get(s.id))).find((w) => w !== undefined)
     const title = Option.match(group.wakeTarget, {
@@ -106,7 +106,7 @@ const groups = (h: H, model: Model, state: Ready, open: ReadonlyArray<Subscripti
           ? null
           : h.span([h.Class("group-quiet")], [`Not answering: ${waiting.attempts.count} attempts`])
       ]),
-      ...group.subscriptions.map((s) => row(h, model, s, details.get(s.id), plugins))
+      ...group.subscriptions.map((s) => row(h, model, s, details.get(s.id), connectors))
     ])
   })
 }
@@ -125,7 +125,7 @@ const closedList = (h: H, model: Model, closed: ReadonlyArray<Subscription.Subsc
           h.Class("row row-closed"),
           h.OnClick(go({ _tag: "Subscription", id: subscription.id }))
         ], [
-          pluginBadge(h, subscription.plugin),
+          connectorBadge(h, subscription.connector),
           h.span([h.Class("row-body")], [
             h.span([h.Class("row-line")], [mono(h, subscription.subject, "row-label")]),
             h.span([h.Class("row-intent")], [subscription.intent]),
@@ -146,14 +146,14 @@ const emptyState = (h: H): Html =>
     h.pre([h.Class("command mono")], [subscribeCommand])
   ])
 
-const pluginAlertCount = (state: PanelState): number =>
+const connectorAlertCount = (state: PanelState): number =>
   state._tag === "Ready" ? Result.getOrElse(Result.map(state.needsYou, (alerts) => alerts.length), () => 0) : 0
 
 export const footer = (h: H, model: Model): Html => {
-  const alerts = pluginAlertCount(model.state)
+  const alerts = connectorAlertCount(model.state)
   const version = model.state._tag === "Ready" && Result.isSuccess(model.state.status) ? model.state.status.success.version : null
   return h.footer([h.Class("bar bar-bottom")], [
-    h.button([h.Type("button"), h.Class("link"), h.OnClick(go({ _tag: "Plugins" }))], [
+    h.button([h.Type("button"), h.Class("link"), h.OnClick(go({ _tag: "Connectors" }))], [
       "Connectors",
       alerts > 0 ? count(h, alerts, "ember") : null
     ]),
