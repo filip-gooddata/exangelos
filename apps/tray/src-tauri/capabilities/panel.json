@@ -1,0 +1,14 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "panel",
+  "description": "The panel window may use the relay and the host commands, nothing else.",
+  "windows": ["panel"],
+  "permissions": [
+    "allow-relay-open",
+    "allow-relay-write",
+    "allow-relay-close",
+    "allow-tray-set-attention",
+    "allow-host-info",
+    "allow-host-smoke-report"
+  ]
+}

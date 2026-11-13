@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-relay-write"
+description = "Enables the relay_write command without any pre-configured scope."
+commands.allow = ["relay_write"]
+
+[[permission]]
+identifier = "deny-relay-write"
+description = "Denies the relay_write command without any pre-configured scope."
+commands.deny = ["relay_write"]
