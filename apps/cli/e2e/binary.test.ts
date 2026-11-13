@@ -444,8 +444,8 @@ describe("official plugins from a release address", () => {
     await copyFile(join(root, "tampered", archive("file-watch")), join(root, "release", archive("file-watch")))
   }, 30_000)
 
-  it("fetches each official plugin and runs its bundle for the catalogue", async () => {
-    // Without credentials neither github-pr nor jira gets past Configure, so neither reaches GitHub or Jira.
+  it("fetches github-pr and jira and runs each bundle up to its handshake catalogue", async () => {
+    // Without credentials neither gets past Configure, so neither reaches GitHub or Jira, and neither is asked to Describe.
     for (const [name, main, eventType] of [["github-pr", "o/r#1", "merge.ready"], ["jira", "project = E2E", "status.changed"]]) {
       const refused = run(exangelos, "subscribe", name!, main!, "--intent", "Catalogue only", "--pull-only")
       expect(refused.status).toBe(1)
@@ -462,7 +462,10 @@ describe("official plugins from a release address", () => {
   it("wakes once for a file event beside a template subscription, and switches event alerts", async () => {
     const drops = join(root, "drops")
     await mkdir(drops, { recursive: true })
-    const ticks = await mcpSubscribe({ ticks: 1 }, { pullOnly: true, similarOk: json("list").map((s: { id: string }) => s.id) })
+    await eventually(() =>
+      json("plugin", "configure", "template", "interval=500", "--secret-file", `token=${join(root, "token")}`)
+    )
+    const ticks = await mcpSubscribe({ ticks: 120 }, { pullOnly: true, similarOk: json("list").map((s: { id: string }) => s.id) })
     const subscribed = run(exangelos, "--json", "subscribe", "file-watch", join(drops, "*.txt"), "--intent", "Watch drops", "--target", "t3:e2e-files")
     expect(subscribed.status, subscribed.stdout + subscribed.stderr).toBe(0)
     const files = JSON.parse(subscribed.stdout) as { id: string }
@@ -471,23 +474,30 @@ describe("official plugins from a release address", () => {
     expect(json("alerts", files.id, "on")).toMatchObject({ id: files.id, eventAlerts: true })
     expect(json("show", files.id).subscription.eventAlerts).toBe(true)
 
-    await Bun.sleep(500)
-    await writeFile(join(drops, "one.txt"), "one")
-    const events = await eventually(() => {
+    const drop = join(drops, "one.txt")
+    const oneEvent = () => {
       const read = json("events", files.id)
       expect(read).toHaveLength(1)
       return read
-    })
-    expect(events[0]).toMatchObject({ type: "file.created", payload: { path: expect.stringMatching(/one\.txt$/) } })
-    const wakes = await eventually(async () => {
-      const blocks = (await readFile(join(root, "wakes.log"), "utf8")).split("thread send -- ").filter((block) => block.includes(files.id))
-      expect(blocks).toHaveLength(1)
-      return blocks
-    })
-    expect(wakes[0]!.startsWith("e2e-files -")).toBe(true)
+    }
+    await writeFile(drop, "one")
+    // The watcher's first scan takes the files it finds as its baseline. A file written before that scan
+    // raises nothing, so the test rewrites it once, which raises file.changed instead.
+    if (!(await eventually(oneEvent, 5_000).then(() => true, () => false))) await writeFile(drop, "one again")
+    const events = await eventually(oneEvent)
+    expect(events[0]).toMatchObject({ type: expect.stringMatching(/^file\.(created|changed)$/), payload: { path: expect.stringMatching(/one\.txt$/) } })
+    const wakesFor = async () =>
+      (await readFile(join(root, "wakes.log"), "utf8")).split("thread send -- ").filter((block) => block.includes(files.id))
+    await eventually(async () => expect(await wakesFor()).toHaveLength(1))
     await Bun.sleep(1_000)
+    const wakes = await wakesFor()
+    expect(wakes).toHaveLength(1)
+    expect(wakes[0]!.startsWith("e2e-files -")).toBe(true)
     expect(json("show", files.id).wakes).toHaveLength(1)
-    await eventually(() => expect(json("events", ticks.id)).toHaveLength(1))
+    const template = json("show", ticks.id)
+    expect(template.subscription.state._tag).not.toBe("Ended")
+    expect(template.events.length).toBeGreaterThan(0)
+    expect(run(exangelos, "cancel", ticks.id).status).toBe(0)
     const alerted = await eventually(async () => {
       const lines = (await readFile(join(root, "notifications.log"), "utf8")).split("\n").filter((line) => line.includes("one.txt"))
       expect(lines).toHaveLength(1)
@@ -503,6 +513,7 @@ describe("official plugins from a release address", () => {
     expect(await stop(daemon!)).toBe(true)
     daemon = undefined
     expect(Bun.spawnSync(["pgrep", "-f", join(home, "plugins")]).exitCode).toBe(1)
+    expect(pluginRuns()).toBe(false)
     expect(run(exangelos, "plugins").stderr.trim()).toMatch(noDaemon)
   }, 15_000)
 })
