@@ -30,5 +30,6 @@ export const layer = DaemonContract.DaemonContract.toLayer({
   DevUnlink: notImplemented("DevUnlink"),
   GetSettings: notImplemented("GetSettings"),
   SetSettings: notImplemented("SetSettings"),
-  ServiceStatus: notImplemented("ServiceStatus")
+  ServiceStatus: notImplemented("ServiceStatus"),
+  SetEventAlerts: notImplemented("SetEventAlerts")
 })

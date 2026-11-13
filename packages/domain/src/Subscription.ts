@@ -46,7 +46,7 @@ export const Subscription = Schema.Struct({
 })
 export type Subscription = typeof Subscription.Type
 
-export const ChangeKind = Schema.Literals(["create", "update", "ack", "pause", "resume", "retarget", "cancel"])
+export const ChangeKind = Schema.Literals(["create", "update", "ack", "pause", "resume", "retarget", "cancel", "eventAlerts"])
 export type ChangeKind = typeof ChangeKind.Type
 
 export const Change = Schema.Struct({

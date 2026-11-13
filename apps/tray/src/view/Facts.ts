@@ -97,7 +97,7 @@ export const stateFact = (now: number, subscription: Subscription.Subscription, 
     case "Ended":
       return state.reason._tag === "MaxEvents"
         ? `Ended ${ago(now, stateSince)} after its last allowed event`
-        : `Ended ${ago(now, stateSince)} by the plugin: ${state.reason.reason}`
+        : `Ended ${ago(now, stateSince)} by the connector: ${state.reason.reason}`
     case "Cancelled":
       return `Cancelled ${ago(now, stateSince)} by ${actorName(state.actor)}`
   }
@@ -166,8 +166,16 @@ const changeTitles: Record<Subscription.ChangeKind, string> = {
   pause: "Paused",
   resume: "Resumed",
   retarget: "Retargeted",
-  cancel: "Cancelled"
+  cancel: "Cancelled",
+  eventAlerts: "Event alerts"
 }
+
+const changeTitle = (change: Subscription.Change): string =>
+  change.kind === "eventAlerts"
+    ? `Event alerts turned ${change.detail === "on" ? "on" : "off"}`
+    : change.detail === undefined
+    ? changeTitles[change.kind]
+    : `${changeTitles[change.kind]}: ${change.detail}`
 
 export interface HistoryEntry {
   readonly title: string
@@ -179,7 +187,7 @@ export interface HistoryEntry {
 export const history = (detail: Detail): ReadonlyArray<HistoryEntry> =>
   [
     ...detail.changes.map((change): HistoryEntry => ({
-      title: change.detail === undefined ? changeTitles[change.kind] : `${changeTitles[change.kind]}: ${change.detail}`,
+      title: changeTitle(change),
       by: `By ${actorName(change.actor)}`,
       at: change.at
     })),
@@ -340,7 +348,7 @@ export const refusalText = (refusal: Refusal): string => {
     case "ImportFailed":
       return `The import failed: ${refusal.reason}`
     case "PluginNotFound":
-      return `The daemon has no plugin ${refusal.plugin}.`
+      return `The daemon has no connector ${refusal.plugin}.`
     case "PluginUnavailable":
       return `${refusal.plugin} is unavailable: ${refusal.problem}`
     case "DigestMismatch":
@@ -349,6 +357,8 @@ export const refusalText = (refusal: Refusal): string => {
       return `The configuration is not valid: ${refusal.reason}`
     case "ConfigurationRejected":
       return `The source rejected this configuration: ${refusal.reason}`
+    case "HumanRequired":
+      return "Only you can do this, from the tray app or the CLI, not an agent."
     case "DaemonNotRunning":
       return `The daemon is not running: ${refusal.message}`
     case "CallFailed":

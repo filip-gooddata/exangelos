@@ -39,6 +39,7 @@ export type Request = Data.TaggedEnum<{
   DisablePlugin: { readonly name: Ids.PluginName }
   RemovePlugin: { readonly name: Ids.PluginName }
   ConfigurePlugin: { readonly name: Ids.PluginName; readonly values: Catalogue.ConfigurationValues }
+  SetEventAlerts: { readonly id: Ids.SubscriptionId; readonly eventAlerts: boolean }
   SetSettings: { readonly settings: Settings.Settings }
   Quit: {}
 }>
@@ -57,6 +58,7 @@ export type Refusal =
   | DaemonContract.DigestMismatch
   | DaemonContract.ConfigurationInvalid
   | DaemonContract.ConfigurationRejected
+  | DaemonContract.HumanRequired
   | DaemonNotRunning
   | CallFailed
   | HostCommandFailed
@@ -75,6 +77,7 @@ export const act = (client: DaemonClient["Service"], quit: Effect.Effect<void, H
     DisablePlugin: ({ name }) => command(client.DisablePlugin({ name })),
     RemovePlugin: ({ name }) => command(client.RemovePlugin({ name })),
     ConfigurePlugin: ({ name, values }) => command(client.ConfigurePlugin({ name, values })),
+    SetEventAlerts: ({ eventAlerts, id }) => command(client.SetEventAlerts({ id, eventAlerts })),
     SetSettings: ({ settings }) => command(client.SetSettings({ settings })),
     Quit: () => quit
   })

@@ -154,7 +154,7 @@ export const footer = (h: H, model: Model): Html => {
   const version = model.state._tag === "Ready" && Result.isSuccess(model.state.status) ? model.state.status.success.version : null
   return h.footer([h.Class("bar bar-bottom")], [
     h.button([h.Type("button"), h.Class("link"), h.OnClick(go({ _tag: "Plugins" }))], [
-      "Plugins",
+      "Connectors",
       alerts > 0 ? count(h, alerts, "ember") : null
     ]),
     h.button([h.Type("button"), h.Class("link"), h.OnClick(go({ _tag: "Settings" }))], ["Settings"]),

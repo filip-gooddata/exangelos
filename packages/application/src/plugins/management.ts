@@ -8,6 +8,7 @@ import { SecretStore, type SecretStoreFailed } from "../ports/SecretStore.ts"
 import { ServiceManager } from "../ports/ServiceManager.ts"
 import { SettingsStore } from "../ports/SettingsStore.ts"
 import { PluginNotFound } from "../seam/PluginAccess.ts"
+import { setEventAlerts } from "../subscriptions/useCases/control.ts"
 import { PluginSupervisor } from "./PluginSupervisor.ts"
 import { redact } from "./redact.ts"
 
@@ -257,5 +258,6 @@ export const management = {
   DevUnlink: devUnlink,
   GetSettings: getSettings,
   SetSettings: setSettings,
-  ServiceStatus: serviceStatus
+  ServiceStatus: serviceStatus,
+  SetEventAlerts: setEventAlerts
 } as const

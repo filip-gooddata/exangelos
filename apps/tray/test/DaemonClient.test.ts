@@ -19,6 +19,7 @@ const handlers = (listDies: boolean, plugins: ReadonlyArray<ReturnType<typeof pl
       startMethod: "foreground"
     }),
   ListPlugins: () => Effect.succeed(plugins),
+  SetEventAlerts: unused,
   List: ({ all }) =>
     listDies
       ? Effect.die("NotImplemented: List")
