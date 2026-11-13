@@ -718,9 +718,27 @@ importers:
         specifier: 'catalog:'
         version: 0.170.0(@effect/platform-browser@4.1.4(effect@4.1.4))(effect@4.1.4)
     devDependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
+      '@exangelos/daemon':
+        specifier: workspace:*
+        version: link:../daemon
+      '@exangelos/daemon-client':
+        specifier: workspace:*
+        version: link:../../adapters/daemon-client
+      '@exangelos/paths':
+        specifier: workspace:*
+        version: link:../../adapters/paths
       '@tauri-apps/cli':
         specifier: 'catalog:'
         version: 2.12.4
+      vitest:
+        specifier: 'catalog:'
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
 
   gap/keychain:
     dependencies:

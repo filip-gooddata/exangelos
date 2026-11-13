@@ -8,7 +8,8 @@
   "scripts": {
     "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
     "build:web": "vite build",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "test": "bun run --bun vitest run"
   },
   "dependencies": {
     "@exangelos/contracts": "workspace:*",
@@ -20,6 +21,12 @@
     "@tauri-apps/api": "catalog:"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "catalog:"
+    "@effect/platform-bun": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@exangelos/daemon": "workspace:*",
+    "@exangelos/daemon-client": "workspace:*",
+    "@exangelos/paths": "workspace:*",
+    "@tauri-apps/cli": "catalog:",
+    "vitest": "catalog:"
   }
 }
