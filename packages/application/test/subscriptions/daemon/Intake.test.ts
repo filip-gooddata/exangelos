@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
 import { Ids } from "@exangelos/domain"
-import { PluginAccessFake, WakeTargetFake } from "@exangelos/application/testing"
+import { AlertSinkFake, PluginAccessFake, WakeTargetFake } from "@exangelos/application/testing"
 import { TestClock } from "effect/testing"
 import { PluginRepository } from "../../../src/ports/PluginRepository.ts"
 import { SubscriptionIntake } from "../../../src/seam/SubscriptionIntake.ts"
@@ -37,6 +37,20 @@ describe("SubscriptionIntake", () => {
       yield* intake.ingest(subscription.id, { _tag: "Event", event: reported("d") })
       yield* deliverDue
       expect(yield* pendingNumbers).toEqual([[1, 2], [1, 2, 3]])
+    }).pipe(Effect.provide(layer)))
+
+  it.effect("raises an event alert for a subscription with event alerts on while they are off globally", () =>
+    Effect.gen(function*() {
+      const intake = yield* SubscriptionIntake
+      const alerted = yield* seed({ eventAlerts: true })
+      const quiet = yield* seed()
+
+      yield* intake.ingest(alerted.id, { _tag: "Event", event: reported("a") })
+      yield* intake.ingest(quiet.id, { _tag: "Event", event: reported("b") })
+
+      const shown = yield* (yield* AlertSinkFake).shown
+      expect(shown.map((alert) => alert._tag === "Event" ? [alert.subscription, alert.event.dedupeKey] : alert._tag))
+        .toEqual([[alerted.id, "a"]])
     }).pipe(Effect.provide(layer)))
 
   it.effect("pauses at the backlog count with one paused wake and stops the stream", () =>

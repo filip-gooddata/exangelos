@@ -90,7 +90,8 @@ const defaults = {
   ListPluginAlerts: () => Effect.succeed([]),
   GetSettings: () => Effect.die("unused"),
   SetSettings: () => Effect.die("unused"),
-  ServiceStatus: () => Effect.succeed({ version: "0.1.0", startMethod: "foreground" as const })
+  ServiceStatus: () => Effect.succeed({ version: "0.1.0", startMethod: "foreground" as const }),
+  SetEventAlerts: () => Effect.die("unused")
 } satisfies HandlerMap
 
 export const daemonServer = (path: string) =>

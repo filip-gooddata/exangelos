@@ -126,6 +126,10 @@ export const layer = DaemonContract.DaemonContract.toLayer({
       Effect.catchTag("ServiceFailed", (e) =>
         Effect.as(Effect.logWarning("Service status unavailable", e.reason), e.method)),
       Effect.map((startMethod) => ({ version, startMethod }))
+    ),
+  SetEventAlerts: (payload, caller) =>
+    Subscriptions.setEventAlerts(actor(caller), payload).pipe(
+      Effect.catchTags({ ...lookup, HumanRequired: Errors.ownerOnlySubscription })
     )
 })
 

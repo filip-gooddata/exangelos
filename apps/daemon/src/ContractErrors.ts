@@ -7,7 +7,8 @@ import type {
   OfficialPluginSource,
   PluginAccess,
   PluginImportSource,
-  SubscriptionNotFound
+  SubscriptionNotFound,
+  Subscriptions
 } from "@exangelos/application"
 import { currentLimits, SubscriptionRepository } from "@exangelos/application"
 import { DaemonContract as Contract } from "@exangelos/contracts"
@@ -55,6 +56,9 @@ export const removedDuringImport = (_: Cause.NoSuchElementError) =>
   Effect.fail(new Contract.ImportFailed({ reason: "Another call removed the plugin while it was being imported." }))
 
 export const humanRequired = (e: HumanRequired) => Effect.fail(new Contract.HumanRequired({ plugin: e.plugin }))
+
+export const ownerOnlySubscription = (e: Subscriptions.HumanRequired) =>
+  Effect.fail(new Contract.HumanRequired({ subscription: e.subscription }))
 
 export const digestMismatch = (e: DigestMismatch) =>
   Effect.fail(new Contract.DigestMismatch({ plugin: e.plugin, expected: e.expected, actual: e.actual }))

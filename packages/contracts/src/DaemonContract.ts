@@ -289,6 +289,12 @@ export class ServiceStatus extends Rpc.make("ServiceStatus", {
   success: Schema.Struct({ version: Schema.String, startMethod: StartMethod })
 }) {}
 
+export class SetEventAlerts extends Rpc.make("SetEventAlerts", {
+  payload: { ...id, eventAlerts: Schema.Boolean },
+  success: Subscription.Subscription,
+  error: Schema.Union([SubscriptionNotFound, InvalidRequest, HumanRequired])
+}) {}
+
 export class ManagementGroup extends RpcGroup.make(
   ImportPlugin,
   EnablePlugin,
@@ -300,7 +306,8 @@ export class ManagementGroup extends RpcGroup.make(
   ListPluginAlerts,
   GetSettings,
   SetSettings,
-  ServiceStatus
+  ServiceStatus,
+  SetEventAlerts
 ) {}
 
 export const DaemonContract = AgentGroup.merge(ManagementGroup)
