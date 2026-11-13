@@ -52,6 +52,7 @@ export const event = <S extends Schema.Codec<any, any>>(
 
 /**
  * Declares the subscription parameters. Throws when `main` is not a required property of the object schema.
+ * The main parameter arrives as a string, so its schema must decode from one.
  */
 export const parameters = <S extends Schema.Codec<object, any>>(options: {
   readonly main: keyof S["Type"] & string

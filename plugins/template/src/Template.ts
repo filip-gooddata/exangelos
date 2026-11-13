@@ -8,7 +8,11 @@ export const tick = Catalogue.event("tick", {
 
 const parameters = Catalogue.parameters({
   main: "ticks",
-  schema: Schema.Struct({ ticks: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 1000 })) })
+  schema: Schema.Struct({
+    ticks: Schema.Union([Schema.Int, Schema.FiniteFromString.check(Schema.isInt())]).check(
+      Schema.isBetween({ minimum: 0, maximum: 1000 })
+    )
+  })
 })
 
 const Interval = Schema.FiniteFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))

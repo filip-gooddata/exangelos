@@ -31,6 +31,8 @@ describe("template plugin", () => {
         label: "3 ticks"
       })
       expect((yield* client.Describe({ parameters: { ticks: -1 } }))._tag).toBe("Invalid")
+      expect(yield* client.Describe({ parameters: { ticks: "3" } })).toMatchObject({ parameters: { ticks: 3 } })
+      expect((yield* client.Describe({ parameters: { ticks: "3.5" } }))._tag).toBe("Invalid")
     }).pipe(Effect.scoped))
 
   it.effect("emits the requested ticks and then ends", () =>
