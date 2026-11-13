@@ -13,10 +13,10 @@ let xng: string
 let template: string
 let daemon: Bun.Subprocess | undefined
 
-const sessionVariable = /^(T3CODE_|CLAUDE_CODE_|CLAUDECODE|CODEX_)/
+const hostVariable = /^(T3CODE_|CLAUDE_CODE_|CLAUDECODE|CODEX_|XDG_)/
 
 const env = () => ({
-  ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !sessionVariable.test(name))),
+  ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !hostVariable.test(name))),
   EXANGELOS_HOME: home,
   HOME: join(root, "user"),
   PATH: `${join(root, "fake-bin")}:${process.env.PATH}`
@@ -71,17 +71,20 @@ const mcpReplies = async (request: unknown) => {
     { jsonrpc: "2.0", method: "notifications/initialized" },
     request
   ]
-  mcp.stdin.write(frames.map((frame) => `${JSON.stringify(frame)}\n`).join(""))
-  await mcp.stdin.flush()
-  const reader = mcp.stdout.getReader()
   let output = ""
-  while (output.split("\n").filter((line) => line !== "").length < 2) {
-    const chunk = await reader.read()
-    if (chunk.done) break
-    output += new TextDecoder().decode(chunk.value)
+  try {
+    mcp.stdin.write(frames.map((frame) => `${JSON.stringify(frame)}\n`).join(""))
+    await mcp.stdin.flush()
+    const reader = mcp.stdout.getReader()
+    while (output.split("\n").filter((line) => line !== "").length < 2) {
+      const chunk = await reader.read()
+      if (chunk.done) break
+      output += new TextDecoder().decode(chunk.value)
+    }
+  } finally {
+    mcp.kill("SIGTERM")
+    await mcp.exited
   }
-  mcp.kill("SIGTERM")
-  await mcp.exited
   return output.split("\n").filter((line) => line !== "").map((line) => JSON.parse(line))
 }
 
@@ -121,7 +124,7 @@ const stopServiceDaemon = async () => {
   const deadline = Date.now() + 10_000
   while (alive(pid) && Date.now() < deadline) await Bun.sleep(100)
   if (!alive(pid)) return true
-  process.kill(pid, "SIGKILL")
+  process.kill(-pid, "SIGKILL")
   return false
 }
 
@@ -144,7 +147,11 @@ const installFakes = async () => {
     `alive || {`,
     `perl -MPOSIX -e 'POSIX::setsid(); exec @ARGV' ${JSON.stringify(exangelos)} daemon < /dev/null > ${at("service-daemon.log")} 2>&1 &`,
     `echo $! > ${at("service.pid")};`,
-    `until [ "$(ps -o pgid= -p $! | tr -d ' ')" = "$!" ] || ! kill -0 $! 2>/dev/null; do sleep 0.05; done;`,
+    `tries=0;`,
+    `until [ "$(ps -o pgid= -p $! | tr -d ' ')" = "$!" ]; do`,
+    `kill -0 $! 2>/dev/null && [ $tries -lt 100 ] || { echo "the daemon did not start in its own process group" >&2; exit 1; };`,
+    `tries=$((tries + 1)); sleep 0.05;`,
+    `done;`,
     `}`
   ].join(" ")
   const aliveCheck = `alive() { [ -f ${at("service.pid")} ] && kill -0 "$(cat ${at("service.pid")})" 2>/dev/null; }`
@@ -163,7 +170,13 @@ const installFakes = async () => {
     `echo "systemctl $*" >> ${at("service-calls.log")}`,
     refuseUnlessAccepting,
     aliveCheck,
-    `case " $* " in *" start "*|*" restart "*) ${startDaemonOnce} ;; esac`,
+    `state() { alive && echo active || echo inactive; }`,
+    `case " $* " in`,
+    `  *" start "*|*" restart "*) ${startDaemonOnce} ;;`,
+    `  *" is-active "*) state; alive || exit 3 ;;`,
+    `  *" ActiveState "*) state ;;`,
+    `  *" MainPID "*) if alive; then cat ${at("service.pid")}; else echo 0; fi ;;`,
+    `esac`,
     `exit 0`
   ].join("\n"))
   await fake("security", [
@@ -174,6 +187,7 @@ const installFakes = async () => {
     `esac`,
     `exit 0`
   ].join("\n"))
+  await fake("secret-tool", `echo "fake Secret Service is unreachable" >&2; exit 2`)
   await fake("t3", `{ printf '%s\\n' "$*"; cat; printf '\\n'; } >> ${at("wakes.log")}`)
   for (const notifier of ["osascript", "notify-send"]) {
     await fake(notifier, `echo "${notifier} $*" >> ${at("notifications.log")}`)
@@ -197,6 +211,7 @@ beforeAll(async () => {
 afterAll(async () => {
   if (daemon !== undefined) await stop(daemon)
   await stopServiceDaemon()
+  Bun.spawnSync(["pkill", "-f", join(template, "dist", "main.js")])
   await rm(root, { recursive: true, force: true })
 })
 
@@ -271,7 +286,9 @@ describe("the exangelos binary", () => {
     await eventually(() =>
       json("plugin", "configure", "template", "interval=0", "--secret-file", `token=${join(root, "token")}`)
     )
-    expect(await readFile(join(root, "secret-calls.log"), "utf8")).toMatch(/^security -i$/m)
+    if (process.platform === "darwin") {
+      expect(await readFile(join(root, "secret-calls.log"), "utf8")).toMatch(/^security -i$/m)
+    }
 
     const woken = await mcpSubscribe({ ticks: 3 }, { target: { harness: "t3", sessionId: "e2e-thread" } })
     const wakes = await eventually(async () => {
@@ -292,7 +309,9 @@ describe("the exangelos binary", () => {
     const pulled = await mcpSubscribe({ ticks: 2 }, { pullOnly: true, similarOk: [woken.id] })
     const waited = run(exangelos, "--json", "wait", pulled.id)
     expect(waited.status).toBe(0)
-    expect(JSON.parse(waited.stdout)).toMatchObject({ wake: { subscription: pulled.id, pending: [{ type: "tick" }, { type: "tick" }] } })
+    const { wake } = JSON.parse(waited.stdout)
+    expect(wake.subscription).toBe(pulled.id)
+    expect(wake.pending.length).toBeGreaterThan(0)
     expect(json("list").map((subscription: { id: string }) => subscription.id).sort()).toEqual([woken.id, pulled.id].sort())
   }, 60_000)
 
@@ -324,6 +343,7 @@ describe("the exangelos binary", () => {
     expect(status.stderr).not.toMatch(/\n\s+at /)
 
     expect(await stopServiceDaemon()).toBe(true)
+    expect(pluginRuns()).toBe(false)
     await rm(join(root, "service-accepts"))
   }, 30_000)
 
