@@ -2,6 +2,7 @@ import { DateTime, Effect, Option } from "effect"
 import { Lifecycle, Subscribe } from "@exangelos/domain"
 import type { Ids, Session, Subscription } from "@exangelos/domain"
 import { EventRepository } from "../../ports/EventRepository.ts"
+import { HumanRequired } from "../Errors.ts"
 import { currentLimits } from "../Limits.ts"
 import { load, locked, record, type Target, targetFlag } from "./shared.ts"
 
@@ -54,3 +55,16 @@ export const retarget = (
       wake: Option.none()
     })
   }))
+
+/** Turns event alerts on or off for one subscription; only you may, so a session is refused. */
+export const setEventAlerts = (actor: Session.Actor, request: ById & { readonly eventAlerts: boolean }) =>
+  Effect.gen(function*() {
+    if (actor._tag !== "You") return yield* new HumanRequired({ subscription: request.id })
+    return yield* locked(request.id, Effect.gen(function*() {
+      const subscription = yield* load(request.id)
+      return yield* record(actor, "eventAlerts", Option.some(subscription), {
+        subscription: { ...subscription, eventAlerts: request.eventAlerts },
+        wake: Option.none()
+      }, request.eventAlerts ? "on" : "off")
+    }))
+  })
