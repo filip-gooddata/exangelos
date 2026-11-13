@@ -122,7 +122,10 @@ export const layer = DaemonContract.DaemonContract.toLayer({
     devUnlink(actor(caller), name).pipe(Effect.catchTags({ ConnectorNotFound: Errors.connectorNotFound })),
   ListConnectorAlerts: () => listConnectorAlerts,
   GetSettings: () => getSettings.pipe(Effect.catchTag("SettingsUnreadable", (e) => Effect.die(e))),
-  SetSettings: ({ settings }) => setSettings(settings).pipe(Effect.catchTags({ SettingsUnreadable: Effect.die, SettingsWriteFailed: Effect.die })),
+  SetSettings: ({ settings }, caller) =>
+    setSettings(actor(caller), settings).pipe(
+      Effect.catchTags({ SettingsOwnerOnly: Errors.settingsOwnerOnly, SettingsUnreadable: Effect.die, SettingsWriteFailed: Effect.die })
+    ),
   SetHarness: ({ name, command }, caller) =>
     Harnesses.setHarness(actor(caller), name, { command }).pipe(
       Effect.catchTags({ HumanRequired: Errors.harnessOwnerOnly, SettingsUnreadable: Effect.die, SettingsWriteFailed: Effect.die })

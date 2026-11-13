@@ -94,6 +94,9 @@ export const failureMessage = (failure: Failure, subscription?: string): string 
       if (failure.subscription !== undefined) {
         return `Only you or the session that created ${failure.subscription} can switch its event alerts, and this terminal runs inside another agent session. Run the command again from your own terminal or from that session.`
       }
+      if (failure.settings !== undefined) {
+        return "Only you change settings, and this terminal runs inside an agent session. Run the command again from your own terminal."
+      }
       if (failure.harness !== undefined) {
         return "Only you define harnesses, and this terminal runs inside an agent session. Run the command again from your own terminal."
       }

@@ -20,7 +20,7 @@ describe("harnesses you define", () => {
   it.effect("keeps them when the other settings change", () =>
     Effect.gen(function*() {
       yield* Harnesses.setHarness(you, relay, definition)
-      const written = yield* setSettings({ ...Settings.initial, eventAlerts: true })
+      const written = yield* setSettings(you, { ...Settings.initial, eventAlerts: true })
       expect(written.harnesses).toEqual({ relay: definition })
       expect(yield* (yield* SettingsStore.SettingsStore).read).toEqual({ ...Settings.initial, eventAlerts: true, harnesses: { relay: definition } })
     }).pipe(withConnectors))

@@ -16,7 +16,7 @@ const failingAlerts = Effect.gen(function*() {
 const acme = name("acme")
 
 const wakeWindow = (seconds: number) =>
-  setSettings({ ...Settings.initial, limits: { ...Settings.initial.limits, wakeWindow: Duration.seconds(seconds) } })
+  setSettings(you, { ...Settings.initial, limits: { ...Settings.initial.limits, wakeWindow: Duration.seconds(seconds) } })
 
 const openedWakeWindows = Effect.gen(function*() {
   const watches = yield* (yield* ConnectorRuntimeFake).watches(acme)
