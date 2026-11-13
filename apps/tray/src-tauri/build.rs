@@ -5,6 +5,7 @@ const COMMANDS: &[&str] = &[
     "tray_set_attention",
     "host_info",
     "host_smoke_report",
+    "tray_quit",
 ];
 
 fn main() {

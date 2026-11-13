@@ -1,7 +1,7 @@
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
-import { type Alert, type Plugin, PluginRules, type Subscription } from "@exangelos/domain"
+import { type Alert, type Plugin, PluginRules, type Settings, type Subscription } from "@exangelos/domain"
 import { Context, Effect, Layer, Option, Predicate, Result, Schema } from "effect"
-import { RpcClient, RpcSerialization } from "effect/rpc"
+import { type Rpc, RpcClient, RpcSerialization } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
 import type { Socket } from "effect/socket"
 
@@ -36,13 +36,24 @@ export const layer: Layer.Layer<DaemonClient, never, Socket.Socket> = Layer.effe
 
 export type Section<A> = Result.Result<A, string>
 
+export type Detail = DaemonContract.Details
+
+export type ServiceStatus = Rpc.Success<typeof DaemonContract.ServiceStatus>
+
 export interface Snapshot {
   readonly subscriptions: Section<ReadonlyArray<Subscription.Subscription>>
+  readonly details: Section<ReadonlyArray<Detail>>
   readonly plugins: Section<ReadonlyArray<Plugin.Plugin>>
   readonly trustAlerts: Section<ReadonlyArray<Alert.Alert>>
+  readonly settings: Section<Settings.Settings>
+  readonly status: Section<ServiceStatus>
 }
 
 export class DaemonNotRunning extends Schema.TaggedError<DaemonNotRunning>()("DaemonNotRunning", {
+  message: Schema.String
+}) {}
+
+export class CallFailed extends Schema.TaggedError<CallFailed>()("CallFailed", {
   message: Schema.String
 }) {}
 
@@ -55,18 +66,35 @@ const describeDefect = (defect: unknown): string => {
   return String(defect)
 }
 
-const section = <A>(
+const isClientError = (error: unknown): error is RpcClientError => Predicate.isTagged(error, "RpcClientError")
+
+const section = <A, E>(
   operation: string,
-  call: Effect.Effect<A, RpcClientError>
+  call: Effect.Effect<A, E | RpcClientError>
 ): Effect.Effect<Section<A>, DaemonNotRunning> =>
   call.pipe(
     Effect.map(Result.succeed),
     Effect.catch((error) =>
-      error.reason._tag === "SocketOpenError"
+      isClientError(error) && error.reason._tag === "SocketOpenError"
         ? Effect.fail(new DaemonNotRunning({ message: error.message }))
-        : Effect.succeed(Result.fail(`${operation}: ${error.message}`))
+        : Effect.succeed(Result.fail(`${operation}: ${describeDefect(error)}`))
     ),
     Effect.catchDefect((defect) => Effect.succeed(Result.fail(`${operation}: ${describeDefect(defect)}`)))
+  )
+
+/** Runs a call for its effect. Keeps the errors the call declares, fails with {@link DaemonNotRunning} when the socket cannot be opened, and turns any other client error or defect into {@link CallFailed}. */
+export const command = <A, E>(
+  call: Effect.Effect<A, E | RpcClientError>
+): Effect.Effect<void, Exclude<E, RpcClientError> | DaemonNotRunning | CallFailed> =>
+  call.pipe(
+    Effect.asVoid,
+    Effect.catchIf(isClientError, (error) =>
+      Effect.fail(
+        error.reason._tag === "SocketOpenError"
+          ? new DaemonNotRunning({ message: error.message })
+          : new CallFailed({ message: error.message })
+      )),
+    Effect.catchDefect((defect) => Effect.fail(new CallFailed({ message: describeDefect(defect) })))
   )
 
 /** The trust alert of each plugin. Until the daemon serves `ListPluginAlerts` this derives them from `ListPlugins` without the official checksums, so every inert official plugin shows as a checksum mismatch, a disabled one included. */
@@ -78,13 +106,29 @@ export const trustAlerts = (
     (plugins) => plugins.flatMap((plugin) => Option.toArray(PluginRules.trustAlert(plugin, Option.none())))
   )
 
-/** Loads the active subscriptions and every plugin with their trust alerts. A call that fails or that the daemon answers with a defect fails only its own section. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */
+const listed = (client: DaemonClient["Service"]) =>
+  Effect.flatMap(section("List", client.List({ all: true })), (subscriptions) =>
+    Result.match(subscriptions, {
+      onFailure: (message) => Effect.succeed({ subscriptions, details: Result.fail(message) }),
+      onSuccess: (all) =>
+        Effect.map(
+          section("Show", Effect.forEach(all, ({ id }) => client.Show({ id }), { concurrency: "unbounded" })),
+          (details) => ({ subscriptions, details })
+        )
+    }))
+
+/** Loads every subscription, closed ones included, with the details of each, the plugins with their trust alerts, the settings and the service status. A call that fails or that the daemon answers with a defect fails only its own section; the details fail with the first failing `Show`, or with `List`. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */
 export const snapshot: Effect.Effect<Snapshot, DaemonNotRunning, DaemonClient> = Effect.flatMap(
   DaemonClient,
   (client) =>
-    Effect.all({
-      subscriptions: section("List", client.List({ all: false })),
-      plugins: section("ListPlugins", client.ListPlugins()),
-      trustAlerts: section("ListPluginAlerts", trustAlerts(client))
-    }, { concurrency: "unbounded" })
+    Effect.map(
+      Effect.all({
+        listed: listed(client),
+        plugins: section("ListPlugins", client.ListPlugins()),
+        trustAlerts: section("ListPluginAlerts", trustAlerts(client)),
+        settings: section("GetSettings", client.GetSettings()),
+        status: section("ServiceStatus", client.ServiceStatus())
+      }, { concurrency: "unbounded" }),
+      ({ listed, ...rest }) => ({ ...listed, ...rest })
+    )
 )
