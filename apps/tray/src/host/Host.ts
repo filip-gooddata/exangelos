@@ -19,6 +19,7 @@ export class Host extends Context.Service<Host, {
   readonly smokeReport: (
     result: { readonly ok: boolean; readonly report: string }
   ) => Effect.Effect<void, HostCommandFailed>
+  readonly quit: Effect.Effect<void, HostCommandFailed>
 }>()("@exangelos/tray/Host") {}
 
 export const make = (invoke: Invoke): Host["Service"] => {
@@ -36,7 +37,8 @@ export const make = (invoke: Invoke): Host["Service"] => {
       )
     ),
     setAttention: (needsYou) => Effect.asVoid(call("tray_set_attention", { needsYou })),
-    smokeReport: ({ ok, report }) => Effect.asVoid(call("host_smoke_report", { ok, report }))
+    smokeReport: ({ ok, report }) => Effect.asVoid(call("host_smoke_report", { ok, report })),
+    quit: Effect.asVoid(call("tray_quit"))
   })
 }
 

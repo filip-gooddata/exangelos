@@ -113,6 +113,12 @@ fn host_smoke_report(app: AppHandle, host: State<'_, Host>, ok: bool, report: St
     app.exit(if ok { 0 } else { 1 });
 }
 
+/// Exits the tray app; the daemon runs in its own process group and stays up.
+#[tauri::command]
+fn tray_quit(app: AppHandle) {
+    app.exit(0);
+}
+
 fn start_daemon() {
     let socket = match socket::daemon_socket_path(|name| std::env::var(name).ok()) {
         Ok(socket) => socket,
@@ -165,7 +171,8 @@ pub fn run() {
             relay_close,
             tray_set_attention,
             host_info,
-            host_smoke_report
+            host_smoke_report,
+            tray_quit
         ])
         .setup(|app| {
             #[cfg(target_os = "macos")]
@@ -210,7 +217,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => platform::show_panel(app, None),
-            "quit" => app.exit(0),
+            "quit" => tray_quit(app.clone()),
             _ => {}
         })
         .on_tray_icon_event(platform::tray_event)

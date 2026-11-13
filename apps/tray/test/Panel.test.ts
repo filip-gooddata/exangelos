@@ -1,11 +1,18 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Ids, PluginRules } from "@exangelos/domain"
+import { DaemonContract } from "@exangelos/contracts"
+import { Ids, PluginRules, Settings } from "@exangelos/domain"
 import { Effect, Option, Ref, Result } from "effect"
 import { TestClock } from "effect/testing"
 import { DaemonClient, Host, Panel } from "../src/index.ts"
 import { plugin, subscription } from "./fixtures.ts"
 
 type Answer = Effect.Effect<DaemonClient.Snapshot, DaemonClient.DaemonNotRunning>
+
+const rest = {
+  details: Result.succeed([]),
+  settings: Result.succeed(Settings.initial),
+  status: Result.succeed({ version: "1.0.0", startMethod: "foreground" as const })
+}
 
 const loaded = (
   subscriptions: ReadonlyArray<ReturnType<typeof subscription>>,
@@ -14,19 +21,25 @@ const loaded = (
   Effect.succeed({
     subscriptions: Result.succeed(subscriptions),
     plugins: Result.succeed(plugins),
-    trustAlerts: Result.succeed(plugins.flatMap((p) => Option.toArray(PluginRules.trustAlert(p, Option.none()))))
+    trustAlerts: Result.succeed(plugins.flatMap((p) => Option.toArray(PluginRules.trustAlert(p, Option.none())))),
+    ...rest
   })
 
 const healthy = loaded([subscription()], [plugin()])
 const failing = loaded([], [plugin({ process: "failing" })])
 const absent: Answer = Effect.fail(new DaemonClient.DaemonNotRunning({ message: "SocketOpenError: no such file" }))
 
-const start = (first: Answer, refusals = 0) =>
+const start = (
+  first: Answer,
+  refusals = 0,
+  act: (request: Panel.Request) => Effect.Effect<void, Panel.Refusal> = () => Effect.void
+) =>
   Effect.gen(function*() {
     const answer = yield* Ref.make(first)
     const sent: Array<boolean> = []
     const panel = yield* Panel.make({
       interval: "5 seconds",
+      act,
       load: Effect.flatten(Ref.get(answer)),
       setAttention: (needsYou) =>
         Effect.suspend(() => {
@@ -39,7 +52,7 @@ const start = (first: Answer, refusals = 0) =>
     yield* TestClock.adjust("1 millis")
     const next = (answer_: Answer) =>
       Ref.set(answer, answer_).pipe(Effect.andThen(TestClock.adjust("5 seconds")))
-    return { panel, sent, next }
+    return { answer, panel, sent, next }
   })
 
 describe("panel state", () => {
@@ -107,13 +120,26 @@ describe("panel state", () => {
       const { panel, sent } = yield* start(Effect.succeed({
         subscriptions: Result.fail("NotImplemented: List"),
         plugins: Result.succeed([plugin({ process: "failing" })]),
-        trustAlerts: Result.succeed([])
+        trustAlerts: Result.succeed([]),
+        ...rest
       }))
       const state = yield* panel.current
       if (state._tag !== "Ready") return expect.fail(state._tag)
       expect(state.subscriptions).toStrictEqual(Result.fail("NotImplemented: List"))
       expect(Result.getOrThrow(state.plugins)).toHaveLength(1)
       expect(sent).toEqual([true])
+    }).pipe(Effect.scoped))
+  it.effect("loads again after a request succeeds and not after a refusal", () =>
+    Effect.gen(function*() {
+      const refused = new DaemonContract.TransitionRefused({ state: { _tag: "Expired" }, message: "expired" })
+      const { answer, panel } = yield* start(healthy, 0, (request) => request._tag === "Pause" ? Effect.fail(refused) : Effect.void)
+      const count = (state: Panel.PanelState) => state._tag === "Ready" ? Result.getOrThrow(state.subscriptions).length : -1
+      yield* Ref.set(answer, loaded([subscription(), subscription()], [plugin()]))
+      const id = Ids.SubscriptionId.make("sub_7f3k")
+      expect(yield* Effect.flip(panel.perform(Panel.Request.Pause({ id })))).toBe(refused)
+      expect(count(yield* panel.current)).toBe(1)
+      yield* panel.perform(Panel.Request.Resume({ id }))
+      expect(count(yield* panel.current)).toBe(2)
     }).pipe(Effect.scoped))
 })
 
