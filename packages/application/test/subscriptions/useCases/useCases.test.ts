@@ -14,6 +14,7 @@ import {
   cancel,
   pause,
   resume,
+  retarget,
   setEventAlerts,
   subscribe,
   type SubscribeRequest,
@@ -191,19 +192,20 @@ describe("subscription use cases", () => {
       expect((yield* Fiber.join(waiting)).why).toMatchObject({ _tag: "Suspended", problem: "the connector was removed" })
     }).pipe(Effect.provide(layerWithIntake)))
 
-  it.effect("only you turn event alerts on or off, and each change names you", () =>
+  it.effect("you and the creating session switch event alerts, even after it wakes another session that is refused", () =>
     Effect.gen(function*() {
       const subscription = yield* subscribed()
       const you: Session.Actor = { _tag: "You" }
+      yield* retarget(ownActor, { id: subscription.id, target: { _tag: "Session", session: other } }, [own, other])
 
       expect((yield* setEventAlerts(you, { id: subscription.id, eventAlerts: true })).eventAlerts).toBe(true)
-      expect((yield* setEventAlerts(you, { id: subscription.id, eventAlerts: false })).eventAlerts).toBe(false)
-      const refused = yield* Effect.flip(setEventAlerts(ownActor, { id: subscription.id, eventAlerts: true }))
+      expect((yield* setEventAlerts(ownActor, { id: subscription.id, eventAlerts: false })).eventAlerts).toBe(false)
+      const refused = yield* Effect.flip(setEventAlerts(otherActor, { id: subscription.id, eventAlerts: true }))
 
       expect(refused).toMatchObject({ _tag: "HumanRequired", subscription: subscription.id })
       const changes = yield* (yield* SubscriptionRepository).changes(subscription.id)
       expect(changes.filter((change) => change.kind === "eventAlerts").map((change) => [change.actor, change.detail]))
-        .toEqual([[you, "on"], [you, "off"]])
+        .toEqual([[you, "on"], [ownActor, "off"]])
       expect(Option.map(yield* (yield* SubscriptionRepository).find(subscription.id), (found) => found.eventAlerts))
         .toEqual(Option.some(false))
     }).pipe(Effect.provide(layerHarness)))

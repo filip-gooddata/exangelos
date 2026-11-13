@@ -25,6 +25,7 @@ export type AgentFailure =
   | DaemonContract.SubjectChanged
   | DaemonContract.TransitionRefused
   | DaemonContract.BacklogOverLimit
+  | DaemonContract.HumanRequired
   | RpcClientError.RpcClientError
   | DaemonClient.DaemonNotRunning
 
@@ -103,6 +104,8 @@ export const failureMessage = (failure: AgentFailure, subscription = "<subscript
       return `Not resumed: ${failure.pending} events are pending, ${
         failure.reason === "count" ? `over the limit of ${failure.limit}` : "and the oldest is older than the backlog allows"
       }. Acknowledge them first: call ack with id: "${subscription}", through: ${failure.through}, then call resume.`
+    case "HumanRequired":
+      return `Nothing changed: only the session that created ${subscription}, or the user, may switch its event alerts. Ask the user to run \`exangelos alerts ${subscription} on\` or \`off\`.`
     case "RpcClientError":
       return connectionFailedMessage(failure.message)
     case "DaemonNotRunning":

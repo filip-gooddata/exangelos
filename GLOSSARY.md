@@ -118,6 +118,10 @@ _Avoid_: Debounce, settle interval
 A desktop notification for you, sent only when something needs you.
 _Avoid_: Wake, notification, warning
 
+**Event alert**:
+An alert for each new event of a subscription. Off unless you turn it on globally or for one subscription; the session that created a subscription may also switch it for that subscription.
+_Avoid_: Event notification
+
 ### People and agents
 
 **Actor**:

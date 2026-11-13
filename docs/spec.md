@@ -220,7 +220,7 @@ The daemon enforces rules 1 to 21 of the confirmed domain model:
 18. Every session can see every subscription, and the default list shows its own. Any session may update, acknowledge, pause, resume, retarget or cancel any subscription. The daemon records who did. This is a convention, not a security boundary.
 19. Only you import, enable, disable and remove connectors, in the tray or the CLI. A third-party connector starts inert and returns to inert when its files change. An official connector is enabled once its checksum matches the one the binary carries.
 20. Connectors are configured in the tray or through the CLI. The CLI reads each secret from a command, a file, or a hidden prompt for you. An agent names the command or the file, such as `gh auth token` or the file T3's secret input writes, so it sets a secret without seeing it. The MCP server has no tools for connector management or configuration.
-21. You get a desktop alert when a connector waits to be enabled, keeps failing or has its credentials rejected, and when an official connector's checksum does not match. A wake target that stays unreachable raises no alert. The tray shows the waiting wake, and the backlog rule catches a session that is gone for good. Event alerts are off unless a setting turns them on, globally or for one subscription.
+21. You get a desktop alert when a connector waits to be enabled, keeps failing or has its credentials rejected, and when an official connector's checksum does not match. A wake target that stays unreachable raises no alert. The tray shows the waiting wake, and the backlog rule catches a session that is gone for good. Event alerts are off unless a setting turns them on, globally or for one subscription. You may switch them for any subscription; a session may switch them only for a subscription it created.
 
 ### Defaults
 
@@ -393,8 +393,8 @@ Any CLI or MCP call that finds no daemon starts it (see service management).
 ### MCP server
 
 - `exangelos mcp` serves MCP over stdio and forwards every call to the daemon over the unix socket. It reads the session identity from its environment for wake addressing.
-- MCP tools: list connectors with catalogues, subscribe, update, list, show, events, ack, wait, pause, resume, retarget, cancel. Subscribe requires the intent.
-- Deliberately not MCP tools: connector import, enable, disable, remove, configure, dev link, scaffold, settings, service status. An agent that needs to configure a connector uses the CLI with a command or file secret source.
+- MCP tools: list connectors with catalogues, subscribe, update, list, show, events, ack, wait, pause, resume, retarget, cancel, set event alerts. Subscribe requires the intent. Set event alerts works only on a subscription the calling session created.
+- Deliberately not MCP tools: connector import, enable, disable, remove, configure, dev link, scaffold, settings (the global event alerts setting among them), service status. An agent that needs to configure a connector uses the CLI with a command or file secret source.
 
 ### Tray host and panel
 

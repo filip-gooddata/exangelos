@@ -37,7 +37,7 @@ describe("MCP server on stdio", () => {
       yield* Deferred.await(listed)
       const responses = written.join("").split("\n").filter((line) => line.length > 0).map((line) => JSON.parse(line))
       const list = responses.find((response) => response.id === 2)
-      expect(list.result.tools).toHaveLength(12)
+      expect(list.result.tools).toHaveLength(13)
       expect(responses.every((response) => response.jsonrpc === "2.0")).toBe(true)
     }))
 })
