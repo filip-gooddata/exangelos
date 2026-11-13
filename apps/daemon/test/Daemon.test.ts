@@ -178,7 +178,7 @@ describe("Daemon errors", () => {
       expect(refused).toMatchObject({ connector: "template" })
     }).pipe(Effect.scoped), 60_000)
 
-  it.live("lets the owner turn event alerts on and refuses a session", () =>
+  it.live("lets the owner and the creating session switch event alerts and refuses another session", () =>
     Effect.gen(function*() {
       const dir = yield* home
       const { as, client } = yield* start(dir)
@@ -195,6 +195,15 @@ describe("Daemon errors", () => {
       const agent = yield* as(session)
       const refused = yield* Effect.flip(agent.SetEventAlerts({ id: subscription.id, eventAlerts: false }))
       expect(refused).toMatchObject({ _tag: "HumanRequired", subscription: subscription.id })
+
+      const own = yield* agent.Subscribe({
+        connector: template,
+        parameters: { ticks: 2 },
+        intent: "Toggle my own event alerts",
+        target: { _tag: "PullOnly" },
+        similarOk: []
+      })
+      expect((yield* agent.SetEventAlerts({ id: own.id, eventAlerts: true })).eventAlerts).toBe(true)
     }).pipe(Effect.scoped), 60_000)
 
   it.live("names the count when resume finds the backlog over its limit", () =>

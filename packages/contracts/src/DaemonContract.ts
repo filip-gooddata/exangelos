@@ -198,6 +198,12 @@ export class Cancel extends Rpc.make("Cancel", {
   error: Schema.Union([SubscriptionNotFound, InvalidRequest, TransitionRefused])
 }) {}
 
+export class SetEventAlerts extends Rpc.make("SetEventAlerts", {
+  payload: { ...id, eventAlerts: Schema.Boolean },
+  success: Subscription.Subscription,
+  error: Schema.Union([SubscriptionNotFound, InvalidRequest, HumanRequired])
+}) {}
+
 export class AgentGroup extends RpcGroup.make(
   ListConnectors,
   Subscribe,
@@ -210,7 +216,8 @@ export class AgentGroup extends RpcGroup.make(
   Pause,
   Resume,
   Retarget,
-  Cancel
+  Cancel,
+  SetEventAlerts
 ) {}
 
 export const ImportSource = Schema.TaggedUnion({
@@ -289,12 +296,6 @@ export class ServiceStatus extends Rpc.make("ServiceStatus", {
   success: Schema.Struct({ version: Schema.String, startMethod: StartMethod })
 }) {}
 
-export class SetEventAlerts extends Rpc.make("SetEventAlerts", {
-  payload: { ...id, eventAlerts: Schema.Boolean },
-  success: Subscription.Subscription,
-  error: Schema.Union([SubscriptionNotFound, InvalidRequest, HumanRequired])
-}) {}
-
 export class ManagementGroup extends RpcGroup.make(
   ImportConnector,
   EnableConnector,
@@ -306,8 +307,7 @@ export class ManagementGroup extends RpcGroup.make(
   ListConnectorAlerts,
   GetSettings,
   SetSettings,
-  ServiceStatus,
-  SetEventAlerts
+  ServiceStatus
 ) {}
 
 export const DaemonContract = AgentGroup.merge(ManagementGroup)

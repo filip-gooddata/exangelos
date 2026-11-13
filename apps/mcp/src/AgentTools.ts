@@ -120,7 +120,13 @@ export const toolkit = Toolkit.make(
     { ...id, ...target },
     Subscription.Subscription
   ),
-  tool("cancel", "Cancel a subscription for good.", id, Subscription.Subscription)
+  tool("cancel", "Cancel a subscription for good.", id, Subscription.Subscription),
+  tool(
+    "set_event_alerts",
+    "Turn this subscription's own event alerts on or off; only for a subscription this session created. When the user has event alerts on globally, every subscription alerts whatever this says.",
+    { ...id, eventAlerts: Schema.Boolean },
+    Subscription.Subscription
+  )
 )
 
 const fail = (failure: AgentFailure, subscription?: string) =>
@@ -180,6 +186,7 @@ export const handlers = toolkit.toLayer(Effect.gen(function*() {
     resume: (input) => call((client) => client.Resume(input), input.id).pipe(Effect.map(withHint)),
     retarget: ({ id, ...choice }) =>
       targetChoice(choice).pipe(Effect.flatMap((target) => call((client) => client.Retarget({ id, target })))),
-    cancel: (input) => call((client) => client.Cancel(input))
+    cancel: (input) => call((client) => client.Cancel(input)),
+    set_event_alerts: (input) => call((client) => client.SetEventAlerts(input), input.id)
   }
 }))

@@ -8,7 +8,6 @@ import { SecretStore, type SecretStoreFailed } from "../ports/SecretStore.ts"
 import { ServiceManager } from "../ports/ServiceManager.ts"
 import { SettingsStore } from "../ports/SettingsStore.ts"
 import { ConnectorNotFound } from "../seam/ConnectorAccess.ts"
-import { setEventAlerts } from "../subscriptions/useCases/control.ts"
 import { listConnectorAlerts } from "./listConnectorAlerts.ts"
 import { ConnectorSupervisor } from "./ConnectorSupervisor.ts"
 import { redact } from "./redact.ts"
@@ -260,6 +259,5 @@ export const management = {
   ListConnectorAlerts: listConnectorAlerts,
   GetSettings: getSettings,
   SetSettings: setSettings,
-  ServiceStatus: serviceStatus,
-  SetEventAlerts: setEventAlerts
+  ServiceStatus: serviceStatus
 } as const

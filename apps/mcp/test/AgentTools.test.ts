@@ -9,7 +9,8 @@ describe("MCP tools", () => {
       const { tools } = yield* mcp.listTools({})
       const names = tools.map((tool) => tool.name).sort()
       expect(names).toEqual(
-        ["ack", "cancel", "events", "list", "list_connectors", "pause", "resume", "retarget", "show", "subscribe", "update", "wait"]
+        ["ack", "cancel", "events", "list", "list_connectors", "pause", "resume", "retarget",
+          "set_event_alerts", "show", "subscribe", "update", "wait"]
       )
       expect(names.filter((name) => /connector_|import|enable|disable|remove|configure|link|setting|status|service/.test(name)))
         .toEqual([])
@@ -35,6 +36,21 @@ describe("MCP tools", () => {
           "  sub_7f3k  parameters: pr=acme/app#123",
           "If you still want a separate subscription, call subscribe again with the same input plus similarOk: [\"sub_7f3k\"]."
         ].join("\n")
+      }])
+    }))
+
+  it.effect("switches event alerts on the caller's subscription and refuses another session's", () =>
+    Effect.gen(function*() {
+      const mcp = yield* mcpClient(inMemory)
+      const own = yield* mcp.callTool({ name: "set_event_alerts", arguments: { id: "sub_7f3k", eventAlerts: true } })
+      expect(own.structuredContent).toMatchObject({ id: "sub_7f3k", eventAlerts: true })
+
+      const refused = yield* mcp.callTool({ name: "set_event_alerts", arguments: { id: "sub_else", eventAlerts: true } })
+      expect(refused.isError).toBe(true)
+      expect(refused.content).toEqual([{
+        type: "text",
+        text:
+          "Nothing changed: only the session that created sub_else, or the user, may switch its event alerts. Ask the user to run `exangelos alerts sub_else on` or `off`."
       }])
     }))
 

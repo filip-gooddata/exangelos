@@ -65,7 +65,11 @@ export const handlers = DaemonContract.AgentGroup.toLayer({
       wakeTarget: { harness: id === "sub_cc" ? "claude-code" as const : "t3" as const, sessionId: "s-1" }
     }),
   Retarget: notFaked,
-  Cancel: notFaked
+  Cancel: notFaked,
+  SetEventAlerts: ({ id, eventAlerts }) =>
+    id === existing.id
+      ? Effect.succeed({ ...existing, eventAlerts })
+      : Effect.fail(new DaemonContract.HumanRequired({ subscription: id }))
 })
 
 export const inMemory = Layer.succeed(AgentClient.AgentClient, {
