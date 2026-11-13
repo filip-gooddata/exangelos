@@ -1,0 +1,64 @@
+import { describe, expect, it } from "@effect/vitest"
+import { Ids, Limits, Settings } from "@exangelos/domain"
+import { Duration, Effect, Result } from "effect"
+import { Scene } from "foldkit/test"
+import { Request } from "../src/state/Panel.ts"
+import { editedSettings, eventAlertsKey, initial, makeUpdate, Message } from "../src/view/Model.ts"
+import { view } from "../src/view/PanelView.ts"
+import * as Fixtures from "./fixtures.ts"
+
+const update = makeUpdate(() => Effect.void)
+const ready = initial(Fixtures.quiet, Fixtures.now)
+const id = Ids.SubscriptionId.make("sub_7f3k")
+
+describe("panel update", () => {
+  it("asks before cancelling and runs the request once you confirm", () => {
+    const asked = update(ready, Message.Requested({ request: Request.Cancel({ id }) }))
+    expect(asked.model.confirming?._tag).toBe("Cancel")
+    expect(asked.commands ?? []).toHaveLength(0)
+
+    const confirmed = update(asked.model, Message.Confirmed())
+    expect(confirmed.model.confirming).toBeNull()
+    expect(confirmed.model.busy).toBe(true)
+    expect(confirmed.commands).toHaveLength(1)
+  })
+
+  it("refuses to save a limit that is not a whole number above zero", () => {
+    const edited = update(ready, Message.EditedSetting({ key: "backlogCount", value: "0" }))
+    const saved = update(edited.model, Message.SavedSettings())
+    expect(saved.model.notice).toEqual({ tone: "refused", text: "Backlog limit by count takes a whole number above zero." })
+    expect(saved.commands ?? []).toHaveLength(0)
+  })
+
+  it("goes back to the list once a removal is done", () => {
+    const onPlugin = initial(Fixtures.needsYou, Fixtures.now, { _tag: "Plugin", name: "jira" })
+    const done = update(onPlugin, Message.Performed({ request: Request.RemovePlugin({ name: Ids.PluginName.make("jira") }) }))
+    expect(done.model.screen).toEqual({ _tag: "Plugins" })
+    expect(done.model.busy).toBe(false)
+  })
+})
+
+describe("editedSettings", () => {
+  it("reads each edit in its field's unit and keeps what you did not touch", () => {
+    const result = editedSettings(Settings.initial, { wakeWindow: " 10 ", [eventAlertsKey]: "on" })
+    const settings = Result.getOrThrow(result)
+    expect(Duration.toMillis(settings.limits.wakeWindow)).toBe(10_000)
+    expect(settings.limits.backlogCount).toBe(Limits.defaults.backlogCount)
+    expect(settings.eventAlerts).toBe(true)
+  })
+
+  it("names the first field that holds no whole number", () => {
+    expect(editedSettings(Settings.initial, { backlogAge: "1.5" })).toEqual(Result.fail("Backlog limit by age"))
+  })
+})
+
+describe("panel view", () => {
+  it("shows each open subscription's label and intent on the main screen", () => {
+    Scene.scene(
+      { update, view },
+      Scene.given(ready),
+      Scene.expect(Scene.text("Fix flaky checkout test")).toExist(),
+      Scene.expect(Scene.text("Waiting on checks and review for the checkout test fix.")).toExist()
+    )
+  })
+})

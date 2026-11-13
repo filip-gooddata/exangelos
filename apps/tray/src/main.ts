@@ -28,7 +28,7 @@ const smoke = Effect.gen(function*() {
 const main = Effect.gen(function*() {
   const host = yield* Host.Host
   if ((yield* host.info).smoke) return yield* smoke
-  PanelView.mount(document.getElementById("panel"), (yield* Panel.Panel).changes)
+  PanelView.mount(document.getElementById("panel"), yield* Panel.Panel)
   return yield* Effect.never
 }).pipe(Effect.provide(live))
 

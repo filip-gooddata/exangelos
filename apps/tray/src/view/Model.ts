@@ -121,7 +121,7 @@ export const limitFields: ReadonlyArray<LimitField> = [
   { key: "backlogCount", label: "Backlog limit by count", unit: "events", toInput: (l) => l.backlogCount, fromInput: (v) => v },
   durationField("backlogAge", "Backlog limit by age", "hours", 3_600_000),
   durationField("lifetime", "Subscription lifetime", "days", 86_400_000),
-  durationField("unavailableBeforeWake", "Plugin unavailable before the session hears", "minutes", 60_000),
+  durationField("unavailableBeforeWake", "Connector unavailable before the session hears", "minutes", 60_000),
   durationField("maxRetryDelay", "Longest wait between wake attempts", "minutes", 60_000),
   durationField("retention", "Closed subscriptions kept", "days", 86_400_000)
 ]
