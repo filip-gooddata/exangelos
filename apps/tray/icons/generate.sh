@@ -2,6 +2,7 @@
 set -eu
 cd "$(dirname "$0")"
 icon=../../../assets/app-icon.svg
+icon16=../../../assets/app-icon-16.svg
 glyph=../../../assets/menu-bar-glyph.svg
 
 python3 - "$glyph" <<'PY'
@@ -33,7 +34,9 @@ rsvg-convert -w 512 -h 512 "$icon" -o icon.png
 if command -v iconutil >/dev/null 2>&1; then
   set_dir=$(mktemp -d)/icon.iconset
   mkdir "$set_dir"
-  for size in 16 32 128 256 512; do
+  rsvg-convert -w 16 -h 16 "$icon16" -o "$set_dir/icon_16x16.png"
+  rsvg-convert -w 32 -h 32 "$icon" -o "$set_dir/icon_16x16@2x.png"
+  for size in 32 128 256 512; do
     rsvg-convert -w "$size" -h "$size" "$icon" -o "$set_dir/icon_${size}x${size}.png"
     rsvg-convert -w $((size * 2)) -h $((size * 2)) "$icon" -o "$set_dir/icon_${size}x${size}@2x.png"
   done
