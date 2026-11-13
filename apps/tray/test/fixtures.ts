@@ -142,11 +142,11 @@ const change = (kind: Subscription.ChangeKind, at: DateTime.Utc, detail?: string
   ...(detail === undefined ? {} : { detail })
 })
 
-const wake = (subscription: string, state: Wake.WakeState, at: DateTime.Utc, attempts: Wake.Attempts, reason: Wake.WakeReason = "events"): Wake.Wake => ({
+const wake = (subscription: string, state: Wake.WakeState, at: DateTime.Utc, attempts: Wake.Attempts, reason: Wake.WakeReason = "events", through = 0): Wake.Wake => ({
   id: Ids.WakeId.make(`wake_${subscription.slice(4)}`),
   subscription: subscriptionId(subscription),
   reason,
-  through: Ids.AckedThrough.make(0),
+  through: Ids.AckedThrough.make(through),
   state,
   attempts,
   createdAt: at
@@ -162,7 +162,7 @@ const details = (codexReachable: boolean): ReadonlyArray<Detail> => {
         event("sub_7f3k", 4, "checks.failed", "build and e2e failed", ago({ minutes: 6 })),
         event("sub_7f3k", 5, "review.submitted", "alice requested changes", ago({ minutes: 2 }))
       ],
-      wakes: [wake("sub_7f3k", "delivered", ago({ minutes: 2 }), { count: 1 })],
+      wakes: [wake("sub_7f3k", "delivered", ago({ minutes: 2 }), { count: 1 }, "events", 5)],
       changes: [
         change("ack", ago({ hours: 1 }), "through #3"),
         change("update", ago({ days: 1 }), "event types"),
@@ -190,11 +190,14 @@ const details = (codexReachable: boolean): ReadonlyArray<Detail> => {
   ]
 }
 
+const hexDigest = (seed: string): string =>
+  Array.from({ length: 64 }, (_, i) => "0123456789abcdef"[(seed.charCodeAt(i % seed.length) * (i + 7)) % 16]).join("")
+
 const official = (name: Ids.PluginName, version: string, rest: Partial<Plugin.Plugin> = {}): Plugin.Plugin => ({
   name,
   version,
   origin: { _tag: "Official", version },
-  digest: `sha256-${name}`,
+  digest: hexDigest(name),
   trust: "enabled",
   configuration: { _tag: "Set" },
   process: "running",
@@ -228,16 +231,17 @@ const plugins = (needsYou: boolean): ReadonlyArray<Plugin.Plugin> => [
     ? official(names.jira, "1.0.3", {
       catalogue: jiraCatalogue,
       configuration: { _tag: "Rejected", reason: "401 Unauthorized from acme.atlassian.net" },
+      configuredBy: { _tag: "You" },
       unavailableSince: ago({ minutes: 25 })
     })
-    : official(names.jira, "1.0.3", { catalogue: jiraCatalogue }),
+    : official(names.jira, "1.0.3", { catalogue: jiraCatalogue, configuredBy: { _tag: "You" } }),
   official(names.files, "1.0.0", { configuration: { _tag: "Set" } }),
   ...(needsYou ? [inertPlugin] : []),
   {
     name: names.mine,
     version: "0.0.1",
     origin: { _tag: "DevLink", path: "~/code/my-plugin" },
-    digest: "sha256-dev",
+    digest: hexDigest("my-plugin"),
     trust: "dev",
     configuration: { _tag: "Set" },
     process: "running"
