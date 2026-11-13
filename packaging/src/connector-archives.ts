@@ -1,6 +1,6 @@
-import { copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { dirname, join } from "node:path"
+import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { digestDirectory } from "@exangelos/connector-directory"
 import { Data, Effect } from "effect"
 import { run } from "./command.ts"
@@ -21,6 +21,7 @@ interface Manifest {
   readonly name: string
   readonly version: string
   readonly entry: { readonly _tag: "Bundle"; readonly path: string } | { readonly _tag: "Native" }
+  readonly files?: ReadonlyArray<string>
 }
 
 export class ConnectorManifestInvalid extends Data.TaggedError("ConnectorManifestInvalid")<{ readonly message: string }> {}
@@ -31,6 +32,47 @@ const readManifest = (connectorDirectory: string) => {
     ? Effect.sync(() => JSON.parse(readFileSync(path, "utf8")) as Manifest)
     : Effect.fail(new ConnectorManifestInvalid({ message: `${path} is missing; an official connector needs a manifest to be archived` }))
 }
+
+const isInside = (root: string, path: string) => {
+  const rel = relative(root, path)
+  return rel !== "" && rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel)
+}
+
+const filesUnder = (root: string, path: string): ReadonlyArray<string> => {
+  const stat = lstatSync(path)
+  if (stat.isSymbolicLink()) {
+    throw new ConnectorManifestInvalid({ message: `${path} is a link; a connector archive carries ordinary files only` })
+  }
+  if (stat.isDirectory()) {
+    return readdirSync(path).toSorted().flatMap((child) => filesUnder(root, join(path, child)))
+  }
+  if (!stat.isFile()) {
+    throw new ConnectorManifestInvalid({ message: `${path} is not an ordinary file` })
+  }
+  return [relative(root, path).split(sep).join("/")]
+}
+
+const declaredFiles = (connectorDirectory: string, manifest: Manifest) =>
+  Effect.try({
+    try: () => {
+      const root = realpathSync(connectorDirectory)
+      return (manifest.files ?? []).flatMap((declared) => {
+        const path = resolve(root, declared)
+        if (isAbsolute(declared) || !isInside(root, path)) {
+          throw new ConnectorManifestInvalid({ message: `${manifest.name}: file ${declared} is outside the connector folder` })
+        }
+        if (!existsSync(path)) {
+          throw new ConnectorManifestInvalid({ message: `${manifest.name}: file ${declared} does not exist` })
+        }
+        if (!isInside(root, realpathSync(path))) {
+          throw new ConnectorManifestInvalid({ message: `${manifest.name}: file ${declared} leads outside the connector folder` })
+        }
+        return filesUnder(root, path)
+      })
+    },
+    catch: (error) =>
+      error instanceof ConnectorManifestInvalid ? error : new ConnectorManifestInvalid({ message: `${manifest.name}: ${String(error)}` })
+  })
 
 export const bun = process.env["BUN"] ?? "bun"
 
@@ -49,14 +91,17 @@ export const buildConnectorArchive = (connectorDirectory: string, outDirectory: 
     const entryPath = manifest.entry.path
     const work = yield* workDirectory(manifest.name)
     yield* run(bun, ["run", "build"], { cwd: connectorDirectory })
+    const extra = yield* declaredFiles(connectorDirectory, manifest)
+    const entries = [...new Set(["connector.json", entryPath, ...extra])]
     const stage = join(work, "stage")
     yield* Effect.sync(() => {
-      mkdirSync(dirname(join(stage, entryPath)), { recursive: true })
-      copyFileSync(join(connectorDirectory, "connector.json"), join(stage, "connector.json"))
-      copyFileSync(join(connectorDirectory, entryPath), join(stage, entryPath))
+      for (const entry of entries) {
+        mkdirSync(dirname(join(stage, entry)), { recursive: true })
+        copyFileSync(join(connectorDirectory, entry), join(stage, entry))
+      }
     })
     const archive = join(outDirectory, connectorArchiveName(manifest.name, manifest.version))
-    yield* createTarGz(archive, stage, ["connector.json", entryPath])
+    yield* createTarGz(archive, stage, entries)
     const unpacked = join(work, "unpacked")
     yield* Effect.sync(() => mkdirSync(unpacked))
     yield* extractTarGz(archive, unpacked)

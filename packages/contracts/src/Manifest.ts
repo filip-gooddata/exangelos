@@ -22,6 +22,7 @@ export type Entry = typeof Entry.Type
 export const Manifest = Schema.Struct({
   name: Ids.ConnectorName,
   version: Schema.NonEmptyString,
-  entry: Entry
+  entry: Entry,
+  files: Schema.optionalKey(Schema.Array(Schema.NonEmptyString))
 })
 export type Manifest = typeof Manifest.Type

@@ -300,7 +300,8 @@ Each change to a subscription or connector records its actor: the session the CL
 
 ### Connector protocol and SDK
 
-- One connector is one installed package in the connector directory, discovered by name. Its manifest declares name, version and the entry, which is either a portable JS bundle or a native executable per platform. The daemon binary runs a JS bundle by acting as the Bun runtime.
+- One connector is one installed package in the connector directory, discovered by name. Its manifest declares name, version and the entry, which is either a portable JS bundle or a native executable per platform. The daemon binary runs a JS bundle by acting as the Bun runtime. Its working directory is the connector's folder.
+- The manifest is `connector.json` at the top of the connector folder. An optional `files` list names further files or folders the connector needs next to its entry, as paths relative to that folder, for example `"files": ["runtime", "LICENSE"]`. A folder brings everything under it.
 - The daemon runs one process per connector. The wire is Effect RPC over the process's stdin and stdout, using one of Effect's own serialisations with framing suitable for pipes (NDJSON; Effect has removed its MessagePack format).
 - The connector protocol RPC group has four methods:
   - Handshake. Returns the connector's protocol version and its catalogue.
@@ -458,7 +459,7 @@ The panel layout (structure, navigation, grouping) is decided separately. Three 
 - One multicall binary holds daemon, CLI and MCP server, built with `bun build --compile` for the four targets.
 - The tray app bundles everything: one desktop download with the binary inside the app, which also puts `exangelos` and `xng` on the PATH.
 - Headless installs use the standalone binary through a Homebrew formula or an install script.
-- Version 1 delivers build scripts for the four targets, Homebrew formula and cask definitions, an install script and a release workflow, all exercised locally. Official connector archives are built as release files with checksums the binary carries.
+- Version 1 delivers build scripts for the four targets, Homebrew formula and cask definitions, an install script and a release workflow, all exercised locally. Official connector archives are built as release files with checksums the binary carries. The release build runs the connector's `build` script, then packs `connector.json`, the bundle entry and every file the `files` list names, at the same paths. It refuses a native entry, a listed path that is absolute, leaves the connector folder or does not exist, and a link or special file among the listed files. The checksum is taken over the unpacked archive, so it covers the listed files.
 - Nothing is published: no tap repository, no signing, no release, no registry or domain reservation, until the owner says so. Dogfooding runs from a local install, with official connectors fetched from a local folder.
 
 ### Versions
