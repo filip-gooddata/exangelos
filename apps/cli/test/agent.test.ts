@@ -102,6 +102,14 @@ describe("agent commands", () => {
     expect(result.stdout).toContain(out)
   })
 
+  it("turns event alerts off for one subscription and prints it", async () => {
+    const result = await run(["alerts", "sub_7f3k", "off"])
+    expect(result.exit._tag).toBe("Success")
+    expect(callOf(result, "SetEventAlerts")?.payload).toEqual({ id: "sub_7f3k", eventAlerts: false })
+    expect(result.stdout).toContain("Subscription:  sub_7f3k")
+    expect(result.stdout).toContain("Event alerts:  off")
+  })
+
   it("tells a Claude Code session how to wait, and a T3 session nothing", async () => {
     const claude = subscription({ wakeTarget: { harness: "claude-code", sessionId: "c-1" } })
     const hint =

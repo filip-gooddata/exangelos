@@ -72,6 +72,7 @@ export const subscription = (subscription: Subscription.Subscription): string =>
     ["Event types", subscription.eventTypes?.join(", ") ?? "all"],
     ["State", `${stateText(subscription.state)} since ${time(subscription.stateSince)}`],
     ["Wakes", subscription.wakeTarget === undefined ? "none (pull-only)" : sessionText(subscription.wakeTarget)],
+    ["Event alerts", subscription.eventAlerts ? "on" : "off"],
     ["Events", `${subscription.lastNumber} received, acknowledged through ${subscription.ackedThrough}`],
     ["Max events", subscription.maxEvents?.toString()],
     ["Created", time(subscription.createdAt)],
