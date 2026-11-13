@@ -2,17 +2,14 @@ import { Effect, Record, Schema } from "effect"
 import { type CommandHarness, Session, type Settings } from "@exangelos/domain"
 import { SettingsStore } from "../ports/SettingsStore.ts"
 
-/** Only you define or remove a harness, and a session asked. */
 export class HumanRequired extends Schema.TaggedError<HumanRequired>()("HumanRequired", {
   harness: Schema.String
 }) {}
 
-/** No harness of that name is in the settings. */
 export class UnknownHarness extends Schema.TaggedError<UnknownHarness>()("UnknownHarness", {
   harness: Schema.String
 }) {}
 
-/** Defines the harness, or replaces the one of that name. */
 export const setHarness = (actor: Session.Actor, name: Session.HarnessName, definition: CommandHarness.Definition) =>
   Effect.gen(function*() {
     if (actor._tag !== "You") return yield* new HumanRequired({ harness: name })
@@ -21,7 +18,6 @@ export const setHarness = (actor: Session.Actor, name: Session.HarnessName, defi
     )
   })
 
-/** Removes the harness. Subscriptions that wake through it keep it and their wakes fail until you define it again. */
 export const removeHarness = (actor: Session.Actor, name: Session.HarnessName) =>
   Effect.gen(function*() {
     if (actor._tag !== "You") return yield* new HumanRequired({ harness: name })
@@ -32,7 +28,6 @@ export const removeHarness = (actor: Session.Actor, name: Session.HarnessName) =
     )
   })
 
-/** Refuses a wake target whose harness you have not defined. A built-in harness always passes. */
 export const requireKnown = (target: Session.Target | undefined) =>
   Effect.gen(function*() {
     if (target === undefined || Session.isBuiltInTarget(target)) return

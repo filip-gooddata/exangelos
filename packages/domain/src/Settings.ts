@@ -7,7 +7,6 @@ export const Settings = Schema.Struct({
   eventAlerts: Schema.Boolean,
   limits: Limits,
   officialConnectorFolder: Schema.optionalKey(Schema.String),
-  /** The harnesses you define, by name. Only you change them, and not through `SetSettings`. */
   harnesses: Schema.Record(HarnessName, Definition)
 })
 export type Settings = typeof Settings.Type

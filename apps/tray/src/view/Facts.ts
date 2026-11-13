@@ -12,7 +12,6 @@ const millis = (at: DateTime.Utc) => DateTime.toEpochMillis(at)
 
 const builtInNames: Record<Session.Harness, string> = { t3: "T3 Code", "claude-code": "Claude Code", codex: "Codex" }
 
-/** The display name of a built-in harness, or the name you gave a harness you defined. */
 export const harnessName = (harness: string): string =>
   Object.hasOwn(builtInNames, harness) ? builtInNames[harness as Session.Harness] : harness
 

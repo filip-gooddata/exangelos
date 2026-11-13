@@ -202,7 +202,6 @@ export const settings = (value: Settings.Settings): string =>
     ...Object.entries(value.harnesses).map(([name, harness]) => [`harnesses.${name}`, commandText(harness.command)] as const)
   ]).join("\n")
 
-/** A command as you would type it: an argument with spaces, quotes or nothing in it is quoted. */
 export const commandText = (command: ReadonlyArray<string>): string =>
   command.map((arg) => /^[^\s"'\\]+$/.test(arg) ? arg : JSON.stringify(arg)).join(" ")
 

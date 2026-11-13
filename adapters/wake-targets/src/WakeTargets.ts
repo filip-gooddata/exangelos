@@ -29,10 +29,6 @@ const attempt = (
     if (verdict.note !== undefined) yield* Effect.logWarning(verdict.note)
   })
 
-/**
- * Runs the command of a harness you define, read from the settings at delivery time, with the
- * session and subscription put into its arguments. A harness you removed fails the wake.
- */
 const named = (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
   settings: SettingsStore.SettingsStore["Service"],
@@ -59,11 +55,6 @@ const named = (
     )
   })
 
-/**
- * Delivers each wake through the harness of its session: T3 Code, Codex, or a harness you define in
- * the settings. A Claude Code session has no route and every wake for it fails at once (see
- * `ClaudeCode`). One attempt per call; the caller owns retries.
- */
 export const layer = (
   options: Options = {}
 ): Layer.Layer<WakeTarget.WakeTarget, never, ChildProcessSpawner.ChildProcessSpawner | SettingsStore.SettingsStore> =>

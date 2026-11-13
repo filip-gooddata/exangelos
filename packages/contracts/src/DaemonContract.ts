@@ -23,7 +23,6 @@ export class NoWakeTarget extends Schema.TaggedError<NoWakeTarget>()("NoWakeTarg
   message: Schema.String
 }) {}
 
-/** The wake target names a harness that is not in the settings. */
 export class UnknownHarness extends Schema.TaggedError<UnknownHarness>()("UnknownHarness", {
   harness: Schema.String,
   message: Schema.String
@@ -297,14 +296,12 @@ export class SetSettings extends Rpc.make("SetSettings", {
   error: InvalidRequest
 }) {}
 
-/** Defines a harness, or replaces the one of that name. Yours alone: a session is refused. */
 export class SetHarness extends Rpc.make("SetHarness", {
   payload: { name: Session.HarnessName, command: CommandHarness.Command },
   success: Settings.Settings,
   error: HumanRequired
 }) {}
 
-/** Removes a harness. Yours alone: a session is refused. */
 export class RemoveHarness extends Rpc.make("RemoveHarness", {
   payload: { name: Session.HarnessName },
   success: Settings.Settings,

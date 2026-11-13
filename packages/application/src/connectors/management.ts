@@ -237,11 +237,6 @@ export const devUnlink = (actor: Session.Actor, name: Ids.ConnectorName) =>
 
 export const getSettings = SettingsStore.use((store) => store.read)
 
-/**
- * Writes the settings. The harnesses stay as stored, whatever the settings passed hold: only
- * `setHarness` and `removeHarness` change them. A changed wake window reaches open Watch streams
- * through a rewatch.
- */
 export const setSettings = (settings: Settings.Settings) =>
   Effect.gen(function*() {
     const written = yield* (yield* SettingsStore).update((current) =>
