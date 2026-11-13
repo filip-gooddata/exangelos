@@ -72,9 +72,24 @@ Every file reuses the two paths of `icon.svg` unchanged. The first path is the f
 | `icon.svg` | none set (black) | none set (black) | Source of the shape. Do not recolour it in place |
 | `mark-on-light.svg` | Ink | Ink | Light backgrounds |
 | `mark-on-dark.svg` | Bone | Bone | Dark backgrounds |
-| `mark-ember-flame-on-light.svg` | Ember deep | Ink | Option A, light backgrounds |
-| `mark-ember-flame-on-dark.svg` | Ember | Bone | Option A, dark backgrounds |
-| `mark-ember-on-light.svg` | Ember deep | Ember deep | Option B, light backgrounds |
-| `mark-ember-on-dark.svg` | Ember | Ember | Option B, dark backgrounds |
+| `mark-ember-flame-on-light.svg` | Ember deep | Ink | Coloured mark, light backgrounds |
+| `mark-ember-flame-on-dark.svg` | Ember | Bone | Coloured mark, dark backgrounds |
+| `app-icon.svg` | Ember | Bone | App icon, on a Night plate |
 
-The ember options are candidates. The owner has not picked one. The menu bar uses `menu-bar-glyph.svg` as a template image, which macOS tints, so it stays uncoloured.
+The brand's coloured version is the ember flame mark: flame band in ember, body neutral. The owner picked it on 2026-11-13 and dropped the all-ember variant. The README header uses the neutral pair. The menu bar uses `menu-bar-glyph.svg` as a template image, which macOS tints, so it stays uncoloured.
+
+## App icon
+
+`app-icon.svg` is the app icon for Finder, the Dock and the installer. It is `mark-ember-flame-on-dark.svg` placed on a rounded plate. `apps/tray/icons/generate.sh` builds the app icon PNGs and `icon.icns` from it.
+
+All sizes below are on the 1024 px canvas.
+
+| Part | Value |
+|---|---|
+| Plate | 824 px square, Night `#2A2A2E` |
+| Corner radius | 185 px |
+| Margin around the plate | 100 px on each side |
+| Mark | Scaled to 0.74 and centred on the canvas, so it measures 417 × 607 px |
+| Space from mark to plate edge | 109 px above and below, about 203 px at the sides |
+
+At 16 px the mark shrinks to an ember crown over a light shape. From 32 px up it reads as the full mark.
