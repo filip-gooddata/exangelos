@@ -6,6 +6,7 @@
   "scripts": {
     "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
     "test": "vitest run",
+    "check:release-tag": "bun src/cli/check-release-tag.ts",
     "build:connectors": "bun src/cli/build-connectors.ts",
     "build:release": "bun src/cli/build-release.ts",
     "render:homebrew": "bun src/cli/render-homebrew.ts"

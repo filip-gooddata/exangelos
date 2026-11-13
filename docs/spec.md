@@ -348,6 +348,7 @@ Each change to a subscription or connector records its actor: the session the CL
 ### Wake targets and session detection
 
 - Wake targets are built into the daemon behind the WakeTarget port, with adapters for T3 Code, Claude Code and Codex and a generic command adapter.
+- Version 1 has no way for an owner to choose the generic command adapter: the daemon always delivers through the session's harness, and the command adapter is used only in tests. A follow-up after version 1 adds a named harness in settings with a command template.
 - Known delivery commands, to verify at implementation: T3 Code `t3 thread send <thread> <message>` (a busy thread gets it as its next turn); Codex `codex queue` or `codex exec resume`. Claude Code has none: no local command reaches a running standalone Claude Code session, and `claude --bg --resume` starts a paid copy. Its wake target fails each attempt with a fixed reason and starts no process. The agent runs `exangelos wait <subscription>` in the background instead, and CLI and MCP results for that harness carry a hint line saying so. Claude Code inside T3 Code gets wakes through T3 Code.
 - The CLI and the MCP server detect the harness session id from environment variables. A T3 Code thread wins when sessions are nested. The exact Claude Code and Codex environment variables are verified at implementation.
 - A subscription has one wake target or none, and any actor can retarget it.

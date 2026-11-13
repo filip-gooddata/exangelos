@@ -14,6 +14,10 @@ export const defaultBuildScript = join(repositoryDirectory, "apps", "cli", "buil
 export const packagingVersion = (): string =>
   (JSON.parse(readFileSync(join(packagingDirectory, "package.json"), "utf8")) as { readonly version: string }).version
 
+/** A tag run builds files that point at the release named `v<version>`, so any other tag fails the build. */
+export const releaseTagMismatch = (tag: string, version: string): string | undefined =>
+  tag === `v${version}` ? undefined : `Tag ${tag} does not match the package version: expected v${version}`
+
 export const officialConnectorDirectories = (connectorsRoot = join(repositoryDirectory, "connectors")): ReadonlyArray<string> =>
   officialConnectorNames.map((name) => join(connectorsRoot, name))
 
