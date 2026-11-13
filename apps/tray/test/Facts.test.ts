@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import type { Subscription } from "@exangelos/domain"
 import { DateTime } from "effect"
 import * as Facts from "../src/view/Facts.ts"
-import { subscription } from "./fixtures.ts"
+import { plugin, subscription } from "./fixtures.ts"
 
 const change = (kind: string, detail?: string): Subscription.Change => ({
   subscription: subscription().id,
@@ -43,5 +43,20 @@ describe("Facts", () => {
     expect(Facts.filledValues(fields, { site: " https://a ", token: "" })).toEqual({ site: "https://a" })
     expect(Facts.filledValues(fields, { mode: " left " })).toEqual({ mode: " left " })
     expect(Facts.filledValues(fields, { mode: " ", site: "  " })).toEqual({ mode: " " })
+  })
+})
+
+describe("secretStored", () => {
+  const token = { _tag: "Secret", key: "token", label: "Token", required: true } as const
+  const optional = { ...token, required: false }
+
+  it("says set only for a required secret of a complete configuration", () => {
+    expect(Facts.secretStored(plugin({ configuration: { _tag: "Set" } }), token)).toBe(true)
+    expect(Facts.secretStored(plugin({ configuration: { _tag: "Rejected", reason: "401" } }), token)).toBe(true)
+  })
+
+  it("stays unknown for an optional secret or an incomplete configuration, even one never saved", () => {
+    expect(Facts.secretStored(plugin({ configuration: { _tag: "Set" } }), optional)).toBeUndefined()
+    expect(Facts.secretStored(plugin({ configuration: { _tag: "Missing" } }), token)).toBeUndefined()
   })
 })
