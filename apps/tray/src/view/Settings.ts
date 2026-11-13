@@ -44,14 +44,22 @@ const alertsOn = (model: Model, settings: Settings.Settings): boolean => {
   return edited === undefined ? settings.eventAlerts : edited === "on"
 }
 
-/** Per-subscription alerts are shown, not changed, until the daemon takes a request for them. */
-const subscriptionAlerts = (h: H, subscription: Subscription.Subscription): Html =>
+const subscriptionAlerts = (h: H, model: Model, subscription: Subscription.Subscription): Html =>
   h.div([h.Class("setting-row")], [
     h.div([h.Class("setting-text")], [
       h.p([h.Class("line-main")], [subscription.label]),
       h.p([h.Class("line-quiet")], [mono(h, subscription.id)])
     ]),
-    toggle(h, `Event alerts for ${subscription.label}`, subscription.eventAlerts, null)
+    toggle(
+      h,
+      `Event alerts for ${subscription.label}`,
+      subscription.eventAlerts,
+      model.busy
+        ? null
+        : Message.Requested({
+          request: Request.SetEventAlerts({ id: subscription.id, eventAlerts: !subscription.eventAlerts })
+        })
+    )
   ])
 
 const alerts = (h: H, model: Model, state: Ready, settings: Settings.Settings): Html => {
@@ -66,7 +74,7 @@ const alerts = (h: H, model: Model, state: Ready, settings: Settings.Settings): 
       toggle(h, "Event alerts", on, Message.EditedSetting({ key: eventAlertsKey, value: on ? "off" : "on" }))
     ]),
     open.length === 0 ? null : h.h3([h.Class("subsection-title")], ["Per subscription"]),
-    ...open.map((subscription) => subscriptionAlerts(h, subscription))
+    ...open.map((subscription) => subscriptionAlerts(h, model, subscription))
   ])
 }
 

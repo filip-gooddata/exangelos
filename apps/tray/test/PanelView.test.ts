@@ -23,6 +23,20 @@ describe("panel update", () => {
     expect(confirmed.commands).toHaveLength(1)
   })
 
+  it("sends the opposite of a subscription's alerts from its switch in Settings, without asking", () => {
+    const turnOff = Request.SetEventAlerts({ id, eventAlerts: false })
+    Scene.scene(
+      { update, view },
+      Scene.given(initial(Fixtures.quiet, Fixtures.now, { _tag: "Settings" })),
+      Scene.click(Scene.label("Event alerts for Fix flaky checkout test")),
+      Scene.Command.resolve(
+        { name: "Perform", args: { request: turnOff }, effect: Effect.succeed(Message.Performed({ request: turnOff })) },
+        Message.Performed({ request: turnOff })
+      ),
+      Scene.Command.expectNone()
+    )
+  })
+
   it("refuses to save a limit that is not a whole number above zero", () => {
     const edited = update(ready, Message.EditedSetting({ key: "backlogCount", value: "0" }))
     const saved = update(edited.model, Message.SavedSettings())
