@@ -178,6 +178,17 @@ describe("Daemon errors", () => {
       expect(refused).toMatchObject({ connector: "template" })
     }).pipe(Effect.scoped), 60_000)
 
+  it.live("refuses a session that changes settings and lets the owner change them", () =>
+    Effect.gen(function*() {
+      const { as, client } = yield* start(yield* home)
+      const before = yield* client.GetSettings()
+      const agent = yield* as(session)
+      const refused = yield* Effect.flip(agent.SetSettings({ settings: { ...before, eventAlerts: !before.eventAlerts } }))
+      expect(refused).toMatchObject({ _tag: "HumanRequired", settings: true })
+      expect(yield* client.GetSettings()).toEqual(before)
+      expect(yield* client.SetSettings({ settings: { ...before, eventAlerts: !before.eventAlerts } })).toMatchObject({ eventAlerts: !before.eventAlerts })
+    }).pipe(Effect.scoped), 60_000)
+
   it.live("lets the owner and the creating session switch event alerts and refuses another session", () =>
     Effect.gen(function*() {
       const dir = yield* home

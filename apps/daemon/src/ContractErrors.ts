@@ -5,6 +5,7 @@ import type {
   HumanRequired,
   ConfigurationRejected,
   OfficialConnectorSource,
+  SettingsOwnerOnly,
   ConnectorAccess,
   ConnectorImportSource,
   Harnesses,
@@ -67,6 +68,8 @@ export const removedDuringImport = (_: Cause.NoSuchElementError) =>
   Effect.fail(new Contract.ImportFailed({ reason: "Another call removed the connector while it was being imported." }))
 
 export const humanRequired = (e: HumanRequired) => Effect.fail(new Contract.HumanRequired({ connector: e.connector }))
+
+export const settingsOwnerOnly = (_: SettingsOwnerOnly) => Effect.fail(new Contract.HumanRequired({ settings: true }))
 
 export const ownerOnlySubscription = (e: Subscriptions.HumanRequired) =>
   Effect.fail(new Contract.HumanRequired({ subscription: e.subscription }))

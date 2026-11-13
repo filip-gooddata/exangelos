@@ -23,6 +23,8 @@ export class HumanRequired extends Schema.TaggedError<HumanRequired>()("HumanReq
   connector: Ids.ConnectorName
 }) {}
 
+export class SettingsOwnerOnly extends Schema.TaggedError<SettingsOwnerOnly>()("SettingsOwnerOnly", {}) {}
+
 export class ConfigurationInvalid extends Schema.TaggedError<ConfigurationInvalid>()("ConfigurationInvalid", {
   connector: Ids.ConnectorName,
   reason: Schema.String
@@ -237,8 +239,9 @@ export const devUnlink = (actor: Session.Actor, name: Ids.ConnectorName) =>
 
 export const getSettings = SettingsStore.use((store) => store.read)
 
-export const setSettings = (settings: Settings.Settings) =>
+export const setSettings = (actor: Session.Actor, settings: Settings.Settings) =>
   Effect.gen(function*() {
+    if (actor._tag !== "You") return yield* new SettingsOwnerOnly()
     const written = yield* (yield* SettingsStore).update((current) =>
       Effect.succeed({ ...settings, harnesses: current.harnesses })
     )

@@ -64,7 +64,8 @@ export class OfficialFetchFailed extends Schema.TaggedError<OfficialFetchFailed>
 export class HumanRequired extends Schema.TaggedError<HumanRequired>()("HumanRequired", {
   connector: Schema.optionalKey(Ids.ConnectorName),
   subscription: Schema.optionalKey(Ids.SubscriptionId),
-  harness: Schema.optionalKey(Schema.String)
+  harness: Schema.optionalKey(Schema.String),
+  settings: Schema.optionalKey(Schema.Literal(true))
 }) {}
 
 export class ImportFailed extends Schema.TaggedError<ImportFailed>()("ImportFailed", {
@@ -293,7 +294,7 @@ export class GetSettings extends Rpc.make("GetSettings", {
 export class SetSettings extends Rpc.make("SetSettings", {
   payload: { settings: Settings.Settings },
   success: Settings.Settings,
-  error: InvalidRequest
+  error: Schema.Union([InvalidRequest, HumanRequired])
 }) {}
 
 export class SetHarness extends Rpc.make("SetHarness", {
