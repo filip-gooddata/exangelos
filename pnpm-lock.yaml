@@ -936,6 +936,9 @@ importers:
       '@exangelos/connector-directory':
         specifier: workspace:*
         version: link:../adapters/connector-directory
+      '@exangelos/connector-import':
+        specifier: workspace:*
+        version: link:../adapters/connector-import
       effect:
         specifier: 'catalog:'
         version: 4.1.4

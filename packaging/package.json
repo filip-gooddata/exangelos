@@ -14,6 +14,7 @@
   "dependencies": {
     "@effect/platform-bun": "catalog:",
     "@exangelos/connector-directory": "workspace:*",
+    "@exangelos/connector-import": "workspace:*",
     "effect": "catalog:"
   }
 }
