@@ -97,7 +97,7 @@ export const stateFact = (now: number, subscription: Subscription.Subscription, 
     case "Ended":
       return state.reason._tag === "MaxEvents"
         ? `Ended ${ago(now, stateSince)} after its last allowed event`
-        : `Ended ${ago(now, stateSince)} by the plugin: ${state.reason.reason}`
+        : `Ended ${ago(now, stateSince)} by the connector: ${state.reason.reason}`
     case "Cancelled":
       return `Cancelled ${ago(now, stateSince)} by ${actorName(state.actor)}`
   }
@@ -340,7 +340,7 @@ export const refusalText = (refusal: Refusal): string => {
     case "ImportFailed":
       return `The import failed: ${refusal.reason}`
     case "PluginNotFound":
-      return `The daemon has no plugin ${refusal.plugin}.`
+      return `The daemon has no connector ${refusal.plugin}.`
     case "PluginUnavailable":
       return `${refusal.plugin} is unavailable: ${refusal.problem}`
     case "DigestMismatch":
