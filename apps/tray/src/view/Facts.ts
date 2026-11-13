@@ -170,7 +170,6 @@ const changeTitles: Readonly<Record<string, string>> = {
   cancel: "Cancelled"
 }
 
-/** One change as a history line. A kind without a title of its own reads as its name, so a new kind still shows. */
 export const changeTitle = (change: Subscription.Change): string => {
   const kind: string = change.kind
   if (kind === "eventAlerts") return `Event alerts turned ${change.detail === "off" ? "off" : "on"}`
@@ -274,7 +273,6 @@ export const isSecretField = (field: Catalogue.ConfigurationField): boolean =>
 /** Whether a secret is stored. The plugin record says only whether the configuration as a whole is set. */
 export const secretStored = (plugin: Plugin.Plugin): boolean => plugin.configuration._tag !== "Missing"
 
-/** The sessions that wake targets name, each once, in the order the subscriptions list them. */
 export const knownSessions = (subscriptions: ReadonlyArray<Subscription.Subscription>): ReadonlyArray<Session.Session> =>
   subscriptions.reduce<ReadonlyArray<Session.Session>>((sessions, subscription) => {
     const target = subscription.wakeTarget
@@ -283,7 +281,6 @@ export const knownSessions = (subscriptions: ReadonlyArray<Subscription.Subscrip
       : [...sessions, target]
   }, [])
 
-/** The number "Acknowledge through" uses: the event you picked while it is still pending, else the newest pending one. */
 export const ackThroughNumber = (subscription: Subscription.Subscription, chosen: number | null): number | undefined => {
   if (subscription.lastNumber <= subscription.ackedThrough) return undefined
   return chosen !== null && chosen > subscription.ackedThrough && chosen <= subscription.lastNumber
@@ -291,13 +288,11 @@ export const ackThroughNumber = (subscription: Subscription.Subscription, chosen
     : subscription.lastNumber
 }
 
-/** A digest cut to its head and tail, for rows: "sha256 9c1f04ab…e27a". */
 export const shortDigest = (digest: string): string => {
   const hex = digest.replace(/^sha256[:-]?/, "")
   return hex.length <= 14 ? `sha256 ${hex}` : `sha256 ${hex.slice(0, 8)}…${hex.slice(-4)}`
 }
 
-/** The import you typed, or nothing while a field it needs is empty. */
 export const importSource = (
   kind: "ArchiveFile" | "HttpsLink" | "Directory" | "GitRepository",
   location: string,
@@ -316,7 +311,6 @@ export const importSource = (
   }
 }
 
-/** The configuration values to send: only the fields you filled in. */
 export const filledValues = (
   fields: ReadonlyArray<Catalogue.ConfigurationField>,
   edits: Readonly<Record<string, string>>
@@ -324,7 +318,7 @@ export const filledValues = (
   Object.fromEntries(
     fields.flatMap((field) => {
       const value = edits[field.key]
-      return value === undefined || value.trim() === "" ? [] : [[field.key, isSecretField(field) ? value : value.trim()] as const]
+      return value === undefined || value.trim() === "" ? [] : [[field.key, field._tag === "Text" && !field.secretDestination ? value.trim() : value] as const]
     })
   )
 

@@ -12,7 +12,6 @@ const plain = (h: H, model: Model, title: string, text: string): ReadonlyArray<H
   null
 ]
 
-/** The connectors from the panel state, or the sentence to show in their place. */
 const loadedPlugins = (model: Model): Result.Result<ReadonlyArray<Plugin.Plugin>, string> => {
   const { state } = model
   switch (state._tag) {
@@ -128,7 +127,6 @@ const importFooter = (h: H, model: Model): Html => {
   ])
 }
 
-/** Every connector with its origin, digest, trust, configuration and process, then the import form. */
 export const plugins = (h: H, model: Model): ReadonlyArray<Html> => {
   const loaded = loadedPlugins(model)
   return [
@@ -246,7 +244,6 @@ const enabledFooter = (h: H, model: Model, plugin: Plugin.Plugin): Html => {
   ])
 }
 
-/** One connector: its origin and digest, then the enable step while it is inert, else its configuration form. */
 export const plugin = (h: H, model: Model, name: string): ReadonlyArray<Html> => {
   const loaded = loadedPlugins(model)
   if (Result.isFailure(loaded)) return plain(h, model, name, loaded.failure)

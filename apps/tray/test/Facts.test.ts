@@ -37,8 +37,10 @@ describe("Facts", () => {
   it("sends only the configuration fields you filled in", () => {
     const fields = [
       { _tag: "Text", key: "site", label: "Site", required: true, secretDestination: false },
-      { _tag: "Secret", key: "token", label: "Token", required: true }
+      { _tag: "Secret", key: "token", label: "Token", required: true },
+      { _tag: "Choice", key: "mode", label: "Mode", required: false, choices: [" left "], secretDestination: false }
     ] as const
     expect(Facts.filledValues(fields, { site: " https://a ", token: "" })).toEqual({ site: "https://a" })
+    expect(Facts.filledValues(fields, { mode: " left " })).toEqual({ mode: " left " })
   })
 })

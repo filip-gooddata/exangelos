@@ -155,7 +155,6 @@ const actions = (h: H, model: Model, subscription: Subscription.Subscription, ac
   ])
 }
 
-/** One subscription in full: its facts, events, wakes and history, with the actions its state allows. */
 export const subscription = (h: H, model: Model, id: string): ReadonlyArray<Html> => {
   const { state } = model
   if (state._tag === "Loading") return plain(h, model, "Subscription", "Asking the daemon.")
