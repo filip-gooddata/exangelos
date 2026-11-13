@@ -14,6 +14,7 @@ import {
   cancel,
   pause,
   resume,
+  setEventAlerts,
   subscribe,
   type SubscribeRequest,
   update,
@@ -189,6 +190,23 @@ describe("subscription use cases", () => {
 
       expect((yield* Fiber.join(waiting)).why).toMatchObject({ _tag: "Suspended", problem: "the plugin was removed" })
     }).pipe(Effect.provide(layerWithIntake)))
+
+  it.effect("only you turn event alerts on or off, and each change names you", () =>
+    Effect.gen(function*() {
+      const subscription = yield* subscribed()
+      const you: Session.Actor = { _tag: "You" }
+
+      expect((yield* setEventAlerts(you, { id: subscription.id, eventAlerts: true })).eventAlerts).toBe(true)
+      expect((yield* setEventAlerts(you, { id: subscription.id, eventAlerts: false })).eventAlerts).toBe(false)
+      const refused = yield* Effect.flip(setEventAlerts(ownActor, { id: subscription.id, eventAlerts: true }))
+
+      expect(refused).toMatchObject({ _tag: "HumanRequired", subscription: subscription.id })
+      const changes = yield* (yield* SubscriptionRepository).changes(subscription.id)
+      expect(changes.filter((change) => change.kind === "eventAlerts").map((change) => [change.actor, change.detail]))
+        .toEqual([[you, "on"], [you, "off"]])
+      expect(Option.map(yield* (yield* SubscriptionRepository).find(subscription.id), (found) => found.eventAlerts))
+        .toEqual(Option.some(false))
+    }).pipe(Effect.provide(layerHarness)))
 
   it.effect("pause by the own session stores no wake; by another actor it stores a paused wake", () =>
     Effect.gen(function*() {

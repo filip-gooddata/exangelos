@@ -19,6 +19,7 @@ const caller = (headers: Readonly<Record<string, string | undefined>>) =>
 const handlers = DaemonContract.DaemonContract.toLayer({
   ServiceStatus: (_, { headers }) => Effect.succeed({ version: caller(headers), startMethod: "foreground" }),
   ListPlugins: unused,
+  SetEventAlerts: unused,
   Subscribe: unused,
   Update: unused,
   List: unused,

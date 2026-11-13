@@ -1,7 +1,7 @@
 #!/bin/sh
 set -eu
 cd "$(dirname "$0")"
-icon=../../../assets/icon.svg
+icon=../../../assets/app-icon.svg
 glyph=../../../assets/menu-bar-glyph.svg
 
 python3 - "$glyph" <<'PY'

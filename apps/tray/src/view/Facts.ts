@@ -166,8 +166,16 @@ const changeTitles: Record<Subscription.ChangeKind, string> = {
   pause: "Paused",
   resume: "Resumed",
   retarget: "Retargeted",
-  cancel: "Cancelled"
+  cancel: "Cancelled",
+  eventAlerts: "Event alerts"
 }
+
+const changeTitle = (change: Subscription.Change): string =>
+  change.kind === "eventAlerts"
+    ? `Event alerts turned ${change.detail === "on" ? "on" : "off"}`
+    : change.detail === undefined
+    ? changeTitles[change.kind]
+    : `${changeTitles[change.kind]}: ${change.detail}`
 
 export interface HistoryEntry {
   readonly title: string
@@ -179,7 +187,7 @@ export interface HistoryEntry {
 export const history = (detail: Detail): ReadonlyArray<HistoryEntry> =>
   [
     ...detail.changes.map((change): HistoryEntry => ({
-      title: change.detail === undefined ? changeTitles[change.kind] : `${changeTitles[change.kind]}: ${change.detail}`,
+      title: changeTitle(change),
       by: `By ${actorName(change.actor)}`,
       at: change.at
     })),
@@ -349,6 +357,8 @@ export const refusalText = (refusal: Refusal): string => {
       return `The configuration is not valid: ${refusal.reason}`
     case "ConfigurationRejected":
       return `The source rejected this configuration: ${refusal.reason}`
+    case "HumanRequired":
+      return "Only you can do this, from the tray app or the CLI, not an agent."
     case "DaemonNotRunning":
       return `The daemon is not running: ${refusal.message}`
     case "CallFailed":

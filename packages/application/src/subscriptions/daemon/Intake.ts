@@ -1,8 +1,10 @@
 import { Array as Arr, DateTime, Effect, Layer, Option, Result } from "effect"
-import { Delivery, Intake, Lifecycle, PluginRules } from "@exangelos/domain"
+import { Alert, Delivery, Intake, Lifecycle, PluginRules, Settings } from "@exangelos/domain"
 import type { Event, Ids, Plugin, Subscription, Wake } from "@exangelos/domain"
 import * as NewId from "../../NewId.ts"
+import { AlertSink } from "../../ports/AlertSink.ts"
 import { EventRepository } from "../../ports/EventRepository.ts"
+import { SettingsStore } from "../../ports/SettingsStore.ts"
 import { SubscriptionRepository } from "../../ports/SubscriptionRepository.ts"
 import { WakeRepository } from "../../ports/WakeRepository.ts"
 import { SubscriptionIntake, type Verdict } from "../../seam/SubscriptionIntake.ts"
@@ -13,7 +15,7 @@ import { commit, type CommitServices } from "../Transitions.ts"
 import { requestWake } from "../Wakes.ts"
 import { RemovedPlugins, type Unavailable } from "../RemovedPlugins.ts"
 
-export type IntakeServices = CommitServices | SubscriptionLocks | RemovedPlugins
+export type IntakeServices = CommitServices | SubscriptionLocks | RemovedPlugins | AlertSink
 
 /** Runs one subscription's load-change-store under its lock, with the subscription as stored now. */
 export const withSubscription = <A, R>(
@@ -40,6 +42,13 @@ export const oldestPending = (subscription: Subscription.Subscription) =>
     return Option.map(Arr.head(pending), (event) => event.receivedAt)
   })
 
+const alertOnEvent = (subscription: Subscription.Subscription, event: Event.Event) =>
+  Effect.gen(function*() {
+    const settings = yield* (yield* SettingsStore).read.pipe(Effect.orElseSucceed(() => Settings.initial))
+    const alert = Alert.forEvent(settings, subscription, event)
+    if (Option.isSome(alert)) yield* Effect.ignore((yield* AlertSink).show(alert.value))
+  })
+
 const admitEvent = (
   before: Subscription.Subscription,
   reported: Event.ReportedEvent,
@@ -53,7 +62,7 @@ const admitEvent = (
     const admission = Intake.admit({ subscription: before, reported, cursor, duplicate, id, now })
     if (Option.isNone(admission.event)) {
       if (admission.subscription !== before) yield* commit(Option.some(before), { ...admission, wake: Option.none() })
-      return admission.subscription
+      return { subscription: admission.subscription, stored: Option.none<Event.Event>() }
     }
     const event = admission.event.value
     const limits = yield* currentLimits
@@ -63,35 +72,43 @@ const admitEvent = (
       () => admission
     )
     yield* commit(Option.some(before), { subscription: step.subscription, wake: step.wake, events: [event] })
-    return step.subscription
+    return { subscription: step.subscription, stored: Option.some(event) }
   })
+
+const unchanged = (subscription: Subscription.Subscription) => ({ subscription, stored: Option.none<Event.Event>() })
 
 const apply = (before: Subscription.Subscription, item: Event.WatchItem) =>
   Effect.gen(function*() {
-    if (before.state._tag !== "Active") return before
+    if (before.state._tag !== "Active") return unchanged(before)
     switch (item._tag) {
       case "Event":
         return yield* admitEvent(before, item.event, Option.fromUndefinedOr(item.cursor))
       case "Cursor": {
         const subscription = { ...before, cursor: item.cursor }
         yield* commit(Option.some(before), { subscription, wake: Option.none() })
-        return subscription
+        return unchanged(subscription)
       }
       case "End": {
         const now = yield* DateTime.now
         const ended = Lifecycle.end(before, { _tag: "Plugin", reason: item.reason }, now)
-        if (Result.isFailure(ended)) return before
+        if (Result.isFailure(ended)) return unchanged(before)
         yield* commit(Option.some(before), ended.success)
-        return ended.success.subscription
+        return unchanged(ended.success.subscription)
       }
     }
   })
 
 const ingest = (id: Ids.SubscriptionId, item: Event.WatchItem) =>
-  Effect.map(
-    withSubscription(id, (before) => apply(before, item)),
-    (after): Verdict => Option.exists(after, (subscription) => subscription.state._tag === "Active") ? "continue" : "stop"
-  )
+  Effect.gen(function*() {
+    const outcome = yield* withSubscription(id, (before) => apply(before, item))
+    if (Option.isSome(outcome) && Option.isSome(outcome.value.stored)) {
+      yield* alertOnEvent(outcome.value.subscription, outcome.value.stored.value)
+    }
+    const verdict: Verdict = Option.exists(outcome, ({ subscription }) => subscription.state._tag === "Active")
+      ? "continue"
+      : "stop"
+    return verdict
+  })
 
 const lastSuspensionWake = (wakes: ReadonlyArray<Wake.Wake>) =>
   Option.map(Arr.findLast(wakes, (wake) => wake.reason === "suspended"), (wake) => wake.createdAt)
