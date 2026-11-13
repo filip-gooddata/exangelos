@@ -1,3 +1,4 @@
+import type { DaemonContract } from "@exangelos/contracts"
 import type { Alert, Catalogue, Event, Plugin, Session, Subscription, Wake } from "@exangelos/domain"
 import { DateTime, Duration } from "effect"
 import type { Detail, ServiceStatus } from "../daemon/DaemonClient.ts"
@@ -159,7 +160,7 @@ export const retryFact = (now: number, wake: Wake.Wake): string => {
   return `Wake waiting, ${attempts}${next}`
 }
 
-const changeTitles: Record<Subscription.ChangeKind, string> = {
+const changeTitles: Readonly<Record<Subscription.ChangeKind, string>> = {
   create: "Created",
   update: "Updated",
   ack: "Acknowledged",
@@ -170,7 +171,7 @@ const changeTitles: Record<Subscription.ChangeKind, string> = {
   eventAlerts: "Event alerts"
 }
 
-const changeTitle = (change: Subscription.Change): string =>
+export const changeTitle = (change: Subscription.Change): string =>
   change.kind === "eventAlerts"
     ? `Event alerts turned ${change.detail === "on" ? "on" : "off"}`
     : change.detail === undefined
@@ -272,6 +273,56 @@ export const isSecretField = (field: Catalogue.ConfigurationField): boolean =>
 
 /** Whether a secret is stored. The plugin record says only whether the configuration as a whole is set. */
 export const secretStored = (plugin: Plugin.Plugin): boolean => plugin.configuration._tag !== "Missing"
+
+export const knownSessions = (subscriptions: ReadonlyArray<Subscription.Subscription>): ReadonlyArray<Session.Session> =>
+  subscriptions.reduce<ReadonlyArray<Session.Session>>((sessions, subscription) => {
+    const target = subscription.wakeTarget
+    return target === undefined || sessions.some((s) => s.harness === target.harness && s.sessionId === target.sessionId)
+      ? sessions
+      : [...sessions, target]
+  }, [])
+
+export const ackThroughNumber = (subscription: Subscription.Subscription, chosen: number | null): number | undefined => {
+  if (subscription.lastNumber <= subscription.ackedThrough) return undefined
+  return chosen !== null && chosen > subscription.ackedThrough && chosen <= subscription.lastNumber
+    ? chosen
+    : subscription.lastNumber
+}
+
+export const shortDigest = (digest: string): string => {
+  const hex = digest.replace(/^sha256[:-]?/, "")
+  return hex.length <= 14 ? `sha256 ${hex}` : `sha256 ${hex.slice(0, 8)}…${hex.slice(-4)}`
+}
+
+export const importSource = (
+  kind: "ArchiveFile" | "HttpsLink" | "Directory" | "GitRepository",
+  location: string,
+  ref: string
+): DaemonContract.ImportSource | undefined => {
+  const at = location.trim()
+  if (at === "") return undefined
+  switch (kind) {
+    case "ArchiveFile":
+    case "Directory":
+      return { _tag: kind, path: at }
+    case "HttpsLink":
+      return { _tag: kind, url: at }
+    case "GitRepository":
+      return ref.trim() === "" ? undefined : { _tag: kind, url: at, ref: ref.trim() }
+  }
+}
+
+export const filledValues = (
+  fields: ReadonlyArray<Catalogue.ConfigurationField>,
+  edits: Readonly<Record<string, string>>
+): Catalogue.ConfigurationValues =>
+  Object.fromEntries(
+    fields.flatMap((field) => {
+      const edit = edits[field.key]
+      const value = field._tag === "Text" && !field.secretDestination ? edit?.trim() : edit
+      return value === undefined || value === "" ? [] : [[field.key, value] as const]
+    })
+  )
 
 export const startMethodText: Record<ServiceStatus["startMethod"], string> = {
   homebrew: "Started by its Homebrew service",
