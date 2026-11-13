@@ -88,8 +88,11 @@ export const failureMessage = (failure: Failure, subscription?: string): string 
     case "DigestMismatch":
       return `The files of ${failure.connector} changed: its checksum is ${failure.actual}, not ${failure.expected}. Nothing was enabled; run \`${command} connector enable ${failure.connector}\` to review the new checksum.`
     case "HumanRequired":
+      if (failure.subscription !== undefined) {
+        return `Only you or the session that created ${failure.subscription} can switch its event alerts, and this terminal runs inside another agent session. Run the command again from your own terminal or from that session.`
+      }
       return `Only you can do this${
-        failure.connector !== undefined ? ` for ${failure.connector}` : failure.subscription !== undefined ? ` for ${failure.subscription}` : ""
+        failure.connector !== undefined ? ` for ${failure.connector}` : ""
       }, and this terminal runs inside an agent session. Run the command again from your own terminal.`
     case "ConfigurationInvalid":
       return `The configuration does not fit the connector's catalogue: ${failure.reason}. Run \`${command} connectors <connector>\` to see its fields.`

@@ -45,6 +45,18 @@ describe("agent commands", () => {
     )
   })
 
+  it("names the creating session when another session tries to switch event alerts", async () => {
+    const result = await run(["alerts", "sub_7f3k", "on"], {
+      handlers: {
+        SetEventAlerts: () => Effect.fail(new DaemonContract.HumanRequired({ subscription: Ids.SubscriptionId.make("sub_7f3k") }))
+      }
+    })
+    expect(result.exit._tag).toBe("Failure")
+    expect(result.stderr).toBe(
+      "Only you or the session that created sub_7f3k can switch its event alerts, and this terminal runs inside another agent session. Run the command again from your own terminal or from that session."
+    )
+  })
+
   it("refuses a malformed parameter before calling the daemon", async () => {
     const result = await run(["subscribe", "github-pr", "acme/app#123", "branch", "--intent", "x"])
     expect(result.exit._tag).toBe("Failure")
