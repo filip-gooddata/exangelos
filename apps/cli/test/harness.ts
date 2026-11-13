@@ -90,6 +90,8 @@ const defaults = {
   ListConnectorAlerts: () => Effect.succeed([]),
   GetSettings: () => Effect.die("unused"),
   SetSettings: () => Effect.die("unused"),
+  SetHarness: () => Effect.die("unused"),
+  RemoveHarness: () => Effect.die("unused"),
   ServiceStatus: () => Effect.succeed({ version: "0.1.0", startMethod: "foreground" as const }),
   SetEventAlerts: (payload: { readonly eventAlerts: boolean }) =>
     Effect.succeed(subscription({ eventAlerts: payload.eventAlerts }))

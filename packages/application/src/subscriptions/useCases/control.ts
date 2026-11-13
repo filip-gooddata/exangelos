@@ -6,6 +6,7 @@ import { SubscriptionRepository } from "../../ports/SubscriptionRepository.ts"
 import { HumanRequired } from "../Errors.ts"
 import { currentLimits } from "../Limits.ts"
 import { load, locked, record, type Target, targetFlag } from "./shared.ts"
+import { requireKnown } from "../../settings/harnesses.ts"
 
 interface ById {
   readonly id: Ids.SubscriptionId
@@ -46,6 +47,7 @@ export const retarget = (
   locked(request.id, Effect.gen(function*() {
     const subscription = yield* load(request.id)
     const target = yield* Effect.fromResult(Subscribe.wakeTarget(detected, targetFlag(request.target)))
+    yield* requireKnown(Option.getOrUndefined(target))
     const { wakeTarget: _previous, ...rest } = subscription
     const retargeted: Subscription.Subscription = Option.match(target, {
       onNone: () => rest,

@@ -87,7 +87,7 @@ export const maxEvents = (options: {
   })
 }
 
-const isHarness = Schema.is(Session.Harness)
+const isTarget = Schema.is(Session.Target)
 
 export const target = (options: {
   readonly target: Option.Option<string>
@@ -98,11 +98,10 @@ export const target = (options: {
   if (Option.isNone(options.target)) return Effect.succeed({ _tag: "Caller" })
   const text = options.target.value
   const at = text.indexOf(":")
-  const harness = text.slice(0, at)
-  const sessionId = text.slice(at + 1)
-  return at > 0 && isHarness(harness) && sessionId.length > 0
-    ? Effect.succeed({ _tag: "Session", session: { harness, sessionId } })
+  const session = { harness: text.slice(0, at), sessionId: text.slice(at + 1) }
+  return at > 0 && isTarget(session)
+    ? Effect.succeed({ _tag: "Session", session })
     : invalid(
-      `"${text}" is not a wake target. Write it as <harness>:<session-id>, where the harness is t3, claude-code or codex.`
+      `"${text}" is not a wake target. Write it as <harness>:<session-id>, where the harness is t3, claude-code, codex or one you defined with \`exangelos settings harness set\`. For a harness you defined, the session id holds only letters, digits and . _ : @ -, and does not start with -.`
     )
 }

@@ -9,11 +9,29 @@ export const Session = Schema.Struct({
 })
 export type Session = typeof Session.Type
 
+const isBuiltIn = Schema.is(Harness)
+
+export const HarnessName = Schema.String.check(Schema.isPattern(/^(?!(?:t3|codex|claude-code)$)[a-z][a-z0-9-]{0,31}$/))
+export type HarnessName = typeof HarnessName.Type
+
+export const HarnessSessionId = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9._:@][A-Za-z0-9._:@-]{0,199}$/))
+
+export const NamedSession = Schema.Struct({
+  harness: HarnessName,
+  sessionId: HarnessSessionId
+})
+export type NamedSession = typeof NamedSession.Type
+
+export const Target = Schema.Union([Session, NamedSession])
+export type Target = typeof Target.Type
+
+export const isBuiltInTarget = (target: Target): target is Session => isBuiltIn(target.harness)
+
 export const Actor = Schema.TaggedUnion({
   Session: { session: Session },
   You: {}
 })
 export type Actor = typeof Actor.Type
 
-export const sameSession = (a: Session, b: Session): boolean =>
+export const sameSession = (a: Target, b: Target): boolean =>
   a.harness === b.harness && a.sessionId === b.sessionId

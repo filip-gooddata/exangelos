@@ -29,6 +29,7 @@ const ContractError = Schema.Union([
   DaemonContract.SubscriptionNotFound,
   DaemonContract.InvalidRequest,
   DaemonContract.NoWakeTarget,
+  DaemonContract.UnknownHarness,
   DaemonContract.ParametersInvalid,
   DaemonContract.SimilarSubscriptions,
   DaemonContract.SubjectChanged,
@@ -67,6 +68,8 @@ export const failureMessage = (failure: Failure, subscription?: string): string 
       return failure.message
     case "NoWakeTarget":
       return noWakeTargetMessage
+    case "UnknownHarness":
+      return failure.message
     case "ParametersInvalid":
       return `The connector refused the parameters: ${failure.reason}. Run \`${command} connectors <connector>\` to see what it takes.`
     case "SimilarSubscriptions":
@@ -90,6 +93,9 @@ export const failureMessage = (failure: Failure, subscription?: string): string 
     case "HumanRequired":
       if (failure.subscription !== undefined) {
         return `Only you or the session that created ${failure.subscription} can switch its event alerts, and this terminal runs inside another agent session. Run the command again from your own terminal or from that session.`
+      }
+      if (failure.harness !== undefined) {
+        return "Only you define harnesses, and this terminal runs inside an agent session. Run the command again from your own terminal."
       }
       return `Only you can do this${
         failure.connector !== undefined ? ` for ${failure.connector}` : ""

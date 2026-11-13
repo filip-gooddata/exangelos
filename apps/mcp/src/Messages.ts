@@ -19,6 +19,7 @@ export type AgentFailure =
   | DaemonContract.OfficialFetchFailed
   | DaemonContract.InvalidRequest
   | DaemonContract.NoWakeTarget
+  | DaemonContract.UnknownHarness
   | DaemonContract.ParametersInvalid
   | DaemonContract.SimilarSubscriptions
   | DaemonContract.SubscriptionNotFound
@@ -86,6 +87,8 @@ export const failureMessage = (failure: AgentFailure, subscription = "<subscript
       return `The daemon refused the request: ${failure.message}. Correct the input, then retry.`
     case "NoWakeTarget":
       return refusalMessage(new Refusal.NoWakeTarget({}))
+    case "UnknownHarness":
+      return `Nothing changed: no harness named "${failure.harness}" is defined. Only the user defines harnesses, in Exangelos settings, so ask them to define it. Meanwhile, pass a target with harness t3, codex or claude-code, or pullOnly: true.`
     case "ParametersInvalid":
       return refusalMessage(new Refusal.ParametersInvalid({ reason: failure.reason }))
     case "SimilarSubscriptions":

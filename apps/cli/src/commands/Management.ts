@@ -1,7 +1,7 @@
 import { Console, Duration, Effect, Option, Path, Redacted, Schema } from "effect"
 import { Argument, Command, Flag, Prompt } from "effect/cli"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
-import { Connector, Settings, Subscription } from "@exangelos/domain"
+import { CommandHarness, Connector, Session, Settings, Subscription } from "@exangelos/domain"
 import * as Text from "../render/Text.ts"
 import { Connection } from "./Connection.ts"
 import * as Input from "./Input.ts"
@@ -260,13 +260,64 @@ const settingsSet = Command.make(
     })
 ).pipe(Command.withDescription("Change settings, each as key=value, for example limits.backlogCount=30"))
 
+const harnessName = (name: string) =>
+  Schema.is(Session.HarnessName)(name)
+    ? Effect.succeed(name)
+    : Effect.fail(
+      new Input.InputInvalid({
+        message: `A harness name is lowercase letters, digits and dashes, starts with a letter, has at most 32 characters, and is not t3, codex or claude-code. ${JSON.stringify(name)} is not one.`
+      })
+    )
+
+const harnessSet = Command.make(
+  "set",
+  {
+    name: Argument.String("name").pipe(Argument.withDescription("The harness name a subscription's wake target uses")),
+    command: Argument.String("program-and-args").pipe(
+      Argument.withDescription("The program to run and its arguments; {session} and {subscription} in an argument become the target's values"),
+      Argument.variadic({ min: 1 })
+    )
+  },
+  ({ name, command }) =>
+    Effect.gen(function*() {
+      const client = yield* Connection
+      const work = Effect.gen(function*() {
+        const checked = yield* harnessName(name)
+        const problem = CommandHarness.problem(command)
+        if (problem !== undefined) return yield* new Input.InputInvalid({ message: `The command does not work as a harness: ${problem}.` })
+        return yield* client.SetHarness({ name: checked, command })
+      })
+      yield* respond(work, { schema: Settings.Settings, text: Text.settings })
+    })
+).pipe(
+  Command.withDescription(
+    "Define a harness, or replace the one of that name. On each wake the daemon runs the program without a shell and passes the wake text on stdin. Put -- before the program when an argument starts with -, for example: settings harness set relay -- /usr/local/bin/relay --session {session}"
+  )
+)
+
+const harnessRemove = Command.make(
+  "remove",
+  { name: Argument.String("name").pipe(Argument.withDescription("The harness to remove")) },
+  ({ name }) =>
+    Effect.gen(function*() {
+      const client = yield* Connection
+      const work = Effect.flatMap(harnessName(name), (checked) => client.RemoveHarness({ name: checked }))
+      yield* respond(work, { schema: Settings.Settings, text: Text.settings })
+    })
+).pipe(Command.withDescription("Remove a harness. Wakes for subscriptions that use it fail until you define it again."))
+
+const harness = Command.make("harness").pipe(
+  Command.withDescription("Define or remove the harnesses that wake sessions through a command of yours"),
+  Command.withSubcommands([harnessSet, harnessRemove])
+)
+
 const settings = Command.make("settings", {}, () =>
   Effect.gen(function*() {
     const client = yield* Connection
     yield* respond(client.GetSettings(), { schema: Settings.Settings, text: Text.settings })
   })).pipe(
     Command.withDescription("Show the settings"),
-    Command.withSubcommands([settingsSet])
+    Command.withSubcommands([settingsSet, harness])
   )
 
 const serviceStatus = Command.make("status", {}, () =>

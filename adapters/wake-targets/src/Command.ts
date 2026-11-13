@@ -15,7 +15,7 @@ export type WakeCommand = readonly [program: string, ...args: Array<string>]
 
 export const invocation = (
   command: WakeCommand,
-  session: Session.Session,
+  session: Session.Target,
   subscription: string,
   text: string
 ): Invocation => ({

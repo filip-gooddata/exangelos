@@ -44,7 +44,9 @@ const handlers = (listDies: boolean, connectors: ReadonlyArray<ReturnType<typeof
   DevUnlink: unused,
   ListConnectorAlerts: unused,
   GetSettings: unused,
-  SetSettings: unused
+  SetSettings: unused,
+  SetHarness: unused,
+  RemoveHarness: unused
 })
 
 const daemon = (path: string, listDies = false, connectors = [connector()]) =>

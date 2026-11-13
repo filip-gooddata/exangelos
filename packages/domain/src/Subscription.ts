@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { Parameters } from "./Catalogue.ts"
 import { AckedThrough, EventType, ConnectorName, SubscriptionId } from "./Ids.ts"
-import { Actor, Session } from "./Session.ts"
+import { Actor, Target } from "./Session.ts"
 
 export const PauseReason = Schema.TaggedUnion({
   BacklogCount: { limit: Schema.Int },
@@ -33,7 +33,7 @@ export const Subscription = Schema.Struct({
   label: Schema.String,
   intent: Schema.NonEmptyString,
   eventTypes: Schema.optionalKey(Schema.NonEmptyArray(EventType)),
-  wakeTarget: Schema.optionalKey(Session),
+  wakeTarget: Schema.optionalKey(Target),
   createdAt: Schema.DateTimeUtc,
   expiresAt: Schema.DateTimeUtc,
   maxEvents: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),

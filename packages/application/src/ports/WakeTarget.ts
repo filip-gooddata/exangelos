@@ -8,5 +8,5 @@ export class DeliveryFailed extends Schema.TaggedError<DeliveryFailed>()("Delive
 
 export class WakeTarget extends Context.Service<WakeTarget, {
   /** Renders the wake text and hands it to the session through its harness. */
-  readonly deliver: (session: Session.Session, content: Wake.WakeContent) => Effect.Effect<void, DeliveryFailed>
+  readonly deliver: (session: Session.Target, content: Wake.WakeContent) => Effect.Effect<void, DeliveryFailed>
 }>()("@exangelos/application/WakeTarget") {}

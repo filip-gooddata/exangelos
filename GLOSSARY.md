@@ -91,7 +91,7 @@ _Avoid_: Deleted, removed
 ### Delivery
 
 **Harness**:
-A program that runs agent sessions and can deliver a message into one, such as T3 Code, Claude Code or Codex.
+A program that runs agent sessions and can deliver a message into one, such as T3 Code, Claude Code or Codex, or a command you define in settings that delivers it.
 _Avoid_: Client, host, agent runner
 
 **Session**:

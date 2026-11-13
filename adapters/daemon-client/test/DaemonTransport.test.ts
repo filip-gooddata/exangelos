@@ -40,7 +40,9 @@ const handlers = DaemonContract.DaemonContract.toLayer({
   DevUnlink: unused,
   ListConnectorAlerts: unused,
   GetSettings: unused,
-  SetSettings: unused
+  SetSettings: unused,
+  SetHarness: unused,
+  RemoveHarness: unused
 })
 
 const daemon = (path: string) =>

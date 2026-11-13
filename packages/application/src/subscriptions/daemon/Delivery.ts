@@ -85,7 +85,7 @@ const decide = (
 
 interface Claim {
   readonly wake: Wake.Wake
-  readonly session: Session.Session
+  readonly session: Session.Target
   readonly content: Wake.WakeContent
 }
 

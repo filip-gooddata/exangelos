@@ -3,7 +3,7 @@ import type { Session, Wake } from "@exangelos/domain"
 import { DeliveryFailed, WakeTarget } from "../ports/WakeTarget.ts"
 
 export interface Delivery {
-  readonly session: Session.Session
+  readonly session: Session.Target
   readonly content: Wake.WakeContent
   /** Set when the attempt failed. */
   readonly failure?: string

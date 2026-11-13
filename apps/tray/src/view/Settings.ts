@@ -109,6 +109,28 @@ const limits = (h: H, model: Model, settings: Settings.Settings): Html =>
     })
   ])
 
+const commandText = (command: ReadonlyArray<string>): string =>
+  command.map((arg) => /^[^\s"'\\]+$/.test(arg) ? arg : JSON.stringify(arg)).join(" ")
+
+const harnesses = (h: H, settings: Settings.Settings): Html => {
+  const defined = Object.entries(settings.harnesses)
+  return section(h, "Harnesses", [
+    h.p([h.Class("line-quiet")], [
+      defined.length === 0
+        ? "None defined. You define one with exangelos settings harness set."
+        : "Each wakes its sessions through your command. You change them with exangelos settings harness."
+    ]),
+    ...defined.map(([name, harness]) =>
+      h.div([h.Class("setting-row")], [
+        h.div([h.Class("setting-text")], [
+          h.p([h.Class("line-main")], [name]),
+          h.p([h.Class("line-quiet")], [commandText(harness.command)])
+        ])
+      ])
+    )
+  ])
+}
+
 const edited = (model: Model): boolean => Object.keys(model.settings).length > 0
 
 export const settings = (h: H, model: Model): ReadonlyArray<Html> => {
@@ -126,6 +148,7 @@ export const settings = (h: H, model: Model): ReadonlyArray<Html> => {
           onSuccess: (current) => [
             alerts(h, model, state, current),
             limits(h, model, current),
+            harnesses(h, current),
             h.div([h.Class("actions")], [
               button(h, "Save", Message.SavedSettings(), { tone: "primary", disabled: model.busy || !edited(model) })
             ])

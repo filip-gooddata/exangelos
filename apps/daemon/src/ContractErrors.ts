@@ -7,6 +7,7 @@ import type {
   OfficialConnectorSource,
   ConnectorAccess,
   ConnectorImportSource,
+  Harnesses,
   SubscriptionNotFound,
   Subscriptions
 } from "@exangelos/application"
@@ -26,6 +27,16 @@ export const noWakeTarget = (_: Refusal.NoWakeTarget) =>
       message: "No agent session to wake: call from an agent session, name a session, or choose pull-only."
     })
   )
+
+export const unknownHarness = (e: Harnesses.UnknownHarness) =>
+  Effect.fail(
+    new Contract.UnknownHarness({
+      harness: e.harness,
+      message: `No harness named "${e.harness}". You define one with exangelos settings harness set.`
+    })
+  )
+
+export const harnessOwnerOnly = (e: Harnesses.HumanRequired) => Effect.fail(new Contract.HumanRequired({ harness: e.harness }))
 
 export const connectorNotFound = (e: ConnectorAccess.ConnectorNotFound) => Effect.fail(new Contract.ConnectorNotFound({ connector: e.connector }))
 

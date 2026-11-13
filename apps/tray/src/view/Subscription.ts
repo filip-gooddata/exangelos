@@ -16,8 +16,8 @@ const plain = (h: H, model: Model, title: string, text: string): ReadonlyArray<H
   null
 ]
 
-const wakeTargetText = (target: Session.Session | undefined): string =>
-  target === undefined ? "Pull-only" : `${Facts.harnessName[target.harness]} session ${target.sessionId}`
+const wakeTargetText = (target: Session.Target | undefined): string =>
+  target === undefined ? "Pull-only" : `${Facts.harnessName(target.harness)} session ${target.sessionId}`
 
 const expiryText = (now: number, subscription: Subscription.Subscription): string =>
   DateTime.toEpochMillis(subscription.expiresAt) > now
@@ -113,7 +113,7 @@ const historySection = (h: H, model: Model, detail: Detail): Html => {
   ])
 }
 
-const sameTarget = (a: Session.Session | undefined, b: Session.Session | undefined): boolean =>
+const sameTarget = (a: Session.Target | undefined, b: Session.Target | undefined): boolean =>
   a === undefined || b === undefined ? a === b : a.harness === b.harness && a.sessionId === b.sessionId
 
 const retargetSection = (h: H, model: Model, subscription: Subscription.Subscription, state: Ready): Html => {
