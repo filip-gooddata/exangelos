@@ -1,9 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Deferred, Duration, Effect, Layer, Ref } from "effect"
 import { TestClock } from "effect/testing"
-import { devLink, enablePlugin, importPlugin, PluginAccess } from "@exangelos/application"
+import { devLink, enablePlugin, importPlugin, PluginAccess, setSettings } from "@exangelos/application"
 import { AlertSinkFake, PluginFilesFake, PluginRuntimeFake, SubscriptionIntakeFake } from "@exangelos/application/testing"
-import { activeSubscription, catalogue, installed, name, pluginOf, settle, tick, unavailableReports, withPlugins, you } from "./harness.ts"
+import { Settings } from "@exangelos/domain"
+import { SettingsStore } from "../../src/ports/SettingsStore.ts"
+import { activeSubscription, catalogue, installed, name, pluginOf, settle, tick, unavailableReports, withPlugins, withPluginsOver, you } from "./harness.ts"
 
 /** Alerts other than the one an import raises while it waits to be enabled. */
 const failingAlerts = Effect.gen(function*() {
@@ -12,6 +14,14 @@ const failingAlerts = Effect.gen(function*() {
 })
 
 const acme = name("acme")
+
+const wakeWindow = (seconds: number) =>
+  setSettings({ ...Settings.initial, limits: { ...Settings.initial.limits, wakeWindow: Duration.seconds(seconds) } })
+
+const openedWakeWindows = Effect.gen(function*() {
+  const watches = yield* (yield* PluginRuntimeFake).watches(acme)
+  return watches.map((request) => Duration.toSeconds(request.wakeWindow))
+})
 
 const running = Effect.gen(function*() {
   yield* (yield* PluginRuntimeFake).define(acme, { catalogue: catalogue() })
@@ -50,6 +60,58 @@ describe("plugin supervision", () => {
       yield* settle
       expect(yield* runtime.openStreams(acme)).toBe(0)
     })))
+
+  it.effect("opens a Watch with the wake window setting and reopens it when the setting changes", () =>
+    withPlugins(Effect.gen(function*() {
+      yield* running
+      const runtime = yield* PluginRuntimeFake
+      yield* wakeWindow(2)
+      yield* (yield* PluginAccess.PluginAccess).watch(yield* activeSubscription("acme", "sub_one"))
+      yield* settle
+      yield* wakeWindow(7)
+      yield* settle
+      yield* wakeWindow(7)
+      yield* settle
+
+      expect(yield* openedWakeWindows).toEqual([2, 7])
+      expect(yield* runtime.openStreams(acme)).toBe(1)
+    })))
+
+  it.effect("reopens with the new wake window a stream that was reading the old one", () =>
+    Effect.gen(function*() {
+      const stored = yield* Ref.make(Settings.initial)
+      const holdNextRead = yield* Ref.make(false)
+      const reading = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const store = Layer.succeed(SettingsStore, {
+        read: Effect.gen(function*() {
+          const settings = yield* Ref.get(stored)
+          if (yield* Ref.getAndSet(holdNextRead, false)) {
+            yield* Deferred.succeed(reading, undefined)
+            yield* Deferred.await(release)
+          }
+          return settings
+        }),
+        write: (settings) => Ref.set(stored, settings)
+      })
+      yield* withPluginsOver(store)(Effect.gen(function*() {
+        yield* running
+        const access = yield* PluginAccess.PluginAccess
+        const id = yield* activeSubscription("acme", "sub_one")
+        yield* wakeWindow(2)
+        yield* access.watch(id)
+        yield* settle
+        yield* Ref.set(holdNextRead, true)
+        yield* Effect.forkChild(access.rewatch(id))
+        yield* Deferred.await(reading)
+        yield* wakeWindow(7)
+        yield* settle
+        yield* Deferred.succeed(release, undefined)
+        yield* settle
+
+        expect(yield* openedWakeWindows).toEqual([2, 7])
+      }))
+    }))
 
   it.effect("restarts a crashed plugin and reopens its streams", () =>
     withPlugins(Effect.gen(function*() {

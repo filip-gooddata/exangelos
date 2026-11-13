@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Exit, Fiber, Option, Stream } from "effect"
+import { DateTime, Duration, Effect, Exit, Fiber, Option, Stream } from "effect"
 import { Event, Ids, Session, Subscription, Wake } from "@exangelos/domain"
 import {
   EventRepository,
@@ -104,8 +104,8 @@ describe("PluginRuntimeFake", () => {
       yield* fake.emit(name, { _tag: "Cursor", cursor: "c1" }, watching("x"))
 
       const process = yield* runtime.start({ name, directory: "/plugins/template", entry: { _tag: "Bundle", path: "main.js" }, dev: false })
-      const x = yield* Stream.runCollect(process.watch({ parameters: { name: "x" }, eventTypes: [] })).pipe(Effect.forkChild)
-      const y = yield* Stream.runCollect(process.watch({ parameters: { name: "y" }, eventTypes: [] })).pipe(Effect.forkChild)
+      const x = yield* Stream.runCollect(process.watch({ parameters: { name: "x" }, eventTypes: [], wakeWindow: Duration.seconds(5) })).pipe(Effect.forkChild)
+      const y = yield* Stream.runCollect(process.watch({ parameters: { name: "y" }, eventTypes: [], wakeWindow: Duration.seconds(5) })).pipe(Effect.forkChild)
       yield* Effect.yieldNow
       yield* fake.emit(name, { _tag: "End", reason: "merged" }, watching("x"))
 
