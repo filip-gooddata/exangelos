@@ -6,7 +6,12 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json"
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "build:web": "vite build",
+    "build:sidecar": "bun build-sidecar.ts",
+    "tauri": "tauri",
+    "bundle": "tauri build --config src-tauri/tauri.sidecar.conf.json",
+    "test": "bun run --bun vitest run"
   },
   "dependencies": {
     "@exangelos/contracts": "workspace:*",
@@ -14,6 +19,16 @@
     "@exangelos/rpc-tauri-ipc": "workspace:*",
     "effect": "catalog:",
     "@effect/platform-browser": "catalog:",
-    "foldkit": "catalog:"
+    "foldkit": "catalog:",
+    "@tauri-apps/api": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/platform-bun": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@exangelos/daemon": "workspace:*",
+    "@exangelos/daemon-client": "workspace:*",
+    "@exangelos/paths": "workspace:*",
+    "@tauri-apps/cli": "catalog:",
+    "vitest": "catalog:"
   }
 }
