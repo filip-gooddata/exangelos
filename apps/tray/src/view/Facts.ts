@@ -1,3 +1,4 @@
+import type { DaemonContract } from "@exangelos/contracts"
 import type { Alert, Catalogue, Event, Plugin, Session, Subscription, Wake } from "@exangelos/domain"
 import { DateTime, Duration } from "effect"
 import type { Detail, ServiceStatus } from "../daemon/DaemonClient.ts"
@@ -159,7 +160,7 @@ export const retryFact = (now: number, wake: Wake.Wake): string => {
   return `Wake waiting, ${attempts}${next}`
 }
 
-const changeTitles: Record<Subscription.ChangeKind, string> = {
+const changeTitles: Readonly<Record<string, string>> = {
   create: "Created",
   update: "Updated",
   ack: "Acknowledged",
@@ -167,6 +168,14 @@ const changeTitles: Record<Subscription.ChangeKind, string> = {
   resume: "Resumed",
   retarget: "Retargeted",
   cancel: "Cancelled"
+}
+
+/** One change as a history line. A kind without a title of its own reads as its name, so a new kind still shows. */
+export const changeTitle = (change: Subscription.Change): string => {
+  const kind: string = change.kind
+  if (kind === "eventAlerts") return `Event alerts turned ${change.detail === "off" ? "off" : "on"}`
+  const title = changeTitles[kind] ?? capitalized(kind)
+  return change.detail === undefined ? title : `${title}: ${change.detail}`
 }
 
 export interface HistoryEntry {
@@ -179,7 +188,7 @@ export interface HistoryEntry {
 export const history = (detail: Detail): ReadonlyArray<HistoryEntry> =>
   [
     ...detail.changes.map((change): HistoryEntry => ({
-      title: change.detail === undefined ? changeTitles[change.kind] : `${changeTitles[change.kind]}: ${change.detail}`,
+      title: changeTitle(change),
       by: `By ${actorName(change.actor)}`,
       at: change.at
     })),
@@ -264,6 +273,60 @@ export const isSecretField = (field: Catalogue.ConfigurationField): boolean =>
 
 /** Whether a secret is stored. The plugin record says only whether the configuration as a whole is set. */
 export const secretStored = (plugin: Plugin.Plugin): boolean => plugin.configuration._tag !== "Missing"
+
+/** The sessions that wake targets name, each once, in the order the subscriptions list them. */
+export const knownSessions = (subscriptions: ReadonlyArray<Subscription.Subscription>): ReadonlyArray<Session.Session> =>
+  subscriptions.reduce<ReadonlyArray<Session.Session>>((sessions, subscription) => {
+    const target = subscription.wakeTarget
+    return target === undefined || sessions.some((s) => s.harness === target.harness && s.sessionId === target.sessionId)
+      ? sessions
+      : [...sessions, target]
+  }, [])
+
+/** The number "Acknowledge through" uses: the event you picked while it is still pending, else the newest pending one. */
+export const ackThroughNumber = (subscription: Subscription.Subscription, chosen: number | null): number | undefined => {
+  if (subscription.lastNumber <= subscription.ackedThrough) return undefined
+  return chosen !== null && chosen > subscription.ackedThrough && chosen <= subscription.lastNumber
+    ? chosen
+    : subscription.lastNumber
+}
+
+/** A digest cut to its head and tail, for rows: "sha256 9c1f04ab…e27a". */
+export const shortDigest = (digest: string): string => {
+  const hex = digest.replace(/^sha256[:-]?/, "")
+  return hex.length <= 14 ? `sha256 ${hex}` : `sha256 ${hex.slice(0, 8)}…${hex.slice(-4)}`
+}
+
+/** The import you typed, or nothing while a field it needs is empty. */
+export const importSource = (
+  kind: "ArchiveFile" | "HttpsLink" | "Directory" | "GitRepository",
+  location: string,
+  ref: string
+): DaemonContract.ImportSource | undefined => {
+  const at = location.trim()
+  if (at === "") return undefined
+  switch (kind) {
+    case "ArchiveFile":
+    case "Directory":
+      return { _tag: kind, path: at }
+    case "HttpsLink":
+      return { _tag: kind, url: at }
+    case "GitRepository":
+      return ref.trim() === "" ? undefined : { _tag: kind, url: at, ref: ref.trim() }
+  }
+}
+
+/** The configuration values to send: only the fields you filled in. */
+export const filledValues = (
+  fields: ReadonlyArray<Catalogue.ConfigurationField>,
+  edits: Readonly<Record<string, string>>
+): Catalogue.ConfigurationValues =>
+  Object.fromEntries(
+    fields.flatMap((field) => {
+      const value = edits[field.key]
+      return value === undefined || value.trim() === "" ? [] : [[field.key, isSecretField(field) ? value : value.trim()] as const]
+    })
+  )
 
 export const startMethodText: Record<ServiceStatus["startMethod"], string> = {
   homebrew: "Started by its Homebrew service",
