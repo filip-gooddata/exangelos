@@ -58,11 +58,13 @@ export const retarget = (
 
 /** Turns event alerts on or off for one subscription; only you may, so a session is refused. */
 export const setEventAlerts = (actor: Session.Actor, request: ById & { readonly eventAlerts: boolean }) =>
-  locked(request.id, Effect.gen(function*() {
+  Effect.gen(function*() {
     if (actor._tag !== "You") return yield* new HumanRequired({ subscription: request.id })
-    const subscription = yield* load(request.id)
-    return yield* record(actor, "eventAlerts", Option.some(subscription), {
-      subscription: { ...subscription, eventAlerts: request.eventAlerts },
-      wake: Option.none()
-    }, request.eventAlerts ? "on" : "off")
-  }))
+    return yield* locked(request.id, Effect.gen(function*() {
+      const subscription = yield* load(request.id)
+      return yield* record(actor, "eventAlerts", Option.some(subscription), {
+        subscription: { ...subscription, eventAlerts: request.eventAlerts },
+        wake: Option.none()
+      }, request.eventAlerts ? "on" : "off")
+    }))
+  })
