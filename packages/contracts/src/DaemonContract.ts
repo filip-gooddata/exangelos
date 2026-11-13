@@ -51,6 +51,12 @@ export class OfficialFetchFailed extends Schema.TaggedError<OfficialFetchFailed>
   reason: Schema.String
 }) {}
 
+/** The call is the owner's alone, and a session made it. */
+export class HumanRequired extends Schema.TaggedError<HumanRequired>()("HumanRequired", {
+  plugin: Schema.optionalKey(Ids.PluginName),
+  subscription: Schema.optionalKey(Ids.SubscriptionId)
+}) {}
+
 export class ImportFailed extends Schema.TaggedError<ImportFailed>()("ImportFailed", {
   reason: Schema.String
 }) {}
@@ -270,6 +276,12 @@ export class ServiceStatus extends Rpc.make("ServiceStatus", {
   success: Schema.Struct({ version: Schema.String, startMethod: StartMethod })
 }) {}
 
+export class SetEventAlerts extends Rpc.make("SetEventAlerts", {
+  payload: { ...id, eventAlerts: Schema.Boolean },
+  success: Subscription.Subscription,
+  error: Schema.Union([SubscriptionNotFound, InvalidRequest, HumanRequired])
+}) {}
+
 export class ManagementGroup extends RpcGroup.make(
   ImportPlugin,
   EnablePlugin,
@@ -280,7 +292,8 @@ export class ManagementGroup extends RpcGroup.make(
   DevUnlink,
   GetSettings,
   SetSettings,
-  ServiceStatus
+  ServiceStatus,
+  SetEventAlerts
 ) {}
 
 export const DaemonContract = AgentGroup.merge(ManagementGroup)

@@ -1,8 +1,10 @@
 import { Array as Arr, DateTime, Effect, Layer, Option, Result } from "effect"
-import { Delivery, Intake, Lifecycle, PluginRules } from "@exangelos/domain"
+import { Alert, Delivery, Intake, Lifecycle, PluginRules, Settings } from "@exangelos/domain"
 import type { Event, Ids, Plugin, Subscription, Wake } from "@exangelos/domain"
 import * as NewId from "../../NewId.ts"
+import { AlertSink } from "../../ports/AlertSink.ts"
 import { EventRepository } from "../../ports/EventRepository.ts"
+import { SettingsStore } from "../../ports/SettingsStore.ts"
 import { SubscriptionRepository } from "../../ports/SubscriptionRepository.ts"
 import { WakeRepository } from "../../ports/WakeRepository.ts"
 import { SubscriptionIntake, type Verdict } from "../../seam/SubscriptionIntake.ts"
@@ -13,7 +15,7 @@ import { commit, type CommitServices } from "../Transitions.ts"
 import { requestWake } from "../Wakes.ts"
 import { RemovedPlugins, type Unavailable } from "../RemovedPlugins.ts"
 
-export type IntakeServices = CommitServices | SubscriptionLocks | RemovedPlugins
+export type IntakeServices = CommitServices | SubscriptionLocks | RemovedPlugins | AlertSink
 
 /** Runs one subscription's load-change-store under its lock, with the subscription as stored now. */
 export const withSubscription = <A, R>(
@@ -40,6 +42,13 @@ export const oldestPending = (subscription: Subscription.Subscription) =>
     return Option.map(Arr.head(pending), (event) => event.receivedAt)
   })
 
+const alertOnEvent = (subscription: Subscription.Subscription, event: Event.Event) =>
+  Effect.gen(function*() {
+    const settings = yield* (yield* SettingsStore).read.pipe(Effect.orElseSucceed(() => Settings.initial))
+    const alert = Alert.forEvent(settings, subscription, event)
+    if (Option.isSome(alert)) yield* Effect.ignore((yield* AlertSink).show(alert.value))
+  })
+
 const admitEvent = (
   before: Subscription.Subscription,
   reported: Event.ReportedEvent,
@@ -63,6 +72,7 @@ const admitEvent = (
       () => admission
     )
     yield* commit(Option.some(before), { subscription: step.subscription, wake: step.wake, events: [event] })
+    yield* alertOnEvent(step.subscription, event)
     return step.subscription
   })
 
