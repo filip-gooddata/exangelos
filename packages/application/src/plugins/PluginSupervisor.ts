@@ -64,6 +64,11 @@ export class PluginSupervisor extends Context.Service<PluginSupervisor, {
   readonly watch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly unwatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly rewatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
+  /**
+   * Rewatches, on the supervisor's own fiber and one pass at a time, every Watch stream not yet
+   * known to be open with the stored wake window.
+   */
+  readonly settingsChanged: Effect.Effect<void>
 }>()("@exangelos/application/PluginSupervisor") {}
 
 type Outcome =
@@ -106,6 +111,16 @@ export const layerPluginSupervisor: Layer.Layer<
   const processes = yield* Ref.make<ReadonlyMap<Ids.PluginName, PluginProcess>>(new Map())
   const changed = yield* Ref.make(yield* Deferred.make<void>())
   const writes = yield* Semaphore.make(1)
+  const refreshes = yield* Semaphore.make(1)
+  const scope = yield* Effect.scope
+  const openedWith = yield* Ref.make<ReadonlyMap<Ids.SubscriptionId, Duration.Duration>>(new Map())
+  const recordWakeWindow = (id: Ids.SubscriptionId, wakeWindow: Duration.Duration | undefined) =>
+    Ref.update(openedWith, (all) => {
+      const next = new Map(all)
+      if (wakeWindow === undefined) next.delete(id)
+      else next.set(id, wakeWindow)
+      return next
+    })
 
   const limits = Effect.map(Effect.orElseSucceed(settings.read, () => Settings.initial), (s) => s.limits)
 
@@ -250,10 +265,15 @@ export const layerPluginSupervisor: Layer.Layer<
         if (Option.isNone(found) || found.value.state._tag !== "Active") return
         const subscription = found.value
         let stop = false
+        // A settings refresh during the read sees no recorded wake window and rewatches the stream.
+        yield* recordWakeWindow(id, undefined)
+        const { wakeWindow } = yield* limits
+        yield* recordWakeWindow(id, wakeWindow)
         const result = yield* process.watch({
           parameters: subscription.parameters,
           eventTypes: subscription.eventTypes ?? process.catalogue.eventTypes.map((spec) => spec.type),
-          ...(subscription.cursor === undefined ? {} : { cursor: subscription.cursor })
+          ...(subscription.cursor === undefined ? {} : { cursor: subscription.cursor }),
+          wakeWindow
         }).pipe(
           Stream.runForEachWhile((item) =>
             // Interrupting the stream waits until an item is fully ingested.
@@ -288,7 +308,9 @@ export const layerPluginSupervisor: Layer.Layer<
       const plugin = yield* plugins.find(name)
       const process = (yield* Ref.get(processes)).get(name)
       if (Option.isNone(plugin) || !PluginRules.isAvailable(plugin.value) || process === undefined) return
-      yield* FiberMap.run(streams, id, runStream(id, name, process), { onlyIfMissing: true })
+      yield* FiberMap.run(streams, id, Effect.ensuring(runStream(id, name, process), recordWakeWindow(id, undefined)), {
+        onlyIfMissing: true
+      })
     })
 
   const launchOf = (plugin: Plugin.Plugin) =>
@@ -560,6 +582,19 @@ export const layerPluginSupervisor: Layer.Layer<
   })
   yield* Effect.forkScoped(startup)
 
+  const rewatch = (subscription: Ids.SubscriptionId) =>
+    Effect.andThen(FiberMap.remove(streams, subscription), openStream(subscription))
+
+  const refresh = Effect.gen(function*() {
+    const { wakeWindow } = yield* limits
+    const opened = yield* Ref.get(openedWith)
+    const stale = Array.from(streams, ([id]) => id).filter((id) => {
+      const used = opened.get(id)
+      return used === undefined || !Duration.equals(used, wakeWindow)
+    })
+    yield* Effect.forEach(stale, rewatch, { discard: true })
+  })
+
   return PluginSupervisor.of({
     store,
     update,
@@ -571,6 +606,7 @@ export const layerPluginSupervisor: Layer.Layer<
     watch: openStream,
     // The intake may unwatch from inside the stream's own ingest, so the removal runs on its own fiber.
     unwatch: (subscription) => Effect.asVoid(Effect.forkDetach(FiberMap.remove(streams, subscription))),
-    rewatch: (subscription) => Effect.andThen(FiberMap.remove(streams, subscription), openStream(subscription))
+    rewatch,
+    settingsChanged: Effect.asVoid(Effect.forkIn(refreshes.withPermit(refresh), scope))
   })
 }))

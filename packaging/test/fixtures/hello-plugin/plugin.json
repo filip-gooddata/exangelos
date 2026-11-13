@@ -1,0 +1,5 @@
+{
+  "name": "hello",
+  "version": "1.2.3",
+  "entry": { "_tag": "Bundle", "path": "dist/index.js" }
+}
