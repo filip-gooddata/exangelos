@@ -2,7 +2,7 @@ import { copyFileSync, readFileSync } from "node:fs"
 import { basename, join, resolve } from "node:path"
 import { Effect } from "effect"
 import { buildBinaries, type BuiltBinary } from "./binaries.ts"
-import { buildPluginArchives, officialPluginNames, type OfficialPlugin } from "./plugin-archives.ts"
+import { buildPluginArchives, officialPluginNames, officialPluginsFileName, type OfficialPlugin } from "./plugin-archives.ts"
 import { clearReleaseFiles, pluginArchiveName, targets, type Target, writeChecksums } from "./release-files.ts"
 
 export const packagingDirectory = resolve(import.meta.dirname, "..")
@@ -20,6 +20,7 @@ export const officialPluginDirectories = (pluginsRoot = join(repositoryDirectory
 export interface ReleaseBuild {
   readonly buildScript: string
   readonly version: string
+  readonly releaseUrl: string
   readonly pluginDirectories: ReadonlyArray<string>
   readonly officialPluginsDirectory: string
   readonly releaseDirectory: string
@@ -39,6 +40,7 @@ export const buildRelease = (build: ReleaseBuild) =>
     const binaries = yield* buildBinaries({
       buildScript: build.buildScript,
       version: build.version,
+      releaseUrl: build.releaseUrl,
       officialPlugins,
       targets: build.targets ?? targets,
       outDirectory: build.releaseDirectory
@@ -49,7 +51,13 @@ export const buildRelease = (build: ReleaseBuild) =>
         copyFileSync(join(build.officialPluginsDirectory, name), join(build.releaseDirectory, name))
         return join(build.releaseDirectory, name)
       })
-      const checksums = writeChecksums(build.releaseDirectory, [...binaries.map((built) => built.archive), ...pluginArchives])
+      const officialPluginsFile = join(build.releaseDirectory, officialPluginsFileName)
+      copyFileSync(join(build.officialPluginsDirectory, officialPluginsFileName), officialPluginsFile)
+      const checksums = writeChecksums(build.releaseDirectory, [
+        ...binaries.map((built) => built.archive),
+        ...pluginArchives,
+        officialPluginsFile
+      ])
       return { officialPlugins, binaries, checksums }
     })
   })

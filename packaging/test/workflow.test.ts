@@ -19,9 +19,15 @@ describe("release workflow", () => {
     const steps = workflowRunSteps()
     expect(steps[0]).toBe("pnpm install --frozen-lockfile")
     for (const step of steps.slice(1)) {
-      const match = /^pnpm --filter @exangelos\/packaging run (\S+)$/.exec(step)
+      const match = /^pnpm --filter @exangelos\/packaging run (\S+)(?: .*)?$/.exec(step)
       expect(match, step).not.toBeNull()
       expect(Object.keys(scripts)).toContain(match![1])
     }
+  })
+
+  it("gives the release build the download address of the version's GitHub release", () => {
+    expect(workflowRunSteps()).toContain(
+      'pnpm --filter @exangelos/packaging run build:release --release-url "https://github.com/${{ github.repository }}/releases/download/v$(jq -r .version packaging/package.json)"'
+    )
   })
 })

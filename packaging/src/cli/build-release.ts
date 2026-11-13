@@ -18,6 +18,7 @@ const { values } = parseArgs({
   options: {
     "build-script": { type: "string" },
     version: { type: "string" },
+    "release-url": { type: "string" },
     plugins: { type: "string" },
     targets: { type: "string" },
     "official-plugins-out": { type: "string", default: defaultOfficialPluginsDirectory },
@@ -25,7 +26,14 @@ const { values } = parseArgs({
   }
 })
 
+const releaseUrl = values["release-url"]
+if (releaseUrl === undefined || releaseUrl === "") {
+  console.error("build-release needs --release-url <url>: the address the binary fetches official plugin archives from")
+  process.exit(2)
+}
+
 buildRelease({
+  releaseUrl,
   buildScript: values["build-script"] === undefined ? defaultBuildScript : resolve(values["build-script"]),
   version: values.version ?? packagingVersion(),
   pluginDirectories:

@@ -10,6 +10,7 @@ import { createTarGz } from "./tar.ts"
 export interface BinaryBuild {
   readonly buildScript: string
   readonly version: string
+  readonly releaseUrl: string
   readonly officialPlugins: ReadonlyArray<OfficialPlugin>
   readonly targets: ReadonlyArray<Target>
   readonly outDirectory: string
@@ -45,6 +46,8 @@ export const buildBinaries = (build: BinaryBuild) =>
           build.version,
           "--official-plugins",
           JSON.stringify(build.officialPlugins),
+          "--release-url",
+          build.releaseUrl,
           "--outfile",
           binary
         ])
