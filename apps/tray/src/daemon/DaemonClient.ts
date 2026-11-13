@@ -1,6 +1,6 @@
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
-import { type Alert, type Plugin, PluginRules, type Settings, type Subscription } from "@exangelos/domain"
-import { Context, Effect, Layer, Option, Predicate, Result, Schema } from "effect"
+import type { Alert, Plugin, Settings, Subscription } from "@exangelos/domain"
+import { Context, Effect, Layer, Predicate, Result, Schema } from "effect"
 import { type Rpc, RpcClient, RpcSerialization } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
 import type { Socket } from "effect/socket"
@@ -97,15 +97,6 @@ export const command = <A, E>(
     Effect.catchDefect((defect) => Effect.fail(new CallFailed({ message: describeDefect(defect) })))
   )
 
-/** The trust alert of each plugin. Until the daemon serves `ListPluginAlerts` this derives them from `ListPlugins` without the official checksums, so every inert official plugin shows as a checksum mismatch, a disabled one included. */
-export const trustAlerts = (
-  client: DaemonClient["Service"]
-): Effect.Effect<ReadonlyArray<Alert.Alert>, RpcClientError> =>
-  Effect.map(
-    client.ListPlugins(),
-    (plugins) => plugins.flatMap((plugin) => Option.toArray(PluginRules.trustAlert(plugin, Option.none())))
-  )
-
 const listed = (client: DaemonClient["Service"]) =>
   Effect.flatMap(section("List", client.List({ all: true })), (subscriptions) =>
     Result.match(subscriptions, {
@@ -125,7 +116,7 @@ export const snapshot: Effect.Effect<Snapshot, DaemonNotRunning, DaemonClient> =
       Effect.all({
         listed: listed(client),
         plugins: section("ListPlugins", client.ListPlugins()),
-        trustAlerts: section("ListPluginAlerts", trustAlerts(client)),
+        trustAlerts: section("ListPluginAlerts", client.ListPluginAlerts()),
         settings: section("GetSettings", client.GetSettings()),
         status: section("ServiceStatus", client.ServiceStatus())
       }, { concurrency: "unbounded" }),

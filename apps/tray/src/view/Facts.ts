@@ -393,7 +393,9 @@ export const needsYouItem = (
 export const refusalText = (refusal: Refusal): string => {
   switch (refusal._tag) {
     case "BacklogOverLimit":
-      return `The backlog holds ${refusal.pending} pending events, over the limit of ${refusal.limit}. Acknowledge events, then resume.`
+      return refusal.reason === "count"
+        ? `The backlog holds ${refusal.pending} pending events, over the limit of ${refusal.limit}. Acknowledge through event ${refusal.through}, then resume.`
+        : `The oldest of the ${refusal.pending} pending events is past the age limit. Acknowledge through event ${refusal.through}, then resume.`
     case "TransitionRefused":
     case "InvalidRequest":
     case "NoWakeTarget":

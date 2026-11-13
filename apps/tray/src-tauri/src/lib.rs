@@ -197,7 +197,7 @@ pub fn run() {
 fn build_panel(app: &AppHandle) -> tauri::Result<WebviewWindow> {
     let builder = WebviewWindowBuilder::new(app, PANEL, WebviewUrl::App("index.html".into()))
         .title("Exangelos")
-        .inner_size(380.0, 520.0)
+        .inner_size(340.0, 520.0)
         .resizable(false)
         .visible(false);
     #[cfg(target_os = "macos")]

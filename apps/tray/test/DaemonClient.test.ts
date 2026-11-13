@@ -91,7 +91,7 @@ describe("daemon client over a unix socket", () => {
         expect(Result.isFailure(loaded.subscriptions)).toBe(true)
         expect(Result.getFailure(loaded.details)).toEqual(Result.getFailure(loaded.subscriptions))
         expect(Result.getOrThrow(loaded.plugins)).toHaveLength(2)
-        expect(Result.getOrThrow(loaded.trustAlerts).map((alert) => alert._tag)).toEqual(["WaitsForEnable", "DigestMismatch"])
+        expect(Result.isFailure(loaded.trustAlerts)).toBe(true)
       }).pipe(Effect.provide(client(path).pipe(Layer.provideMerge(daemon(path, true, [
         plugin({ name: Ids.PluginName.make("new"), trust: "inert" }),
         plugin({ name: Ids.PluginName.make("official"), trust: "inert", origin: { _tag: "Official", version: "1" } })

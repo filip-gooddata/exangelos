@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import { DaemonContract } from "@exangelos/contracts"
 import type { Subscription } from "@exangelos/domain"
 import { DateTime } from "effect"
 import * as Facts from "../src/view/Facts.ts"
@@ -43,6 +44,11 @@ describe("Facts", () => {
     expect(Facts.filledValues(fields, { site: " https://a ", token: "" })).toEqual({ site: "https://a" })
     expect(Facts.filledValues(fields, { mode: " left " })).toEqual({ mode: " left " })
     expect(Facts.filledValues(fields, { mode: " ", site: "  " })).toEqual({ mode: " " })
+  })
+  it("names the event to acknowledge through when resume is over the backlog limit", () => {
+    const over = (reason: "count" | "age") => Facts.refusalText(new DaemonContract.BacklogOverLimit({ pending: 25, limit: 20, through: 41, reason }))
+    expect(over("count")).toBe("The backlog holds 25 pending events, over the limit of 20. Acknowledge through event 41, then resume.")
+    expect(over("age")).toBe("The oldest of the 25 pending events is past the age limit. Acknowledge through event 41, then resume.")
   })
 })
 
