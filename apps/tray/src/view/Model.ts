@@ -142,6 +142,24 @@ export const editedSettings = (current: Settings.Settings, edits: Readonly<Recor
   return Result.succeed({ ...current, eventAlerts: alerts === undefined ? current.eventAlerts : alerts === "on", limits })
 }
 
+/** The drafts a finished request used up; every other draft stays as you left it. */
+const settled = (request: Request): Partial<Model> => {
+  switch (request._tag) {
+    case "Ack":
+      return { ackThrough: null }
+    case "Retarget":
+      return { retargeting: false }
+    case "ImportPlugin":
+      return { importing: null, importLocation: "", importRef: "" }
+    case "ConfigurePlugin":
+      return { configuration: {} }
+    case "SetSettings":
+      return { settings: {} }
+    default:
+      return {}
+  }
+}
+
 const needsConfirming = (request: Request): boolean =>
   request._tag === "Cancel" || request._tag === "RemovePlugin" || request._tag === "DisablePlugin"
 
@@ -212,7 +230,7 @@ export const makeUpdate = (perform: (request: Request) => Effect.Effect<void, Re
         return {
           model: {
             ...model,
-            ...drafts,
+            ...settled(request),
             busy: false,
             notice: text === null ? null : { tone: "done", text },
             screen: request._tag === "RemovePlugin" ? { _tag: "Plugins" } : model.screen

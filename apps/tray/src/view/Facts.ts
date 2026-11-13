@@ -271,8 +271,16 @@ export const configurationText = (plugin: Plugin.Plugin): string => {
 export const isSecretField = (field: Catalogue.ConfigurationField): boolean =>
   field._tag === "Secret" || field.secretDestination
 
-/** Whether a secret is stored. The plugin record says only whether the configuration as a whole is set. */
-export const secretStored = (plugin: Plugin.Plugin): boolean => plugin.configuration._tag !== "Missing"
+/**
+ * Whether a secret is stored, when the plugin record can tell: nothing was ever configured, or the field is required
+ * and the configuration is complete. The record has no presence per field, so an optional secret stays unknown.
+ */
+export const secretStored = (plugin: Plugin.Plugin, field: Catalogue.ConfigurationField): boolean | undefined =>
+  plugin.configuration._tag === "Missing"
+    ? plugin.configuredBy === undefined ? false : undefined
+    : field.required
+    ? true
+    : undefined
 
 export const knownSessions = (subscriptions: ReadonlyArray<Subscription.Subscription>): ReadonlyArray<Session.Session> =>
   subscriptions.reduce<ReadonlyArray<Session.Session>>((sessions, subscription) => {

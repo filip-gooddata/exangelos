@@ -177,9 +177,8 @@ const configurationField = (h: H, model: Model, plugin: Plugin.Plugin, field: Ca
   const value = model.configuration[field.key] ?? ""
   const edit = (next: string) => Message.EditedConfiguration({ key: field.key, value: next })
   const secret = Facts.isSecretField(field)
-  const status = secret
-    ? h.span([h.Class("field-status")], [Facts.secretStored(plugin) ? "set" : "not set"])
-    : null
+  const stored = secret ? Facts.secretStored(plugin, field) : undefined
+  const status = stored === undefined ? null : h.span([h.Class("field-status")], [stored ? "set" : "not set"])
   if (field._tag === "Choice") {
     return h.div([h.Class("field")], [
       fieldLabel(h, field),

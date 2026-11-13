@@ -50,6 +50,13 @@ describe("panel update", () => {
     expect(done.model.screen).toEqual({ _tag: "Plugins" })
     expect(done.model.busy).toBe(false)
   })
+
+  it("keeps unsaved limits when a subscription's alerts switch finishes", () => {
+    const editing = update(initial(Fixtures.quiet, Fixtures.now, { _tag: "Settings" }), Message.EditedSetting({ key: "backlogCount", value: "30" })).model
+    const request = Request.SetEventAlerts({ id: Ids.SubscriptionId.make("sub_7f3k"), eventAlerts: false })
+    expect(update(editing, Message.Performed({ request })).model.settings).toEqual({ backlogCount: "30" })
+    expect(update(editing, Message.Performed({ request: Request.SetSettings({ settings: Settings.initial }) })).model.settings).toEqual({})
+  })
 })
 
 describe("editedSettings", () => {
