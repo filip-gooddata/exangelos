@@ -137,19 +137,21 @@ const actions = (h: H, model: Model, subscription: Subscription.Subscription, ac
   const { id } = subscription
   const tag = subscription.state._tag
   const open = tag === "Active" || tag === "Paused" || tag === "Expired"
-  if (!open) return null
+  if (!open && ackThrough === undefined) return null
   return h.footer([h.Class("bar bar-bottom actions")], [
     ackThrough === undefined ? null : ask(h, model, `Acknowledge through #${ackThrough}`, Request.Ack({ id, through: ackThrough }), "primary"),
     tag === "Active" ? ask(h, model, "Pause", Request.Pause({ id })) : null,
     tag === "Paused" || tag === "Expired" ? ask(h, model, "Resume", Request.Resume({ id })) : null,
-    h.button([
-      h.Type("button"),
-      h.Class(model.retargeting ? "button button-plain button-on" : "button button-plain"),
-      h.AriaExpanded(model.retargeting),
-      h.OnClick(Message.ToggledRetarget())
-    ], ["Retarget"]),
+    open
+      ? h.button([
+        h.Type("button"),
+        h.Class(model.retargeting ? "button button-plain button-on" : "button button-plain"),
+        h.AriaExpanded(model.retargeting),
+        h.OnClick(Message.ToggledRetarget())
+      ], ["Retarget"])
+      : null,
     h.span([h.Class("bar-spacer")], []),
-    ask(h, model, "Cancel", Request.Cancel({ id }), "danger")
+    open ? ask(h, model, "Cancel", Request.Cancel({ id }), "danger") : null
   ])
 }
 

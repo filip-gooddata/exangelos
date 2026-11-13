@@ -214,7 +214,9 @@ const configurationSection = (h: H, model: Model, plugin: Plugin.Plugin): Html =
     plugin.configuration._tag === "Rejected"
       ? h.p([h.Class("notice notice-refused"), h.Role("alert")], [`Rejected by the source: ${plugin.configuration.reason}`])
       : null,
-    fields.length === 0
+    plugin.catalogue === undefined
+      ? h.p([h.Class("quiet-line")], ["Its configuration form is not available yet. The daemon reads it once the connector runs."])
+      : fields.length === 0
       ? h.p([h.Class("quiet-line")], ["This connector needs no configuration."])
       : h.div([h.Class("configuration-form")], [
         h.p([h.Class("quiet-line")], ["Fields you leave empty keep their stored values. Secrets go to the system keychain."]),
