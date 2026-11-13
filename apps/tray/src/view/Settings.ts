@@ -64,17 +64,24 @@ const subscriptionAlerts = (h: H, model: Model, subscription: Subscription.Subsc
 
 const alerts = (h: H, model: Model, state: Ready, settings: Settings.Settings): Html => {
   const on = alertsOn(model, settings)
-  const open = Result.getOrElse(Result.map(state.subscriptions, (all) => all.filter(Facts.isOpen)), () => [])
   return section(h, "Event alerts", [
     h.div([h.Class("setting-row")], [
       h.div([h.Class("setting-text")], [
         h.p([h.Class("line-main")], ["Alerts for new events"]),
         h.p([h.Class("line-quiet")], ["Anything that needs you raises an alert either way."])
       ]),
-      toggle(h, "Event alerts", on, Message.EditedSetting({ key: eventAlertsKey, value: on ? "off" : "on" }))
+      toggle(h, "Event alerts", on, model.busy ? null : Message.EditedSetting({ key: eventAlertsKey, value: on ? "off" : "on" }))
     ]),
-    open.length === 0 ? null : h.h3([h.Class("subsection-title")], ["Per subscription"]),
-    ...open.map((subscription) => subscriptionAlerts(h, model, subscription))
+    ...Result.match(state.subscriptions, {
+      onFailure: (reason) => [h.p([h.Class("load-error")], [`Could not load the subscriptions: ${reason}`])],
+      onSuccess: (all) => {
+        const open = all.filter(Facts.isOpen)
+        return open.length === 0 ? [] : [
+          h.h3([h.Class("subsection-title")], ["Per subscription"]),
+          ...open.map((subscription) => subscriptionAlerts(h, model, subscription))
+        ]
+      }
+    })
   ])
 }
 
@@ -92,6 +99,7 @@ const limits = (h: H, model: Model, settings: Settings.Settings): Html =>
             h.Class("input input-number"),
             h.Min("1"),
             h.Step("1"),
+            h.Disabled(model.busy),
             h.Value(model.settings[field.key] ?? String(field.toInput(settings.limits))),
             h.OnInput((value) => Message.EditedSetting({ key: field.key, value }))
           ]),
