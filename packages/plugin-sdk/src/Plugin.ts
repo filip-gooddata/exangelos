@@ -1,7 +1,7 @@
-import { Data, Effect, Layer, Logger, Schema, Stream } from "effect"
+import { Data, Duration, Effect, Layer, Logger, Schema, Stream } from "effect"
 import { type Rpc, type RpcGroup, RpcSerialization, RpcServer } from "effect/rpc"
 import { PluginProtocol } from "@exangelos/contracts"
-import type { Catalogue as Wire, Event, Ids } from "@exangelos/domain"
+import { type Catalogue as Wire, type Event, type Ids, Limits } from "@exangelos/domain"
 import type { ConfigurationField, EventType, Parameters } from "./Catalogue.ts"
 
 export class ConfigurationRejected extends Data.TaggedError("ConfigurationRejected")<{ readonly reason: string }> {}
@@ -16,6 +16,8 @@ export interface WatchRequest<P> {
   readonly parameters: P
   readonly eventTypes: ReadonlyArray<Ids.EventType>
   readonly cursor: string | undefined
+  /** The daemon's wake window, or its 5 s default when the daemon sends none. */
+  readonly wakeWindow: Duration.Duration
 }
 
 export interface Handlers<P, R> {
@@ -99,11 +101,16 @@ export const make = <Params extends Parameters<any>, R = never, E = never, RB = 
             ),
             Effect.catchTag("ParametersInvalid", ({ reason }) => Effect.succeed({ _tag: "Invalid", reason } as const))
           ),
-        Watch: ({ parameters, eventTypes, cursor }) =>
+        Watch: ({ parameters, eventTypes, cursor, wakeWindow }) =>
           decode(parameters).pipe(
             Effect.mapError((error) => new SourceFailed({ reason: `Invalid parameters: ${error.message}` })),
             Effect.map((decoded) =>
-              handlers.watch({ parameters: decoded, eventTypes, cursor }).pipe(
+              handlers.watch({
+                parameters: decoded,
+                eventTypes,
+                cursor,
+                wakeWindow: wakeWindow ?? Limits.defaults.wakeWindow
+              }).pipe(
                 Stream.map(selectTypes(eventTypes)),
                 Stream.filter((item) => item !== undefined),
                 Stream.takeUntil((item) => item._tag === "End")
