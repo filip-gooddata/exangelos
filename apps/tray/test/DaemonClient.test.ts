@@ -38,6 +38,7 @@ const handlers = (listDies: boolean, plugins: ReadonlyArray<ReturnType<typeof pl
   ConfigurePlugin: unused,
   DevLink: unused,
   DevUnlink: unused,
+  ListPluginAlerts: unused,
   GetSettings: unused,
   SetSettings: unused
 })
