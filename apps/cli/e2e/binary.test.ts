@@ -12,12 +12,19 @@ let exangelos: string
 let xng: string
 let template: string
 let daemon: Bun.Subprocess | undefined
+let release: Bun.Subprocess<"ignore", "pipe", "pipe"> | undefined
+let releasePort: number
 
 const hostVariable = /^(T3CODE_|CLAUDE_CODE_|CLAUDECODE|CODEX_|XDG_)/
 
 const env = () => ({
   ...Object.fromEntries(Object.entries(process.env).filter(([name]) => !hostVariable.test(name))),
   EXANGELOS_HOME: home,
+  NODE_EXTRA_CA_CERTS: join(root, "release-tls", "cert.pem"),
+  // Anything but the local release server goes to a closed port, so no test reaches a real service.
+  HTTPS_PROXY: "http://127.0.0.1:9",
+  HTTP_PROXY: "http://127.0.0.1:9",
+  NO_PROXY: "127.0.0.1",
   HOME: join(root, "user"),
   PATH: `${join(root, "fake-bin")}:${process.env.PATH}`
 })
@@ -183,7 +190,8 @@ const installFakes = async () => {
     `echo "security $*" >> ${at("secret-calls.log")}`,
     `case "$1" in`,
     `  -i) cat >> ${at("secrets.log")} ;;`,
-    `  find-generic-password) [ -f ${at("secrets.log")} ] || exit 44; echo not-a-secret ;;`,
+    `  find-generic-password) service=$(printf '%s\\n' "$*" | sed -n 's/.*-s \\([^ ]*\\).*/\\1/p');`,
+    `    grep -qs -- "-s \\"$service\\"" ${at("secrets.log")} || exit 44; echo not-a-secret ;;`,
     `esac`,
     `exit 0`
   ].join("\n"))
@@ -194,24 +202,78 @@ const installFakes = async () => {
   }
 }
 
+// The release server runs in its own process: the tests block on the binary while the daemon downloads.
+const serveRelease = async (directory: string) => {
+  const tls = join(root, "release-tls")
+  await mkdir(tls)
+  const certificate = Bun.spawnSync([
+    "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1", "-subj", "/CN=127.0.0.1",
+    "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", join(tls, "key.pem"), "-out", join(tls, "cert.pem")
+  ], { stdout: "ignore", stderr: "pipe" })
+  if (certificate.exitCode !== 0) throw new Error(certificate.stderr.toString())
+  // Besides the archives it stands in for the GitHub and Jira calls of Configure and Describe, and logs each request.
+  const server = `
+    const [directory, tls, log] = process.argv.slice(1)
+    const api = {
+      "POST /api/graphql": { data: { viewer: { login: "e2e" } } },
+      "GET /rest/api/3/serverInfo": { deploymentType: "Cloud" },
+      "GET /rest/api/3/myself": { accountId: "e2e" },
+      "GET /rest/api/3/search/jql": { issues: [{ id: "1", key: "E2E-1", fields: { summary: "One" } }], isLast: true }
+    }
+    const served = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      tls: { cert: Bun.file(tls + "/cert.pem"), key: Bun.file(tls + "/key.pem") },
+      fetch: async (request) => {
+        const url = new URL(request.url)
+        const route = request.method + " " + url.pathname
+        require("node:fs").appendFileSync(log, route + url.search + "\\n")
+        if (route in api) return Response.json(api[route])
+        const file = Bun.file(directory + new URL(request.url).pathname)
+        return (await file.exists()) ? new Response(file) : new Response("not found", { status: 404 })
+      }
+    })
+    console.log(served.port)
+  `
+  release = Bun.spawn(["bun", "-e", server, directory, tls, join(root, "release-requests.log")], { stdin: "ignore", stdout: "pipe", stderr: "pipe" })
+  const { value } = await release.stdout.getReader().read()
+  return Number(new TextDecoder().decode(value).trim())
+}
+
 beforeAll(async () => {
   root = await mkdtemp("/tmp/xng-")
   home = join(root, "h")
   exangelos = join(root, "bin", "exangelos")
   xng = join(root, "bin", "xng")
   template = join(root, "sources", "template")
-  build("apps/cli/build.ts", "--version", version, "--outfile", exangelos)
+  const releaseDirectory = join(root, "release")
+  build("packaging/src/cli/build-plugins.ts", "--out", releaseDirectory)
+  const official = await readFile(join(releaseDirectory, "official-plugins.json"), "utf8")
+  releasePort = await serveRelease(releaseDirectory)
+  build(
+    "apps/cli/build.ts",
+    "--version",
+    version,
+    "--release-url",
+    `https://127.0.0.1:${releasePort}`,
+    "--official-plugins",
+    JSON.stringify(JSON.parse(official)),
+    "--outfile",
+    exangelos
+  )
   await symlink(exangelos, xng)
   await installFakes()
   build("build", "plugins/template/src/main.ts", "--target=bun", `--outfile=${join(template, "dist", "main.js")}`)
   await copyFile(join(repo, "plugins/template/plugin.json"), join(template, "plugin.json"))
   await writeFile(join(root, "token"), "not-a-secret")
-}, 120_000)
+}, 300_000)
 
 afterAll(async () => {
   if (daemon !== undefined) await stop(daemon)
   await stopServiceDaemon()
   Bun.spawnSync(["pkill", "-f", join(template, "dist", "main.js")])
+  Bun.spawnSync(["pkill", "-f", join(home, "plugins")])
+  if (release !== undefined) await stop(release)
   await rm(root, { recursive: true, force: true })
 })
 
@@ -362,4 +424,127 @@ describe("the exangelos binary", () => {
     build("apps/cli/build.ts", "--target=bun-linux-x64", "--outfile", linux)
     expect((await readFile(linux)).subarray(0, 4)).toEqual(Buffer.from([0x7f, 0x45, 0x4c, 0x46]))
   }, 120_000)
+})
+
+describe("official plugins from a release address", () => {
+  const archive = (name: string) => `${name}-0.1.0.tar.gz`
+
+  // Serves the archive with one byte of its bundle changed, keeping the original to restore.
+  const tamper = async (name: string) => {
+    const served = join(root, "release", archive(name))
+    const unpacked = join(root, "tampered", name)
+    await mkdir(unpacked, { recursive: true })
+    await copyFile(served, join(root, "tampered", archive(name)))
+    expect(Bun.spawnSync(["tar", "-xzf", served, "-C", unpacked]).exitCode).toBe(0)
+    const entry = join(unpacked, "dist", "main.js")
+    const bytes = await readFile(entry)
+    bytes[bytes.length - 1] = bytes[bytes.length - 1] === 0x0a ? 0x20 : 0x0a
+    await writeFile(entry, bytes)
+    expect(Bun.spawnSync(["tar", "-czf", served, "-C", unpacked, "plugin.json", "dist/main.js"]).exitCode).toBe(0)
+  }
+
+  const pluginNamed = (name: string) => json("plugins").find((plugin: { name: string }) => plugin.name === name)
+
+  it("refuses a tampered official archive and leaves the plugin inert", async () => {
+    daemon = startDaemon()
+    await listUntilReady()
+    await tamper("file-watch")
+    const refused = run(exangelos, "subscribe", "file-watch", join(root, "drops", "*.txt"), "--intent", "Watch drops", "--pull-only")
+    expect(refused.status).toBe(1)
+    expect(refused.stderr.trim()).toMatch(/^file-watch is unavailable: its checksum does not match the one this binary carries\./)
+    expect(pluginNamed("file-watch")).toMatchObject({ trust: "inert" })
+    expect(run(exangelos, "plugin", "remove", "file-watch").status).toBe(0)
+    await copyFile(join(root, "tampered", archive("file-watch")), join(root, "release", archive("file-watch")))
+  }, 30_000)
+
+  it("fetches github-pr and jira, and describes a subscription to each against a local stand-in", async () => {
+    const stored = async (field: string, value: string) => {
+      const path = join(root, `${field}-value`)
+      await writeFile(path, value)
+      return `${field}=${path}`
+    }
+    const local = `127.0.0.1:${releasePort}`
+    const plugins = [
+      { name: "github-pr", main: "o/r#1", eventType: "merge.ready", described: { label: "Pull request o/r#1" }, values: ["--secret-file", await stored("host", local)] },
+      { name: "jira", main: "project = E2E", eventType: "status.changed", described: {}, values: ["email=e2e@example.invalid", "--secret-file", await stored("site", `https://${local}`)] }
+    ]
+    for (const { described, eventType, main, name, values } of plugins) {
+      // Without credentials the plugin stops at Configure, before any request.
+      const refused = run(exangelos, "subscribe", name, main, "--intent", "Describe only", "--pull-only")
+      expect(refused.status).toBe(1)
+      expect(refused.stderr.trim()).toBe(`${name} is unavailable: its configuration is missing. Run \`exangelos plugins ${name}\` to see its state.`)
+      expect(pluginNamed(name)).toMatchObject({ trust: "enabled", origin: { _tag: "Official" } })
+
+      const configured = run(exangelos, "plugin", "configure", name, ...values, "--secret-file", await stored("token", "not-a-secret"))
+      expect(configured.status, configured.stdout + configured.stderr).toBe(0)
+      const subscribed = run(exangelos, "--json", "subscribe", name, main, "--intent", "Describe only", "--pull-only")
+      expect(subscribed.status, subscribed.stdout + subscribed.stderr).toBe(0)
+      const subscription = JSON.parse(subscribed.stdout)
+      expect(subscription).toMatchObject({ plugin: name, subject: expect.any(String), ...described })
+      expect(run(exangelos, "cancel", subscription.id).status).toBe(0)
+      expect(pluginNamed(name).catalogue.eventTypes.map((spec: { type: string }) => spec.type)).toContain(eventType)
+    }
+    const requests = (await readFile(join(root, "release-requests.log"), "utf8")).split("\n")
+    expect(requests).toEqual(expect.arrayContaining(["POST /api/graphql", "GET /rest/api/3/serverInfo", "GET /rest/api/3/myself"]))
+    // Jira's Describe checks the JQL with a one-result search; Watch searches without that limit.
+    expect(requests.some((line) => /^GET \/rest\/api\/3\/search\/jql\?.*maxResults=1(&|$)/.test(line))).toBe(true)
+  }, 60_000)
+
+  it("wakes once for a file event beside a template subscription, and switches event alerts", async () => {
+    const drops = join(root, "drops")
+    await mkdir(drops, { recursive: true })
+    await eventually(() =>
+      json("plugin", "configure", "template", "interval=500", "--secret-file", `token=${join(root, "token")}`)
+    )
+    const ticks = await mcpSubscribe({ ticks: 120 }, { pullOnly: true, similarOk: json("list").map((s: { id: string }) => s.id) })
+    const subscribed = run(exangelos, "--json", "subscribe", "file-watch", join(drops, "*.txt"), "--intent", "Watch drops", "--target", "t3:e2e-files")
+    expect(subscribed.status, subscribed.stdout + subscribed.stderr).toBe(0)
+    const files = JSON.parse(subscribed.stdout) as { id: string }
+    expect(pluginNamed("file-watch")).toMatchObject({ trust: "enabled", catalogue: { eventTypes: expect.arrayContaining([expect.objectContaining({ type: "file.created" })]) } })
+
+    expect(json("alerts", files.id, "on")).toMatchObject({ id: files.id, eventAlerts: true })
+    expect(json("show", files.id).subscription.eventAlerts).toBe(true)
+
+    const drop = join(drops, "one.txt")
+    const oneEvent = () => {
+      const read = json("events", files.id)
+      expect(read).toHaveLength(1)
+      return read
+    }
+    await writeFile(drop, "one")
+    // The watcher's first scan takes the files it finds as its baseline. A file written before that scan
+    // raises nothing, so the test rewrites it once, which raises file.changed instead.
+    if (!(await eventually(oneEvent, 5_000).then(() => true, () => false))) await writeFile(drop, "one again")
+    const events = await eventually(oneEvent)
+    expect(events[0]).toMatchObject({ type: expect.stringMatching(/^file\.(created|changed)$/), payload: { path: expect.stringMatching(/one\.txt$/) } })
+    const wakesFor = async () =>
+      (await readFile(join(root, "wakes.log"), "utf8")).split("thread send -- ").filter((block) => block.includes(files.id))
+    await eventually(async () => expect(await wakesFor()).toHaveLength(1))
+    await Bun.sleep(1_000)
+    const wakes = await wakesFor()
+    expect(wakes).toHaveLength(1)
+    expect(wakes[0]!.startsWith("e2e-files -")).toBe(true)
+    expect(json("show", files.id).wakes).toHaveLength(1)
+    const template = json("show", ticks.id)
+    expect(template.subscription.state._tag).not.toBe("Ended")
+    expect(template.events.length).toBeGreaterThan(0)
+    expect(run(exangelos, "cancel", ticks.id).status).toBe(0)
+    const alerted = await eventually(async () => {
+      const lines = (await readFile(join(root, "notifications.log"), "utf8")).split("\n").filter((line) => line.includes("one.txt"))
+      expect(lines).toHaveLength(1)
+      return lines[0]
+    })
+    expect(alerted).toMatch(/^(osascript|notify-send) /)
+
+    expect(json("alerts", files.id, "off")).toMatchObject({ eventAlerts: false })
+    expect(json("show", files.id).subscription.eventAlerts).toBe(false)
+  }, 60_000)
+
+  it("stops and leaves no daemon or plugin process behind", async () => {
+    expect(await stop(daemon!)).toBe(true)
+    daemon = undefined
+    expect(Bun.spawnSync(["pgrep", "-f", join(home, "plugins")]).exitCode).toBe(1)
+    expect(pluginRuns()).toBe(false)
+    expect(run(exangelos, "plugins").stderr.trim()).toMatch(noDaemon)
+  }, 15_000)
 })
