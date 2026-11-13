@@ -109,6 +109,6 @@ export const backlogOverLimit = (e: Refusal.BacklogOverLimit) =>
       pending: e.pending,
       limit: limits.backlogCount,
       through: e.through,
-      reason: e.pending > limits.backlogCount ? "count" : "age"
+      reason: e.pending >= limits.backlogCount ? "count" : "age"
     })
   })

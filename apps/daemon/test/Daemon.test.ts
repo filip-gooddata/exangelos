@@ -1,50 +1,158 @@
+import { execFile } from "node:child_process"
 import * as Fs from "node:fs/promises"
-import * as Os from "node:os"
 import * as Path from "node:path"
-import { BunServices } from "@effect/platform-bun"
+import { promisify } from "node:util"
 import { describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer, Option } from "effect"
-import {
-  layerAlertSink,
-  layerSecretStore,
-  layerServiceManager,
-  layerWakeTarget
-} from "@exangelos/application/testing"
-import { DaemonClient } from "@exangelos/daemon-client"
-import { Paths } from "@exangelos/paths"
-import { Daemon } from "@exangelos/daemon"
+import { Duration, Effect } from "effect"
+import { digestDirectory } from "@exangelos/plugin-directory"
+import { Ids } from "@exangelos/domain"
+import { layerCommand } from "@exangelos/wake-targets"
+import { eventually, home, installTemplate, quickWakes, start, templatePlugin, wakeLog } from "./support.ts"
 
-const home = Effect.acquireRelease(
-  Effect.promise(() => Fs.mkdtemp(Path.join(Os.tmpdir(), "exangelos-daemon-"))),
-  (dir) => Effect.promise(() => Fs.rm(dir, { recursive: true, force: true }))
-)
-
-const withFakes = Daemon.layer({
-  alerts: layerAlertSink,
-  serviceManager: layerServiceManager({ method: "launch-agent", installed: true, running: true }),
-  secretStore: layerSecretStore,
-  wakeTarget: layerWakeTarget,
-  officialPlugins: [],
-  releaseUrl: undefined
-})
+const session = { harness: "t3", sessionId: "daemon-test" } as const
+const template = Ids.PluginName.make("template")
 
 describe("Daemon", () => {
-  it.live("starts with fakes for the platform ports and answers on its socket", () =>
+  it.live("wakes a subscriber through the command target, then reads, acknowledges and waits", () =>
     Effect.gen(function*() {
       const dir = yield* home
-      const paths = Paths.layer.pipe(
-        Layer.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({ EXANGELOS_HOME: dir }))),
-        Layer.orDie
-      )
-      const platform = Layer.mergeAll(BunServices.layer, paths)
-      const { socketPath, databaseFile } = yield* Effect.provide(Paths.Paths, paths)
+      const wakes = Path.join(dir, "wakes.log")
+      const { client } = yield* start(dir, { wakeTarget: layerCommand(wakeLog(wakes)) })
+      yield* quickWakes(client)
+      yield* installTemplate(client, dir)
 
-      yield* Layer.build(withFakes.pipe(Layer.provide(platform)))
+      const woken = yield* client.Subscribe({
+        plugin: template,
+        parameters: { ticks: 3 },
+        intent: "Count three ticks",
+        target: { _tag: "Session", session },
+        similarOk: []
+      })
+      const log = yield* eventually(Effect.tryPromise(async () => {
+        const text = await Fs.readFile(wakes, "utf8")
+        if (!text.includes(woken.id)) throw new Error("no wake yet")
+        return text
+      }))
+      expect(log.split("\n")[0]).toBe(woken.id)
 
-      const plugins = yield* Effect.flatMap(DaemonClient.DaemonClient, (client) => client.ListPlugins()).pipe(
-        Effect.provide(DaemonClient.layer({ path: socketPath, session: Option.none() }))
-      )
-      expect(plugins).toEqual([])
-      yield* Effect.promise(() => Fs.access(databaseFile))
-    }).pipe(Effect.scoped))
+      const events = yield* eventually(client.Events({ id: woken.id }).pipe(
+        Effect.filterOrFail((events) => events.length === 3)
+      ))
+      expect(events.map((event) => event.payload)).toEqual([{ index: 1 }, { index: 2 }, { index: 3 }])
+      const acknowledged = yield* client.Ack({ id: woken.id, through: events[2]!.number })
+      expect(acknowledged.ackedThrough).toBe(events[2]!.number)
+
+      const pulled = yield* client.Subscribe({
+        plugin: template,
+        parameters: { ticks: 2 },
+        intent: "Count two ticks without a wake",
+        target: { _tag: "PullOnly" },
+        similarOk: [woken.id]
+      })
+      const content = yield* client.Wait({ id: pulled.id }).pipe(Effect.timeout(Duration.seconds(20)))
+      expect(content.subscription).toBe(pulled.id)
+      expect(content.pending.length).toBeGreaterThan(0)
+    }).pipe(Effect.scoped), 60_000)
+
+  it.live("keeps subscriptions and their events across a restart on the same home", () =>
+    Effect.gen(function*() {
+      const dir = yield* home
+      const first = yield* start(dir)
+      yield* installTemplate(first.client, dir)
+      const subscription = yield* first.client.Subscribe({
+        plugin: template,
+        parameters: { ticks: 2 },
+        intent: "Count two ticks",
+        target: { _tag: "PullOnly" },
+        similarOk: []
+      })
+      const before = yield* eventually(first.client.Events({ id: subscription.id }).pipe(
+        Effect.filterOrFail((events) => events.length === 2)
+      ))
+      yield* first.stop
+
+      const { client } = yield* start(dir)
+      const shown = yield* client.Show({ id: subscription.id })
+      expect(shown.subscription.id).toBe(subscription.id)
+      expect(shown.events).toEqual(before)
+      expect(yield* client.Events({ id: subscription.id })).toEqual(before)
+    }).pipe(Effect.scoped), 60_000)
+
+  it.live("reports an official plugin with a changed checksum but not one the owner disabled", () =>
+    Effect.gen(function*() {
+      const dir = yield* home
+      const releases = Path.join(dir, "releases")
+      const built = Path.join(dir, "built")
+      const archive = (name: string) =>
+        Effect.gen(function*() {
+          const plugin = yield* templatePlugin(built, name)
+          yield* Effect.promise(() => Fs.mkdir(releases, { recursive: true }))
+          yield* Effect.promise(() =>
+            promisify(execFile)("tar", ["--no-xattrs", "-czf", Path.join(releases, `${name}-0.1.0.tar.gz`), "-C", plugin, "."], {
+              env: { ...process.env, COPYFILE_DISABLE: "1" }
+            })
+          )
+          return yield* digestDirectory(plugin)
+        })
+      const matching = yield* archive("matching")
+      yield* archive("changed")
+
+      const { client } = yield* start(dir, {
+        officialPlugins: [
+          { name: "matching", version: "0.1.0", digest: matching },
+          { name: "changed", version: "0.1.0", digest: "0".repeat(64) }
+        ],
+        releaseUrl: `file://${releases}`
+      })
+      const fetch = (plugin: string) =>
+        client.Subscribe({
+          plugin: Ids.PluginName.make(plugin),
+          parameters: { ticks: 1 },
+          intent: "Fetch the official plugin",
+          target: { _tag: "PullOnly" },
+          similarOk: []
+        }).pipe(Effect.ignore)
+      yield* fetch("matching")
+      yield* fetch("changed")
+      yield* client.DisablePlugin({ name: Ids.PluginName.make("matching") })
+
+      const plugins = yield* client.ListPlugins()
+      expect(plugins.map(({ name, trust }) => ({ name, trust })).sort((a, b) => a.name.localeCompare(b.name)))
+        .toEqual([{ name: "changed", trust: "inert" }, { name: "matching", trust: "inert" }])
+      expect(yield* client.ListPluginAlerts()).toEqual([{ _tag: "DigestMismatch", plugin: "changed" }])
+    }).pipe(Effect.scoped), 60_000)
+})
+
+describe("Daemon errors", () => {
+  it.live("refuses a session that enables a plugin", () =>
+    Effect.gen(function*() {
+      const dir = yield* home
+      const { as, client } = yield* start(dir)
+      const source = yield* templatePlugin(Path.join(dir, "sources"))
+      const imported = yield* client.ImportPlugin({ source: { _tag: "Directory", path: source } })
+      const agent = yield* as(session)
+      const refused = yield* Effect.flip(agent.EnablePlugin({ name: imported.name, digest: imported.digest }))
+      expect(refused._tag).toBe("HumanRequired")
+      expect(refused).toMatchObject({ plugin: "template" })
+    }).pipe(Effect.scoped), 60_000)
+
+  it.live("names the count when resume finds the backlog over its limit", () =>
+    Effect.gen(function*() {
+      const dir = yield* home
+      const { client } = yield* start(dir)
+      yield* quickWakes(client, { backlogCount: 2 })
+      yield* installTemplate(client, dir)
+      const subscription = yield* client.Subscribe({
+        plugin: template,
+        parameters: { ticks: 5 },
+        intent: "Overflow the backlog",
+        target: { _tag: "PullOnly" },
+        similarOk: []
+      })
+      yield* eventually(client.Show({ id: subscription.id }).pipe(
+        Effect.filterOrFail((shown) => shown.subscription.state._tag === "Paused")
+      ))
+      const refused = yield* Effect.flip(client.Resume({ id: subscription.id }))
+      expect(refused).toMatchObject({ _tag: "BacklogOverLimit", reason: "count", limit: 2 })
+    }).pipe(Effect.scoped), 60_000)
 })
