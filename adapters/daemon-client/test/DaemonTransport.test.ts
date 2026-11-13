@@ -180,10 +180,10 @@ describe("daemon transport", () => {
   it.live("lets one of two daemons win over a stale socket file", () =>
     withSocket((path) =>
       Effect.gen(function*() {
-        const start = Layer.build(daemon(path)).pipe(Effect.exit, Effect.scoped)
+        const start = Layer.build(daemon(path)).pipe(Effect.exit)
         for (let round = 0; round < 50; round++) {
           writeFileSync(path, "")
-          const exits = yield* Effect.all([start, start], { concurrency: 2 })
+          const exits = yield* Effect.scoped(Effect.all([start, start], { concurrency: 2 }))
           expect(exits.filter(Exit.isSuccess)).toHaveLength(1)
         }
       })
