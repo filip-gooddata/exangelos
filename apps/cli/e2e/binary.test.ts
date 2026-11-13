@@ -339,7 +339,7 @@ describe("the exangelos binary", () => {
     expect(replies[0].result.serverInfo).toMatchObject({ name: "exangelos", version })
     const tools = replies[1].result.tools.map((tool: { name: string }) => tool.name)
     expect([...tools].sort()).toEqual(
-      ["ack", "cancel", "events", "list", "list_connectors", "pause", "resume", "retarget", "show", "subscribe", "update", "wait"]
+      ["ack", "cancel", "events", "list", "list_connectors", "pause", "resume", "retarget", "set_event_alerts", "show", "subscribe", "update", "wait"]
     )
   }, 15_000)
 
