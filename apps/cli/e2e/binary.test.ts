@@ -13,6 +13,7 @@ let xng: string
 let template: string
 let daemon: Bun.Subprocess | undefined
 let release: Bun.Subprocess<"ignore", "pipe", "pipe"> | undefined
+let releasePort: number
 
 const hostVariable = /^(T3CODE_|CLAUDE_CODE_|CLAUDECODE|CODEX_|XDG_)/
 
@@ -189,7 +190,8 @@ const installFakes = async () => {
     `echo "security $*" >> ${at("secret-calls.log")}`,
     `case "$1" in`,
     `  -i) cat >> ${at("secrets.log")} ;;`,
-    `  find-generic-password) [ -f ${at("secrets.log")} ] || exit 44; case " $* " in *" exangelos.template "*) echo not-a-secret ;; *) exit 44 ;; esac ;;`,
+    `  find-generic-password) service=$(printf '%s\\n' "$*" | sed -n 's/.*-s \\([^ ]*\\).*/\\1/p');`,
+    `    grep -qs -- "-s \\"$service\\"" ${at("secrets.log")} || exit 44; echo not-a-secret ;;`,
     `esac`,
     `exit 0`
   ].join("\n"))
@@ -209,20 +211,31 @@ const serveRelease = async (directory: string) => {
     "-addext", "subjectAltName=IP:127.0.0.1", "-keyout", join(tls, "key.pem"), "-out", join(tls, "cert.pem")
   ], { stdout: "ignore", stderr: "pipe" })
   if (certificate.exitCode !== 0) throw new Error(certificate.stderr.toString())
+  // Besides the archives it stands in for the GitHub and Jira calls of Configure and Describe, and logs each request.
   const server = `
-    const [directory, tls] = process.argv.slice(1)
+    const [directory, tls, log] = process.argv.slice(1)
+    const api = {
+      "POST /api/graphql": { data: { viewer: { login: "e2e" } } },
+      "GET /rest/api/3/serverInfo": { deploymentType: "Cloud" },
+      "GET /rest/api/3/myself": { accountId: "e2e" },
+      "GET /rest/api/3/search/jql": { issues: [{ id: "1", key: "E2E-1", fields: { summary: "One" } }], isLast: true }
+    }
     const served = Bun.serve({
       hostname: "127.0.0.1",
       port: 0,
       tls: { cert: Bun.file(tls + "/cert.pem"), key: Bun.file(tls + "/key.pem") },
       fetch: async (request) => {
+        const url = new URL(request.url)
+        const route = request.method + " " + url.pathname
+        require("node:fs").appendFileSync(log, route + url.search + "\\n")
+        if (route in api) return Response.json(api[route])
         const file = Bun.file(directory + new URL(request.url).pathname)
         return (await file.exists()) ? new Response(file) : new Response("not found", { status: 404 })
       }
     })
     console.log(served.port)
   `
-  release = Bun.spawn(["bun", "-e", server, directory, tls], { stdin: "ignore", stdout: "pipe", stderr: "pipe" })
+  release = Bun.spawn(["bun", "-e", server, directory, tls, join(root, "release-requests.log")], { stdin: "ignore", stdout: "pipe", stderr: "pipe" })
   const { value } = await release.stdout.getReader().read()
   return Number(new TextDecoder().decode(value).trim())
 }
@@ -236,13 +249,13 @@ beforeAll(async () => {
   const releaseDirectory = join(root, "release")
   build("packaging/src/cli/build-plugins.ts", "--out", releaseDirectory)
   const official = await readFile(join(releaseDirectory, "official-plugins.json"), "utf8")
-  const port = await serveRelease(releaseDirectory)
+  releasePort = await serveRelease(releaseDirectory)
   build(
     "apps/cli/build.ts",
     "--version",
     version,
     "--release-url",
-    `https://127.0.0.1:${port}`,
+    `https://127.0.0.1:${releasePort}`,
     "--official-plugins",
     JSON.stringify(JSON.parse(official)),
     "--outfile",
@@ -444,19 +457,37 @@ describe("official plugins from a release address", () => {
     await copyFile(join(root, "tampered", archive("file-watch")), join(root, "release", archive("file-watch")))
   }, 30_000)
 
-  it("fetches github-pr and jira and runs each bundle up to its handshake catalogue", async () => {
-    // Without credentials neither gets past Configure, so neither reaches GitHub or Jira, and neither is asked to Describe.
-    for (const [name, main, eventType] of [["github-pr", "o/r#1", "merge.ready"], ["jira", "project = E2E", "status.changed"]]) {
-      const refused = run(exangelos, "subscribe", name!, main!, "--intent", "Catalogue only", "--pull-only")
+  it("fetches github-pr and jira, and describes a subscription to each against a local stand-in", async () => {
+    const stored = async (field: string, value: string) => {
+      const path = join(root, `${field}-value`)
+      await writeFile(path, value)
+      return `${field}=${path}`
+    }
+    const local = `127.0.0.1:${releasePort}`
+    const plugins = [
+      { name: "github-pr", main: "o/r#1", eventType: "merge.ready", described: { label: "Pull request o/r#1" }, values: ["--secret-file", await stored("host", local)] },
+      { name: "jira", main: "project = E2E", eventType: "status.changed", described: {}, values: ["email=e2e@example.invalid", "--secret-file", await stored("site", `https://${local}`)] }
+    ]
+    for (const { described, eventType, main, name, values } of plugins) {
+      // Without credentials the plugin stops at Configure, before any request.
+      const refused = run(exangelos, "subscribe", name, main, "--intent", "Describe only", "--pull-only")
       expect(refused.status).toBe(1)
       expect(refused.stderr.trim()).toBe(`${name} is unavailable: its configuration is missing. Run \`exangelos plugins ${name}\` to see its state.`)
-      const plugin = await eventually(() => {
-        const listed = pluginNamed(name!)
-        expect(listed.catalogue.eventTypes.map((spec: { type: string }) => spec.type)).toContain(eventType)
-        return listed
-      })
-      expect(plugin).toMatchObject({ trust: "enabled", origin: { _tag: "Official" } })
+      expect(pluginNamed(name)).toMatchObject({ trust: "enabled", origin: { _tag: "Official" } })
+
+      const configured = run(exangelos, "plugin", "configure", name, ...values, "--secret-file", await stored("token", "not-a-secret"))
+      expect(configured.status, configured.stdout + configured.stderr).toBe(0)
+      const subscribed = run(exangelos, "--json", "subscribe", name, main, "--intent", "Describe only", "--pull-only")
+      expect(subscribed.status, subscribed.stdout + subscribed.stderr).toBe(0)
+      const subscription = JSON.parse(subscribed.stdout)
+      expect(subscription).toMatchObject({ plugin: name, subject: expect.any(String), ...described })
+      expect(run(exangelos, "cancel", subscription.id).status).toBe(0)
+      expect(pluginNamed(name).catalogue.eventTypes.map((spec: { type: string }) => spec.type)).toContain(eventType)
     }
+    const requests = (await readFile(join(root, "release-requests.log"), "utf8")).split("\n")
+    expect(requests).toEqual(expect.arrayContaining(["POST /api/graphql", "GET /rest/api/3/serverInfo", "GET /rest/api/3/myself"]))
+    // Jira's Describe checks the JQL with a one-result search; Watch searches without that limit.
+    expect(requests.some((line) => /^GET \/rest\/api\/3\/search\/jql\?.*maxResults=1(&|$)/.test(line))).toBe(true)
   }, 60_000)
 
   it("wakes once for a file event beside a template subscription, and switches event alerts", async () => {
