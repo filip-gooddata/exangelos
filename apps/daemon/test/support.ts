@@ -16,7 +16,7 @@ import type { Limits, Session } from "@exangelos/domain"
 import { Paths } from "@exangelos/paths"
 import { Daemon } from "@exangelos/daemon"
 
-const run = promisify(execFile)
+export const run = promisify(execFile)
 
 const template = Path.resolve(import.meta.dirname, "../../../plugins/template")
 
@@ -27,14 +27,14 @@ export const home = Effect.acquireRelease(
 
 /** A runnable copy of plugins/template under `name`, bundled with the Bun that runs the tests. */
 export const templatePlugin = (into: string, name = "template") =>
-  Effect.promise(async () => {
+  Effect.promise(async (signal) => {
     const directory = Path.join(into, name)
     await run(process.execPath, [
       "build",
       Path.join(template, "src/main.ts"),
       "--target=bun",
       `--outfile=${Path.join(directory, "dist/main.js")}`
-    ], { env: { ...process.env, BUN_BE_BUN: "1" } })
+    ], { env: { ...process.env, BUN_BE_BUN: "1" }, signal, timeout: 60_000 })
     const manifest = JSON.parse(await Fs.readFile(Path.join(template, "plugin.json"), "utf8"))
     await Fs.writeFile(Path.join(directory, "plugin.json"), JSON.stringify({ ...manifest, name }))
     return directory

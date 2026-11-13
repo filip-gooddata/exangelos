@@ -1,13 +1,11 @@
-import { execFile } from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { promisify } from "node:util"
 import { describe, expect, it } from "@effect/vitest"
 import { Duration, Effect } from "effect"
 import { digestDirectory } from "@exangelos/plugin-directory"
 import { Ids } from "@exangelos/domain"
 import { layerCommand } from "@exangelos/wake-targets"
-import { eventually, home, installTemplate, quickWakes, start, templatePlugin, wakeLog } from "./support.ts"
+import { eventually, home, installTemplate, quickWakes, run, start, templatePlugin, wakeLog } from "./support.ts"
 
 const session = { harness: "t3", sessionId: "daemon-test" } as const
 const template = Ids.PluginName.make("template")
@@ -30,7 +28,7 @@ describe("Daemon", () => {
       })
       const log = yield* eventually(Effect.tryPromise(async () => {
         const text = await Fs.readFile(wakes, "utf8")
-        if (!text.includes(woken.id)) throw new Error("no wake yet")
+        if (!text.includes(woken.id) || !text.includes("ticks:3")) throw new Error("no wake yet")
         return text
       }))
       expect(log.split("\n")[0]).toBe(woken.id)
@@ -41,6 +39,7 @@ describe("Daemon", () => {
       expect(events.map((event) => event.payload)).toEqual([{ index: 1 }, { index: 2 }, { index: 3 }])
       const acknowledged = yield* client.Ack({ id: woken.id, through: events[2]!.number })
       expect(acknowledged.ackedThrough).toBe(events[2]!.number)
+      expect((yield* client.Show({ id: woken.id })).subscription.ackedThrough).toBe(events[2]!.number)
 
       const pulled = yield* client.Subscribe({
         plugin: template,
@@ -87,9 +86,11 @@ describe("Daemon", () => {
         Effect.gen(function*() {
           const plugin = yield* templatePlugin(built, name)
           yield* Effect.promise(() => Fs.mkdir(releases, { recursive: true }))
-          yield* Effect.promise(() =>
-            promisify(execFile)("tar", ["--no-xattrs", "-czf", Path.join(releases, `${name}-0.1.0.tar.gz`), "-C", plugin, "."], {
-              env: { ...process.env, COPYFILE_DISABLE: "1" }
+          yield* Effect.promise((signal) =>
+            run("tar", ["--no-xattrs", "-czf", Path.join(releases, `${name}-0.1.0.tar.gz`), "-C", plugin, "."], {
+              env: { ...process.env, COPYFILE_DISABLE: "1" },
+              signal,
+              timeout: 60_000
             })
           )
           return yield* digestDirectory(plugin)
@@ -153,6 +154,6 @@ describe("Daemon errors", () => {
         Effect.filterOrFail((shown) => shown.subscription.state._tag === "Paused")
       ))
       const refused = yield* Effect.flip(client.Resume({ id: subscription.id }))
-      expect(refused).toMatchObject({ _tag: "BacklogOverLimit", reason: "count", limit: 2 })
+      expect(refused).toMatchObject({ _tag: "BacklogOverLimit", reason: "count", pending: 2, limit: 2 })
     }).pipe(Effect.scoped), 60_000)
 })
