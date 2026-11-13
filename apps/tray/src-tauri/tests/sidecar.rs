@@ -7,6 +7,8 @@ use std::time::Duration;
 
 use exangelos_tray_lib::sidecar::{ensure_daemon, Daemon};
 
+const DEADLINE: Duration = Duration::from_secs(5);
+
 fn fake_sidecar(directory: &Path) -> std::path::PathBuf {
     let sidecar = directory.join("exangelos");
     let marker = directory.join("started");
@@ -29,7 +31,10 @@ fn leaves_an_answering_daemon_alone() {
     let _listener = UnixListener::bind(&socket).unwrap();
     let sidecar = fake_sidecar(directory.path());
 
-    assert_eq!(ensure_daemon(&socket, &sidecar), Ok(Daemon::Answering));
+    assert_eq!(
+        ensure_daemon(&socket, &sidecar, DEADLINE),
+        Ok(Daemon::Answering)
+    );
     thread::sleep(Duration::from_millis(200));
     assert!(!directory.path().join("started").exists());
 }
@@ -40,7 +45,10 @@ fn starts_the_service_through_the_sidecar_when_the_socket_is_silent() {
     let socket = directory.path().join("daemon.sock");
     let sidecar = fake_sidecar(directory.path());
 
-    assert_eq!(ensure_daemon(&socket, &sidecar), Ok(Daemon::Started));
+    assert_eq!(
+        ensure_daemon(&socket, &sidecar, DEADLINE),
+        Ok(Daemon::Started)
+    );
     assert_eq!(
         fs::read_to_string(directory.path().join("started")).unwrap(),
         "service status\n"
@@ -60,7 +68,7 @@ fn reports_the_sidecar_message_when_the_start_fails() {
     fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o755)).unwrap();
 
     assert_eq!(
-        ensure_daemon(&socket, &sidecar),
+        ensure_daemon(&socket, &sidecar, DEADLINE),
         Err("No Exangelos daemon is running, and starting it failed: refused.".to_string())
     );
 }
@@ -70,5 +78,17 @@ fn reports_a_missing_sidecar() {
     let directory = tempfile::tempdir().unwrap();
     let socket = directory.path().join("daemon.sock");
 
-    assert!(ensure_daemon(&socket, &directory.path().join("exangelos")).is_err());
+    assert!(ensure_daemon(&socket, &directory.path().join("exangelos"), DEADLINE).is_err());
+}
+
+#[test]
+fn kills_a_sidecar_that_outlives_the_deadline() {
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("daemon.sock");
+    let sidecar = directory.path().join("exangelos");
+    fs::write(&sidecar, "#!/bin/sh\nexec sleep 30\n").unwrap();
+    fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o755)).unwrap();
+
+    let error = ensure_daemon(&socket, &sidecar, Duration::from_millis(300)).unwrap_err();
+    assert!(error.contains("did not finish within"), "{error}");
 }

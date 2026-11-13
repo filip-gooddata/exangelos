@@ -23,6 +23,7 @@ const PANEL: &str = "panel";
 const TRAY: &str = "main";
 const CONNECTION_HEADER: &str = "exangelos-relay-connection";
 const SMOKE_TIMEOUT: Duration = Duration::from_secs(15);
+const DAEMON_START_DEADLINE: Duration = Duration::from_secs(30);
 
 const ICON_QUIET: &[u8] = include_bytes!("../../icons/tray-quiet.png");
 const ICON_ATTENTION: &[u8] = include_bytes!("../../icons/tray-attention.png");
@@ -123,10 +124,12 @@ fn start_daemon() {
         Ok(socket) => socket,
         Err(message) => return eprintln!("the Exangelos daemon is not running: {message}"),
     };
-    match sidecar::sidecar_path().and_then(|sidecar| sidecar::ensure_daemon(&socket, &sidecar)) {
+    match sidecar::sidecar_path()
+        .and_then(|sidecar| sidecar::ensure_daemon(&socket, &sidecar, DAEMON_START_DEADLINE))
+    {
         Ok(sidecar::Daemon::Answering) => {}
         Ok(sidecar::Daemon::Started) => eprintln!("started the Exangelos daemon service"),
-        Err(message) => eprintln!("the Exangelos daemon is not running: {message}"),
+        Err(message) => eprintln!("starting the Exangelos daemon failed: {message}"),
     }
 }
 
