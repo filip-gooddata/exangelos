@@ -7,7 +7,7 @@ import { Effect, Layer, Option, Result, Schedule } from "effect"
 import { RpcServer } from "effect/rpc"
 import { Socket } from "effect/socket"
 import { mkdtempSync, rmSync } from "node:fs"
-import { DaemonClient } from "../src/index.ts"
+import { DaemonClient, Host, Panel } from "../src/index.ts"
 import { plugin, subscription } from "./fixtures.ts"
 
 const unused = () => Effect.die("not served in this test")
@@ -20,17 +20,21 @@ const handlers = (listDies: boolean, plugins: ReadonlyArray<ReturnType<typeof pl
     }),
   ListPlugins: () => Effect.succeed(plugins),
   SetEventAlerts: unused,
-  List: () => listDies ? Effect.die("NotImplemented: List") : Effect.succeed([subscription()]),
+  List: ({ all }) =>
+    listDies
+      ? Effect.die("NotImplemented: List")
+      : Effect.succeed(all ? [subscription(), subscription({ id: Ids.SubscriptionId.make("sub_done"), state: { _tag: "Expired" } })] : [subscription()]),
   Subscribe: unused,
   Update: unused,
-  Show: unused,
+  Show: ({ id }) => Effect.succeed({ subscription: subscription({ id }), events: [], wakes: [], changes: [] }),
   Events: unused,
   Ack: unused,
   Wait: unused,
-  Pause: unused,
+  Pause: ({ id }) =>
+    Effect.fail(new DaemonContract.TransitionRefused({ state: { _tag: "Expired" }, message: `${id} has expired` })),
   Resume: unused,
   Retarget: unused,
-  Cancel: unused,
+  Cancel: () => Effect.die("NotImplemented: Cancel"),
   ImportPlugin: unused,
   EnablePlugin: unused,
   DisablePlugin: unused,
@@ -61,8 +65,11 @@ describe("daemon client over a unix socket", () => {
     withHome((path) =>
       Effect.gen(function*() {
         const loaded = yield* DaemonClient.snapshot
-        expect(Result.getOrThrow(loaded.subscriptions).map((s) => s.id)).toEqual(["sub_7f3k"])
+        expect(Result.getOrThrow(loaded.subscriptions).map((s) => s.id)).toEqual(["sub_7f3k", "sub_done"])
+        expect(Result.getOrThrow(loaded.details).map((d) => d.subscription.id)).toEqual(["sub_7f3k", "sub_done"])
         expect(Result.getOrThrow(loaded.plugins).map((p) => p.name)).toEqual(["github-pr"])
+        expect(Result.getFailure(loaded.settings)).toEqual(Option.some("GetSettings: not served in this test"))
+        expect(Result.getOrThrow(loaded.status)).toEqual({ version: "you", startMethod: "foreground" })
         expect((yield* (yield* DaemonClient.DaemonClient).ServiceStatus()).version).toBe("you")
       }).pipe(Effect.provide(client(path).pipe(Layer.provideMerge(daemon(path)))))
     ))
@@ -82,11 +89,32 @@ describe("daemon client over a unix socket", () => {
       Effect.gen(function*() {
         const loaded = yield* DaemonClient.snapshot
         expect(Result.isFailure(loaded.subscriptions)).toBe(true)
+        expect(Result.getFailure(loaded.details)).toEqual(Result.getFailure(loaded.subscriptions))
         expect(Result.getOrThrow(loaded.plugins)).toHaveLength(2)
-        expect(Result.getOrThrow(loaded.trustAlerts).map((alert) => alert._tag)).toEqual(["WaitsForEnable", "DigestMismatch"])
+        expect(Result.isFailure(loaded.trustAlerts)).toBe(true)
       }).pipe(Effect.provide(client(path).pipe(Layer.provideMerge(daemon(path, true, [
         plugin({ name: Ids.PluginName.make("new"), trust: "inert" }),
         plugin({ name: Ids.PluginName.make("official"), trust: "inert", origin: { _tag: "Official", version: "1" } })
       ])))))
     ))
+  it.live("keeps the error a refused request declares and reports a defect as a failed call", () =>
+    withHome((path) =>
+      Effect.gen(function*() {
+        const act = Panel.act(yield* DaemonClient.DaemonClient, Effect.die("quit is not used here"))
+        const id = Ids.SubscriptionId.make("sub_7f3k")
+        const refused = yield* Effect.flip(act(Panel.Request.Pause({ id })))
+        expect(refused).toMatchObject({ _tag: "TransitionRefused", message: "sub_7f3k has expired" })
+        const failed = yield* Effect.flip(act(Panel.Request.Cancel({ id })))
+        expect(failed).toMatchObject({ _tag: "CallFailed" })
+        expect(failed.message).toContain("NotImplemented: Cancel")
+      }).pipe(Effect.provide(client(path).pipe(Layer.provideMerge(daemon(path)))))
+    ))
+  it.effect("quits through the host's tray_quit command", () =>
+    Effect.gen(function*() {
+      const calls: Array<string> = []
+      yield* Host.make(async (command) => {
+        calls.push(command)
+      }).quit
+      expect(calls).toEqual(["tray_quit"])
+    }))
 })

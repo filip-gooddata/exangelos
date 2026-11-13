@@ -9,6 +9,7 @@
     "allow-relay-close",
     "allow-tray-set-attention",
     "allow-host-info",
-    "allow-host-smoke-report"
+    "allow-host-smoke-report",
+    "allow-tray-quit"
   ]
 }

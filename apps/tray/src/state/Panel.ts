@@ -1,6 +1,17 @@
-import type { Alert, Plugin, Session, Subscription } from "@exangelos/domain"
+import type { DaemonContract } from "@exangelos/contracts"
+import type { Alert, Catalogue, Ids, Plugin, Session, Settings, Subscription } from "@exangelos/domain"
 import { Context, Data, type Duration, Effect, Layer, Option, Ref, Result, Schedule, type Scope, Semaphore, Stream, SubscriptionRef } from "effect"
-import { DaemonClient, type DaemonNotRunning, type Section, type Snapshot, snapshot } from "../daemon/DaemonClient.ts"
+import {
+  type CallFailed,
+  command,
+  DaemonClient,
+  type DaemonNotRunning,
+  type Detail,
+  type Section,
+  type ServiceStatus,
+  type Snapshot,
+  snapshot
+} from "../daemon/DaemonClient.ts"
 import { Host, type HostCommandFailed } from "../host/Host.ts"
 
 export type PanelState = Data.TaggedEnum<{
@@ -8,11 +19,68 @@ export type PanelState = Data.TaggedEnum<{
   DaemonNotRunning: { readonly message: string }
   Ready: {
     readonly subscriptions: Section<ReadonlyArray<Subscription.Subscription>>
+    readonly details: Section<ReadonlyArray<Detail>>
     readonly plugins: Section<ReadonlyArray<Plugin.Plugin>>
     readonly needsYou: Section<ReadonlyArray<Alert.Alert>>
+    readonly settings: Section<Settings.Settings>
+    readonly status: Section<ServiceStatus>
   }
 }>
 export const PanelState = Data.taggedEnum<PanelState>()
+
+export type Request = Data.TaggedEnum<{
+  Ack: { readonly id: Ids.SubscriptionId; readonly through: Ids.AckedThrough }
+  Pause: { readonly id: Ids.SubscriptionId }
+  Resume: { readonly id: Ids.SubscriptionId }
+  Retarget: { readonly id: Ids.SubscriptionId; readonly target: DaemonContract.TargetChoice }
+  Cancel: { readonly id: Ids.SubscriptionId }
+  ImportPlugin: { readonly source: DaemonContract.ImportSource }
+  EnablePlugin: { readonly name: Ids.PluginName; readonly digest: string }
+  DisablePlugin: { readonly name: Ids.PluginName }
+  RemovePlugin: { readonly name: Ids.PluginName }
+  ConfigurePlugin: { readonly name: Ids.PluginName; readonly values: Catalogue.ConfigurationValues }
+  SetEventAlerts: { readonly id: Ids.SubscriptionId; readonly eventAlerts: boolean }
+  SetSettings: { readonly settings: Settings.Settings }
+  Quit: {}
+}>
+export const Request = Data.taggedEnum<Request>()
+
+/** Why a request did not happen: an error the daemon declares for it, the daemon being absent, a call that failed otherwise, or a host that refused to quit. */
+export type Refusal =
+  | DaemonContract.TransitionRefused
+  | DaemonContract.BacklogOverLimit
+  | DaemonContract.SubscriptionNotFound
+  | DaemonContract.InvalidRequest
+  | DaemonContract.NoWakeTarget
+  | DaemonContract.ImportFailed
+  | DaemonContract.PluginNotFound
+  | DaemonContract.PluginUnavailable
+  | DaemonContract.DigestMismatch
+  | DaemonContract.ConfigurationInvalid
+  | DaemonContract.ConfigurationRejected
+  | DaemonContract.HumanRequired
+  | DaemonNotRunning
+  | CallFailed
+  | HostCommandFailed
+
+/** Sends a request to the daemon, or quits through the host. */
+export const act = (client: DaemonClient["Service"], quit: Effect.Effect<void, HostCommandFailed>) =>
+(request: Request): Effect.Effect<void, Refusal> =>
+  Request.$match(request, {
+    Ack: ({ id, through }) => command(client.Ack({ id, through })),
+    Pause: ({ id }) => command(client.Pause({ id })),
+    Resume: ({ id }) => command(client.Resume({ id })),
+    Retarget: ({ id, target }) => command(client.Retarget({ id, target })),
+    Cancel: ({ id }) => command(client.Cancel({ id })),
+    ImportPlugin: ({ source }) => command(client.ImportPlugin({ source })),
+    EnablePlugin: ({ digest, name }) => command(client.EnablePlugin({ name, digest })),
+    DisablePlugin: ({ name }) => command(client.DisablePlugin({ name })),
+    RemovePlugin: ({ name }) => command(client.RemovePlugin({ name })),
+    ConfigurePlugin: ({ name, values }) => command(client.ConfigurePlugin({ name, values })),
+    SetEventAlerts: ({ eventAlerts, id }) => command(client.SetEventAlerts({ id, eventAlerts })),
+    SetSettings: ({ settings }) => command(client.SetSettings({ settings })),
+    Quit: () => quit
+  })
 
 export const needsYou = (
   plugins: ReadonlyArray<Plugin.Plugin>,
@@ -83,11 +151,14 @@ export const fromLoad = <R>(
   load: Effect.Effect<Snapshot, DaemonNotRunning, R>
 ): Effect.Effect<PanelState, never, R> =>
   load.pipe(
-    Effect.map(({ plugins, subscriptions, trustAlerts }) =>
+    Effect.map(({ details, plugins, settings, status, subscriptions, trustAlerts }) =>
       PanelState.Ready({
         subscriptions,
+        details,
         plugins,
-        needsYou: Result.flatMap(plugins, (loaded) => Result.map(trustAlerts, (alerts) => needsYou(loaded, alerts)))
+        needsYou: Result.flatMap(plugins, (loaded) => Result.map(trustAlerts, (alerts) => needsYou(loaded, alerts))),
+        settings,
+        status
       })
     ),
     Effect.catchTag("DaemonNotRunning", ({ message }) => Effect.succeed(PanelState.DaemonNotRunning({ message })))
@@ -100,16 +171,18 @@ export class Panel extends Context.Service<Panel, {
   readonly current: Effect.Effect<PanelState>
   readonly changes: Stream.Stream<PanelState>
   readonly refresh: Effect.Effect<void>
+  readonly perform: (request: Request) => Effect.Effect<void, Refusal>
 }>()("@exangelos/tray/Panel") {}
 
 export interface Options {
   readonly load: Effect.Effect<Snapshot, DaemonNotRunning>
   readonly setAttention: (needsYou: boolean) => Effect.Effect<void, HostCommandFailed>
+  readonly act: (request: Request) => Effect.Effect<void, Refusal>
   readonly interval: Duration.Input
 }
 
-/** Loads now and then every `interval`. After each load that lists the plugins, tells the host when the needs-you list has turned empty or non-empty; a host that refuses is told again after the next load. */
-export const make = ({ interval, load, setAttention }: Options): Effect.Effect<Panel["Service"], never, Scope.Scope> =>
+/** Loads now and then every `interval`. After each load that lists the plugins, tells the host when the needs-you list has turned empty or non-empty; a host that refuses is told again after the next load. `perform` loads again once a request succeeds. */
+export const make = ({ act, interval, load, setAttention }: Options): Effect.Effect<Panel["Service"], never, Scope.Scope> =>
   Effect.gen(function*() {
     const state = yield* SubscriptionRef.make<PanelState>(PanelState.Loading())
     const sent = yield* Ref.make(Option.none<boolean>())
@@ -126,7 +199,12 @@ export const make = ({ interval, load, setAttention }: Options): Effect.Effect<P
       }
     }).pipe(lock.withPermits(1))
     yield* Effect.forkScoped(Effect.repeat(refresh, Schedule.spaced(interval)))
-    return Panel.of({ current: SubscriptionRef.get(state), changes: SubscriptionRef.changes(state), refresh })
+    return Panel.of({
+      current: SubscriptionRef.get(state),
+      changes: SubscriptionRef.changes(state),
+      refresh,
+      perform: (request) => Effect.andThen(act(request), refresh)
+    })
   })
 
 export const layer = (interval: Duration.Input): Layer.Layer<Panel, never, DaemonClient | Host> =>
@@ -138,7 +216,8 @@ export const layer = (interval: Duration.Input): Layer.Layer<Panel, never, Daemo
       return yield* make({
         interval,
         load: Effect.provideService(snapshot, DaemonClient, client),
-        setAttention: host.setAttention
+        setAttention: host.setAttention,
+        act: act(client, host.quit)
       })
     })
   )
@@ -151,11 +230,15 @@ export const smokeReport = (state: PanelState): { readonly ok: boolean; readonly
   PanelState.$match(state, {
     Loading: () => ({ ok: false, report: "panel still loading" }),
     DaemonNotRunning: ({ message }) => ({ ok: false, report: `daemon not running: ${message}` }),
-    Ready: ({ needsYou, plugins, subscriptions }) => ({
+    Ready: ({ details, needsYou, plugins, subscriptions }) => ({
       ok: Result.isSuccess(plugins),
       report: `panel ready: ${
-        [describeSection("plugins", plugins), describeSection("needs you", needsYou), describeSection("subscriptions", subscriptions)]
-          .join(", ")
+        [
+          describeSection("plugins", plugins),
+          describeSection("needs you", needsYou),
+          describeSection("subscriptions", subscriptions),
+          describeSection("details", details)
+        ].join(", ")
       }`
     })
   })
