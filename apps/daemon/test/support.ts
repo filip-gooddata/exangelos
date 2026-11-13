@@ -25,13 +25,13 @@ export const home = Effect.acquireRelease(
   (dir) => Effect.promise(() => Fs.rm(dir, { recursive: true, force: true }))
 )
 
-/** A runnable copy of plugins/template under `name`, bundled with the Bun that runs the tests. */
-export const templatePlugin = (into: string, name = "template") =>
+/** A plugin directory under `name` whose entry is `main` bundled with the Bun that runs the tests. */
+export const bundledPlugin = (main: string, into: string, name: string) =>
   Effect.promise(async (signal) => {
     const directory = Path.join(into, name)
     await run(process.execPath, [
       "build",
-      Path.join(template, "src/main.ts"),
+      main,
       "--target=bun",
       `--outfile=${Path.join(directory, "dist/main.js")}`
     ], { env: { ...process.env, BUN_BE_BUN: "1" }, signal, timeout: 60_000 })
@@ -39,6 +39,10 @@ export const templatePlugin = (into: string, name = "template") =>
     await Fs.writeFile(Path.join(directory, "plugin.json"), JSON.stringify({ ...manifest, name }))
     return directory
   })
+
+/** A runnable copy of plugins/template under `name`. */
+export const templatePlugin = (into: string, name = "template") =>
+  bundledPlugin(Path.join(template, "src/main.ts"), into, name)
 
 /** Appends each wake's subscription id and text to `file`. */
 export const wakeLog = (file: string) =>
@@ -102,18 +106,23 @@ export const quickWakes = (client: Running["client"], change: Partial<Limits.Lim
     })
   })
 
-/** Imports the template from a local directory, enables it and gives it the configuration it asks for. */
-export const installTemplate = (client: Running["client"], dir: string, interval = "0") =>
+/** Imports a plugin from a local directory, enables it and gives it `values` once it has started. */
+export const install = (client: Running["client"], source: string, values: Record<string, string>) =>
   Effect.gen(function*() {
-    const source = yield* templatePlugin(Path.join(dir, "sources"))
     const imported = yield* client.ImportPlugin({ source: { _tag: "Directory", path: source } })
     yield* client.EnablePlugin({ name: imported.name, digest: imported.digest })
-    yield* client.ConfigurePlugin({ name: imported.name, values: { token: "not-a-secret", interval } }).pipe(
+    yield* client.ConfigurePlugin({ name: imported.name, values }).pipe(
       Effect.retry({ schedule: Schedule.spaced(Duration.millis(100)) }),
       Effect.timeout(Duration.seconds(15))
     )
     return imported
   })
+
+export const installTemplate = (client: Running["client"], dir: string) =>
+  Effect.flatMap(
+    templatePlugin(Path.join(dir, "sources")),
+    (source) => install(client, source, { token: "not-a-secret", interval: "0" })
+  )
 
 /** Retries `check` until it succeeds, failing the test after `limit`. */
 export const eventually = <A, E, R>(check: Effect.Effect<A, E, R>, limit = Duration.seconds(20)) =>

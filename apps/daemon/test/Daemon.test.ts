@@ -5,7 +5,18 @@ import { Duration, Effect } from "effect"
 import { digestDirectory } from "@exangelos/plugin-directory"
 import { Ids } from "@exangelos/domain"
 import { layerCommand } from "@exangelos/wake-targets"
-import { eventually, home, installTemplate, quickWakes, run, start, templatePlugin, wakeLog } from "./support.ts"
+import {
+  bundledPlugin,
+  eventually,
+  home,
+  install,
+  installTemplate,
+  quickWakes,
+  run,
+  start,
+  templatePlugin,
+  wakeLog
+} from "./support.ts"
 
 const session = { harness: "t3", sessionId: "daemon-test" } as const
 const template = Ids.PluginName.make("template")
@@ -81,26 +92,30 @@ describe("Daemon", () => {
     Effect.gen(function*() {
       const dir = yield* home
       const { client } = yield* start(dir)
-      yield* installTemplate(client, dir, "1000")
+      const probe = yield* bundledPlugin(
+        Path.join(import.meta.dirname, "fixtures/windowProbe.ts"),
+        Path.join(dir, "sources"),
+        "window-probe"
+      )
+      const imported = yield* install(client, probe, {})
       const subscription = yield* client.Subscribe({
-        plugin: template,
-        parameters: { ticks: 4 },
-        intent: "Count four slow ticks",
+        plugin: imported.name,
+        parameters: { label: "probe" },
+        intent: "Report the wake window",
         target: { _tag: "PullOnly" },
         similarOk: []
       })
-      yield* eventually(client.Events({ id: subscription.id }).pipe(
+      const [first] = yield* eventually(client.Events({ id: subscription.id }).pipe(
         Effect.filterOrFail((events) => events.length > 0)
       ))
-      yield* quickWakes(client, { wakeWindow: Duration.millis(1234) })
+      expect(first!.payload).toEqual({ wakeWindow: 5000 })
 
+      yield* quickWakes(client, { wakeWindow: Duration.millis(1234) })
       const ended = yield* eventually(client.Show({ id: subscription.id }).pipe(
         Effect.map((shown) => shown.subscription.state),
         Effect.filterOrFail((state) => state._tag === "Ended")
       ))
-      expect(ended).toMatchObject({ reason: { _tag: "Plugin", reason: "Emitted 4 ticks; wake window 1234 ms" } })
-      expect((yield* client.Events({ id: subscription.id })).map((event) => event.payload))
-        .toEqual([{ index: 1 }, { index: 2 }, { index: 3 }, { index: 4 }])
+      expect(ended).toMatchObject({ reason: { _tag: "Plugin", reason: "wake window 1234 ms" } })
     }).pipe(Effect.scoped), 60_000)
 
   it.live("reports an official plugin with a changed checksum but not one the owner disabled", () =>
