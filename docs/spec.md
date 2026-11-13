@@ -134,7 +134,7 @@ Driven adapters, one package each:
 - Connector directory: discovers installed connectors by name, computes their digests and watches their files.
 - Connector import sources: archive file, https link, local directory, git repository at a ref.
 - Official connector source: fetches official connector archives from release files, or from a local folder when a setting points there.
-- Wake targets: T3 Code, Codex, a generic command adapter, and a Claude Code adapter that fails every attempt because a standalone Claude Code session has no push route in version 1.
+- Wake targets: T3 Code, Codex, a Claude Code adapter that fails every attempt because a standalone Claude Code session has no push route in version 1, and a command adapter that runs the harnesses you define in settings.
 - Alerts over the notifications gap package.
 - Service manager over the service gap package.
 - Settings file.
@@ -166,7 +166,7 @@ Connectors live in the monorepo as their own packages: `github-pr`, `jira`, `fil
 | ConnectorDirectory | list installed connectors, read manifests, compute digests, report file changes | file system |
 | ConnectorImportSource | place a connector in the connector directory from a source, inert | archive file, https link, local directory, git repository at a ref |
 | OfficialConnectorSource | fetch an official connector archive by name and version | release files, local folder |
-| WakeTarget | deliver wake text to one session of one harness | T3 Code, Codex, command; Claude Code fails each attempt with a fixed reason |
+| WakeTarget | deliver wake text to one session of one harness | T3 Code, Codex, command for the harnesses you define; Claude Code fails each attempt with a fixed reason |
 | AlertSink | show a desktop alert | desktop notifications; recording fake for tests |
 | ServiceManager | install, start and report the daemon service | Homebrew service, own LaunchAgent, own systemd user unit |
 | SettingsStore | read and write the settings file | file in the config directory |
@@ -347,8 +347,10 @@ Each change to a subscription or connector records its actor: the session the CL
 
 ### Wake targets and session detection
 
-- Wake targets are built into the daemon behind the WakeTarget port, with adapters for T3 Code, Claude Code and Codex and a generic command adapter.
-- Version 1 has no way for an owner to choose the generic command adapter: the daemon always delivers through the session's harness, and the command adapter is used only in tests. A follow-up after version 1 adds a named harness in settings with a command template.
+- Wake targets are built into the daemon behind the WakeTarget port, with adapters for T3 Code, Claude Code and Codex and a command adapter for the harnesses you define in settings.
+- You define a harness in settings with a name and a command, `exangelos settings harness set <name> [--] <program> [args…]`, and remove it with `exangelos settings harness remove <name>`. A name is lowercase letters, digits and dashes, starts with a letter, has at most 32 characters, and is not `t3`, `codex` or `claude-code`. Only you define or remove a harness, as with connectors (rule 19). The daemon refuses the change from an agent session, the MCP server has no tool for it, and `exangelos settings set` and the panel's settings leave the harnesses as they are.
+- On a wake the daemon runs the program without a shell and stops it after 30 seconds. In an argument, `{session}` becomes the wake target's session id and `{subscription}` the subscription id. The program takes no placeholder. The wake text goes to the command's standard input, and the environment carries `EXANGELOS_HARNESS`, `EXANGELOS_SESSION_ID` and `EXANGELOS_SUBSCRIPTION`. A session id for a harness you define holds only letters, digits and `. _ : @ -` and does not start with `-`, so it cannot add an argument or pass as an option. A shell you name as the program interprets the values you hand it.
+- A subscribe or retarget call that names a harness you have not defined fails and says that you define harnesses. A wake through a harness that fails to start, exits with an error, runs past its 30 seconds or was removed is a failed attempt, and the daemon retries it like any other (rule 10).
 - Known delivery commands, to verify at implementation: T3 Code `t3 thread send <thread> <message>` (a busy thread gets it as its next turn); Codex `codex queue` or `codex exec resume`. Claude Code has none: no local command reaches a running standalone Claude Code session, and `claude --bg --resume` starts a paid copy. Its wake target fails each attempt with a fixed reason and starts no process. The agent runs `exangelos wait <subscription>` in the background instead, and CLI and MCP results for that harness carry a hint line saying so. Claude Code inside T3 Code gets wakes through T3 Code.
 - The CLI and the MCP server detect the harness session id from environment variables. A T3 Code thread wins when sessions are nested. The exact Claude Code and Codex environment variables are verified at implementation.
 - A subscription has one wake target or none, and any actor can retarget it.
@@ -382,7 +384,7 @@ Commands for you only (not offered through MCP):
 | `exangelos connector configure <name>` | set configuration; each secret from a command, a file, or a hidden prompt |
 | `exangelos connector dev-link <dir>`, `connector dev-unlink <name>` | dev loop |
 | `exangelos connector scaffold <name>` | write a renamed copy of the template |
-| `exangelos settings` | read and change settings |
+| `exangelos settings` | read and change settings; `settings harness set` and `settings harness remove` define and remove harnesses |
 | `exangelos service status` | daemon running, version, start method |
 | `exangelos daemon` | run the daemon in the foreground (used by the service definitions) |
 | `exangelos mcp` | run the MCP server over stdio |
@@ -395,7 +397,7 @@ Any CLI or MCP call that finds no daemon starts it (see service management).
 
 - `exangelos mcp` serves MCP over stdio and forwards every call to the daemon over the unix socket. It reads the session identity from its environment for wake addressing.
 - MCP tools: list connectors with catalogues, subscribe, update, list, show, events, ack, wait, pause, resume, retarget, cancel, set event alerts. Subscribe requires the intent. Set event alerts works only on a subscription the calling session created.
-- Deliberately not MCP tools: connector import, enable, disable, remove, configure, dev link, scaffold, settings (the global event alerts setting among them), service status. An agent that needs to configure a connector uses the CLI with a command or file secret source.
+- Deliberately not MCP tools: connector import, enable, disable, remove, configure, dev link, scaffold, settings (the global event alerts setting and harnesses among them), service status. An agent that needs to configure a connector uses the CLI with a command or file secret source.
 
 ### Tray host and panel
 
@@ -413,7 +415,7 @@ What the panel shows:
 - Each connector: name, version, origin, sha256 digest, trust, configuration state, process state, and who configured it.
 - What needs you: a connector waiting to be enabled, a connector that keeps failing, rejected credentials, an official connector whose checksum does not match. Each raises an alert and is findable in the panel.
 - An unreachable wake target as a quiet fact on its session and on the waiting wake, not in the "needs you" list.
-- Whether the daemon runs, its version and how it started; settings (event alerts on or off globally and per subscription, default limits); quit.
+- Whether the daemon runs, its version and how it started; settings (event alerts on or off globally and per subscription, default limits, and the harnesses you defined, which the panel only lists); quit.
 - An empty state that says only agents subscribe and shows `exangelos subscribe github-pr acme/app#123 --intent "Waiting on checks and review"`.
 
 What the panel does:
@@ -494,7 +496,7 @@ The pyramid, from the bottom:
 - Use cases (the widest layer). `application` use cases run against in-memory fakes of every port: a fake ConnectorRuntime that streams scripted events, a recording WakeTarget and AlertSink, in-memory repositories. These cover subscribe through wake, ack, the rule 11 wakes, retry and replacement, suspension and the 1 hour wake, official fetch on first use with matching and mismatching checksums, trust changes on file change, and the MCP-versus-CLI split of the daemon service contract.
 - Adapter contracts (integration). The SQLite repositories against a real SQLite file in a temporary collapsed directory, including migrations from empty. The stdio transport and the connector runtime against the real `template` connector as a child process, including a crash and resume from cursor. The archive import adapter, including a path-escaping archive. Each gap package has its own small test suite at this level.
 - Connectors. Each official connector is tested through the SDK's in-memory harness with a stubbed HTTP client or a temporary directory: Describe naming the subject, Watch mapping source changes to events with dedupe keys, and the end condition.
-- End to end (a few). The compiled binary in a collapsed temporary directory: start on first use, subscribe to the `template` connector, receive a wake through the command wake adapter, read, ack, and `wait` on a pull-only subscription. One run of `exangelos mcp` listing its tools and confirming the connector management tools are absent.
+- End to end (a few). The compiled binary in a collapsed temporary directory: start on first use, subscribe to the `template` connector, receive a wake through the T3 Code adapter with a stand-in `t3`, define a harness with `exangelos settings harness set` and receive a wake through it with a stand-in command, read, ack, and `wait` on a pull-only subscription. One run of `exangelos mcp` listing its tools and confirming the connector management tools are absent.
 
 Deliberately left untested: the panel's visual layout and the Rust relay beyond a smoke check that the panel loads data; real Keychain and Secret Service access; real launchd, systemd and Homebrew service installation; real delivery into T3 Code, Claude Code and Codex (each is checked by hand once at implementation); Linux desktop variants; the release workflow on all four targets beyond the local run; exact wording of error messages; performance.
 
