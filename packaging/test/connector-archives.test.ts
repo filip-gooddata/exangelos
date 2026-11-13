@@ -94,7 +94,8 @@ describe("declared files in a connector archive (contract test with the real bun
   it.effect.each([
     ["../outside", "is outside the connector folder"],
     ["missing", "does not exist"],
-    ["linked", "is a link"]
+    ["linked", "is a link"],
+    ["linked/main.js", "goes through one"]
   ])("refuses a declared file %s", ([declared, message]) =>
     Effect.gen(function*() {
       const directory = temporaryDirectory("extras-refused")

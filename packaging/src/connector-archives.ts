@@ -2,10 +2,11 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSyn
 import { tmpdir } from "node:os"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import { digestDirectory } from "@exangelos/connector-directory"
+import { unpack } from "@exangelos/connector-import"
 import { Data, Effect } from "effect"
 import { run } from "./command.ts"
 import { clearReleaseFiles, connectorArchiveName, writeChecksums } from "./release-files.ts"
-import { createTarGz, extractTarGz } from "./tar.ts"
+import { createTarGz } from "./tar.ts"
 
 export const officialConnectorNames: ReadonlyArray<string> = ["github-pr", "jira", "file-watch"]
 
@@ -64,8 +65,8 @@ const declaredFiles = (connectorDirectory: string, manifest: Manifest) =>
         if (!existsSync(path)) {
           throw new ConnectorManifestInvalid({ message: `${manifest.name}: file ${declared} does not exist` })
         }
-        if (!isInside(root, realpathSync(path))) {
-          throw new ConnectorManifestInvalid({ message: `${manifest.name}: file ${declared} leads outside the connector folder` })
+        if (realpathSync(path) !== path) {
+          throw new ConnectorManifestInvalid({ message: `${manifest.name}: file ${declared} is a link or goes through one` })
         }
         return filesUnder(root, path)
       })
@@ -103,8 +104,15 @@ export const buildConnectorArchive = (connectorDirectory: string, outDirectory: 
     const archive = join(outDirectory, connectorArchiveName(manifest.name, manifest.version))
     yield* createTarGz(archive, stage, entries)
     const unpacked = join(work, "unpacked")
-    yield* Effect.sync(() => mkdirSync(unpacked))
-    yield* extractTarGz(archive, unpacked)
+    yield* Effect.tryPromise({
+      try: () => unpack(archive, unpacked),
+      catch: (error) =>
+        new ConnectorManifestInvalid({
+          message: `${manifest.name}: the archive would be refused on import: ${
+            typeof error === "object" && error !== null && "reason" in error ? String(error.reason) : String(error)
+          }`
+        })
+    })
     const digest = yield* digestDirectory(unpacked)
     return { name: manifest.name, version: manifest.version, digest, archive }
   }).pipe(Effect.scoped)
