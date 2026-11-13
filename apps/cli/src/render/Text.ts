@@ -22,7 +22,7 @@ const columns = (rows: ReadonlyArray<ReadonlyArray<string>>, indent = ""): Array
   )
 }
 
-const sessionText = (session: Session.Session): string => `${session.harness}:${session.sessionId}`
+const sessionText = (session: Session.Target): string => `${session.harness}:${session.sessionId}`
 
 const actorText = (actor: Session.Actor): string => actor._tag === "You" ? "you" : sessionText(actor.session)
 
@@ -198,8 +198,13 @@ export const settings = (value: Settings.Settings): string =>
     ...Object.entries(value.limits).map(([key, limit]) =>
       [`limits.${key}`, Duration.isDuration(limit) ? Duration.format(limit) : parameterValue(limit)] as const
     ),
-    ["officialConnectorFolder", value.officialConnectorFolder]
+    ["officialConnectorFolder", value.officialConnectorFolder],
+    ...Object.entries(value.harnesses).map(([name, harness]) => [`harnesses.${name}`, commandText(harness.command)] as const)
   ]).join("\n")
+
+/** A command as you would type it: an argument with spaces, quotes or nothing in it is quoted. */
+export const commandText = (command: ReadonlyArray<string>): string =>
+  command.map((arg) => /^[^\s"'\\]+$/.test(arg) ? arg : JSON.stringify(arg)).join(" ")
 
 export const serviceStatus = (status: { readonly version: string; readonly startMethod: string }): string =>
   fields([["Daemon", "running"], ["Version", status.version], ["Start method", status.startMethod]]).join("\n")

@@ -100,6 +100,14 @@ describe("subscription use cases", () => {
       expect(changes.map((change) => [change.kind, change.actor])).toEqual([["create", ownActor]])
     }).pipe(Effect.provide(layerHarness)))
 
+  it.effect("subscribe refuses a harness you have not defined", () =>
+    Effect.gen(function*() {
+      yield* setup
+      const named = { harness: "relay", sessionId: "s1" } as Session.Target
+      const refused = yield* Effect.flip(subscribe(ownActor, request({ target: { _tag: "Session", session: named } }), [own]))
+      expect(refused._tag).toBe("UnknownHarness")
+    }).pipe(Effect.provide(layerHarness)))
+
   it.effect("subscribe refuses a similar open subscription of the same session until its id is resubmitted", () =>
     Effect.gen(function*() {
       const first = yield* subscribed()

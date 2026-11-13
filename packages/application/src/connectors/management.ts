@@ -11,6 +11,7 @@ import { ConnectorNotFound } from "../seam/ConnectorAccess.ts"
 import { listConnectorAlerts } from "./listConnectorAlerts.ts"
 import { ConnectorSupervisor } from "./ConnectorSupervisor.ts"
 import { redact } from "./redact.ts"
+import { removeHarness, setHarness } from "../settings/harnesses.ts"
 
 export class DigestMismatch extends Schema.TaggedError<DigestMismatch>()("DigestMismatch", {
   connector: Ids.ConnectorName,
@@ -236,12 +237,18 @@ export const devUnlink = (actor: Session.Actor, name: Ids.ConnectorName) =>
 
 export const getSettings = SettingsStore.use((store) => store.read)
 
-/** Writes the settings. A changed wake window reaches open Watch streams through a rewatch. */
+/**
+ * Writes the settings. The harnesses stay as stored, whatever the settings passed hold: only
+ * `setHarness` and `removeHarness` change them. A changed wake window reaches open Watch streams
+ * through a rewatch.
+ */
 export const setSettings = (settings: Settings.Settings) =>
   Effect.gen(function*() {
-    yield* (yield* SettingsStore).write(settings)
+    const written = yield* (yield* SettingsStore).update((current) =>
+      Effect.succeed({ ...settings, harnesses: current.harnesses })
+    )
     yield* (yield* ConnectorSupervisor).settingsChanged
-    return settings
+    return written
   })
 
 /** Whether the daemon service runs and how it started; the caller adds its own version. */
@@ -259,5 +266,7 @@ export const management = {
   ListConnectorAlerts: listConnectorAlerts,
   GetSettings: getSettings,
   SetSettings: setSettings,
+  SetHarness: setHarness,
+  RemoveHarness: removeHarness,
   ServiceStatus: serviceStatus
 } as const

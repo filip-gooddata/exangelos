@@ -52,6 +52,7 @@ export type Refusal =
   | DaemonContract.SubscriptionNotFound
   | DaemonContract.InvalidRequest
   | DaemonContract.NoWakeTarget
+  | DaemonContract.UnknownHarness
   | DaemonContract.ImportFailed
   | DaemonContract.ConnectorNotFound
   | DaemonContract.ConnectorUnavailable
@@ -96,13 +97,13 @@ export const needsYou = (
 ]
 
 export interface SessionGroup {
-  readonly wakeTarget: Option.Option<Session.Session>
+  readonly wakeTarget: Option.Option<Session.Target>
   readonly subscriptions: ReadonlyArray<Subscription.Subscription>
 }
 
 /** Groups subscriptions by the session they wake, in first-seen order, with pull-only subscriptions last. */
 export const bySession = (subscriptions: ReadonlyArray<Subscription.Subscription>): ReadonlyArray<SessionGroup> => {
-  const groups = new Map<string, { wakeTarget: Option.Option<Session.Session>; subscriptions: Array<Subscription.Subscription> }>()
+  const groups = new Map<string, { wakeTarget: Option.Option<Session.Target>; subscriptions: Array<Subscription.Subscription> }>()
   const pullOnly: Array<Subscription.Subscription> = []
   for (const subscription of subscriptions) {
     const target = subscription.wakeTarget

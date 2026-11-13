@@ -10,7 +10,11 @@ const day = 24 * hour
 
 const millis = (at: DateTime.Utc) => DateTime.toEpochMillis(at)
 
-export const harnessName: Record<Session.Harness, string> = { t3: "T3 Code", "claude-code": "Claude Code", codex: "Codex" }
+const builtInNames: Record<Session.Harness, string> = { t3: "T3 Code", "claude-code": "Claude Code", codex: "Codex" }
+
+/** The display name of a built-in harness, or the name you gave a harness you defined. */
+export const harnessName = (harness: string): string =>
+  Object.hasOwn(builtInNames, harness) ? builtInNames[harness as Session.Harness] : harness
 
 /** A duration in the panel's terse units: "4 min", "3 h", "6 days". */
 export const span = (ms: number): string => {
@@ -37,7 +41,7 @@ export const until = (now: number, at: DateTime.Utc): string => {
 export const age = (now: number, at: DateTime.Utc): string => span(now - millis(at))
 
 export const actorName = (actor: Session.Actor): string =>
-  actor._tag === "You" ? "you" : `${harnessName[actor.session.harness]} session ${actor.session.sessionId}`
+  actor._tag === "You" ? "you" : `${harnessName(actor.session.harness)} session ${actor.session.sessionId}`
 
 export const pending = (subscription: Subscription.Subscription): number =>
   subscription.lastNumber - subscription.ackedThrough
@@ -278,8 +282,8 @@ export const isSecretField = (field: Catalogue.ConfigurationField): boolean =>
 export const secretStored = (connector: Connector.Connector, field: Catalogue.ConfigurationField): true | undefined =>
   connector.configuration._tag !== "Missing" && field.required ? true : undefined
 
-export const knownSessions = (subscriptions: ReadonlyArray<Subscription.Subscription>): ReadonlyArray<Session.Session> =>
-  subscriptions.reduce<ReadonlyArray<Session.Session>>((sessions, subscription) => {
+export const knownSessions = (subscriptions: ReadonlyArray<Subscription.Subscription>): ReadonlyArray<Session.Target> =>
+  subscriptions.reduce<ReadonlyArray<Session.Target>>((sessions, subscription) => {
     const target = subscription.wakeTarget
     return target === undefined || sessions.some((s) => s.harness === target.harness && s.sessionId === target.sessionId)
       ? sessions
@@ -399,6 +403,7 @@ export const refusalText = (refusal: Refusal): string => {
     case "TransitionRefused":
     case "InvalidRequest":
     case "NoWakeTarget":
+    case "UnknownHarness":
       return refusal.message
     case "SubscriptionNotFound":
       return `The daemon has no subscription ${refusal.id}.`

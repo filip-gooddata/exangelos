@@ -5,7 +5,7 @@ import type { Limits } from "./Limits.ts"
 import type { Connector } from "./Connector.ts"
 import * as ConnectorRules from "./ConnectorRules.ts"
 import { BacklogOverLimit, NotAllowed } from "./Refusal.ts"
-import { type Actor, sameSession, type Session } from "./Session.ts"
+import { type Actor, sameSession, type Target } from "./Session.ts"
 import type { EndReason, PauseReason, State, Subscription } from "./Subscription.ts"
 import type { Why } from "./Wake.ts"
 
@@ -21,7 +21,7 @@ export interface NewSubscription {
   readonly subject: string
   readonly label: string
   readonly intent: string
-  readonly wakeTarget: Option.Option<Session>
+  readonly wakeTarget: Option.Option<Target>
   readonly eventTypes?: ReadonlyArray<EventType>
   readonly endAt?: DateTime.Utc
   readonly maxEvents?: number

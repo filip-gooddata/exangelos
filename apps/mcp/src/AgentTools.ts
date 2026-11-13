@@ -11,7 +11,9 @@ export class ToolFailure extends Schema.TaggedError<ToolFailure>()("ToolFailure"
 
 const id = { id: Ids.SubscriptionId }
 
-const SessionTarget = Schema.Struct({ harness: Session.Harness, sessionId: Schema.NonEmptyString })
+const SessionTarget = Session.Target.annotate({
+  description: "A session to wake: harness t3, codex or claude-code, or a harness the user defined in Exangelos settings, and its session id"
+})
 
 const target = {
   target: Schema.optionalKey(SessionTarget),

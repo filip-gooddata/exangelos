@@ -95,7 +95,7 @@ const groups = (h: H, model: Model, state: Ready, open: ReadonlyArray<Subscripti
     const title = Option.match(group.wakeTarget, {
       onNone: () => [h.span([h.Class("group-harness")], ["Pull-only"]), h.span([h.Class("group-session")], ["No wake target"])],
       onSome: (session) => [
-        h.span([h.Class("group-harness")], [Facts.harnessName[session.harness]]),
+        h.span([h.Class("group-harness")], [Facts.harnessName(session.harness)]),
         h.span([h.Class("group-session mono")], [session.sessionId])
       ]
     })

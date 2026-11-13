@@ -10,6 +10,7 @@ import {
   type SecretStore,
   ServiceManager,
   SubscriptionIntake,
+  type SettingsStore,
   type WakeTarget
 } from "@exangelos/application"
 import * as Alerts from "@exangelos/alerts"
@@ -40,7 +41,7 @@ export interface Choices {
   readonly alerts: Layer.Layer<AlertSink.AlertSink, never, Platform>
   readonly serviceManager: Layer.Layer<ServiceManager.ServiceManager, never, Platform>
   readonly secretStore: Layer.Layer<SecretStore.SecretStore, never, Platform>
-  readonly wakeTarget: Layer.Layer<WakeTarget.WakeTarget, never, Platform>
+  readonly wakeTarget: Layer.Layer<WakeTarget.WakeTarget, never, Platform | SettingsStore.SettingsStore>
 }
 
 export interface Options extends Choices {

@@ -35,7 +35,8 @@ describe("SettingsFile", () => {
         const changed: Settings.Settings = {
           eventAlerts: true,
           limits: { ...Settings.initial.limits, backlogCount: 5, wakeWindow: Duration.seconds(30) },
-          officialConnectorFolder: "/srv/connectors"
+          officialConnectorFolder: "/srv/connectors",
+          harnesses: { relay: { command: ["/usr/local/bin/relay", "{session}"] } }
         }
         yield* store.write(changed)
         expect(yield* store.read).toEqual(changed)

@@ -248,7 +248,7 @@ const connectors = (needsYou: boolean): ReadonlyArray<Connector.Connector> => [
   }
 ]
 
-const settings: Settings.Settings = { eventAlerts: true, limits: Limits.defaults }
+const settings: Settings.Settings = { eventAlerts: true, limits: Limits.defaults, harnesses: {} }
 
 const ready = (needsYou: boolean): PanelState => {
   const installed = connectors(needsYou)

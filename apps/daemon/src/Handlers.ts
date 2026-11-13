@@ -5,6 +5,7 @@ import {
   disableConnector,
   enableConnector,
   getSettings,
+  Harnesses,
   importConnector,
   listConnectorAlerts,
   listConnectors,
@@ -35,6 +36,7 @@ export const layer = DaemonContract.DaemonContract.toLayer({
       Effect.catchTags({
         IntentRequired: Errors.intentRequired,
         NoWakeTarget: Errors.noWakeTarget,
+        UnknownHarness: Errors.unknownHarness,
         ConnectorNotFound: Errors.connectorNotFound,
         ConnectorUnavailable: Errors.connectorUnavailable,
         OfficialFetchFailed: Errors.officialFetchFailed,
@@ -75,7 +77,8 @@ export const layer = DaemonContract.DaemonContract.toLayer({
     Subscriptions.retarget(actor(caller), payload, detected(caller)).pipe(
       Effect.catchTags({
         ...lookup,
-        NoWakeTarget: Errors.noWakeTarget
+        NoWakeTarget: Errors.noWakeTarget,
+        UnknownHarness: Errors.unknownHarness
       })
     ),
   Cancel: (payload, caller) =>
@@ -119,7 +122,20 @@ export const layer = DaemonContract.DaemonContract.toLayer({
     devUnlink(actor(caller), name).pipe(Effect.catchTags({ ConnectorNotFound: Errors.connectorNotFound })),
   ListConnectorAlerts: () => listConnectorAlerts,
   GetSettings: () => getSettings.pipe(Effect.catchTag("SettingsUnreadable", (e) => Effect.die(e))),
-  SetSettings: ({ settings }) => setSettings(settings).pipe(Effect.catchTag("SettingsWriteFailed", (e) => Effect.die(e))),
+  SetSettings: ({ settings }) => setSettings(settings).pipe(Effect.catchTags({ SettingsUnreadable: Effect.die, SettingsWriteFailed: Effect.die })),
+  SetHarness: ({ name, command }, caller) =>
+    Harnesses.setHarness(actor(caller), name, { command }).pipe(
+      Effect.catchTags({ HumanRequired: Errors.harnessOwnerOnly, SettingsUnreadable: Effect.die, SettingsWriteFailed: Effect.die })
+    ),
+  RemoveHarness: ({ name }, caller) =>
+    Harnesses.removeHarness(actor(caller), name).pipe(
+      Effect.catchTags({
+        HumanRequired: Errors.harnessOwnerOnly,
+        UnknownHarness: Errors.unknownHarness,
+        SettingsUnreadable: Effect.die,
+        SettingsWriteFailed: Effect.die
+      })
+    ),
   ServiceStatus: () =>
     serviceStatus.pipe(
       Effect.map((status) => status.method),

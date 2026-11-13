@@ -8,6 +8,7 @@ import { ConnectorAccess, ConnectorNotFound } from "../../seam/ConnectorAccess.t
 import { currentLimits } from "../Limits.ts"
 import { SubscriptionLocks } from "../Locks.ts"
 import { record, type Target, targetFlag } from "./shared.ts"
+import { requireKnown } from "../../settings/harnesses.ts"
 
 export interface SubscribeRequest {
   readonly connector: Ids.ConnectorName
@@ -35,6 +36,7 @@ export const subscribe = (
   Effect.gen(function*() {
     yield* Effect.fromResult(Subscribe.checkIntent(request.intent))
     const wakeTarget = yield* Effect.fromResult(Subscribe.wakeTarget(detected, targetFlag(request.target)))
+    yield* requireKnown(Option.getOrUndefined(wakeTarget))
     const described = yield* (yield* ConnectorAccess).describe(actor, request.connector, {
       parameters: request.parameters,
       main: Option.fromNullishOr(request.main)

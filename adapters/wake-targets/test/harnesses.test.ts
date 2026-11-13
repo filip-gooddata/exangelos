@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Duration, Effect, Exit, Layer } from "effect"
 import { WakeTarget } from "@exangelos/application"
+import { layerSettingsStore } from "@exangelos/application/testing"
 import { WakeText } from "@exangelos/contracts"
 import type { Session } from "@exangelos/domain"
 import { Codex, layer, T3 } from "../src/index.ts"
@@ -17,7 +18,7 @@ const deliverTo = (session: Session.Session, exitCode = 0) =>
         const target = yield* WakeTarget.WakeTarget
         yield* target.deliver(session, content)
       }).pipe(
-        Effect.provide(layer().pipe(Layer.provide(runner.layer)))
+        Effect.provide(layer().pipe(Layer.provide([runner.layer, layerSettingsStore()])))
       )
     )
     return { exit, spawned: yield* runner.spawned }

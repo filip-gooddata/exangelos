@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
-import { Alert, Catalogue, Event, Ids, Connector, Session, Settings, Subscription, Wake } from "@exangelos/domain"
+import { Alert, Catalogue, CommandHarness, Event, Ids, Connector, Session, Settings, Subscription, Wake } from "@exangelos/domain"
 
 export class ConnectorNotFound extends Schema.TaggedError<ConnectorNotFound>()("ConnectorNotFound", {
   connector: Schema.String
@@ -20,6 +20,12 @@ export class InvalidRequest extends Schema.TaggedError<InvalidRequest>()("Invali
 }) {}
 
 export class NoWakeTarget extends Schema.TaggedError<NoWakeTarget>()("NoWakeTarget", {
+  message: Schema.String
+}) {}
+
+/** The wake target names a harness that is not in the settings. */
+export class UnknownHarness extends Schema.TaggedError<UnknownHarness>()("UnknownHarness", {
+  harness: Schema.String,
   message: Schema.String
 }) {}
 
@@ -58,7 +64,8 @@ export class OfficialFetchFailed extends Schema.TaggedError<OfficialFetchFailed>
 /** The call is the owner's alone, and a session made it. */
 export class HumanRequired extends Schema.TaggedError<HumanRequired>()("HumanRequired", {
   connector: Schema.optionalKey(Ids.ConnectorName),
-  subscription: Schema.optionalKey(Ids.SubscriptionId)
+  subscription: Schema.optionalKey(Ids.SubscriptionId),
+  harness: Schema.optionalKey(Schema.String)
 }) {}
 
 export class ImportFailed extends Schema.TaggedError<ImportFailed>()("ImportFailed", {
@@ -81,7 +88,7 @@ export class ConfigurationRejected extends Schema.TaggedError<ConfigurationRejec
 
 export const TargetChoice = Schema.TaggedUnion({
   Caller: {},
-  Session: { session: Session.Session },
+  Session: { session: Session.Target },
   PullOnly: {}
 })
 export type TargetChoice = typeof TargetChoice.Type
@@ -112,6 +119,7 @@ export class Subscribe extends Rpc.make("Subscribe", {
     OfficialFetchFailed,
     InvalidRequest,
     NoWakeTarget,
+    UnknownHarness,
     ParametersInvalid,
     SimilarSubscriptions
   ])
@@ -189,7 +197,7 @@ export class Resume extends Rpc.make("Resume", {
 export class Retarget extends Rpc.make("Retarget", {
   payload: { ...id, target: TargetChoice },
   success: Subscription.Subscription,
-  error: Schema.Union([SubscriptionNotFound, InvalidRequest, NoWakeTarget, TransitionRefused])
+  error: Schema.Union([SubscriptionNotFound, InvalidRequest, NoWakeTarget, UnknownHarness, TransitionRefused])
 }) {}
 
 export class Cancel extends Rpc.make("Cancel", {
@@ -289,6 +297,20 @@ export class SetSettings extends Rpc.make("SetSettings", {
   error: InvalidRequest
 }) {}
 
+/** Defines a harness, or replaces the one of that name. Yours alone: a session is refused. */
+export class SetHarness extends Rpc.make("SetHarness", {
+  payload: { name: Session.HarnessName, command: CommandHarness.Command },
+  success: Settings.Settings,
+  error: HumanRequired
+}) {}
+
+/** Removes a harness. Yours alone: a session is refused. */
+export class RemoveHarness extends Rpc.make("RemoveHarness", {
+  payload: { name: Session.HarnessName },
+  success: Settings.Settings,
+  error: Schema.Union([HumanRequired, UnknownHarness])
+}) {}
+
 export const StartMethod = Schema.Literals(["homebrew", "launch-agent", "systemd-user", "foreground"])
 export type StartMethod = typeof StartMethod.Type
 
@@ -307,6 +329,8 @@ export class ManagementGroup extends RpcGroup.make(
   ListConnectorAlerts,
   GetSettings,
   SetSettings,
+  SetHarness,
+  RemoveHarness,
   ServiceStatus
 ) {}
 

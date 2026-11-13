@@ -92,7 +92,8 @@ describe("connector supervision", () => {
           }
           return settings
         }),
-        write: (settings) => Ref.set(stored, settings)
+        write: (settings) => Ref.set(stored, settings),
+        update: (change) => Ref.get(stored).pipe(Effect.flatMap(change), Effect.tap((settings) => Ref.set(stored, settings)))
       })
       yield* withConnectorsOver(store)(Effect.gen(function*() {
         yield* running

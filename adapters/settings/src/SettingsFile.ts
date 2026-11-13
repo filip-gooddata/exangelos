@@ -1,4 +1,4 @@
-import { Effect, FileSystem, Layer, Path, Random, Schema } from "effect"
+import { Effect, FileSystem, Layer, Path, Random, Schema, Semaphore } from "effect"
 import { SettingsStore } from "@exangelos/application"
 import { Settings } from "@exangelos/domain"
 import { Paths } from "@exangelos/paths"
@@ -53,9 +53,16 @@ export const layer: Layer.Layer<SettingsStore.SettingsStore, never, FileSystem.F
   Effect.gen(function*() {
     const path = (yield* Paths.Paths).settingsFile
     const context = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
+    const permit = yield* Semaphore.make(1)
     return {
       read: read(path).pipe(Effect.provide(context)),
-      write: (settings) => write(path, settings).pipe(Effect.provide(context))
+      write: (settings) => write(path, settings).pipe(Effect.provide(context)),
+      update: (change) =>
+        Semaphore.withPermit(permit)(Effect.gen(function*() {
+          const next = yield* change(yield* read(path).pipe(Effect.provide(context)))
+          yield* write(path, next).pipe(Effect.provide(context))
+          return next
+        }))
     }
   })
 )

@@ -47,7 +47,8 @@ const fetch = (
     read: Effect.succeed<Settings.Settings>(
       options.folder === undefined ? Settings.initial : { ...Settings.initial, officialConnectorFolder: options.folder }
     ),
-    write: () => Effect.void
+    write: () => Effect.void,
+    update: () => Effect.die("unused")
   })
   const http = Layer.succeed(
     HttpClient.HttpClient,

@@ -13,7 +13,7 @@ import {
   SimilarSubscriptions,
   SubjectChanged
 } from "./Refusal.ts"
-import { sameSession, type Session } from "./Session.ts"
+import { sameSession, type Session, type Target } from "./Session.ts"
 import type { Subscription } from "./Subscription.ts"
 
 export const checkIntent = (intent: string): Result.Result<string, IntentRequired> => {
@@ -30,13 +30,13 @@ export const check = (connector: Connector, intent: string): Result.Result<strin
   })
 
 export type TargetFlag =
-  | { readonly _tag: "Session"; readonly session: Session }
+  | { readonly _tag: "Session"; readonly session: Target }
   | { readonly _tag: "PullOnly" }
 
 export const wakeTarget = (
   detected: ReadonlyArray<Session>,
   flag: Option.Option<TargetFlag>
-): Result.Result<Option.Option<Session>, NoWakeTarget> => {
+): Result.Result<Option.Option<Target>, NoWakeTarget> => {
   if (Option.isSome(flag)) {
     return Result.succeed(flag.value._tag === "Session" ? Option.some(flag.value.session) : Option.none())
   }
@@ -47,10 +47,10 @@ export const wakeTarget = (
 export interface Candidate {
   readonly connector: ConnectorName
   readonly subject: string
-  readonly wakeTarget: Option.Option<Session>
+  readonly wakeTarget: Option.Option<Target>
 }
 
-const sameTarget = (a: Option.Option<Session>, b: Session | undefined): boolean =>
+const sameTarget = (a: Option.Option<Target>, b: Target | undefined): boolean =>
   Option.match(a, { onNone: () => b === undefined, onSome: (session) => b !== undefined && sameSession(session, b) })
 
 export const similar = (
