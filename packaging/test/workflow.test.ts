@@ -2,7 +2,7 @@ import { execFileSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { join } from "node:path"
 import { describe, expect, it } from "@effect/vitest"
-import { packagingDirectory, repositoryDirectory } from "../src/release.ts"
+import { packagingDirectory, releaseTagMismatch, repositoryDirectory } from "../src/release.ts"
 
 const workflowPath = join(repositoryDirectory, ".github", "workflows", "release.yml")
 
@@ -29,5 +29,10 @@ describe("release workflow", () => {
     expect(workflowRunSteps()).toContain(
       'pnpm --filter @exangelos/packaging run build:release --release-url "https://github.com/${{ github.repository }}/releases/download/v$(jq -r .version packaging/package.json)"'
     )
+  })
+
+  it("fails a tag run whose tag is not v<version> and passes the matching tag", () => {
+    expect(releaseTagMismatch("v0.2.0", "0.1.0")).toBe("Tag v0.2.0 does not match the package version: expected v0.1.0")
+    expect(releaseTagMismatch("v0.1.0", "0.1.0")).toBeUndefined()
   })
 })

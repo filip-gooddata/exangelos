@@ -26,6 +26,11 @@ jobs:
           bun-version: 1.4.2
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Check the tag names the package version
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: pnpm --filter @exangelos/packaging run check:release-tag "$TAG"
       - name: Typecheck packaging
         run: pnpm --filter @exangelos/packaging run typecheck
       - name: Test packaging
