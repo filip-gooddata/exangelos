@@ -10,13 +10,13 @@ The tool you use now, pr-watch, covers one case. It watches one GitHub pull requ
 
 ## Solution
 
-Exangelos is a daemon on your machine that agents subscribe through. An agent session subscribes to selected event types on one subject, such as the pull request `acme/app#123`, and states its intent in one line. Plugins, which are separate executables the daemon supervises, watch the sources and report events. The daemon stores every event, numbers it within its subscription and sends a wake into the session that subscribed. The wake lists the pending events and the commands to read and acknowledge them. The stored record stays the truth, and a blocking `wait` call covers a lost wake and serves subscriptions that have no wake target.
+Exangelos is a daemon on your machine that agents subscribe through. An agent session subscribes to selected event types on one subject, such as the pull request `acme/app#123`, and states its intent in one line. Connectors, which are separate executables the daemon supervises, watch the sources and report events. The daemon stores every event, numbers it within its subscription and sends a wake into the session that subscribed. The wake lists the pending events and the commands to read and acknowledge them. The stored record stays the truth, and a blocking `wait` call covers a lost wake and serves subscriptions that have no wake target.
 
-Agents reach the daemon through the `exangelos` command (alias `xng`) and through an MCP server. You reach it through a menu bar panel on macOS, a window on Linux, and the same command. The panel shows every subscription with its intent, its events, its wakes and its history, and it is where you import, enable and configure plugins. You get a desktop alert only when something needs you.
+Agents reach the daemon through the `exangelos` command (alias `xng`) and through an MCP server. You reach it through a menu bar panel on macOS, a window on Linux, and the same command. The panel shows every subscription with its intent, its events, its wakes and its history, and it is where you import, enable and configure connectors. You get a desktop alert only when something needs you.
 
 Subscriptions cannot pile up unnoticed. Each one expires after at most 7 days unless resumed, pauses when its backlog grows past 20 events or 24 hours, and tells its session once when it stops for any reason the session did not cause.
 
-Version 1 ships three official plugins (github-pr, jira, file-watch) and a plugin template, and it replaces pr-watch for you.
+Version 1 ships three official connectors (github-pr, jira, file-watch) and a connector template, and it replaces pr-watch for you.
 
 ## User stories
 
@@ -31,10 +31,10 @@ Version 1 ships three official plugins (github-pr, jira, file-watch) and a plugi
 7. As an agent session, I want to be required to state my intent when I subscribe, so that you can tell what each subscription is for.
 8. As an agent session, I want wakes that never repeat my intent, so that my context holds only what changed.
 9. As an agent session, I want show and list to return the intent, so that I can recall why a subscription exists when I ask.
-10. As an agent session, I want to list the installed plugins with their catalogues, so that I can learn which event types and parameters each plugin offers.
+10. As an agent session, I want to list the installed connectors with their catalogues, so that I can learn which event types and parameters each connector offers.
 11. As an agent session, I want to select a subset of event types, so that I am woken only for what matters to my task.
 12. As an agent session, I want to ask for a single event, a number of events or an end time, so that a subscription ends when my task no longer needs it.
-13. As an agent session, I want the daemon to refuse a subscription that matches one I already have on the same plugin and subject, and to show me the existing ones, so that I do not create duplicates by mistake.
+13. As an agent session, I want the daemon to refuse a subscription that matches one I already have on the same connector and subject, and to show me the existing ones, so that I do not create duplicates by mistake.
 14. As an agent session, I want to resubmit with the ids I was shown to create the second subscription anyway, so that I can have two on purpose.
 15. As an agent session, I want one wake that lists every pending event after a short window, so that a burst of events reaches me as one message.
 16. As an agent session, I want each wake to print the ready-made read and ack commands, so that I can act without looking up syntax.
@@ -46,36 +46,36 @@ Version 1 ships three official plugins (github-pr, jira, file-watch) and a plugi
 22. As an agent session, I want to pause, resume, retarget and cancel any subscription, so that I can hand work over to another session or stop watching.
 23. As an agent session, I want one wake when my subscription pauses at its backlog limit, with the ack and resume commands, so that I know nothing is watched until I act.
 24. As an agent session, I want one wake when my subscription expires, with the resume command, so that I can continue it if the task is still open.
-25. As an agent session, I want one wake when the plugin ends my subscription, such as when the pull request merges, so that I know the subject is finished.
+25. As an agent session, I want one wake when the connector ends my subscription, such as when the pull request merges, so that I know the subject is finished.
 26. As an agent session, I want one wake when another session or you pause or cancel my subscription, so that I am not left waiting on something that stopped.
 27. As an agent session, I want no wake for a pause or cancel I made myself, so that I am not told what I already know.
-28. As an agent session, I want one wake when the plugin behind my subscription has been unavailable for an hour, so that I can tell you or plan around it.
+28. As an agent session, I want one wake when the connector behind my subscription has been unavailable for an hour, so that I can tell you or plan around it.
 29. As an agent session, I want resume to refuse while my backlog is over the limit and tell me to acknowledge first, so that a paused subscription does not restart into the same overflow.
-30. As an agent session, I want the plugin to report what changed while my subscription was paused or expired, where the source can tell, so that resuming loses as little as possible.
-31. As an agent session, I want to configure a plugin's secret by naming a command or a file, such as `gh auth token`, so that I can set it up without the secret entering my context.
+30. As an agent session, I want the connector to report what changed while my subscription was paused or expired, where the source can tell, so that resuming loses as little as possible.
+31. As an agent session, I want to configure a connector's secret by naming a command or a file, such as `gh auth token`, so that I can set it up without the secret entering my context.
 32. As an agent session, I want the list to show my own subscriptions by default and every subscription with a flag, so that I see what concerns me first.
 
 ### You, the person at the machine
 
 33. As you, I want a menu bar icon that opens a panel, so that I can see what every agent session waits on without opening a terminal.
 34. As you, I want the icon to change when something needs me, so that I notice it without an alert for every event.
-35. As you, I want every subscription in the panel with its intent, plugin, subject, wake target, expiry and state, so that I can tell what each one is for and whether it still matters.
+35. As you, I want every subscription in the panel with its intent, connector, subject, wake target, expiry and state, so that I can tell what each one is for and whether it still matters.
 36. As you, I want to see each subscription's events, with the pending ones marked, so that I know what the agent has not dealt with.
 37. As you, I want to see each subscription's wakes with state, attempt count, last error and next attempt, so that I can tell when a session is unreachable.
 38. As you, I want an unreachable wake target shown as a quiet fact on the session and the waiting wake, and never as an alert, so that a closed session does not interrupt me.
 39. As you, I want to see each subscription's changes with actor and time, so that I know which session or which of my own actions changed it.
 40. As you, I want to acknowledge, pause, resume, retarget and cancel subscriptions from the panel, so that I can step in for an agent.
-41. As you, I want a desktop alert when a plugin waits to be enabled, keeps failing, has its credentials rejected, or when an official plugin's checksum does not match, so that I am told only when I am needed.
+41. As you, I want a desktop alert when a connector waits to be enabled, keeps failing, has its credentials rejected, or when an official connector's checksum does not match, so that I am told only when I am needed.
 42. As you, I want event alerts off unless I turn them on globally or for one subscription, so that events show in the panel and do not interrupt me.
-43. As you, I want to import a plugin from an archive file, an https link, a local directory or a git repository at a ref, in the panel or the CLI, so that I can add sources nobody ships officially.
-44. As you, I want an imported plugin to stay inert until I enable it after reading its origin and checksum, so that no code runs that I have not approved.
-45. As you, I want a plugin whose files change to return to inert, so that an update needs my approval again.
-46. As you, I want the official plugins to download, verify and enable themselves the first time an agent needs one, so that the common case needs no setup step from me.
-47. As you, I want to disable and remove plugins, so that I can stop a source I no longer trust or use.
-48. As you, I want to configure a plugin through a form the plugin declares, with secret fields stored in the system keychain, so that I never paste a token into a config file.
-49. As you, I want to see who configured a plugin, so that I know whether an agent or I set its credentials.
-50. As you, I want subscriptions of an unavailable plugin to wait quietly and continue from their cursor when it returns, so that a crash or a credential problem loses no events that the source can still report.
-51. As you, I want no agent able to import, enable, disable, remove or configure plugins through the MCP server, so that plugin trust stays my decision.
+43. As you, I want to import a connector from an archive file, an https link, a local directory or a git repository at a ref, in the panel or the CLI, so that I can add sources nobody ships officially.
+44. As you, I want an imported connector to stay inert until I enable it after reading its origin and checksum, so that no code runs that I have not approved.
+45. As you, I want a connector whose files change to return to inert, so that an update needs my approval again.
+46. As you, I want the official connectors to download, verify and enable themselves the first time an agent needs one, so that the common case needs no setup step from me.
+47. As you, I want to disable and remove connectors, so that I can stop a source I no longer trust or use.
+48. As you, I want to configure a connector through a form the connector declares, with secret fields stored in the system keychain, so that I never paste a token into a config file.
+49. As you, I want to see who configured a connector, so that I know whether an agent or I set its credentials.
+50. As you, I want subscriptions of an unavailable connector to wait quietly and continue from their cursor when it returns, so that a crash or a credential problem loses no events that the source can still report.
+51. As you, I want no agent able to import, enable, disable, remove or configure connectors through the MCP server, so that connector trust stays my decision.
 52. As you, I want the daemon to start at login and keep running after I quit the panel, so that wakes reach sessions whenever they run.
 53. As you, I want any CLI or MCP call that finds no daemon to start it through the right service manager, so that I never start it by hand.
 54. As you, I want to see whether the daemon runs, and its version, in the panel and the CLI, so that I can tell a quiet day from a stopped daemon.
@@ -83,19 +83,19 @@ Version 1 ships three official plugins (github-pr, jira, file-watch) and a plugi
 56. As you, I want closed subscriptions and their events deleted after 30 days, so that the store does not grow without bound.
 57. As you, I want an empty panel to tell me that only agents subscribe and show the command an agent runs, so that I know what to do on first launch.
 
-### Plugin author
+### Connector author
 
-58. As a plugin author, I want a scaffold command that writes a renamed copy of the template plugin, so that I start from a working package with one event type, one parameter, a configuration with a secret field and tests.
-59. As a plugin author, I want an SDK that turns my catalogue and my four handlers into a stdio RPC server, so that I write source logic and not protocol code.
-60. As a plugin author, I want to declare event payloads, subscription parameters and configuration fields as schemas, so that the daemon validates them and the panel and CLI render my configuration form.
-61. As a plugin author, I want to mark configuration fields as secret, so that the daemon stores them in the keychain and hands them to my process at start.
-62. As a plugin author, I want my Describe handler to normalise parameters and name the subject, so that duplicate detection and labels work for my source.
-63. As a plugin author, I want my Watch handler to stream events with dedupe keys and cursors, so that the daemon resumes my watch after any restart without duplicates.
-64. As a plugin author, I want to end a subscription with a reason when its subject is finished, so that agents are told and nothing is watched for nothing.
-65. As a plugin author, I want an in-memory test harness in the SDK, so that I test my plugin without a daemon.
-66. As a plugin author, I want a dev link that trusts my working directory, restarts my plugin when files change and labels it dev, so that I can iterate without re-importing.
-67. As a plugin author, I want to ship either a portable JS bundle or a native executable per platform, so that I can write a plugin without bundling a runtime.
-68. As a plugin author, I want the daemon to refuse my plugin with a clear reason when its protocol version is incompatible, so that I know to rebuild against a newer SDK.
+58. As a connector author, I want a scaffold command that writes a renamed copy of the template connector, so that I start from a working package with one event type, one parameter, a configuration with a secret field and tests.
+59. As a connector author, I want an SDK that turns my catalogue and my four handlers into a stdio RPC server, so that I write source logic and not protocol code.
+60. As a connector author, I want to declare event payloads, subscription parameters and configuration fields as schemas, so that the daemon validates them and the panel and CLI render my configuration form.
+61. As a connector author, I want to mark configuration fields as secret, so that the daemon stores them in the keychain and hands them to my process at start.
+62. As a connector author, I want my Describe handler to normalise parameters and name the subject, so that duplicate detection and labels work for my source.
+63. As a connector author, I want my Watch handler to stream events with dedupe keys and cursors, so that the daemon resumes my watch after any restart without duplicates.
+64. As a connector author, I want to end a subscription with a reason when its subject is finished, so that agents are told and nothing is watched for nothing.
+65. As a connector author, I want an in-memory test harness in the SDK, so that I test my connector without a daemon.
+66. As a connector author, I want a dev link that trusts my working directory, restarts my connector when files change and labels it dev, so that I can iterate without re-importing.
+67. As a connector author, I want to ship either a portable JS bundle or a native executable per platform, so that I can write a connector without bundling a runtime.
+68. As a connector author, I want the daemon to refuse my connector with a clear reason when its protocol version is incompatible, so that I know to rebuild against a newer SDK.
 
 ### Someone installing the tool
 
@@ -110,7 +110,7 @@ Version 1 ships three official plugins (github-pr, jira, file-watch) and a plugi
 
 ### Architecture
 
-- Exangelos is open source and dogfooded by its owner. Its core knows no particular harness and no particular source. It selects, deduplicates, stores and delivers events, and plugins and wake target adapters carry everything specific.
+- Exangelos is open source and dogfooded by its owner. Its core knows no particular harness and no particular source. It selects, deduplicates, stores and delivers events, and connectors and wake target adapters carry everything specific.
 - Exangelos is an Effect 4 application with a strict hexagonal architecture. Ports are `Context.Service` definitions. Adapters are Layers, and only the apps compose them.
 - The repository is a pnpm workspace with Turborepo for tasks, Vitest with the Effect test integration, and tsgo (TypeScript 7) for type checking. Bun only runs and compiles the apps.
 - Library packages are runtime-agnostic and use Effect abstractions only. The apps pick the Bun platform layers and compile with `bun build --compile` for darwin-arm64, darwin-x64, linux-arm64 and linux-x64.
@@ -121,19 +121,19 @@ Version 1 ships three official plugins (github-pr, jira, file-watch) and a plugi
 
 The four ring packages, from the inside out:
 
-- `domain`. The records (plugin, subscription, event, wake, change), their states and the transitions of the state table below, and the pure rules: backlog limit, expiry, wake content, duplicate detection, acknowledgement. It performs no I/O.
+- `domain`. The records (connector, subscription, event, wake, change), their states and the transitions of the state table below, and the pure rules: backlog limit, expiry, wake content, duplicate detection, acknowledgement. It performs no I/O.
 - `application`. The use cases listed below and the ports they need. It depends on `domain` only.
-- `contracts`. Two Effect RPC groups with their schemas: the daemon service contract (used by the CLI, the MCP server and the panel) and the plugin protocol. It also holds the wake text format and the plugin manifest schema.
-- `plugin-sdk`. What a plugin author builds on: catalogue builders, the stdio RPC server for the plugin protocol, and the in-memory test harness. It depends on `contracts` only, never on `application`.
+- `contracts`. Two Effect RPC groups with their schemas: the daemon service contract (used by the CLI, the MCP server and the panel) and the connector protocol. It also holds the wake text format and the connector manifest schema.
+- `connector-sdk`. What a connector author builds on: catalogue builders, the stdio RPC server for the connector protocol, and the in-memory test harness. It depends on `contracts` only, never on `application`.
 
 Driven adapters, one package each:
 
 - SQLite repositories (Effect SQL client with the Bun SQLite driver).
 - Secret store over the keychain gap package.
-- Plugin runtime: starts and supervises plugin processes and speaks the plugin protocol over the stdio transport gap package.
-- Plugin directory: discovers installed plugins by name, computes their digests and watches their files.
-- Plugin import sources: archive file, https link, local directory, git repository at a ref.
-- Official plugin source: fetches official plugin archives from release files, or from a local folder when a setting points there.
+- Connector runtime: starts and supervises connector processes and speaks the connector protocol over the stdio transport gap package.
+- Connector directory: discovers installed connectors by name, computes their digests and watches their files.
+- Connector import sources: archive file, https link, local directory, git repository at a ref.
+- Official connector source: fetches official connector archives from release files, or from a local folder when a setting points there.
 - Wake targets: T3 Code, Codex, a generic command adapter, and a Claude Code adapter that fails every attempt because a standalone Claude Code session has no push route in version 1.
 - Alerts over the notifications gap package.
 - Service manager over the service gap package.
@@ -151,21 +151,21 @@ Gap packages that fill holes in the Effect ecosystem. Each is general-purpose, h
 
 Apps compose layers and contain no logic of their own: `daemon`, `cli`, `mcp` and `tray`. The first three ship as one multicall binary. The `cli` app is the binary's entry point, and `exangelos daemon` and `exangelos mcp` load the `daemon` and `mcp` compositions, so each app still only composes layers.
 
-Plugins live in the monorepo as their own packages: `github-pr`, `jira`, `file-watch` and `template`. None is compiled into the binary.
+Connectors live in the monorepo as their own packages: `github-pr`, `jira`, `file-watch` and `template`. None is compiled into the binary.
 
 ### Ports
 
 | Port | Purpose | Adapters |
 |---|---|---|
-| PluginRepository | plugin records: origin, digest, trust, catalogue, configuration state, process state, who configured it | SQLite |
+| ConnectorRepository | connector records: origin, digest, trust, catalogue, configuration state, process state, who configured it | SQLite |
 | SubscriptionRepository | subscriptions with cursor, acked through, state, reason and changes | SQLite |
 | EventRepository | events, numbering, dedupe keys | SQLite |
 | WakeRepository | wakes with reason, through, state and attempts | SQLite |
-| SecretStore | secret configuration fields per plugin | macOS Keychain, Secret Service, 0600 file |
-| PluginRuntime | start and stop a plugin process; Handshake, Configure, Describe, Watch | child process with stdio RPC; in-memory fake for tests |
-| PluginDirectory | list installed plugins, read manifests, compute digests, report file changes | file system |
-| PluginImportSource | place a plugin in the plugin directory from a source, inert | archive file, https link, local directory, git repository at a ref |
-| OfficialPluginSource | fetch an official plugin archive by name and version | release files, local folder |
+| SecretStore | secret configuration fields per connector | macOS Keychain, Secret Service, 0600 file |
+| ConnectorRuntime | start and stop a connector process; Handshake, Configure, Describe, Watch | child process with stdio RPC; in-memory fake for tests |
+| ConnectorDirectory | list installed connectors, read manifests, compute digests, report file changes | file system |
+| ConnectorImportSource | place a connector in the connector directory from a source, inert | archive file, https link, local directory, git repository at a ref |
+| OfficialConnectorSource | fetch an official connector archive by name and version | release files, local folder |
 | WakeTarget | deliver wake text to one session of one harness | T3 Code, Codex, command; Claude Code fails each attempt with a fixed reason |
 | AlertSink | show a desktop alert | desktop notifications; recording fake for tests |
 | ServiceManager | install, start and report the daemon service | Homebrew service, own LaunchAgent, own systemd user unit |
@@ -177,12 +177,12 @@ The application uses Effect's clock and scheduling for every timer, so tests dri
 
 The daemon stores four records. Fields are as in the domain model:
 
-- Plugin: name and version from the manifest; origin (official release, archive file, https link, directory, git repository at a ref, dev link); digest (sha256 of its files); trust (inert, enabled, dev); catalogue (event types, subscription parameters, configuration fields); configuration (one per plugin: missing, set, or rejected by the source); process (stopped, running, restarting, failing). A plugin is available when it is enabled or dev, its configuration is set and its process runs.
-- Subscription: id `sub_…`; plugin by name; parameters validated and normalised by the plugin; subject and label named by the plugin; intent (required, one line); selected event types (all by default); wake target (harness and session id, or none); expires at (at most 7 days after the start or the last resume); max events (optional); state with reason (active, paused, expired, ended, cancelled); cursor; acked through; changes (each create, update, ack, pause, resume, retarget and cancel with actor and time).
-- Event: id `evt_…`; number (1, 2, 3 within its subscription); type; occurred at; received at; one-line summary from the plugin; payload in the shape its event type declares; optional link; dedupe key. An event is pending while its number is above the subscription's acked through.
+- Connector: name and version from the manifest; origin (official release, archive file, https link, directory, git repository at a ref, dev link); digest (sha256 of its files); trust (inert, enabled, dev); catalogue (event types, subscription parameters, configuration fields); configuration (one per connector: missing, set, or rejected by the source); process (stopped, running, restarting, failing). A connector is available when it is enabled or dev, its configuration is set and its process runs.
+- Subscription: id `sub_…`; connector by name; parameters validated and normalised by the connector; subject and label named by the connector; intent (required, one line); selected event types (all by default); wake target (harness and session id, or none); expires at (at most 7 days after the start or the last resume); max events (optional); state with reason (active, paused, expired, ended, cancelled); cursor; acked through; changes (each create, update, ack, pause, resume, retarget and cancel with actor and time).
+- Event: id `evt_…`; number (1, 2, 3 within its subscription); type; occurred at; received at; one-line summary from the connector; payload in the shape its event type declares; optional link; dedupe key. An event is pending while its number is above the subscription's acked through.
 - Wake: subscription; reason (events, paused, expired, suspended, ended, cancelled); through (the last event number it covers); state (waiting, sending, delivered, replaced, dropped); attempts (count, last error, time of the next attempt). A subscription has at most one undelivered wake. A wake describes the subscription as it is when sent and never carries the intent.
 
-Only an active subscription is watched. Active, paused and expired are open; ended and cancelled are closed. An active subscription is suspended while its plugin is unavailable and continues from its cursor by itself when the plugin returns.
+Only an active subscription is watched. Active, paused and expired are open; ended and cancelled are closed. An active subscription is suspended while its connector is unavailable and continues from its cursor by itself when the connector returns.
 
 | From | When | To | Wake to its session |
 |---|---|---|---|
@@ -192,35 +192,35 @@ Only an active subscription is watched. Active, paused and expired are open; end
 | paused, expired | An actor resumes it and the backlog is under the limit. | active | none |
 | active | The expiry time passes. | expired | one, with the resume command |
 | paused | The expiry time passes. | expired | none, it was told when it paused |
-| active | The plugin ends it, or it reaches its max events. | ended | one, with the reason |
+| active | The connector ends it, or it reaches its max events. | ended | one, with the reason |
 | any open | An actor cancels it. | cancelled | one, unless its own session cancelled it |
-| active | Its plugin has been unavailable for 1 hour. | active | one, with the reason |
+| active | Its connector has been unavailable for 1 hour. | active | one, with the reason |
 
 ### Rules
 
 The daemon enforces rules 1 to 21 of the confirmed domain model:
 
-1. A subscribe call needs an available plugin and an intent. The plugin validates the parameters and names the subject. If the plugin is an official one that is not installed yet, that call downloads, checks and enables it. The tray shows the intent on every subscription. The daemon returns it when a session shows or lists subscriptions and never repeats it in a wake.
+1. A subscribe call needs an available connector and an intent. The connector validates the parameters and names the subject. If the connector is an official one that is not installed yet, that call downloads, checks and enables it. The tray shows the intent on every subscription. The daemon returns it when a session shows or lists subscriptions and never repeats it in a wake.
 2. The CLI and the MCP server read the calling session from the environment and store it as the wake target. A T3 Code thread wins when sessions are nested. One flag names another target, and another makes the subscription pull-only. With no session and no flag the call fails and says why.
-3. The daemon refuses a subscribe call when an open subscription has the same plugin, subject and wake session, and lists what it found with each one's parameters. Resubmitting with those ids creates the second subscription, provided the ids cover every match at that moment. Subscriptions of other sessions do not count.
+3. The daemon refuses a subscribe call when an open subscription has the same connector, subject and wake session, and lists what it found with each one's parameters. Resubmitting with those ids creates the second subscription, provided the ids cover every match at that moment. Subscriptions of other sessions do not count.
 4. A subscription expires 7 days after it starts or was last resumed. The agent can ask for less with an end time, a number of events, or a single event.
-5. An agent can change a subscription's event types, limits, intent and parameters, as long as the plugin still reports the same subject.
-6. The daemon keeps a reported event when its type is selected and its dedupe key is new for that subscription. It numbers the event and stores it together with the plugin's cursor.
+5. An agent can change a subscription's event types, limits, intent and parameters, as long as the connector still reports the same subject.
+6. The daemon keeps a reported event when its type is selected and its dedupe key is new for that subscription. It numbers the event and stores it together with the connector's cursor.
 7. An event stays pending until an actor acknowledges up to its number or beyond.
 8. The first pending event opens a 5 second window. When it closes, the daemon sends one wake that lists every pending event.
 9. Each later event causes a new wake that lists every pending event again. Events that stay pending never cause another wake by themselves.
 10. The daemon retries an undelivered wake and waits at most 10 minutes between attempts. It stops when the send succeeds, when a newer wake replaces it, or when nothing is left to say.
-11. When a subscription stops for a reason other than its own session's action, that session gets one wake with the reason and the commands to continue. This covers the backlog pause, expiry, an end by the plugin, and a pause or cancel by another session or by you.
+11. When a subscription stops for a reason other than its own session's action, that session gets one wake with the reason and the commands to continue. This covers the backlog pause, expiry, an end by the connector, and a pause or cancel by another session or by you.
 12. `wait` blocks until a subscription has something to say and returns what the wake would contain. It serves pull-only subscriptions and covers a lost wake.
 13. A subscription pauses at 20 pending events, or when its oldest pending event is 24 hours old.
 14. Resume is an explicit call that sets a fresh expiry. It refuses while the backlog is over the limit and says to acknowledge first. Acknowledging never resumes.
-15. A paused or expired subscription is not watched. The daemon stops the plugin's watch and keeps the cursor. On resume the plugin continues from the cursor and reports what changed meanwhile, where the source can tell.
-16. While a plugin is unavailable its active subscriptions are suspended, and they continue from their cursors when it returns. A plugin is unavailable when it is inert after a file change, disabled or removed by you, crash-looping, or its configuration is missing or rejected. After 1 hour each affected session gets one wake.
-17. The plugin ends a subscription when its subject is finished or can no longer be watched. The daemon ends it at the requested number of events.
+15. A paused or expired subscription is not watched. The daemon stops the connector's watch and keeps the cursor. On resume the connector continues from the cursor and reports what changed meanwhile, where the source can tell.
+16. While a connector is unavailable its active subscriptions are suspended, and they continue from their cursors when it returns. A connector is unavailable when it is inert after a file change, disabled or removed by you, crash-looping, or its configuration is missing or rejected. After 1 hour each affected session gets one wake.
+17. The connector ends a subscription when its subject is finished or can no longer be watched. The daemon ends it at the requested number of events.
 18. Every session can see every subscription, and the default list shows its own. Any session may update, acknowledge, pause, resume, retarget or cancel any subscription. The daemon records who did. This is a convention, not a security boundary.
-19. Only you import, enable, disable and remove plugins, in the tray or the CLI. A third-party plugin starts inert and returns to inert when its files change. An official plugin is enabled once its checksum matches the one the binary carries.
-20. Plugins are configured in the tray or through the CLI. The CLI reads each secret from a command, a file, or a hidden prompt for you. An agent names the command or the file, such as `gh auth token` or the file T3's secret input writes, so it sets a secret without seeing it. The MCP server has no tools for plugin management or configuration.
-21. You get a desktop alert when a plugin waits to be enabled, keeps failing or has its credentials rejected, and when an official plugin's checksum does not match. A wake target that stays unreachable raises no alert. The tray shows the waiting wake, and the backlog rule catches a session that is gone for good. Event alerts are off unless a setting turns them on, globally or for one subscription.
+19. Only you import, enable, disable and remove connectors, in the tray or the CLI. A third-party connector starts inert and returns to inert when its files change. An official connector is enabled once its checksum matches the one the binary carries.
+20. Connectors are configured in the tray or through the CLI. The CLI reads each secret from a command, a file, or a hidden prompt for you. An agent names the command or the file, such as `gh auth token` or the file T3's secret input writes, so it sets a secret without seeing it. The MCP server has no tools for connector management or configuration.
+21. You get a desktop alert when a connector waits to be enabled, keeps failing or has its credentials rejected, and when an official connector's checksum does not match. A wake target that stays unreachable raises no alert. The tray shows the waiting wake, and the backlog rule catches a session that is gone for good. Event alerts are off unless a setting turns them on, globally or for one subscription.
 
 ### Defaults
 
@@ -232,7 +232,7 @@ All limits are settings. Their defaults:
 | Backlog limit by count | 20 events |
 | Backlog limit by age | 24 h |
 | Subscription lifetime and maximum age | 7 d |
-| Plugin unavailable before the session hears | 1 h |
+| Connector unavailable before the session hears | 1 h |
 | Longest wait between wake attempts | 10 min |
 | Closed subscriptions and their events kept | 30 d |
 
@@ -240,7 +240,7 @@ The standing defaults from the domain model's smaller choices 3 to 10 apply as w
 
 ### Wake text
 
-A wake is plain text. It names the subscription, plugin and subject, lists every pending event with number, type and summary, and prints ready-made commands with the full command name `exangelos`, never the alias. Examples from the domain model:
+A wake is plain text. It names the subscription, connector and subject, lists every pending event with number, type and summary, and prints ready-made commands with the full command name `exangelos`, never the alias. Examples from the domain model:
 
 ```
 2 events on sub_7f3k (github-pr, acme/app#123)
@@ -257,14 +257,14 @@ Ack     exangelos ack sub_7f3k --through 5
 Resume  exangelos resume sub_7f3k
 ```
 
-Wakes for expiry, an end, a cancel, a pause by another actor and a suspended plugin follow the same shape: one line with the subscription, its state and the reason, then the commands to continue. `wait` returns the same text.
+Wakes for expiry, an end, a cancel, a pause by another actor and a suspended connector follow the same shape: one line with the subscription, its state and the reason, then the commands to continue. `wait` returns the same text.
 
 ### Daemon use cases
 
 The `application` package implements these use cases. The first group is the daemon service contract, offered to agents and to you:
 
-- List plugins with their catalogues.
-- Subscribe (with duplicate check, official plugin fetch on first use, wake target from the caller).
+- List connectors with their catalogues.
+- Subscribe (with duplicate check, official connector fetch on first use, wake target from the caller).
 - Update (event types, limits, intent, parameters; refused when the subject changes).
 - List (own by default, all with a flag) and show (with intent, events, wakes, changes).
 - Events (stored events of a subscription, with payloads and links).
@@ -274,8 +274,8 @@ The `application` package implements these use cases. The first group is the dae
 
 The second group is offered to the CLI and the tray only, never to the MCP server:
 
-- Import a plugin from a source; enable, disable and remove a plugin.
-- Configure a plugin (validates against the catalogue, stores secret fields in the secret store, sends Configure, records who configured it).
+- Import a connector from a source; enable, disable and remove a connector.
+- Configure a connector (validates against the catalogue, stores secret fields in the secret store, sends Configure, records who configured it).
 - Dev link and unlink.
 - Read and change settings.
 - Service status (daemon running, version, start method).
@@ -285,12 +285,12 @@ The third group runs inside the daemon:
 - Ingest: receive events and cursors from a Watch stream, apply rules 6, 13 and 17, and schedule a wake.
 - Wake scheduling and delivery: open the window, build the wake, deliver it through the WakeTarget port, retry with backoff capped at 10 minutes, replace older undelivered wakes.
 - Limits: pause on backlog, expire on time, end at max events.
-- Plugin supervision: start enabled and dev plugins, Handshake and refuse incompatible protocol versions, Configure, run one Watch stream per active subscription, restart a crashed process with backoff and resume every stream from its cursor, mark a crash-looping plugin as failing and alert you, mark rejected credentials and alert you, suspend and resume subscriptions, send the one wake after 1 hour of unavailability.
-- Plugin file watch: return a changed third-party plugin to inert and alert you that it waits to be enabled; restart a dev plugin on change.
-- Official plugin fetch on first use: download the archive, compare its checksum with the one the binary carries, enable it on a match, keep it inert and alert you on a mismatch, and fail with a clear message when offline.
+- Connector supervision: start enabled and dev connectors, Handshake and refuse incompatible protocol versions, Configure, run one Watch stream per active subscription, restart a crashed process with backoff and resume every stream from its cursor, mark a crash-looping connector as failing and alert you, mark rejected credentials and alert you, suspend and resume subscriptions, send the one wake after 1 hour of unavailability.
+- Connector file watch: return a changed third-party connector to inert and alert you that it waits to be enabled; restart a dev connector on change.
+- Official connector fetch on first use: download the archive, compare its checksum with the one the binary carries, enable it on a match, keep it inert and alert you on a mismatch, and fail with a clear message when offline.
 - Retention: delete closed subscriptions and their events after 30 days, and cancel an expired subscription that nobody resumed for 30 days.
 
-Each change to a subscription or plugin records its actor: the session the CLI or MCP server detected, or you. A CLI call with no session in its environment, and every tray call, records you.
+Each change to a subscription or connector records its actor: the session the CLI or MCP server detected, or you. A CLI call with no session in its environment, and every tray call, records you.
 
 ### Daemon service contract and transport
 
@@ -298,35 +298,35 @@ Each change to a subscription or plugin records its actor: the session the CLI o
 - The CLI, the MCP server and the panel are clients of that same contract.
 - The contract carries the calling session (harness and session id) on every call, so the daemon can store wake targets and record actors.
 
-### Plugin protocol and SDK
+### Connector protocol and SDK
 
-- One plugin is one installed package in the plugin directory, discovered by name. Its manifest declares name, version and the entry, which is either a portable JS bundle or a native executable per platform. The daemon binary runs a JS bundle by acting as the Bun runtime.
-- The daemon runs one process per plugin. The wire is Effect RPC over the process's stdin and stdout, using one of Effect's own serialisations with framing suitable for pipes (NDJSON; Effect has removed its MessagePack format).
-- The plugin protocol RPC group has four methods:
-  - Handshake. Returns the plugin's protocol version and its catalogue.
+- One connector is one installed package in the connector directory, discovered by name. Its manifest declares name, version and the entry, which is either a portable JS bundle or a native executable per platform. The daemon binary runs a JS bundle by acting as the Bun runtime.
+- The daemon runs one process per connector. The wire is Effect RPC over the process's stdin and stdout, using one of Effect's own serialisations with framing suitable for pipes (NDJSON; Effect has removed its MessagePack format).
+- The connector protocol RPC group has four methods:
+  - Handshake. Returns the connector's protocol version and its catalogue.
   - Configure. Receives the configuration with its secrets. Answers accepted, or rejected with a reason.
   - Describe. Receives parameters. Answers the normalised parameters, the subject and a label, or why they are invalid.
-  - Watch. A streaming method. Receives parameters, the selected event types, the cursor and the wake window. A changed wake window reopens every Watch stream from its cursor, and a plugin that receives no wake window uses 5 s. Streams events (type, occurred at, summary, payload, optional link, dedupe key) and cursors, and may end with a reason.
-- The daemon refuses a plugin whose protocol version it does not support, and says why.
-- Each subscription is one Watch stream. Configuration with secrets reaches the plugin at start through Configure.
+  - Watch. A streaming method. Receives parameters, the selected event types, the cursor and the wake window. A changed wake window reopens every Watch stream from its cursor, and a connector that receives no wake window uses 5 s. Streams events (type, occurred at, summary, payload, optional link, dedupe key) and cursors, and may end with a reason.
+- The daemon refuses a connector whose protocol version it does not support, and says why.
+- Each subscription is one Watch stream. Configuration with secrets reaches the connector at start through Configure.
 - A catalogue declares event types with payload schemas, subscription parameters as a schema, and configuration fields (text, choice, secret). The panel and the CLI render the configuration form from it.
-- The core has no filter over event payloads. Filtering beyond event types is a plugin parameter.
-- `plugin-sdk` gives authors builders for the catalogue, a function that serves the four handlers over stdio, and an in-memory test harness that drives the handlers without a daemon.
-- The `template` plugin package has one event type, one parameter, a configuration with a secret field, and tests, and CI builds it. The scaffold command writes a renamed copy of it.
+- The core has no filter over event payloads. Filtering beyond event types is a connector parameter.
+- `connector-sdk` gives authors builders for the catalogue, a function that serves the four handlers over stdio, and an in-memory test harness that drives the handlers without a daemon.
+- The `template` connector package has one event type, one parameter, a configuration with a secret field, and tests, and CI builds it. The scaffold command writes a renamed copy of it.
 
-### Plugin trust and installation
+### Connector trust and installation
 
-- Trust is inert, enabled or dev. A third-party plugin lands inert. You enable it in the panel or the CLI after seeing its origin and sha256 checksum. Any change to its files returns it to inert.
-- Import sources in version 1 sit behind one import port: archive file (zip or tar.gz, with archive entries that would escape the target directory refused), https link to an archive, local directory, git repository at a ref. Every import ends inert in the plugin directory. The panel exposes import.
-- Official plugins are fetched from release files on first use and enabled by default. The binary carries the checksums of the official plugins built with it. A setting points official plugin downloads at a local folder, which is how version 1 runs before anything is published.
-- An official plugin whose files change no longer matches the checksum the binary carries. It becomes inert and raises the checksum-mismatch alert.
-- A plugin that declares no configuration fields counts as configured.
-- Dev link is CLI-only. It trusts a working directory while linked, restarts the plugin when its files change, and labels it dev.
-- Exactly one configuration exists per plugin. There are no named connections in version 1.
+- Trust is inert, enabled or dev. A third-party connector lands inert. You enable it in the panel or the CLI after seeing its origin and sha256 checksum. Any change to its files returns it to inert.
+- Import sources in version 1 sit behind one import port: archive file (zip or tar.gz, with archive entries that would escape the target directory refused), https link to an archive, local directory, git repository at a ref. Every import ends inert in the connector directory. The panel exposes import.
+- Official connectors are fetched from release files on first use and enabled by default. The binary carries the checksums of the official connectors built with it. A setting points official connector downloads at a local folder, which is how version 1 runs before anything is published.
+- An official connector whose files change no longer matches the checksum the binary carries. It becomes inert and raises the checksum-mismatch alert.
+- A connector that declares no configuration fields counts as configured.
+- Dev link is CLI-only. It trusts a working directory while linked, restarts the connector when its files change, and labels it dev.
+- Exactly one configuration exists per connector. There are no named connections in version 1.
 
-### Official plugins
+### Official connectors
 
-- `github-pr`. Uses the GitHub API through the Effect HTTP client with a token from the plugin configuration (secret). Setup can fill the token from `gh auth token`. It makes conditional requests and has a GitHub Enterprise host setting. The main parameter is the pull request, written `owner/repo#number`. Its catalogue carries over pr-watch's triggers:
+- `github-pr`. Uses the GitHub API through the Effect HTTP client with a token from the connector configuration (secret). Setup can fill the token from `gh auth token`. It makes conditional requests and has a GitHub Enterprise host setting. The main parameter is the pull request, written `owner/repo#number`. Its catalogue carries over pr-watch's triggers:
 
   | Event type | Reported when |
   |---|---|
@@ -343,7 +343,7 @@ Each change to a subscription or plugin records its actor: the session the CLI o
   It ends a subscription when the pull request is merged or closed, with that as the reason. pr-watch's ignore lists become optional parameters: check names, authors and comments to ignore, each as a pattern.
 - `jira`. Uses the Jira Cloud REST API with site URL, email and API token (secret), by polling. A subscription targets one issue key or a JQL query. Event types: status changed (`status.changed`), comment added, assignee changed, other field changed, and an issue entering or leaving the JQL result.
 - `file-watch`. Watches files on disk. The main parameter is a path glob, such as `~/code/api-gateway/dist/**`, and an optional parameter lists globs to ignore. Event types are `file.created`, `file.changed` and `file.deleted`. Changes to one file inside the wake window become one event. It declares no configuration fields.
-- `template`. The plugin boilerplate described above.
+- `template`. The connector boilerplate described above.
 
 ### Wake targets and session detection
 
@@ -354,14 +354,14 @@ Each change to a subscription or plugin records its actor: the session the CLI o
 
 ### CLI
 
-The command is `exangelos`. The install also provides the alias `xng`. The binary is one multicall executable for daemon, CLI and MCP server. The owner fixed `subscribe`, `events`, `ack`, `wait`, `resume` and `--intent`. The other command and flag names are defaults listed in Further notes. A plugin declares one main parameter, which the CLI takes as a positional value, and the CLI takes every other parameter as a `key=value` pair.
+The command is `exangelos`. The install also provides the alias `xng`. The binary is one multicall executable for daemon, CLI and MCP server. The owner fixed `subscribe`, `events`, `ack`, `wait`, `resume` and `--intent`. The other command and flag names are defaults listed in Further notes. A connector declares one main parameter, which the CLI takes as a positional value, and the CLI takes every other parameter as a `key=value` pair.
 
 Agent and person commands (daemon service contract):
 
 | Command | Does |
 |---|---|
-| `exangelos plugins` | list plugins with trust, state and catalogue summary; with a name, show the full catalogue |
-| `exangelos subscribe <plugin> <params…> --intent "…"` | subscribe; `--types`, `--once`, `--max-events N`, `--until <time>`, `--target <harness>:<session>`, `--pull-only`, and `--similar-ok <ids>` to create a subscription next to the similar ones it was shown |
+| `exangelos connectors` | list connectors with trust, state and catalogue summary; with a name, show the full catalogue |
+| `exangelos subscribe <connector> <params…> --intent "…"` | subscribe; `--types`, `--once`, `--max-events N`, `--until <time>`, `--target <harness>:<session>`, `--pull-only`, and `--similar-ok <ids>` to create a subscription next to the similar ones it was shown |
 | `exangelos update <sub>` | change event types, limits, intent or parameters |
 | `exangelos list` | own subscriptions; `--all` for every subscription |
 | `exangelos show <sub>` | one subscription with intent, events, wakes and changes |
@@ -375,26 +375,26 @@ Commands for you only (not offered through MCP):
 
 | Command | Does |
 |---|---|
-| `exangelos plugin import <source>` | import from an archive file, https link, directory, or git repository at a ref |
-| `exangelos plugin enable <name>` | show origin and checksum, then enable |
-| `exangelos plugin disable <name>`, `plugin remove <name>` | disable or remove |
-| `exangelos plugin configure <name>` | set configuration; each secret from a command, a file, or a hidden prompt |
-| `exangelos plugin dev-link <dir>`, `plugin dev-unlink <name>` | dev loop |
-| `exangelos plugin scaffold <name>` | write a renamed copy of the template |
+| `exangelos connector import <source>` | import from an archive file, https link, directory, or git repository at a ref |
+| `exangelos connector enable <name>` | show origin and checksum, then enable |
+| `exangelos connector disable <name>`, `connector remove <name>` | disable or remove |
+| `exangelos connector configure <name>` | set configuration; each secret from a command, a file, or a hidden prompt |
+| `exangelos connector dev-link <dir>`, `connector dev-unlink <name>` | dev loop |
+| `exangelos connector scaffold <name>` | write a renamed copy of the template |
 | `exangelos settings` | read and change settings |
 | `exangelos service status` | daemon running, version, start method |
 | `exangelos daemon` | run the daemon in the foreground (used by the service definitions) |
 | `exangelos mcp` | run the MCP server over stdio |
 
-The CLI reads a secret source once, at configure time. An agent may run `plugin configure` with a command or file source, because the CLI process reads the secret with the agent's permissions and hands the value to the daemon without printing it.
+The CLI reads a secret source once, at configure time. An agent may run `connector configure` with a command or file source, because the CLI process reads the secret with the agent's permissions and hands the value to the daemon without printing it.
 
 Any CLI or MCP call that finds no daemon starts it (see service management).
 
 ### MCP server
 
 - `exangelos mcp` serves MCP over stdio and forwards every call to the daemon over the unix socket. It reads the session identity from its environment for wake addressing.
-- MCP tools: list plugins with catalogues, subscribe, update, list, show, events, ack, wait, pause, resume, retarget, cancel. Subscribe requires the intent.
-- Deliberately not MCP tools: plugin import, enable, disable, remove, configure, dev link, scaffold, settings, service status. An agent that needs to configure a plugin uses the CLI with a command or file secret source.
+- MCP tools: list connectors with catalogues, subscribe, update, list, show, events, ack, wait, pause, resume, retarget, cancel. Subscribe requires the intent.
+- Deliberately not MCP tools: connector import, enable, disable, remove, configure, dev link, scaffold, settings, service status. An agent that needs to configure a connector uses the CLI with a command or file secret source.
 
 ### Tray host and panel
 
@@ -408,9 +408,9 @@ Any CLI or MCP call that finds no daemon starts it (see service management).
 
 What the panel shows:
 
-- Each subscription: id, plugin, subject, label, intent, selected event types, wake target (harness and session, or pull-only), expiry time, state with reason, whether it is suspended, its events with the pending ones marked, its wakes (state, attempt count, last error, time of the next attempt), and its changes (actor and time).
-- Each plugin: name, version, origin, sha256 digest, trust, configuration state, process state, and who configured it.
-- What needs you: a plugin waiting to be enabled, a plugin that keeps failing, rejected credentials, an official plugin whose checksum does not match. Each raises an alert and is findable in the panel.
+- Each subscription: id, connector, subject, label, intent, selected event types, wake target (harness and session, or pull-only), expiry time, state with reason, whether it is suspended, its events with the pending ones marked, its wakes (state, attempt count, last error, time of the next attempt), and its changes (actor and time).
+- Each connector: name, version, origin, sha256 digest, trust, configuration state, process state, and who configured it.
+- What needs you: a connector waiting to be enabled, a connector that keeps failing, rejected credentials, an official connector whose checksum does not match. Each raises an alert and is findable in the panel.
 - An unreachable wake target as a quiet fact on its session and on the waiting wake, not in the "needs you" list.
 - Whether the daemon runs, its version and how it started; settings (event alerts on or off globally and per subscription, default limits); quit.
 - An empty state that says only agents subscribe and shows `exangelos subscribe github-pr acme/app#123 --intent "Waiting on checks and review"`.
@@ -418,7 +418,7 @@ What the panel shows:
 What the panel does:
 
 - On a subscription: acknowledge through a number, pause, resume (refused while the backlog is over the limit), retarget, cancel.
-- On plugins: import from any of the four sources, enable after showing origin and checksum, disable, remove, configure through the declared form (text, choice and secret fields; a secret shows only whether it is set).
+- On connectors: import from any of the four sources, enable after showing origin and checksum, disable, remove, configure through the declared form (text, choice and secret fields; a secret shows only whether it is set).
 
 The panel layout (structure, navigation, grouping) is decided separately. Three structural concepts are under comparison.
 
@@ -431,9 +431,9 @@ The panel layout (structure, navigation, grouping) is decided separately. Three 
 ### Secrets
 
 - Secret configuration fields go through the SecretStore port: macOS Keychain, Secret Service on Linux, and a 0600 file on headless machines.
-- Secrets never enter the settings file, the database or a wake. They reach the plugin at start through Configure.
+- Secrets never enter the settings file, the database or a wake. They reach the connector at start through Configure.
 - Changing a configuration field that says where secrets are sent, such as a host or a site URL, clears the stored secrets.
-- When a source rejects credentials, the plugin's configuration becomes rejected, its subscriptions are suspended, you get an alert, and the configure command runs again.
+- When a source rejects credentials, the connector's configuration becomes rejected, its subscriptions are suspended, you get an alert, and the configure command runs again.
 
 ### Service management
 
@@ -446,7 +446,7 @@ The panel layout (structure, navigation, grouping) is decided separately. Three 
 
 - XDG layout on macOS and Linux: configuration under `~/.config`, data under `~/.local/share`, state under `~/.local/state`, honouring the XDG variables.
 - The configuration directory holds the single settings file. The CLI and the tray edit it.
-- The data directory holds the database and the plugin directory.
+- The data directory holds the database and the connector directory.
 - The state directory holds the unix socket and the logs.
 - The environment variable `EXANGELOS_HOME` collapses every directory into a single one, for tests and side-by-side installs.
 
@@ -455,8 +455,8 @@ The panel layout (structure, navigation, grouping) is decided separately. Three 
 - One multicall binary holds daemon, CLI and MCP server, built with `bun build --compile` for the four targets.
 - The tray app bundles everything: one desktop download with the binary inside the app, which also puts `exangelos` and `xng` on the PATH.
 - Headless installs use the standalone binary through a Homebrew formula or an install script.
-- Version 1 delivers build scripts for the four targets, Homebrew formula and cask definitions, an install script and a release workflow, all exercised locally. Official plugin archives are built as release files with checksums the binary carries.
-- Nothing is published: no tap repository, no signing, no release, no registry or domain reservation, until the owner says so. Dogfooding runs from a local install, with official plugins fetched from a local folder.
+- Version 1 delivers build scripts for the four targets, Homebrew formula and cask definitions, an install script and a release workflow, all exercised locally. Official connector archives are built as release files with checksums the binary carries.
+- Nothing is published: no tap repository, no signing, no release, no registry or domain reservation, until the owner says so. Dogfooding runs from a local install, with official connectors fetched from a local folder.
 
 ### Versions
 
@@ -490,10 +490,10 @@ A good test drives a seam from the outside and checks behaviour an agent or you 
 The pyramid, from the bottom:
 
 - Domain rules (unit). Pure tests on `domain` for the transition table, the backlog limits, expiry, wake content and coalescing, duplicate detection with the acknowledging id list, and acknowledgement. One test per rule and transition, not per edge case.
-- Use cases (the widest layer). `application` use cases run against in-memory fakes of every port: a fake PluginRuntime that streams scripted events, a recording WakeTarget and AlertSink, in-memory repositories. These cover subscribe through wake, ack, the rule 11 wakes, retry and replacement, suspension and the 1 hour wake, official fetch on first use with matching and mismatching checksums, trust changes on file change, and the MCP-versus-CLI split of the daemon service contract.
-- Adapter contracts (integration). The SQLite repositories against a real SQLite file in a temporary collapsed directory, including migrations from empty. The stdio transport and the plugin runtime against the real `template` plugin as a child process, including a crash and resume from cursor. The archive import adapter, including a path-escaping archive. Each gap package has its own small test suite at this level.
-- Plugins. Each official plugin is tested through the SDK's in-memory harness with a stubbed HTTP client or a temporary directory: Describe naming the subject, Watch mapping source changes to events with dedupe keys, and the end condition.
-- End to end (a few). The compiled binary in a collapsed temporary directory: start on first use, subscribe to the `template` plugin, receive a wake through the command wake adapter, read, ack, and `wait` on a pull-only subscription. One run of `exangelos mcp` listing its tools and confirming the plugin management tools are absent.
+- Use cases (the widest layer). `application` use cases run against in-memory fakes of every port: a fake ConnectorRuntime that streams scripted events, a recording WakeTarget and AlertSink, in-memory repositories. These cover subscribe through wake, ack, the rule 11 wakes, retry and replacement, suspension and the 1 hour wake, official fetch on first use with matching and mismatching checksums, trust changes on file change, and the MCP-versus-CLI split of the daemon service contract.
+- Adapter contracts (integration). The SQLite repositories against a real SQLite file in a temporary collapsed directory, including migrations from empty. The stdio transport and the connector runtime against the real `template` connector as a child process, including a crash and resume from cursor. The archive import adapter, including a path-escaping archive. Each gap package has its own small test suite at this level.
+- Connectors. Each official connector is tested through the SDK's in-memory harness with a stubbed HTTP client or a temporary directory: Describe naming the subject, Watch mapping source changes to events with dedupe keys, and the end condition.
+- End to end (a few). The compiled binary in a collapsed temporary directory: start on first use, subscribe to the `template` connector, receive a wake through the command wake adapter, read, ack, and `wait` on a pull-only subscription. One run of `exangelos mcp` listing its tools and confirming the connector management tools are absent.
 
 Deliberately left untested: the panel's visual layout and the Rust relay beyond a smoke check that the panel loads data; real Keychain and Secret Service access; real launchd, systemd and Homebrew service installation; real delivery into T3 Code, Claude Code and Codex (each is checked by hand once at implementation); Linux desktop variants; the release workflow on all four targets beyond the local run; exact wording of error messages; performance.
 
@@ -501,11 +501,11 @@ Prior art: the repository has no code yet. The tests use `@effect/vitest`, Effec
 
 ## Out of scope
 
-- The Slack and Teams plugins. They wait until version 1 runs on the main workload, then get their own design session.
-- A generic `command` source plugin.
+- The Slack and Teams connectors. They wait until version 1 runs on the main workload, then get their own design session.
+- A generic `command` source connector.
 - Publishing of any kind: no tap repository, no code signing or notarization, no release, no npm publication of the gap packages, no registry or domain reservation, until the owner says so.
 - More than one person or one machine: no remote access, no network listener, no authentication beyond file permissions.
-- Named connections or more than one configuration per plugin.
+- Named connections or more than one configuration per connector.
 - Filtering over event payloads in the core.
 - Windows.
 - The panel layout, decided separately.
@@ -515,9 +515,9 @@ Prior art: the repository has no code yet. The tests use `@effect/vitest`, Effec
 
 ### What depends on the open panel layout
 
-Depends on the layout: how the panel groups and orders subscriptions and plugins, how you move between the main view, one subscription, the plugin list and settings, and where the "needs you" items and the quiet unreachable-target fact sit. The panel's view code in Foldkit is the only part of the build that waits on it.
+Depends on the layout: how the panel groups and orders subscriptions and connectors, how you move between the main view, one subscription, the connector list and settings, and where the "needs you" items and the quiet unreachable-target fact sit. The panel's view code in Foldkit is the only part of the build that waits on it.
 
-Does not depend on the layout: everything else in this spec. That includes the facts the panel shows and the actions it offers, the daemon service contract the panel calls, the Tauri host and Rust relay, the Tauri IPC transport, the menu bar icon's two states, the Linux open-panel menu item, and every daemon, CLI, MCP, plugin, storage and packaging decision. The owner can confirm these first.
+Does not depend on the layout: everything else in this spec. That includes the facts the panel shows and the actions it offers, the daemon service contract the panel calls, the Tauri host and Rust relay, the Tauri IPC transport, the menu bar icon's two states, the Linux open-panel menu item, and every daemon, CLI, MCP, connector, storage and packaging decision. The owner can confirm these first.
 
 ### Unruled defaults
 
@@ -525,12 +525,12 @@ These are standing defaults that the owner has not ruled on. Each stands unless 
 
 1. A paused subscription that reaches its expiry becomes expired without a second wake.
 2. The daemon deletes a closed subscription and its events after 30 days. It cancels an expired subscription that nobody resumed for 30 days.
-3. The core has no filter over event payloads. Filtering beyond event types is a plugin parameter, as the ignore lists of pr-watch are.
-4. The CLI reads a secret source once, when the plugin is configured. If the source later rejects the credentials, you get an alert and the configure command runs again.
+3. The core has no filter over event payloads. Filtering beyond event types is a connector parameter, as the ignore lists of pr-watch are.
+4. The CLI reads a secret source once, when the connector is configured. If the source later rejects the credentials, you get an alert and the configure command runs again.
 5. Changing a configuration field that says where secrets are sent, such as a host or a site URL, clears the stored secrets.
-6. The daemon records who configured a plugin, and the tray shows it.
+6. The daemon records who configured a connector, and the tray shows it.
 7. Settings live in one file in the config directory. The CLI and the tray edit it.
-8. A setting can point official plugin downloads at a local folder.
+8. A setting can point official connector downloads at a local folder.
 9. The macOS panel uses tauri-nspanel.
 10. The Linux panel is always a normal window. The owner asked for a positioned popup where possible, and the Linux tray reports no click position, so there is nothing to position the panel against.
 11. Linux tray bundles are built in the release workflow only.
@@ -543,10 +543,10 @@ These are standing defaults that the owner has not ruled on. Each stands unless 
 18. The unix socket and the logs live in the state directory.
 19. The single-directory environment variable is `EXANGELOS_HOME`, and the service label is `exangelos.daemon`.
 20. A CLI call with no detected session, and every tray call, records you as the actor.
-21. An official plugin whose files change becomes inert and raises the checksum-mismatch alert.
+21. An official connector whose files change becomes inert and raises the checksum-mismatch alert.
 22. There is no total age cap across resumes. Every resume is an explicit call that sets a fresh 7 days, as the confirmed domain model says.
-23. A plugin that declares no configuration fields counts as configured.
-24. The plugin wire uses NDJSON framing, migrations run when the daemon starts, and the database and the plugin directory live in the data directory.
+23. A connector that declares no configuration fields counts as configured.
+24. The connector wire uses NDJSON framing, migrations run when the daemon starts, and the database and the connector directory live in the data directory.
 
 ### Open points
 

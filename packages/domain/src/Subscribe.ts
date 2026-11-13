@@ -1,15 +1,15 @@
 import { Array as Arr, DateTime, Option, Result } from "effect"
 import type { Parameters } from "./Catalogue.ts"
-import type { EventType, PluginName, SubscriptionId } from "./Ids.ts"
+import type { EventType, ConnectorName, SubscriptionId } from "./Ids.ts"
 import * as Lifecycle from "./Lifecycle.ts"
 import type { Limits } from "./Limits.ts"
-import type { Plugin } from "./Plugin.ts"
-import * as PluginRules from "./PluginRules.ts"
+import type { Connector } from "./Connector.ts"
+import * as ConnectorRules from "./ConnectorRules.ts"
 import {
   IntentRequired,
   NoWakeTarget,
   ParametersInvalid,
-  PluginUnavailable,
+  ConnectorUnavailable,
   SimilarSubscriptions,
   SubjectChanged
 } from "./Refusal.ts"
@@ -23,10 +23,10 @@ export const checkIntent = (intent: string): Result.Result<string, IntentRequire
   return Result.succeed(line)
 }
 
-export const check = (plugin: Plugin, intent: string): Result.Result<string, IntentRequired | PluginUnavailable> =>
-  Option.match(PluginRules.problem(plugin), {
+export const check = (connector: Connector, intent: string): Result.Result<string, IntentRequired | ConnectorUnavailable> =>
+  Option.match(ConnectorRules.problem(connector), {
     onNone: () => checkIntent(intent),
-    onSome: (problem) => Result.fail(new PluginUnavailable({ plugin: plugin.name, problem }))
+    onSome: (problem) => Result.fail(new ConnectorUnavailable({ connector: connector.name, problem }))
   })
 
 export type TargetFlag =
@@ -45,7 +45,7 @@ export const wakeTarget = (
 }
 
 export interface Candidate {
-  readonly plugin: PluginName
+  readonly connector: ConnectorName
   readonly subject: string
   readonly wakeTarget: Option.Option<Session>
 }
@@ -60,7 +60,7 @@ export const similar = (
 ): Result.Result<void, SimilarSubscriptions> => {
   const matches = subscriptions.filter((subscription) =>
     Lifecycle.isOpen(subscription) &&
-    subscription.plugin === candidate.plugin &&
+    subscription.connector === candidate.connector &&
     subscription.subject === candidate.subject &&
     sameTarget(candidate.wakeTarget, subscription.wakeTarget)
   )

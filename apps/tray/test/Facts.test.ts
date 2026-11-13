@@ -3,7 +3,7 @@ import { DaemonContract } from "@exangelos/contracts"
 import type { Subscription } from "@exangelos/domain"
 import { DateTime } from "effect"
 import * as Facts from "../src/view/Facts.ts"
-import { plugin, subscription } from "./fixtures.ts"
+import { connector, subscription } from "./fixtures.ts"
 
 const change = (kind: string, detail?: string): Subscription.Change => ({
   subscription: subscription().id,
@@ -57,12 +57,12 @@ describe("secretStored", () => {
   const optional = { ...token, required: false }
 
   it("says set only for a required secret of a complete configuration", () => {
-    expect(Facts.secretStored(plugin({ configuration: { _tag: "Set" } }), token)).toBe(true)
-    expect(Facts.secretStored(plugin({ configuration: { _tag: "Rejected", reason: "401" } }), token)).toBe(true)
+    expect(Facts.secretStored(connector({ configuration: { _tag: "Set" } }), token)).toBe(true)
+    expect(Facts.secretStored(connector({ configuration: { _tag: "Rejected", reason: "401" } }), token)).toBe(true)
   })
 
   it("stays unknown for an optional secret or an incomplete configuration, even one never saved", () => {
-    expect(Facts.secretStored(plugin({ configuration: { _tag: "Set" } }), optional)).toBeUndefined()
-    expect(Facts.secretStored(plugin({ configuration: { _tag: "Missing" } }), token)).toBeUndefined()
+    expect(Facts.secretStored(connector({ configuration: { _tag: "Set" } }), optional)).toBeUndefined()
+    expect(Facts.secretStored(connector({ configuration: { _tag: "Missing" } }), token)).toBeUndefined()
   })
 })

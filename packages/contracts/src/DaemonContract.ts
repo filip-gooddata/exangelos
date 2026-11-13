@@ -1,13 +1,13 @@
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
-import { Alert, Catalogue, Event, Ids, Plugin, Session, Settings, Subscription, Wake } from "@exangelos/domain"
+import { Alert, Catalogue, Event, Ids, Connector, Session, Settings, Subscription, Wake } from "@exangelos/domain"
 
-export class PluginNotFound extends Schema.TaggedError<PluginNotFound>()("PluginNotFound", {
-  plugin: Schema.String
+export class ConnectorNotFound extends Schema.TaggedError<ConnectorNotFound>()("ConnectorNotFound", {
+  connector: Schema.String
 }) {}
 
-export class PluginUnavailable extends Schema.TaggedError<PluginUnavailable>()("PluginUnavailable", {
-  plugin: Ids.PluginName,
+export class ConnectorUnavailable extends Schema.TaggedError<ConnectorUnavailable>()("ConnectorUnavailable", {
+  connector: Ids.ConnectorName,
   problem: Schema.String
 }) {}
 
@@ -51,13 +51,13 @@ export class BacklogOverLimit extends Schema.TaggedError<BacklogOverLimit>()("Ba
 }) {}
 
 export class OfficialFetchFailed extends Schema.TaggedError<OfficialFetchFailed>()("OfficialFetchFailed", {
-  plugin: Ids.PluginName,
+  connector: Ids.ConnectorName,
   reason: Schema.String
 }) {}
 
 /** The call is the owner's alone, and a session made it. */
 export class HumanRequired extends Schema.TaggedError<HumanRequired>()("HumanRequired", {
-  plugin: Schema.optionalKey(Ids.PluginName),
+  connector: Schema.optionalKey(Ids.ConnectorName),
   subscription: Schema.optionalKey(Ids.SubscriptionId)
 }) {}
 
@@ -66,7 +66,7 @@ export class ImportFailed extends Schema.TaggedError<ImportFailed>()("ImportFail
 }) {}
 
 export class DigestMismatch extends Schema.TaggedError<DigestMismatch>()("DigestMismatch", {
-  plugin: Ids.PluginName,
+  connector: Ids.ConnectorName,
   expected: Schema.String,
   actual: Schema.String
 }) {}
@@ -89,13 +89,13 @@ export type TargetChoice = typeof TargetChoice.Type
 const SubscriptionLookup = Schema.Union([SubscriptionNotFound, InvalidRequest])
 const id = { id: Ids.SubscriptionId }
 
-export class ListPlugins extends Rpc.make("ListPlugins", {
-  success: Schema.Array(Plugin.Plugin)
+export class ListConnectors extends Rpc.make("ListConnectors", {
+  success: Schema.Array(Connector.Connector)
 }) {}
 
 export class Subscribe extends Rpc.make("Subscribe", {
   payload: {
-    plugin: Ids.PluginName,
+    connector: Ids.ConnectorName,
     main: Schema.optionalKey(Schema.String),
     parameters: Catalogue.Parameters,
     intent: Schema.NonEmptyString,
@@ -107,8 +107,8 @@ export class Subscribe extends Rpc.make("Subscribe", {
   },
   success: Subscription.Subscription,
   error: Schema.Union([
-    PluginNotFound,
-    PluginUnavailable,
+    ConnectorNotFound,
+    ConnectorUnavailable,
     OfficialFetchFailed,
     InvalidRequest,
     NoWakeTarget,
@@ -130,7 +130,7 @@ export class Update extends Rpc.make("Update", {
   error: Schema.Union([
     SubscriptionNotFound,
     InvalidRequest,
-    PluginUnavailable,
+    ConnectorUnavailable,
     ParametersInvalid,
     SubjectChanged,
     TransitionRefused
@@ -199,7 +199,7 @@ export class Cancel extends Rpc.make("Cancel", {
 }) {}
 
 export class AgentGroup extends RpcGroup.make(
-  ListPlugins,
+  ListConnectors,
   Subscribe,
   Update,
   List,
@@ -221,54 +221,54 @@ export const ImportSource = Schema.TaggedUnion({
 })
 export type ImportSource = typeof ImportSource.Type
 
-const name = { name: Ids.PluginName }
+const name = { name: Ids.ConnectorName }
 
-export class ImportPlugin extends Rpc.make("ImportPlugin", {
+export class ImportConnector extends Rpc.make("ImportConnector", {
   payload: { source: ImportSource },
-  success: Plugin.Plugin,
+  success: Connector.Connector,
   error: ImportFailed
 }) {}
 
-export class EnablePlugin extends Rpc.make("EnablePlugin", {
+export class EnableConnector extends Rpc.make("EnableConnector", {
   payload: { ...name, digest: Schema.NonEmptyString },
-  success: Plugin.Plugin,
-  error: Schema.Union([PluginNotFound, DigestMismatch, HumanRequired])
+  success: Connector.Connector,
+  error: Schema.Union([ConnectorNotFound, DigestMismatch, HumanRequired])
 }) {}
 
-export class DisablePlugin extends Rpc.make("DisablePlugin", {
+export class DisableConnector extends Rpc.make("DisableConnector", {
   payload: name,
-  success: Plugin.Plugin,
-  error: PluginNotFound
+  success: Connector.Connector,
+  error: ConnectorNotFound
 }) {}
 
-export class RemovePlugin extends Rpc.make("RemovePlugin", {
+export class RemoveConnector extends Rpc.make("RemoveConnector", {
   payload: name,
-  error: PluginNotFound
+  error: ConnectorNotFound
 }) {}
 
-export class ConfigurePlugin extends Rpc.make("ConfigurePlugin", {
+export class ConfigureConnector extends Rpc.make("ConfigureConnector", {
   payload: { ...name, values: Catalogue.ConfigurationValues },
-  success: Plugin.Plugin,
-  error: Schema.Union([PluginNotFound, PluginUnavailable, ConfigurationInvalid, ConfigurationRejected])
+  success: Connector.Connector,
+  error: Schema.Union([ConnectorNotFound, ConnectorUnavailable, ConfigurationInvalid, ConfigurationRejected])
 }) {}
 
 export class DevLink extends Rpc.make("DevLink", {
   payload: { path: Schema.NonEmptyString },
-  success: Plugin.Plugin,
+  success: Connector.Connector,
   error: ImportFailed
 }) {}
 
 export class DevUnlink extends Rpc.make("DevUnlink", {
   payload: name,
-  error: PluginNotFound
+  error: ConnectorNotFound
 }) {}
 
 /**
- * One alert for each plugin that waits for the owner because of its trust: `WaitsForEnable` for an
- * inert plugin the owner can enable, `DigestMismatch` for an official plugin whose files do not match
- * the checksum the binary carries. An official plugin the owner disabled has no alert.
+ * One alert for each connector that waits for the owner because of its trust: `WaitsForEnable` for an
+ * inert connector the owner can enable, `DigestMismatch` for an official connector whose files do not match
+ * the checksum the binary carries. An official connector the owner disabled has no alert.
  */
-export class ListPluginAlerts extends Rpc.make("ListPluginAlerts", {
+export class ListConnectorAlerts extends Rpc.make("ListConnectorAlerts", {
   success: Schema.Array(Alert.Alert)
 }) {}
 
@@ -296,14 +296,14 @@ export class SetEventAlerts extends Rpc.make("SetEventAlerts", {
 }) {}
 
 export class ManagementGroup extends RpcGroup.make(
-  ImportPlugin,
-  EnablePlugin,
-  DisablePlugin,
-  RemovePlugin,
-  ConfigurePlugin,
+  ImportConnector,
+  EnableConnector,
+  DisableConnector,
+  RemoveConnector,
+  ConfigureConnector,
   DevLink,
   DevUnlink,
-  ListPluginAlerts,
+  ListConnectorAlerts,
   GetSettings,
   SetSettings,
   ServiceStatus,

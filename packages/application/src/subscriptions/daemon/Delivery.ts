@@ -1,8 +1,8 @@
 import { Array as Arr, DateTime, Duration, Effect, Option } from "effect"
-import { Delivery, Lifecycle, PluginRules } from "@exangelos/domain"
-import type { Event, Ids, Limits, Plugin, Session, Subscription, Wake } from "@exangelos/domain"
+import { Delivery, Lifecycle, ConnectorRules } from "@exangelos/domain"
+import type { Event, Ids, Limits, Connector, Session, Subscription, Wake } from "@exangelos/domain"
 import { EventRepository } from "../../ports/EventRepository.ts"
-import { PluginRepository } from "../../ports/PluginRepository.ts"
+import { ConnectorRepository } from "../../ports/ConnectorRepository.ts"
 import type { SettingsStore } from "../../ports/SettingsStore.ts"
 import { SubscriptionRepository } from "../../ports/SubscriptionRepository.ts"
 import { WakeRepository } from "../../ports/WakeRepository.ts"
@@ -10,17 +10,17 @@ import { DeliveryFailed, WakeTarget } from "../../ports/WakeTarget.ts"
 import { currentLimits } from "../Limits.ts"
 import type { SubscriptionLocks } from "../Locks.ts"
 import { withSubscription } from "./Intake.ts"
-import { RemovedPlugins } from "../RemovedPlugins.ts"
+import { RemovedConnectors } from "../RemovedConnectors.ts"
 
 export type DeliveryServices =
   | WakeRepository
   | SubscriptionRepository
   | EventRepository
-  | PluginRepository
+  | ConnectorRepository
   | WakeTarget
   | SettingsStore
   | SubscriptionLocks
-  | RemovedPlugins
+  | RemovedConnectors
 
 /** How long one attempt may take before it counts as failed, so a hung session cannot stall delivery. */
 export const deliveryTimeout = Duration.seconds(30)
@@ -38,22 +38,22 @@ const wait: Decision = { _tag: "Wait" }
 
 const suspensionOf = (
   subscription: Subscription.Subscription,
-  plugin: Option.Option<Plugin.Plugin>,
+  connector: Option.Option<Connector.Connector>,
   now: DateTime.Utc,
   limits: Limits.Limits
 ) =>
   Effect.gen(function*() {
-    if (Option.isSome(plugin)) {
-      return Option.some(Lifecycle.suspensionWake(subscription, plugin.value, Option.none(), now, limits))
+    if (Option.isSome(connector)) {
+      return Option.some(Lifecycle.suspensionWake(subscription, connector.value, Option.none(), now, limits))
     }
-    const removed = yield* RemovedPlugins
-    const unavailable = yield* removed.find(subscription.plugin)
+    const removed = yield* RemovedConnectors
+    const unavailable = yield* removed.find(subscription.connector)
     if (Option.isNone(unavailable)) return Option.none()
     return Option.some(Lifecycle.suspensionWakeWhen(subscription, unavailable, Option.none(), now, limits))
   })
 
 /**
- * What to do with the wake now. A suspended wake of a removed plugin waits while the plugin half
+ * What to do with the wake now. A suspended wake of a removed connector waits while the connector half
  * has not yet said why it is gone after a restart.
  */
 const decide = (
@@ -64,9 +64,9 @@ const decide = (
   limits: Limits.Limits
 ) =>
   Effect.gen(function*() {
-    const plugins = yield* PluginRepository
-    const plugin = yield* plugins.find(subscription.plugin)
-    const available = Option.exists(plugin, PluginRules.isAvailable)
+    const connectors = yield* ConnectorRepository
+    const connector = yield* connectors.find(subscription.connector)
+    const available = Option.exists(connector, ConnectorRules.isAvailable)
     const send = (content: Option.Option<Wake.WakeContent>): Decision =>
       Option.match(content, { onNone: () => drop, onSome: (c) => ({ _tag: "Send", content: c }) })
     if (!Delivery.hasSomethingToSayWhen(wake, subscription, available)) return drop
@@ -74,7 +74,7 @@ const decide = (
       case "events":
         return send(Option.some(Delivery.content(subscription, { _tag: "Events" }, pending)))
       case "suspended": {
-        const why = yield* suspensionOf(subscription, plugin, now, limits)
+        const why = yield* suspensionOf(subscription, connector, now, limits)
         if (Option.isNone(why)) return wait
         return send(Option.map(why.value, (w) => Delivery.content(subscription, w, pending)))
       }

@@ -1,14 +1,14 @@
 import {
-  configurePlugin,
+  configureConnector,
   devLink,
   devUnlink,
-  disablePlugin,
-  enablePlugin,
+  disableConnector,
+  enableConnector,
   getSettings,
-  importPlugin,
-  listPluginAlerts,
-  listPlugins,
-  removePlugin,
+  importConnector,
+  listConnectorAlerts,
+  listConnectors,
+  removeConnector,
   serviceStatus,
   setSettings,
   Subscriptions
@@ -29,14 +29,14 @@ const detected = ({ headers }: Caller) => Option.toArray(SessionHeaders.fromHead
 const lookup = { SubscriptionNotFound: Errors.subscriptionNotFound } as const
 
 export const layer = DaemonContract.DaemonContract.toLayer({
-  ListPlugins: () => listPlugins,
+  ListConnectors: () => listConnectors,
   Subscribe: (payload, caller) =>
     Subscriptions.subscribe(actor(caller), payload, detected(caller)).pipe(
       Effect.catchTags({
         IntentRequired: Errors.intentRequired,
         NoWakeTarget: Errors.noWakeTarget,
-        PluginNotFound: Errors.pluginNotFound,
-        PluginUnavailable: Errors.pluginUnavailable,
+        ConnectorNotFound: Errors.connectorNotFound,
+        ConnectorUnavailable: Errors.connectorUnavailable,
         OfficialFetchFailed: Errors.officialFetchFailed,
         ParametersInvalid: Errors.parametersInvalid,
         SimilarSubscriptions: Errors.similarSubscriptions
@@ -47,10 +47,10 @@ export const layer = DaemonContract.DaemonContract.toLayer({
       Effect.catchTags({
         ...lookup,
         IntentRequired: Errors.intentRequired,
-        PluginUnavailable: Errors.pluginUnavailable,
+        ConnectorUnavailable: Errors.connectorUnavailable,
         ParametersInvalid: Errors.parametersInvalid,
         SubjectChanged: Errors.subjectChanged,
-        PluginNotFound: Errors.pluginGoneOnUpdate,
+        ConnectorNotFound: Errors.connectorGoneOnUpdate,
         OfficialFetchFailed: Errors.officialFetchFailedOnUpdate
       })
     ),
@@ -82,31 +82,31 @@ export const layer = DaemonContract.DaemonContract.toLayer({
     Subscriptions.cancel(actor(caller), payload).pipe(
       Effect.catchTags({ ...lookup, NotAllowed: Errors.transitionRefused(payload.id) })
     ),
-  ImportPlugin: ({ source }, caller) =>
-    importPlugin(actor(caller), source).pipe(
+  ImportConnector: ({ source }, caller) =>
+    importConnector(actor(caller), source).pipe(
       Effect.catchTags({ NoSuchElementError: Errors.removedDuringImport, ImportFailed: Errors.importFailed })
     ),
-  EnablePlugin: ({ name, digest }, caller) =>
-    enablePlugin(actor(caller), name, digest).pipe(
+  EnableConnector: ({ name, digest }, caller) =>
+    enableConnector(actor(caller), name, digest).pipe(
       Effect.catchTags({
         NoSuchElementError: Errors.removedDuringCall(name),
-        PluginNotFound: Errors.pluginNotFound,
+        ConnectorNotFound: Errors.connectorNotFound,
         DigestMismatch: Errors.digestMismatch,
         HumanRequired: Errors.humanRequired
       })
     ),
-  DisablePlugin: ({ name }, caller) =>
-    disablePlugin(actor(caller), name).pipe(
-      Effect.catchTags({ NoSuchElementError: Errors.removedDuringCall(name), PluginNotFound: Errors.pluginNotFound })
+  DisableConnector: ({ name }, caller) =>
+    disableConnector(actor(caller), name).pipe(
+      Effect.catchTags({ NoSuchElementError: Errors.removedDuringCall(name), ConnectorNotFound: Errors.connectorNotFound })
     ),
-  RemovePlugin: ({ name }, caller) =>
-    removePlugin(actor(caller), name).pipe(Effect.catchTags({ PluginNotFound: Errors.pluginNotFound })),
-  ConfigurePlugin: ({ name, values }, caller) =>
-    configurePlugin(actor(caller), name, values).pipe(
+  RemoveConnector: ({ name }, caller) =>
+    removeConnector(actor(caller), name).pipe(Effect.catchTags({ ConnectorNotFound: Errors.connectorNotFound })),
+  ConfigureConnector: ({ name, values }, caller) =>
+    configureConnector(actor(caller), name, values).pipe(
       Effect.catchTags({
         NoSuchElementError: Errors.removedDuringCall(name),
-        PluginNotFound: Errors.pluginNotFound,
-        PluginUnavailable: Errors.pluginUnavailable,
+        ConnectorNotFound: Errors.connectorNotFound,
+        ConnectorUnavailable: Errors.connectorUnavailable,
         ConfigurationInvalid: Errors.configurationInvalid,
         ConfigurationRejected: Errors.configurationRejected
       })
@@ -116,8 +116,8 @@ export const layer = DaemonContract.DaemonContract.toLayer({
       Effect.catchTags({ NoSuchElementError: Errors.removedDuringImport, ImportFailed: Errors.importFailed })
     ),
   DevUnlink: ({ name }, caller) =>
-    devUnlink(actor(caller), name).pipe(Effect.catchTags({ PluginNotFound: Errors.pluginNotFound })),
-  ListPluginAlerts: () => listPluginAlerts,
+    devUnlink(actor(caller), name).pipe(Effect.catchTags({ ConnectorNotFound: Errors.connectorNotFound })),
+  ListConnectorAlerts: () => listConnectorAlerts,
   GetSettings: () => getSettings.pipe(Effect.catchTag("SettingsUnreadable", (e) => Effect.die(e))),
   SetSettings: ({ settings }) => setSettings(settings).pipe(Effect.catchTag("SettingsWriteFailed", (e) => Effect.die(e))),
   ServiceStatus: () =>

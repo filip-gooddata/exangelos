@@ -5,22 +5,22 @@ import type { Notification } from "@exangelos/notifications"
 
 export const render: (alert: AlertSink.Alert) => Notification = Match.type<AlertSink.Alert>().pipe(
   Match.tagsExhaustive({
-    WaitsForEnable: ({ plugin }) => ({
-      title: `${plugin} waits to be enabled`,
-      body: `Read its origin and checksum, then run: exangelos plugin enable ${plugin}`
+    WaitsForEnable: ({ connector }) => ({
+      title: `${connector} waits to be enabled`,
+      body: `Read its origin and checksum, then run: exangelos connector enable ${connector}`
     }),
-    Failing: ({ plugin, reason }) => ({ title: `${plugin} keeps failing`, body: reason }),
-    CredentialsRejected: ({ plugin, reason }) => ({
-      title: `${plugin} credentials rejected`,
-      body: `${reason}\nUpdate them with: exangelos plugin configure ${plugin}`
+    Failing: ({ connector, reason }) => ({ title: `${connector} keeps failing`, body: reason }),
+    CredentialsRejected: ({ connector, reason }) => ({
+      title: `${connector} credentials rejected`,
+      body: `${reason}\nUpdate them with: exangelos connector configure ${connector}`
     }),
-    DigestMismatch: ({ plugin }) => ({
-      title: `${plugin} checksum does not match`,
-      body: "The official plugin's files differ from the checksum this binary carries, so it will not run."
+    DigestMismatch: ({ connector }) => ({
+      title: `${connector} checksum does not match`,
+      body: "The official connector's files differ from the checksum this binary carries, so it will not run."
     }),
-    Event: ({ event, plugin, subject }) => ({
+    Event: ({ event, connector, subject }) => ({
       title: `${event.type} on ${subject}`,
-      body: `${event.summary}\n${plugin}, event #${event.number}`
+      body: `${event.summary}\n${connector}, event #${event.number}`
     })
   })
 )

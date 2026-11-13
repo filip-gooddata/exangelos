@@ -1,12 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
 import { DateTime, Effect } from "effect"
 import { Ids } from "@exangelos/domain"
-import { AlertSinkFake, PluginAccessFake, WakeTargetFake } from "@exangelos/application/testing"
+import { AlertSinkFake, ConnectorAccessFake, WakeTargetFake } from "@exangelos/application/testing"
 import { TestClock } from "effect/testing"
-import { PluginRepository } from "../../../src/ports/PluginRepository.ts"
+import { ConnectorRepository } from "../../../src/ports/ConnectorRepository.ts"
 import { SubscriptionIntake } from "../../../src/seam/SubscriptionIntake.ts"
 import { deliverDue } from "../../../src/subscriptions/daemon/Delivery.ts"
-import { plugin } from "../../fixtures.ts"
+import { connector } from "../../fixtures.ts"
 import { eventsOf, github, layer, reload, reported, seed, wakesOf } from "./support.ts"
 
 const pendingNumbers = Effect.gen(function*() {
@@ -56,7 +56,7 @@ describe("SubscriptionIntake", () => {
   it.effect("pauses at the backlog count with one paused wake and stops the stream", () =>
     Effect.gen(function*() {
       const intake = yield* SubscriptionIntake
-      const access = yield* PluginAccessFake
+      const access = yield* ConnectorAccessFake
       const subscription = yield* seed()
 
       const verdicts: Array<string> = []
@@ -88,7 +88,7 @@ describe("SubscriptionIntake", () => {
       expect((yield* reload(capped)).state).toEqual({ _tag: "Ended", reason: { _tag: "MaxEvents" } })
       expect((yield* reload(ending)).state).toEqual({
         _tag: "Ended",
-        reason: { _tag: "Plugin", reason: "the repository was deleted" }
+        reason: { _tag: "Connector", reason: "the repository was deleted" }
       })
       for (const subscription of [capped, ending]) {
         const undelivered = (yield* wakesOf(subscription)).filter((wake) => wake.state === "waiting")
@@ -96,46 +96,46 @@ describe("SubscriptionIntake", () => {
       }
     }).pipe(Effect.provide(layer)))
 
-  it.effect("sends one suspended wake once the plugin has been unavailable an hour, and drops it on return", () =>
+  it.effect("sends one suspended wake once the connector has been unavailable an hour, and drops it on return", () =>
     Effect.gen(function*() {
       const intake = yield* SubscriptionIntake
       const since = yield* DateTime.now
-      const failing = { ...plugin("github"), process: "failing" as const, unavailableSince: since }
+      const failing = { ...connector("github"), process: "failing" as const, unavailableSince: since }
       const first = yield* seed({}, failing)
       const second = yield* seed({}, failing)
 
-      yield* intake.pluginChanged(failing)
+      yield* intake.connectorChanged(failing)
       expect(yield* wakesOf(first)).toEqual([])
 
       yield* TestClock.adjust("1 hour")
-      yield* intake.pluginChanged(failing)
-      yield* intake.pluginChanged(failing)
+      yield* intake.connectorChanged(failing)
+      yield* intake.connectorChanged(failing)
       for (const subscription of [first, second]) {
         expect((yield* wakesOf(subscription)).map((wake) => [wake.reason, wake.state])).toEqual([["suspended", "waiting"]])
       }
 
-      yield* intake.pluginChanged(plugin("github"))
+      yield* intake.connectorChanged(connector("github"))
       expect((yield* wakesOf(first)).map((wake) => wake.state)).toEqual(["dropped"])
     }).pipe(Effect.provide(layer)))
 
-  it.effect("still sends event wakes for a removed plugin and one suspended wake after an hour", () =>
+  it.effect("still sends event wakes for a removed connector and one suspended wake after an hour", () =>
     Effect.gen(function*() {
       const intake = yield* SubscriptionIntake
-      const plugins = yield* PluginRepository
+      const connectors = yield* ConnectorRepository
       const target = yield* WakeTargetFake
       const subscription = yield* seed()
       yield* intake.ingest(subscription.id, { _tag: "Event", event: reported("a") })
       const since = yield* DateTime.now
-      yield* plugins.remove(github, { plugin: github, kind: "remove", actor: { _tag: "You" }, at: since })
-      yield* intake.pluginRemoved(github, since, "it was removed")
+      yield* connectors.remove(github, { connector: github, kind: "remove", actor: { _tag: "You" }, at: since })
+      yield* intake.connectorRemoved(github, since, "it was removed")
 
       yield* TestClock.adjust("5 seconds")
       yield* deliverDue
       yield* TestClock.adjust("1 hour")
-      yield* intake.pluginRemoved(github, since, "it was removed")
-      yield* intake.pluginRemoved(github, since, "it was removed")
+      yield* intake.connectorRemoved(github, since, "it was removed")
+      yield* intake.connectorRemoved(github, since, "it was removed")
       yield* deliverDue
-      yield* intake.pluginRemoved(github, since, "it was removed")
+      yield* intake.connectorRemoved(github, since, "it was removed")
 
       expect((yield* wakesOf(subscription)).map((wake) => [wake.reason, wake.state])).toEqual([
         ["events", "delivered"],

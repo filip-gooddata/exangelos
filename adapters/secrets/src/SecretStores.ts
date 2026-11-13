@@ -6,21 +6,21 @@ import { Keychain } from "@exangelos/keychain"
 import { Paths } from "@exangelos/paths"
 import * as SecretsFile from "./SecretsFile.ts"
 
-const entry = (plugin: Ids.PluginName, field: string): Keychain.Entry => ({ service: `exangelos.${plugin}`, account: field })
+const entry = (connector: Ids.ConnectorName, field: string): Keychain.Entry => ({ service: `exangelos.${connector}`, account: field })
 
-const failed = (plugin: Ids.PluginName) => (error: { readonly reason: string }) =>
-  new SecretStore.SecretStoreFailed({ plugin, reason: error.reason })
+const failed = (connector: Ids.ConnectorName) => (error: { readonly reason: string }) =>
+  new SecretStore.SecretStoreFailed({ connector, reason: error.reason })
 
-/** Keeps each secret field as one entry of the macOS Keychain or Secret Service, under service `exangelos.<plugin>`. */
+/** Keeps each secret field as one entry of the macOS Keychain or Secret Service, under service `exangelos.<connector>`. */
 export const layerKeychain: Layer.Layer<SecretStore.SecretStore, never, Keychain.Keychain> = Layer.effect(SecretStore.SecretStore)(
   Effect.gen(function*() {
     const keychain = yield* Keychain.Keychain
     return {
-      set: (plugin, field, value) => keychain.set(entry(plugin, field), value).pipe(Effect.mapError(failed(plugin))),
-      get: (plugin, field) => keychain.get(entry(plugin, field)).pipe(Effect.mapError(failed(plugin))),
-      delete: (plugin, fields) =>
-        Effect.forEach(fields, (field) => keychain.delete(entry(plugin, field)), { discard: true }).pipe(
-          Effect.mapError(failed(plugin))
+      set: (connector, field, value) => keychain.set(entry(connector, field), value).pipe(Effect.mapError(failed(connector))),
+      get: (connector, field) => keychain.get(entry(connector, field)).pipe(Effect.mapError(failed(connector))),
+      delete: (connector, fields) =>
+        Effect.forEach(fields, (field) => keychain.delete(entry(connector, field)), { discard: true }).pipe(
+          Effect.mapError(failed(connector))
         )
     }
   })
@@ -34,17 +34,17 @@ export const layerFile: Layer.Layer<SecretStore.SecretStore, never, FileSystem.F
       const context = yield* Effect.context<FileSystem.FileSystem | Path.Path>()
       const writing = yield* Semaphore.make(1)
       return {
-        set: (plugin, field, value) =>
-          SecretsFile.set(path, plugin, field, value).pipe(
+        set: (connector, field, value) =>
+          SecretsFile.set(path, connector, field, value).pipe(
             writing.withPermit,
-            Effect.mapError(failed(plugin)),
+            Effect.mapError(failed(connector)),
             Effect.provide(context)
           ),
-        get: (plugin, field) => SecretsFile.get(path, plugin, field).pipe(Effect.mapError(failed(plugin)), Effect.provide(context)),
-        delete: (plugin, fields) =>
-          SecretsFile.remove(path, plugin, fields).pipe(
+        get: (connector, field) => SecretsFile.get(path, connector, field).pipe(Effect.mapError(failed(connector)), Effect.provide(context)),
+        delete: (connector, fields) =>
+          SecretsFile.remove(path, connector, fields).pipe(
             writing.withPermit,
-            Effect.mapError(failed(plugin)),
+            Effect.mapError(failed(connector)),
             Effect.provide(context)
           )
       }

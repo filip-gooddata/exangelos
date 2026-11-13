@@ -15,8 +15,8 @@ const RequestSchema = opaque<Request>("Request")
 export const Screen = Schema.TaggedUnion({
   Main: {},
   Subscription: { id: Schema.String },
-  Plugins: {},
-  Plugin: { name: Schema.String },
+  Connectors: {},
+  Connector: { name: Schema.String },
   Settings: {}
 })
 export type Screen = typeof Screen.Type
@@ -149,9 +149,9 @@ const settled = (request: Request): Partial<Model> => {
       return { ackThrough: null }
     case "Retarget":
       return { retargeting: false }
-    case "ImportPlugin":
+    case "ImportConnector":
       return { importing: null, importLocation: "", importRef: "" }
-    case "ConfigurePlugin":
+    case "ConfigureConnector":
       return { configuration: {} }
     case "SetSettings":
       return { settings: {} }
@@ -161,13 +161,13 @@ const settled = (request: Request): Partial<Model> => {
 }
 
 const needsConfirming = (request: Request): boolean =>
-  request._tag === "Cancel" || request._tag === "RemovePlugin" || request._tag === "DisablePlugin"
+  request._tag === "Cancel" || request._tag === "RemoveConnector" || request._tag === "DisableConnector"
 
 const doneText = (request: Request): string | null => {
   switch (request._tag) {
-    case "ImportPlugin":
+    case "ImportConnector":
       return "Imported. It stays inert until you enable it."
-    case "ConfigurePlugin":
+    case "ConfigureConnector":
     case "SetSettings":
       return "Saved."
     default:
@@ -233,7 +233,7 @@ export const makeUpdate = (perform: (request: Request) => Effect.Effect<void, Re
             ...settled(request),
             busy: false,
             notice: text === null ? null : { tone: "done", text },
-            screen: request._tag === "RemovePlugin" ? { _tag: "Plugins" } : model.screen
+            screen: request._tag === "RemoveConnector" ? { _tag: "Connectors" } : model.screen
           }
         }
       },

@@ -28,11 +28,11 @@ describe("migrations", () => {
       Effect.gen(function*() {
         const first = yield* schema.pipe(Effect.provide(Database.layer({ filename })))
         expect(first.filter((row) => row.type === "table").map((row) => row.name)).toEqual([
+          "connector_changes",
+          "connector_values",
+          "connectors",
           "effect_sql_migrations",
           "events",
-          "plugin_changes",
-          "plugin_values",
-          "plugins",
           "subscription_changes",
           "subscriptions",
           "wakes"

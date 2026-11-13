@@ -46,7 +46,7 @@ export type Why = typeof Why.Type
 
 export const WakeContent = Schema.Struct({
   subscription: SubscriptionId,
-  plugin: Schema.String,
+  connector: Schema.String,
   subject: Schema.String,
   why: Why,
   pending: Schema.Array(PendingLine)

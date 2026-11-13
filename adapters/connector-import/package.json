@@ -1,0 +1,28 @@
+{
+  "name": "@exangelos/connector-import",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@exangelos/application": "workspace:*",
+    "@exangelos/domain": "workspace:*",
+    "@exangelos/paths": "workspace:*",
+    "effect": "catalog:",
+    "tar": "catalog:",
+    "yauzl": "catalog:"
+  },
+  "devDependencies": {
+    "@effect/platform-bun": "catalog:",
+    "@effect/vitest": "catalog:",
+    "@types/bun": "catalog:",
+    "vitest": "catalog:",
+    "@exangelos/connector-directory": "workspace:*",
+    "@types/yauzl": "catalog:"
+  }
+}

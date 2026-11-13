@@ -2,7 +2,7 @@ import { DateTime, Effect, Equal, Option } from "effect"
 import { Subscribe } from "@exangelos/domain"
 import type { Catalogue, Ids, Session, Subscription } from "@exangelos/domain"
 import { SubscriptionRepository } from "../../ports/SubscriptionRepository.ts"
-import { PluginAccess } from "../../seam/PluginAccess.ts"
+import { ConnectorAccess } from "../../seam/ConnectorAccess.ts"
 import { currentLimits } from "../Limits.ts"
 import { load, locked, record } from "./shared.ts"
 
@@ -20,23 +20,23 @@ const selectionChanged = (before: Subscription.Subscription, after: Subscription
   !(Equal.equals(before.parameters, after.parameters) && Equal.equals(before.eventTypes, after.eventTypes))
 
 /**
- * Changes what a subscription selects or how long it runs; the plugin must still name the same
+ * Changes what a subscription selects or how long it runs; the connector must still name the same
  * subject. An active subscription whose selection changed gets its Watch stream reopened once the
  * lock is released.
  */
 export const update = (actor: Session.Actor, request: UpdateRequest) =>
   Effect.gen(function*() {
     const { before, after } = yield* change(actor, request)
-    if (selectionChanged(before, after)) yield* (yield* PluginAccess).rewatch(after.id)
+    if (selectionChanged(before, after)) yield* (yield* ConnectorAccess).rewatch(after.id)
     return after
   })
 
 const change = (actor: Session.Actor, request: UpdateRequest) =>
   locked(request.id, Effect.gen(function*() {
     const subscription = yield* load(request.id)
-    const described = yield* (yield* PluginAccess).describe(
+    const described = yield* (yield* ConnectorAccess).describe(
       actor,
-      subscription.plugin,
+      subscription.connector,
       { parameters: request.parameters ?? subscription.parameters, main: Option.none() }
     )
     const changes = yield* (yield* SubscriptionRepository).changes(subscription.id)

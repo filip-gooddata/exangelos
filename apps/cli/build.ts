@@ -10,7 +10,7 @@ const { values } = parseArgs({
     target: { type: "string" },
     outfile: { type: "string" },
     version: { type: "string" },
-    "official-plugins": { type: "string" },
+    "official-connectors": { type: "string" },
     "release-url": { type: "string" }
   }
 })
@@ -18,7 +18,7 @@ const { values } = parseArgs({
 const outfile = values.outfile === undefined
   ? join(import.meta.dir, "dist", values.target === undefined ? "exangelos" : `exangelos-${values.target}`)
   : resolve(values.outfile)
-const templateDirectory = join(import.meta.dir, "../../plugins/template")
+const templateDirectory = join(import.meta.dir, "../../connectors/template")
 const skipped = new Set(["node_modules", ".turbo", "dist"])
 const template = Object.fromEntries(
   readdirSync(templateDirectory, { recursive: true, withFileTypes: true })
@@ -29,9 +29,9 @@ const template = Object.fromEntries(
 )
 const defines = [
   "--define",
-  `EXANGELOS_PLUGIN_TEMPLATE=${JSON.stringify(template)}`,
+  `EXANGELOS_CONNECTOR_TEMPLATE=${JSON.stringify(template)}`,
   ...(values.version === undefined ? [] : ["--define", `EXANGELOS_VERSION=${JSON.stringify(values.version)}`]),
-  ...(values["official-plugins"] === undefined ? [] : ["--define", `EXANGELOS_OFFICIAL_PLUGINS=${values["official-plugins"]}`]),
+  ...(values["official-connectors"] === undefined ? [] : ["--define", `EXANGELOS_OFFICIAL_CONNECTORS=${values["official-connectors"]}`]),
   ...(values["release-url"] === undefined ? [] : ["--define", `EXANGELOS_RELEASE_URL=${JSON.stringify(values["release-url"])}`])
 ]
 const target = values.target === undefined ? [] : [`--target=${values.target}`]

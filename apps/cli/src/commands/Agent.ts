@@ -1,7 +1,7 @@
 import { Effect, Option, Schema } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
-import { Plugin, Subscription } from "@exangelos/domain"
+import { Connector, Subscription } from "@exangelos/domain"
 import * as Text from "../render/Text.ts"
 import { Connection } from "./Connection.ts"
 import * as Input from "./Input.ts"
@@ -12,7 +12,7 @@ const subscriptionArgument = Argument.String("subscription").pipe(
 )
 
 const parameterArguments = Argument.String("key=value").pipe(
-  Argument.withDescription("Further plugin parameters, each as key=value"),
+  Argument.withDescription("Further connector parameters, each as key=value"),
   Argument.variadic()
 )
 
@@ -42,39 +42,39 @@ const pullOnlyFlag = Flag.Boolean("pull-only").pipe(
 
 const SubscriptionSchema = Subscription.Subscription
 
-const plugins = Command.make(
-  "plugins",
+const connectors = Command.make(
+  "connectors",
   {
     name: Argument.String("name").pipe(
-      Argument.withDescription("Show this plugin's full catalogue"),
+      Argument.withDescription("Show this connector's full catalogue"),
       Argument.optional
     )
   },
   ({ name }) =>
     Effect.gen(function*() {
       const client = yield* Connection
-      const listed = client.ListPlugins()
+      const listed = client.ListConnectors()
       yield* Option.match(name, {
-        onNone: () => respond(listed, { schema: Schema.Array(Plugin.Plugin), text: Text.plugins }),
+        onNone: () => respond(listed, { schema: Schema.Array(Connector.Connector), text: Text.connectors }),
         onSome: (wanted) =>
           respond(
             Effect.flatMap(listed, (all) => {
-              const found = all.find((plugin) => plugin.name === wanted)
+              const found = all.find((connector) => connector.name === wanted)
               return found === undefined
-                ? Effect.fail(new DaemonContract.PluginNotFound({ plugin: wanted }))
+                ? Effect.fail(new DaemonContract.ConnectorNotFound({ connector: wanted }))
                 : Effect.succeed(found)
             }),
-            { schema: Plugin.Plugin, text: Text.plugin }
+            { schema: Connector.Connector, text: Text.connector }
           )
       })
     })
-).pipe(Command.withDescription("List plugins with trust, state and catalogue summary; with a name, show its catalogue"))
+).pipe(Command.withDescription("List connectors with trust, state and catalogue summary; with a name, show its catalogue"))
 
 const subscribe = Command.make(
   "subscribe",
   {
-    plugin: Argument.String("plugin").pipe(Argument.withDescription("The plugin to watch with")),
-    main: Argument.String("main").pipe(Argument.withDescription("The plugin's main parameter")),
+    connector: Argument.String("connector").pipe(Argument.withDescription("The connector to watch with")),
+    main: Argument.String("main").pipe(Argument.withDescription("The connector's main parameter")),
     parameters: parameterArguments,
     intent: intentFlag,
     types: typesFlag,
@@ -93,7 +93,7 @@ const subscribe = Command.make(
       const client = yield* Connection
       const work = Effect.gen(function*() {
         const payload = {
-          plugin: yield* Input.pluginName(input.plugin),
+          connector: yield* Input.connectorName(input.connector),
           main: input.main,
           parameters: yield* Input.pairs(input.parameters),
           intent: input.intent.trim(),
@@ -121,7 +121,7 @@ const subscribe = Command.make(
         json: Text.hintedJson
       })
     })
-).pipe(Command.withDescription("Subscribe to events from a plugin on one subject"))
+).pipe(Command.withDescription("Subscribe to events from a connector on one subject"))
 
 const update = Command.make(
   "update",
@@ -280,7 +280,7 @@ const retarget = Command.make(
 ).pipe(Command.withDescription("Set a new wake target, or make the subscription pull-only"))
 
 export const commands = [
-  plugins,
+  connectors,
   subscribe,
   update,
   list,

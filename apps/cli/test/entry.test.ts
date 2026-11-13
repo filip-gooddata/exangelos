@@ -23,7 +23,7 @@ const pathsIn = (dir: string): Layer.Layer<Paths.Paths> =>
       settingsFile: `${dir}/settings.json`,
       secretsFile: `${dir}/secrets.json`,
       databaseFile: `${dir}/exangelos.db`,
-      pluginDir: `${dir}/plugins`,
+      connectorDir: `${dir}/connectors`,
       socketPath: `${dir}/daemon.sock`,
       logDir: dir,
       logFile: `${dir}/daemon.log`
@@ -59,7 +59,7 @@ const run = (
         serviceManager: manager,
         secretStore: layerSecretStore,
         wakeTarget: layerWakeTarget,
-        officialPlugins: [],
+        officialConnectors: [],
         releaseUrl: undefined
       }
     })(argv).pipe(

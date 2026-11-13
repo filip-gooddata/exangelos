@@ -6,7 +6,7 @@ import { Refusal, type Subscription } from "@exangelos/domain"
 
 export type AnyRefusal =
   | Refusal.IntentRequired
-  | Refusal.PluginUnavailable
+  | Refusal.ConnectorUnavailable
   | Refusal.NoWakeTarget
   | Refusal.ParametersInvalid
   | Refusal.SimilarSubscriptions
@@ -14,8 +14,8 @@ export type AnyRefusal =
   | Refusal.NotAllowed
 
 export type AgentFailure =
-  | DaemonContract.PluginNotFound
-  | DaemonContract.PluginUnavailable
+  | DaemonContract.ConnectorNotFound
+  | DaemonContract.ConnectorUnavailable
   | DaemonContract.OfficialFetchFailed
   | DaemonContract.InvalidRequest
   | DaemonContract.NoWakeTarget
@@ -52,12 +52,12 @@ export const refusalMessage = (refusal: AnyRefusal): string => {
   switch (refusal._tag) {
     case "IntentRequired":
       return `Nothing was created: ${refusal.message}. Call subscribe again with an intent saying why you want these events.`
-    case "PluginUnavailable":
-      return `Plugin ${refusal.plugin} is unavailable: ${refusal.problem}. Ask the user to fix the plugin, then retry.`
+    case "ConnectorUnavailable":
+      return `Connector ${refusal.connector} is unavailable: ${refusal.problem}. Ask the user to fix the connector, then retry.`
     case "NoWakeTarget":
       return "No session to wake was found for this call. Pass target: { harness, sessionId } to wake a specific session, or pullOnly: true to collect events with wait."
     case "ParametersInvalid":
-      return `The parameters do not fit the plugin: ${refusal.reason}. Call list_plugins to see the plugin's parameter schema, then retry.`
+      return `The parameters do not fit the connector: ${refusal.reason}. Call list_connectors to see the connector's parameter schema, then retry.`
     case "SimilarSubscriptions":
       return [
         "Nothing was created: this session already has a similar open subscription.",
@@ -75,12 +75,12 @@ export const refusalMessage = (refusal: AnyRefusal): string => {
 
 export const failureMessage = (failure: AgentFailure, subscription = "<subscription>"): string => {
   switch (failure._tag) {
-    case "PluginNotFound":
-      return `No plugin named "${failure.plugin}" is installed. Call list_plugins to see the installed plugins, or ask the user to import this one.`
-    case "PluginUnavailable":
-      return refusalMessage(new Refusal.PluginUnavailable({ plugin: failure.plugin, problem: failure.problem }))
+    case "ConnectorNotFound":
+      return `No connector named "${failure.connector}" is installed. Call list_connectors to see the installed connectors, or ask the user to import this one.`
+    case "ConnectorUnavailable":
+      return refusalMessage(new Refusal.ConnectorUnavailable({ connector: failure.connector, problem: failure.problem }))
     case "OfficialFetchFailed":
-      return `Fetching the official plugin ${failure.plugin} failed: ${failure.reason}. Check the network connection, then retry.`
+      return `Fetching the official connector ${failure.connector} failed: ${failure.reason}. Check the network connection, then retry.`
     case "InvalidRequest":
       return `The daemon refused the request: ${failure.message}. Correct the input, then retry.`
     case "NoWakeTarget":

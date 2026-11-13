@@ -22,7 +22,7 @@ const client = Entry.daemonClient(SessionHeaders.detect(process.env), Entry.serv
 
 const daemon = {
   ...Daemon.platformChoices(machine),
-  officialPlugins: Build.officialPlugins,
+  officialConnectors: Build.officialConnectors,
   releaseUrl: Build.releaseUrl
 }
 

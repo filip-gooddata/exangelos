@@ -1,5 +1,5 @@
-import { EventRepository, PluginRepository, SubscriptionRepository, WakeRepository } from "@exangelos/application"
-import { Catalogue, Event, Plugin, Subscription, Wake } from "@exangelos/domain"
+import { EventRepository, ConnectorRepository, SubscriptionRepository, WakeRepository } from "@exangelos/application"
+import { Catalogue, Event, Connector, Subscription, Wake } from "@exangelos/domain"
 import type { Ids } from "@exangelos/domain"
 import { Array as Arr, DateTime, Effect, Layer, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
@@ -13,8 +13,8 @@ const column = <S extends Schema.Codec<any, any, never, never>>(schema: S) => {
   }
 }
 
-const plugins = column(Plugin.Plugin)
-const pluginChanges = column(PluginRepository.PluginChange)
+const connectors = column(Connector.Connector)
+const connectorChanges = column(ConnectorRepository.ConnectorChange)
 const values = column(Catalogue.ConfigurationValues)
 const subscriptions = column(Subscription.Subscription)
 const subscriptionChanges = column(Subscription.Change)
@@ -29,7 +29,7 @@ const undelivered = ["waiting", "sending"] as const
 
 /** The four repositories over the SQL client, so writes that span them share one transaction. */
 export const layer: Layer.Layer<
-  | PluginRepository.PluginRepository
+  | ConnectorRepository.ConnectorRepository
   | SubscriptionRepository.SubscriptionRepository
   | EventRepository.EventRepository
   | WakeRepository.WakeRepository,
@@ -47,41 +47,41 @@ export const layer: Layer.Layer<
       onSome: (row) => Effect.asSome(decode(row.record))
     })
 
-  const appendPluginChange = (change: PluginRepository.PluginChange) =>
+  const appendConnectorChange = (change: ConnectorRepository.ConnectorChange) =>
     Effect.flatMap(
-      pluginChanges.encode(change),
-      (record) => sql`INSERT INTO plugin_changes (plugin, record) VALUES (${change.plugin}, ${record})`
+      connectorChanges.encode(change),
+      (record) => sql`INSERT INTO connector_changes (connector, record) VALUES (${change.connector}, ${record})`
     )
 
-  const pluginRepository = PluginRepository.PluginRepository.of({
+  const connectorRepository = ConnectorRepository.ConnectorRepository.of({
     find: (name) =>
-      run(sql<Row>`SELECT record FROM plugins WHERE name = ${name}`).pipe(
-        Effect.flatMap((rows) => decodeFirst(rows, plugins.decode))
+      run(sql<Row>`SELECT record FROM connectors WHERE name = ${name}`).pipe(
+        Effect.flatMap((rows) => decodeFirst(rows, connectors.decode))
       ),
-    list: run(sql<Row>`SELECT record FROM plugins ORDER BY name`).pipe(
-      Effect.flatMap((rows) => decodeAll(rows, plugins.decode))
+    list: run(sql<Row>`SELECT record FROM connectors ORDER BY name`).pipe(
+      Effect.flatMap((rows) => decodeAll(rows, connectors.decode))
     ),
-    store: (plugin, change) =>
+    store: (connector, change) =>
       write(Effect.gen(function*() {
-        const record = yield* plugins.encode(plugin)
+        const record = yield* connectors.encode(connector)
         yield* sql`
-          INSERT INTO plugins (name, record) VALUES (${plugin.name}, ${record})
+          INSERT INTO connectors (name, record) VALUES (${connector.name}, ${record})
           ON CONFLICT (name) DO UPDATE SET record = excluded.record
         `
-        if (change !== undefined) yield* appendPluginChange(change)
+        if (change !== undefined) yield* appendConnectorChange(change)
       })),
     remove: (name, change) =>
       write(Effect.gen(function*() {
-        yield* sql`DELETE FROM plugins WHERE name = ${name}`
-        yield* sql`DELETE FROM plugin_values WHERE plugin = ${name}`
-        yield* appendPluginChange(change)
+        yield* sql`DELETE FROM connectors WHERE name = ${name}`
+        yield* sql`DELETE FROM connector_values WHERE connector = ${name}`
+        yield* appendConnectorChange(change)
       })),
     changes: (name) =>
-      run(sql<Row>`SELECT record FROM plugin_changes WHERE plugin = ${name} ORDER BY position`).pipe(
-        Effect.flatMap((rows) => decodeAll(rows, pluginChanges.decode))
+      run(sql<Row>`SELECT record FROM connector_changes WHERE connector = ${name} ORDER BY position`).pipe(
+        Effect.flatMap((rows) => decodeAll(rows, connectorChanges.decode))
       ),
     values: (name) =>
-      run(sql<Row>`SELECT record FROM plugin_values WHERE plugin = ${name}`).pipe(
+      run(sql<Row>`SELECT record FROM connector_values WHERE connector = ${name}`).pipe(
         Effect.flatMap((rows) => decodeFirst(rows, values.decode)),
         Effect.map(Option.getOrElse((): Catalogue.ConfigurationValues => ({})))
       ),
@@ -89,8 +89,8 @@ export const layer: Layer.Layer<
       write(Effect.gen(function*() {
         const record = yield* values.encode(configuration)
         yield* sql`
-          INSERT INTO plugin_values (plugin, record) VALUES (${name}, ${record})
-          ON CONFLICT (plugin) DO UPDATE SET record = excluded.record
+          INSERT INTO connector_values (connector, record) VALUES (${name}, ${record})
+          ON CONFLICT (connector) DO UPDATE SET record = excluded.record
         `
       }))
   })
@@ -100,7 +100,7 @@ export const layer: Layer.Layer<
       const record = yield* subscriptions.encode(subscription)
       const row = {
         id: subscription.id,
-        plugin: subscription.plugin,
+        connector: subscription.connector,
         state: subscription.state._tag,
         target_harness: subscription.wakeTarget?.harness ?? null,
         target_session: subscription.wakeTarget?.sessionId ?? null,
@@ -110,7 +110,7 @@ export const layer: Layer.Layer<
       yield* sql`
         INSERT INTO subscriptions ${sql.insert(row)}
         ON CONFLICT (id) DO UPDATE SET
-          plugin = excluded.plugin,
+          connector = excluded.connector,
           state = excluded.state,
           target_harness = excluded.target_harness,
           target_session = excluded.target_session,
@@ -128,7 +128,7 @@ export const layer: Layer.Layer<
       if (filter.states !== undefined && filter.states.length === 0) return Effect.succeed([])
       const where = sql.and([
         ...(filter.states === undefined ? [] : [sql.in("state", filter.states)]),
-        ...(filter.plugin === undefined ? [] : [sql`plugin = ${filter.plugin}`]),
+        ...(filter.connector === undefined ? [] : [sql`connector = ${filter.connector}`]),
         ...(filter.target === undefined
           ? []
           : [sql`target_harness = ${filter.target.harness} AND target_session = ${filter.target.sessionId}`])
@@ -221,7 +221,7 @@ export const layer: Layer.Layer<
   })
 
   return Layer.mergeAll(
-    Layer.succeed(PluginRepository.PluginRepository, pluginRepository),
+    Layer.succeed(ConnectorRepository.ConnectorRepository, connectorRepository),
     Layer.succeed(SubscriptionRepository.SubscriptionRepository, subscriptionRepository),
     Layer.succeed(EventRepository.EventRepository, eventRepository),
     Layer.succeed(WakeRepository.WakeRepository, wakeRepository)

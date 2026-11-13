@@ -1,7 +1,7 @@
 import { Console, Duration, Effect, Option, Path, Redacted, Schema } from "effect"
 import { Argument, Command, Flag, Prompt } from "effect/cli"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
-import { Plugin, Settings, Subscription } from "@exangelos/domain"
+import { Connector, Settings, Subscription } from "@exangelos/domain"
 import * as Text from "../render/Text.ts"
 import { Connection } from "./Connection.ts"
 import * as Input from "./Input.ts"
@@ -10,12 +10,12 @@ import * as Secrets from "./Secrets.ts"
 
 const command = WakeText.command
 
-const nameArgument = Argument.String("name").pipe(Argument.withDescription("The plugin name"))
+const nameArgument = Argument.String("name").pipe(Argument.withDescription("The connector name"))
 
-const findPlugin = (client: Connection["Service"], name: string) =>
-  Effect.flatMap(client.ListPlugins(), (all) => {
-    const found = all.find((plugin) => plugin.name === name)
-    return found === undefined ? Effect.fail(new DaemonContract.PluginNotFound({ plugin: name })) : Effect.succeed(found)
+const findConnector = (client: Connection["Service"], name: string) =>
+  Effect.flatMap(client.ListConnectors(), (all) => {
+    const found = all.find((connector) => connector.name === name)
+    return found === undefined ? Effect.fail(new DaemonContract.ConnectorNotFound({ connector: name })) : Effect.succeed(found)
   })
 
 const isArchive = (path: string): boolean => /\.(tar\.gz|tgz|tar|zip)$/.test(path)
@@ -30,7 +30,7 @@ const importSource = (source: string, ref: Option.Option<string>) =>
       : DaemonContract.ImportSource.cases.Directory.make({ path })
   })
 
-const importPlugin = Command.make(
+const importConnector = Command.make(
   "import",
   {
     source: Argument.String("source").pipe(
@@ -41,21 +41,21 @@ const importPlugin = Command.make(
   ({ ref, source }) =>
     Effect.gen(function*() {
       const client = yield* Connection
-      const work = Effect.flatMap(importSource(source, ref), (resolved) => client.ImportPlugin({ source: resolved }))
+      const work = Effect.flatMap(importSource(source, ref), (resolved) => client.ImportConnector({ source: resolved }))
       yield* respond(work, {
-        schema: Plugin.Plugin,
-        text: (plugin) =>
-          `${Text.plugin(plugin)}\n\n${plugin.name} is inert. Run \`${command} plugin enable ${plugin.name}\` after checking its origin and checksum.`
+        schema: Connector.Connector,
+        text: (connector) =>
+          `${Text.connector(connector)}\n\n${connector.name} is inert. Run \`${command} connector enable ${connector.name}\` after checking its origin and checksum.`
       })
     })
-).pipe(Command.withDescription("Import a plugin; it lands inert"))
+).pipe(Command.withDescription("Import a connector; it lands inert"))
 
 const enable = Command.make(
   "enable",
   {
     name: nameArgument,
     digest: Flag.String("digest").pipe(
-      Flag.withDescription("Enable without asking, if the plugin's checksum is still this one"),
+      Flag.withDescription("Enable without asking, if the connector's checksum is still this one"),
       Flag.optional
     )
   },
@@ -64,52 +64,52 @@ const enable = Command.make(
       const client = yield* Connection
       const json = yield* Json
       const work = Effect.gen(function*() {
-        const plugin = yield* Effect.flatMap(Input.pluginName(name), (valid) => findPlugin(client, valid))
-        if (Option.isSome(digest)) return yield* client.EnablePlugin({ name: plugin.name, digest: digest.value })
+        const connector = yield* Effect.flatMap(Input.connectorName(name), (valid) => findConnector(client, valid))
+        if (Option.isSome(digest)) return yield* client.EnableConnector({ name: connector.name, digest: digest.value })
         if (json) {
           return yield* new Input.InputInvalid({
-            message: `Check the origin (${Text.origin(plugin.origin)}) and checksum (${plugin.digest}) of ${plugin.name}, then run \`${command} plugin enable ${plugin.name} --digest ${plugin.digest}\`.`
+            message: `Check the origin (${Text.origin(connector.origin)}) and checksum (${connector.digest}) of ${connector.name}, then run \`${command} connector enable ${connector.name} --digest ${connector.digest}\`.`
           })
         }
-        yield* Console.log(`Origin:    ${Text.origin(plugin.origin)}\nChecksum:  ${plugin.digest}`)
-        const confirmed = yield* Prompt.Confirm({ message: `Enable ${plugin.name}?` }).pipe(
+        yield* Console.log(`Origin:    ${Text.origin(connector.origin)}\nChecksum:  ${connector.digest}`)
+        const confirmed = yield* Prompt.Confirm({ message: `Enable ${connector.name}?` }).pipe(
           Effect.catchTag("QuitError", () => Effect.succeed(false))
         )
         if (!confirmed) {
-          return yield* new Input.InputInvalid({ message: `${plugin.name} was not enabled. It stays inert.` })
+          return yield* new Input.InputInvalid({ message: `${connector.name} was not enabled. It stays inert.` })
         }
-        return yield* client.EnablePlugin({ name: plugin.name, digest: plugin.digest })
+        return yield* client.EnableConnector({ name: connector.name, digest: connector.digest })
       })
-      yield* respond(work, { schema: Plugin.Plugin, text: (plugin) => `${plugin.name} is ${plugin.trust}.` })
+      yield* respond(work, { schema: Connector.Connector, text: (connector) => `${connector.name} is ${connector.trust}.` })
     })
-).pipe(Command.withDescription("Enable a plugin after showing its origin and checksum"))
+).pipe(Command.withDescription("Enable a connector after showing its origin and checksum"))
 
 const byName = <A, E extends Failure>(
   name: string,
   description: string,
-  call: (client: Connection["Service"], name: Plugin.Plugin["name"]) => Effect.Effect<A, E>,
+  call: (client: Connection["Service"], name: Connector.Connector["name"]) => Effect.Effect<A, E>,
   schema: Schema.Codec<A, unknown>,
   text: (value: A, name: string) => string
 ) =>
   Command.make(name, { name: nameArgument }, (input) =>
     Effect.gen(function*() {
       const client = yield* Connection
-      const work = Effect.flatMap(Input.pluginName(input.name), (valid) => call(client, valid))
+      const work = Effect.flatMap(Input.connectorName(input.name), (valid) => call(client, valid))
       yield* respond(work, { schema, text: (value) => text(value, input.name) })
     })).pipe(Command.withDescription(description))
 
 const disable = byName(
   "disable",
-  "Disable a plugin; its subscriptions are suspended",
-  (client, name) => client.DisablePlugin({ name }),
-  Plugin.Plugin,
-  (plugin) => `${plugin.name} is ${plugin.trust}.`
+  "Disable a connector; its subscriptions are suspended",
+  (client, name) => client.DisableConnector({ name }),
+  Connector.Connector,
+  (connector) => `${connector.name} is ${connector.trust}.`
 )
 
 const remove = byName(
   "remove",
-  "Remove a plugin",
-  (client, name) => client.RemovePlugin({ name }),
+  "Remove a connector",
+  (client, name) => client.RemoveConnector({ name }),
   Schema.Void,
   (_, name) => `${name} was removed.`
 )
@@ -124,21 +124,21 @@ const devUnlink = byName(
 
 const devLink = Command.make(
   "dev-link",
-  { path: Argument.String("path").pipe(Argument.withDescription("The plugin's working directory")) },
+  { path: Argument.String("path").pipe(Argument.withDescription("The connector's working directory")) },
   ({ path }) =>
     Effect.gen(function*() {
       const client = yield* Connection
       const absolute = (yield* Path.Path).resolve(path)
       yield* respond(client.DevLink({ path: absolute }), {
-        schema: Plugin.Plugin,
-        text: (plugin) => `${plugin.name} runs from ${absolute} as dev and restarts when its files change.`
+        schema: Connector.Connector,
+        text: (connector) => `${connector.name} runs from ${absolute} as dev and restarts when its files change.`
       })
     })
-).pipe(Command.withDescription("Trust a plugin working directory for development"))
+).pipe(Command.withDescription("Trust a connector working directory for development"))
 
-const secretFieldKeys = (plugin: Plugin.Plugin): Set<string> =>
+const secretFieldKeys = (connector: Connector.Connector): Set<string> =>
   new Set(
-    (plugin.catalogue?.configuration ?? [])
+    (connector.catalogue?.configuration ?? [])
       .filter((field) => field._tag === "Secret" || field.secretDestination)
       .map((field) => field.key)
   )
@@ -168,15 +168,15 @@ const configure = Command.make(
     Effect.gen(function*() {
       const client = yield* Connection
       const work = Effect.gen(function*() {
-        const name = yield* Input.pluginName(input.name)
+        const name = yield* Input.connectorName(input.name)
         const plain = yield* Input.pairs(input.values)
         const sources = yield* Secrets.sources({
           commands: input.secretCommands,
           files: input.secretFiles,
           prompts: input.secretPrompts
         })
-        const plugin = yield* findPlugin(client, name)
-        const secretKeys = secretFieldKeys(plugin)
+        const connector = yield* findConnector(client, name)
+        const secretKeys = secretFieldKeys(connector)
         const leaked = Object.keys(plain).filter((key) => secretKeys.has(key))
         if (leaked.length > 0) {
           return yield* new Input.InputInvalid({
@@ -191,23 +191,23 @@ const configure = Command.make(
             message: `${doubled.map((source) => source.key).join(", ")} is given both as key=value and as a secret. Give it once.`
           })
         }
-        const labels = new Map((plugin.catalogue?.configuration ?? []).map((field) => [field.key, field.label]))
+        const labels = new Map((connector.catalogue?.configuration ?? []).map((field) => [field.key, field.label]))
         const secrets = yield* Secrets.read(sources, (key) => labels.get(key) ?? key)
         const values: Record<string, string> = { ...plain }
         for (const [key, value] of secrets) values[key] = Redacted.value(value)
         const revealed = secrets.map(([, value]) => Redacted.value(value))
-        return yield* client.ConfigurePlugin({ name, values }).pipe(
+        return yield* client.ConfigureConnector({ name, values }).pipe(
           Effect.mapError((failure) => Secrets.scrub(failure, revealed))
         )
       })
       yield* respond(work, {
-        schema: Plugin.Plugin,
-        text: (plugin) => `${plugin.name} is configured.`
+        schema: Connector.Connector,
+        text: (connector) => `${connector.name} is configured.`
       })
     })
-).pipe(Command.withDescription("Configure a plugin; secret fields come from a command, a file or a hidden prompt"))
+).pipe(Command.withDescription("Configure a connector; secret fields come from a command, a file or a hidden prompt"))
 
-export const pluginCommands = [importPlugin, enable, disable, remove, configure, devLink, devUnlink] as const
+export const connectorCommands = [importConnector, enable, disable, remove, configure, devLink, devUnlink] as const
 
 const SettingsJson = Schema.toCodecJson(Settings.Settings)
 
@@ -233,7 +233,7 @@ const setPath = (encoded: unknown, path: ReadonlyArray<string>, value: string): 
       ? Effect.succeed({ ...current, [head]: Duration.toMillis(duration.value) })
       : Effect.succeed({ ...current, [head]: value })
   }
-  if (existing === undefined && head !== "officialPluginFolder") return Effect.fail(unknownKey)
+  if (existing === undefined && head !== "officialConnectorFolder") return Effect.fail(unknownKey)
   return Effect.succeed({ ...current, [head]: value })
 }
 

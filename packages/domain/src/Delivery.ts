@@ -2,9 +2,9 @@ import { DateTime, Duration, Effect, Option, Schedule } from "effect"
 import type { Event } from "./Event.ts"
 import type { WakeId } from "./Ids.ts"
 import * as Lifecycle from "./Lifecycle.ts"
-import * as PluginRules from "./PluginRules.ts"
+import * as ConnectorRules from "./ConnectorRules.ts"
 import type { Limits } from "./Limits.ts"
-import type { Plugin } from "./Plugin.ts"
+import type { Connector } from "./Connector.ts"
 import type { Subscription } from "./Subscription.ts"
 import type { Wake, WakeContent, WakeReason, Why } from "./Wake.ts"
 
@@ -79,8 +79,8 @@ export const retry = (wake: Wake, error: string, now: DateTime.Utc, limits: Limi
   }
 }
 
-export const hasSomethingToSay = (wake: Wake, subscription: Subscription, plugin: Plugin): boolean =>
-  hasSomethingToSayWhen(wake, subscription, PluginRules.isAvailable(plugin))
+export const hasSomethingToSay = (wake: Wake, subscription: Subscription, connector: Connector): boolean =>
+  hasSomethingToSayWhen(wake, subscription, ConnectorRules.isAvailable(connector))
 
 export const hasSomethingToSayWhen = (wake: Wake, subscription: Subscription, available: boolean): boolean => {
   switch (wake.reason) {
@@ -100,7 +100,7 @@ export const hasSomethingToSayWhen = (wake: Wake, subscription: Subscription, av
 
 export const content = (subscription: Subscription, why: Why, events: ReadonlyArray<Event>): WakeContent => ({
   subscription: subscription.id,
-  plugin: subscription.plugin,
+  connector: subscription.connector,
   subject: subscription.subject,
   why,
   pending: events

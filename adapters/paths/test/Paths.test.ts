@@ -16,7 +16,7 @@ describe("Paths", () => {
         settingsFile: "/home/a/.config/exangelos/settings.json",
         secretsFile: "/home/a/.local/share/exangelos/secrets.json",
         databaseFile: "/home/a/.local/share/exangelos/exangelos.db",
-        pluginDir: "/home/a/.local/share/exangelos/plugins",
+        connectorDir: "/home/a/.local/share/exangelos/connectors",
         socketPath: "/run/state/exangelos/daemon.sock",
         logDir: "/run/state/exangelos/logs",
         logFile: "/run/state/exangelos/logs/daemon.log"

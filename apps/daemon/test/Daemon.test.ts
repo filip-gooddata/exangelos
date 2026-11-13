@@ -2,11 +2,11 @@ import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { describe, expect, it } from "@effect/vitest"
 import { Duration, Effect } from "effect"
-import { digestDirectory } from "@exangelos/plugin-directory"
+import { digestDirectory } from "@exangelos/connector-directory"
 import { Ids } from "@exangelos/domain"
 import { layerCommand } from "@exangelos/wake-targets"
 import {
-  bundledPlugin,
+  bundledConnector,
   eventually,
   home,
   install,
@@ -14,12 +14,12 @@ import {
   quickWakes,
   run,
   start,
-  templatePlugin,
+  templateConnector,
   wakeLog
 } from "./support.ts"
 
 const session = { harness: "t3", sessionId: "daemon-test" } as const
-const template = Ids.PluginName.make("template")
+const template = Ids.ConnectorName.make("template")
 
 describe("Daemon", () => {
   it.live("wakes a subscriber through the command target, then reads, acknowledges and waits", () =>
@@ -31,7 +31,7 @@ describe("Daemon", () => {
       yield* installTemplate(client, dir)
 
       const woken = yield* client.Subscribe({
-        plugin: template,
+        connector: template,
         parameters: { ticks: 3 },
         intent: "Count three ticks",
         target: { _tag: "Session", session },
@@ -53,7 +53,7 @@ describe("Daemon", () => {
       expect((yield* client.Show({ id: woken.id })).subscription.ackedThrough).toBe(events[2]!.number)
 
       const pulled = yield* client.Subscribe({
-        plugin: template,
+        connector: template,
         parameters: { ticks: 2 },
         intent: "Count two ticks without a wake",
         target: { _tag: "PullOnly" },
@@ -70,7 +70,7 @@ describe("Daemon", () => {
       const first = yield* start(dir)
       yield* installTemplate(first.client, dir)
       const subscription = yield* first.client.Subscribe({
-        plugin: template,
+        connector: template,
         parameters: { ticks: 2 },
         intent: "Count two ticks",
         target: { _tag: "PullOnly" },
@@ -92,14 +92,14 @@ describe("Daemon", () => {
     Effect.gen(function*() {
       const dir = yield* home
       const { client } = yield* start(dir)
-      const probe = yield* bundledPlugin(
+      const probe = yield* bundledConnector(
         Path.join(import.meta.dirname, "fixtures/windowProbe.ts"),
         Path.join(dir, "sources"),
         "window-probe"
       )
       const imported = yield* install(client, probe, {})
       const subscription = yield* client.Subscribe({
-        plugin: imported.name,
+        connector: imported.name,
         parameters: { label: "probe" },
         intent: "Report the wake window",
         target: { _tag: "PullOnly" },
@@ -115,67 +115,67 @@ describe("Daemon", () => {
         Effect.map((shown) => shown.subscription.state),
         Effect.filterOrFail((state) => state._tag === "Ended")
       ))
-      expect(ended).toMatchObject({ reason: { _tag: "Plugin", reason: "wake window 1234 ms" } })
+      expect(ended).toMatchObject({ reason: { _tag: "Connector", reason: "wake window 1234 ms" } })
     }).pipe(Effect.scoped), 60_000)
 
-  it.live("reports an official plugin with a changed checksum but not one the owner disabled", () =>
+  it.live("reports an official connector with a changed checksum but not one the owner disabled", () =>
     Effect.gen(function*() {
       const dir = yield* home
       const releases = Path.join(dir, "releases")
       const built = Path.join(dir, "built")
       const archive = (name: string) =>
         Effect.gen(function*() {
-          const plugin = yield* templatePlugin(built, name)
+          const connector = yield* templateConnector(built, name)
           yield* Effect.promise(() => Fs.mkdir(releases, { recursive: true }))
           yield* Effect.promise((signal) =>
-            run("tar", ["--no-xattrs", "-czf", Path.join(releases, `${name}-0.1.0.tar.gz`), "-C", plugin, "."], {
+            run("tar", ["--no-xattrs", "-czf", Path.join(releases, `${name}-0.1.0.tar.gz`), "-C", connector, "."], {
               env: { ...process.env, COPYFILE_DISABLE: "1" },
               signal,
               timeout: 60_000
             })
           )
-          return yield* digestDirectory(plugin)
+          return yield* digestDirectory(connector)
         })
       const matching = yield* archive("matching")
       yield* archive("changed")
 
       const { client } = yield* start(dir, {
-        officialPlugins: [
+        officialConnectors: [
           { name: "matching", version: "0.1.0", digest: matching },
           { name: "changed", version: "0.1.0", digest: "0".repeat(64) }
         ],
         releaseUrl: `file://${releases}`
       })
-      const fetch = (plugin: string) =>
+      const fetch = (connector: string) =>
         client.Subscribe({
-          plugin: Ids.PluginName.make(plugin),
+          connector: Ids.ConnectorName.make(connector),
           parameters: { ticks: 1 },
-          intent: "Fetch the official plugin",
+          intent: "Fetch the official connector",
           target: { _tag: "PullOnly" },
           similarOk: []
         }).pipe(Effect.ignore)
       yield* fetch("matching")
       yield* fetch("changed")
-      yield* client.DisablePlugin({ name: Ids.PluginName.make("matching") })
+      yield* client.DisableConnector({ name: Ids.ConnectorName.make("matching") })
 
-      const plugins = yield* client.ListPlugins()
-      expect(plugins.map(({ name, trust }) => ({ name, trust })).sort((a, b) => a.name.localeCompare(b.name)))
+      const connectors = yield* client.ListConnectors()
+      expect(connectors.map(({ name, trust }) => ({ name, trust })).sort((a, b) => a.name.localeCompare(b.name)))
         .toEqual([{ name: "changed", trust: "inert" }, { name: "matching", trust: "inert" }])
-      expect(yield* client.ListPluginAlerts()).toEqual([{ _tag: "DigestMismatch", plugin: "changed" }])
+      expect(yield* client.ListConnectorAlerts()).toEqual([{ _tag: "DigestMismatch", connector: "changed" }])
     }).pipe(Effect.scoped), 60_000)
 })
 
 describe("Daemon errors", () => {
-  it.live("refuses a session that enables a plugin", () =>
+  it.live("refuses a session that enables a connector", () =>
     Effect.gen(function*() {
       const dir = yield* home
       const { as, client } = yield* start(dir)
-      const source = yield* templatePlugin(Path.join(dir, "sources"))
-      const imported = yield* client.ImportPlugin({ source: { _tag: "Directory", path: source } })
+      const source = yield* templateConnector(Path.join(dir, "sources"))
+      const imported = yield* client.ImportConnector({ source: { _tag: "Directory", path: source } })
       const agent = yield* as(session)
-      const refused = yield* Effect.flip(agent.EnablePlugin({ name: imported.name, digest: imported.digest }))
+      const refused = yield* Effect.flip(agent.EnableConnector({ name: imported.name, digest: imported.digest }))
       expect(refused._tag).toBe("HumanRequired")
-      expect(refused).toMatchObject({ plugin: "template" })
+      expect(refused).toMatchObject({ connector: "template" })
     }).pipe(Effect.scoped), 60_000)
 
   it.live("lets the owner turn event alerts on and refuses a session", () =>
@@ -184,7 +184,7 @@ describe("Daemon errors", () => {
       const { as, client } = yield* start(dir)
       yield* installTemplate(client, dir)
       const subscription = yield* client.Subscribe({
-        plugin: template,
+        connector: template,
         parameters: { ticks: 1 },
         intent: "Toggle event alerts",
         target: { _tag: "PullOnly" },
@@ -204,7 +204,7 @@ describe("Daemon errors", () => {
       yield* quickWakes(client, { backlogCount: 2 })
       yield* installTemplate(client, dir)
       const subscription = yield* client.Subscribe({
-        plugin: template,
+        connector: template,
         parameters: { ticks: 5 },
         intent: "Overflow the backlog",
         target: { _tag: "PullOnly" },

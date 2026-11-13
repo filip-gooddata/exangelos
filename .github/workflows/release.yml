@@ -30,7 +30,7 @@ jobs:
         run: pnpm --filter @exangelos/packaging run typecheck
       - name: Test packaging
         run: pnpm --filter @exangelos/packaging run test
-      - name: Build official plugin archives and the four binaries
+      - name: Build official connector archives and the four binaries
         run: pnpm --filter @exangelos/packaging run build:release --release-url "https://github.com/${{ github.repository }}/releases/download/v$(jq -r .version packaging/package.json)"
       - name: Render the Homebrew formula and cask
         run: pnpm --filter @exangelos/packaging run render:homebrew

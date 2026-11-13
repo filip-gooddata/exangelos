@@ -8,7 +8,7 @@ import { Paths } from "@exangelos/paths"
 import { SecretStores } from "../src/index.ts"
 
 const Platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
-const github = Ids.PluginName.make("github")
+const github = Ids.ConnectorName.make("github")
 
 const reveal = (secret: Option.Option<Redacted.Redacted<string>>) => Option.map(secret, (value) => Redacted.value(value))
 
@@ -82,7 +82,7 @@ describe("file store", () => {
       yield* fs.writeFileString(path, JSON.stringify({ github: { token: 42, other: "ghp-leak" } }))
       const error = yield* Effect.flip(store.get(github, "token"))
       expect(error).toBeInstanceOf(SecretStore.SecretStoreFailed)
-      expect(error.plugin).toBe(github)
+      expect(error.connector).toBe(github)
       expect(error.message).not.toContain("ghp-leak")
     }).pipe(Effect.provide(Platform)))
 })
@@ -91,7 +91,7 @@ describe("file store lookups", () => {
   it.effect("treats inherited object properties as missing entries", () =>
     Effect.gen(function*() {
       const store = yield* fileStore((yield* temporaryFile).paths)
-      const constructor = Ids.PluginName.make("constructor")
+      const constructor = Ids.ConnectorName.make("constructor")
       expect(yield* store.get(constructor, "name")).toEqual(Option.none())
       yield* store.set(github, "token", Redacted.make("ghp-one"))
       expect(yield* store.get(github, "toString")).toEqual(Option.none())

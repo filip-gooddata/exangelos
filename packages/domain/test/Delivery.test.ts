@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Duration, Effect, Option, Schedule } from "effect"
 import type { Wake } from "../src/index.ts"
 import { Delivery, Ids } from "../src/index.ts"
-import { at, event, later, limits, plugin, subscription } from "./fixtures.ts"
+import { at, event, later, limits, connector, subscription } from "./fixtures.ts"
 
 const now = at("2026-11-02T10:00:00Z")
 
@@ -86,15 +86,15 @@ describe("Delivery", () => {
         lastError: "offline",
         nextAttemptAt: later(now, "10 minutes")
       })
-      expect(Delivery.hasSomethingToSay(wake({ through: 3 }), subscription({ lastNumber: 3, ackedThrough: 2 }), plugin()))
+      expect(Delivery.hasSomethingToSay(wake({ through: 3 }), subscription({ lastNumber: 3, ackedThrough: 2 }), connector()))
       .toBe(true)
-    expect(Delivery.hasSomethingToSay(wake({ through: 3 }), subscription({ lastNumber: 3, ackedThrough: 3 }), plugin()))
+    expect(Delivery.hasSomethingToSay(wake({ through: 3 }), subscription({ lastNumber: 3, ackedThrough: 3 }), connector()))
       .toBe(false)
-    expect(Delivery.hasSomethingToSay(wake({ reason: "paused" }), subscription(), plugin())).toBe(false)
+    expect(Delivery.hasSomethingToSay(wake({ reason: "paused" }), subscription(), connector())).toBe(false)
     expect(
-      Delivery.hasSomethingToSay(wake({ reason: "paused" }), subscription({ state: { _tag: "Expired" } }), plugin())
+      Delivery.hasSomethingToSay(wake({ reason: "paused" }), subscription({ state: { _tag: "Expired" } }), connector())
     ).toBe(true)
-    expect(Delivery.hasSomethingToSay(wake({ reason: "suspended" }), subscription(), plugin())).toBe(false)
+    expect(Delivery.hasSomethingToSay(wake({ reason: "suspended" }), subscription(), connector())).toBe(false)
     expect(Delivery.hasSomethingToSayWhen(wake({ reason: "suspended" }), subscription(), false)).toBe(true)
     }).pipe(Effect.runSync))
 
@@ -106,7 +106,7 @@ describe("Delivery", () => {
     ])
     expect(content).toEqual({
       subscription: "sub_7f3k",
-      plugin: "github-pr",
+      connector: "github-pr",
       subject: "acme/app#123",
       why: { _tag: "Events" },
       pending: [

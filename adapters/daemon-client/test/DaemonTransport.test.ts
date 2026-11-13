@@ -18,7 +18,7 @@ const caller = (headers: Readonly<Record<string, string | undefined>>) =>
 
 const handlers = DaemonContract.DaemonContract.toLayer({
   ServiceStatus: (_, { headers }) => Effect.succeed({ version: caller(headers), startMethod: "foreground" }),
-  ListPlugins: unused,
+  ListConnectors: unused,
   SetEventAlerts: unused,
   Subscribe: unused,
   Update: unused,
@@ -31,14 +31,14 @@ const handlers = DaemonContract.DaemonContract.toLayer({
   Resume: unused,
   Retarget: unused,
   Cancel: unused,
-  ImportPlugin: unused,
-  EnablePlugin: unused,
-  DisablePlugin: unused,
-  RemovePlugin: unused,
-  ConfigurePlugin: unused,
+  ImportConnector: unused,
+  EnableConnector: unused,
+  DisableConnector: unused,
+  RemoveConnector: unused,
+  ConfigureConnector: unused,
   DevLink: unused,
   DevUnlink: unused,
-  ListPluginAlerts: unused,
+  ListConnectorAlerts: unused,
   GetSettings: unused,
   SetSettings: unused
 })

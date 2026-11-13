@@ -45,9 +45,9 @@ describe("panel update", () => {
   })
 
   it("goes back to the list once a removal is done", () => {
-    const onPlugin = initial(Fixtures.needsYou, Fixtures.now, { _tag: "Plugin", name: "jira" })
-    const done = update(onPlugin, Message.Performed({ request: Request.RemovePlugin({ name: Ids.PluginName.make("jira") }) }))
-    expect(done.model.screen).toEqual({ _tag: "Plugins" })
+    const onConnector = initial(Fixtures.needsYou, Fixtures.now, { _tag: "Connector", name: "jira" })
+    const done = update(onConnector, Message.Performed({ request: Request.RemoveConnector({ name: Ids.ConnectorName.make("jira") }) }))
+    expect(done.model.screen).toEqual({ _tag: "Connectors" })
     expect(done.model.busy).toBe(false)
   })
 

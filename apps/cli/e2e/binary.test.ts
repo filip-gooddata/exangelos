@@ -59,9 +59,9 @@ const eventually = async <A>(check: () => A | Promise<A>, limit = 20_000): Promi
 const startDaemon = () =>
   Bun.spawn([exangelos, "daemon"], { env: env(), stdout: "pipe", stderr: "pipe" })
 
-const listUntilReady = () => eventually(() => json("plugins"))
+const listUntilReady = () => eventually(() => json("connectors"))
 
-const pluginRuns = () =>
+const connectorRuns = () =>
   Bun.spawnSync(["pgrep", "-f", join(template, "dist", "main.js")]).exitCode === 0
 
 const abandonSocket = async (path: string) => {
@@ -100,7 +100,7 @@ const mcpSubscribe = async (parameters: Record<string, unknown>, delivery: Recor
     jsonrpc: "2.0",
     id: 2,
     method: "tools/call",
-    params: { name: "subscribe", arguments: { plugin: "template", parameters, intent: "Count ticks", ...delivery } }
+    params: { name: "subscribe", arguments: { connector: "template", parameters, intent: "Count ticks", ...delivery } }
   })
   expect(replies[1]).toMatchObject({ result: { structuredContent: { id: expect.any(String) } } })
   return replies[1].result.structuredContent as { id: string }
@@ -247,8 +247,8 @@ beforeAll(async () => {
   xng = join(root, "bin", "xng")
   template = join(root, "sources", "template")
   const releaseDirectory = join(root, "release")
-  build("packaging/src/cli/build-plugins.ts", "--out", releaseDirectory)
-  const official = await readFile(join(releaseDirectory, "official-plugins.json"), "utf8")
+  build("packaging/src/cli/build-connectors.ts", "--out", releaseDirectory)
+  const official = await readFile(join(releaseDirectory, "official-connectors.json"), "utf8")
   releasePort = await serveRelease(releaseDirectory)
   build(
     "apps/cli/build.ts",
@@ -256,15 +256,15 @@ beforeAll(async () => {
     version,
     "--release-url",
     `https://127.0.0.1:${releasePort}`,
-    "--official-plugins",
+    "--official-connectors",
     JSON.stringify(JSON.parse(official)),
     "--outfile",
     exangelos
   )
   await symlink(exangelos, xng)
   await installFakes()
-  build("build", "plugins/template/src/main.ts", "--target=bun", `--outfile=${join(template, "dist", "main.js")}`)
-  await copyFile(join(repo, "plugins/template/plugin.json"), join(template, "plugin.json"))
+  build("build", "connectors/template/src/main.ts", "--target=bun", `--outfile=${join(template, "dist", "main.js")}`)
+  await copyFile(join(repo, "connectors/template/connector.json"), join(template, "connector.json"))
   await writeFile(join(root, "token"), "not-a-secret")
 }, 300_000)
 
@@ -272,7 +272,7 @@ afterAll(async () => {
   if (daemon !== undefined) await stop(daemon)
   await stopServiceDaemon()
   Bun.spawnSync(["pkill", "-f", join(template, "dist", "main.js")])
-  Bun.spawnSync(["pkill", "-f", join(home, "plugins")])
+  Bun.spawnSync(["pkill", "-f", join(home, "connectors")])
   if (release !== undefined) await stop(release)
   await rm(root, { recursive: true, force: true })
 })
@@ -284,7 +284,7 @@ describe("the exangelos binary", () => {
   })
 
   it("tries to start the service on first use and says why it could not", async () => {
-    const result = run(xng, "plugins")
+    const result = run(xng, "connectors")
     expect(result.status).toBe(1)
     expect(result.stdout).toBe("")
     expect(result.stderr.trim()).toMatch(noDaemon)
@@ -298,18 +298,18 @@ describe("the exangelos binary", () => {
     expect(replies[1].result.content[0].text).toMatch(/^No Exangelos daemon is running, and starting it failed: .*fake service manager refused/s)
   }, 15_000)
 
-  it("serves the template plugin's catalogue from a daemon that replaced a stale socket", async () => {
+  it("serves the template connector's catalogue from a daemon that replaced a stale socket", async () => {
     await mkdir(home)
     await abandonSocket(join(home, "daemon.sock"))
     daemon = startDaemon()
     expect(await listUntilReady()).toEqual([])
-    expect(run(exangelos, "plugin", "dev-link", template).status).toBe(0)
-    const plugins = await eventually(() => {
-      const listed = json("plugins")
+    expect(run(exangelos, "connector", "dev-link", template).status).toBe(0)
+    const connectors = await eventually(() => {
+      const listed = json("connectors")
       expect(listed).toMatchObject([{ process: "running" }])
       return listed
     })
-    expect(plugins).toMatchObject([
+    expect(connectors).toMatchObject([
       {
         name: "template",
         trust: "dev",
@@ -319,7 +319,7 @@ describe("the exangelos binary", () => {
     const socket = await lstat(join(home, "daemon.sock"))
     expect(socket.isSocket()).toBe(true)
     expect(socket.mode & 0o777).toBe(0o600)
-    expect(pluginRuns()).toBe(true)
+    expect(connectorRuns()).toBe(true)
   }, 30_000)
 
   it("applied the migrations to the database", () => {
@@ -328,7 +328,7 @@ describe("the exangelos binary", () => {
     const migrations = database.query<{ migration_id: number }, []>("select migration_id from effect_sql_migrations").all()
     database.close()
     expect(tables.map((table) => table.name)).toEqual(
-      expect.arrayContaining(["plugins", "plugin_values", "plugin_changes", "subscriptions", "events", "wakes"])
+      expect.arrayContaining(["connectors", "connector_values", "connector_changes", "subscriptions", "events", "wakes"])
     )
     expect(migrations).toEqual([{ migration_id: 1 }])
   })
@@ -339,14 +339,14 @@ describe("the exangelos binary", () => {
     expect(replies[0].result.serverInfo).toMatchObject({ name: "exangelos", version })
     const tools = replies[1].result.tools.map((tool: { name: string }) => tool.name)
     expect([...tools].sort()).toEqual(
-      ["ack", "cancel", "events", "list", "list_plugins", "pause", "resume", "retarget", "show", "subscribe", "update", "wait"]
+      ["ack", "cancel", "events", "list", "list_connectors", "pause", "resume", "retarget", "show", "subscribe", "update", "wait"]
     )
   }, 15_000)
 
   it("wakes a subscriber through t3, then reads, acknowledges and waits on a pull-only subscription", async () => {
     json("settings", "set", "limits.wakeWindow=0 millis")
     await eventually(() =>
-      json("plugin", "configure", "template", "interval=0", "--secret-file", `token=${join(root, "token")}`)
+      json("connector", "configure", "template", "interval=0", "--secret-file", `token=${join(root, "token")}`)
     )
     if (process.platform === "darwin") {
       expect(await readFile(join(root, "secret-calls.log"), "utf8")).toMatch(/^security -i$/m)
@@ -381,19 +381,19 @@ describe("the exangelos binary", () => {
     const second = run(exangelos, "daemon")
     expect(second.status).toBe(1)
     expect(second.stderr.trim()).toBe(`a daemon already runs on ${join(home, "daemon.sock")}`)
-    expect(run(exangelos, "plugins").status).toBe(0)
+    expect(run(exangelos, "connectors").status).toBe(0)
   })
 
-  it("stops with its plugin and leaves no daemon behind", async () => {
+  it("stops with its connector and leaves no daemon behind", async () => {
     expect(await stop(daemon!)).toBe(true)
     daemon = undefined
-    expect(pluginRuns()).toBe(false)
-    expect(run(exangelos, "plugins").stderr.trim()).toMatch(noDaemon)
+    expect(connectorRuns()).toBe(false)
+    expect(run(exangelos, "connectors").stderr.trim()).toMatch(noDaemon)
   }, 15_000)
 
   it("starts the daemon through the service manager on first use and reports its status", async () => {
     await writeFile(join(root, "service-accepts"), "")
-    const listed = run(exangelos, "--json", "plugins")
+    const listed = run(exangelos, "--json", "connectors")
     expect(listed.stderr).toBe("")
     expect(listed.status).toBe(0)
     expect(JSON.parse(listed.stdout)).toMatchObject([{ name: "template", trust: "dev" }])
@@ -405,18 +405,18 @@ describe("the exangelos binary", () => {
     expect(status.stderr).not.toMatch(/\n\s+at /)
 
     expect(await stopServiceDaemon()).toBe(true)
-    expect(pluginRuns()).toBe(false)
+    expect(connectorRuns()).toBe(false)
     await rm(join(root, "service-accepts"))
   }, 30_000)
 
-  it("scaffolds a renamed copy of the plugin template", async () => {
-    expect(run(exangelos, "plugin", "scaffold", "template-feed").status).toBe(0)
+  it("scaffolds a renamed copy of the connector template", async () => {
+    expect(run(exangelos, "connector", "scaffold", "template-feed").status).toBe(0)
     const directory = join(root, "template-feed")
-    expect(JSON.parse(await readFile(join(directory, "plugin.json"), "utf8")).name).toBe("template-feed")
-    expect(JSON.parse(await readFile(join(directory, "package.json"), "utf8")).name).toBe("@exangelos/plugin-template-feed")
+    expect(JSON.parse(await readFile(join(directory, "connector.json"), "utf8")).name).toBe("template-feed")
+    expect(JSON.parse(await readFile(join(directory, "package.json"), "utf8")).name).toBe("@exangelos/connector-template-feed")
     expect(await readFile(join(directory, "src", "index.ts"), "utf8")).toBe(`export * as TemplateFeed from "./TemplateFeed.ts"\n`)
     expect(await readFile(join(directory, "README.md"), "utf8")).toContain("builds only inside the Exangelos monorepo")
-    expect(run(exangelos, "plugin", "scaffold", "template-feed").status).toBe(1)
+    expect(run(exangelos, "connector", "scaffold", "template-feed").status).toBe(1)
   })
 
   it("cross-compiles for Linux x64 into an ELF executable", async () => {
@@ -426,7 +426,7 @@ describe("the exangelos binary", () => {
   }, 120_000)
 })
 
-describe("official plugins from a release address", () => {
+describe("official connectors from a release address", () => {
   const archive = (name: string) => `${name}-0.1.0.tar.gz`
 
   // Serves the archive with one byte of its bundle changed, keeping the original to restore.
@@ -440,20 +440,20 @@ describe("official plugins from a release address", () => {
     const bytes = await readFile(entry)
     bytes[bytes.length - 1] = bytes[bytes.length - 1] === 0x0a ? 0x20 : 0x0a
     await writeFile(entry, bytes)
-    expect(Bun.spawnSync(["tar", "-czf", served, "-C", unpacked, "plugin.json", "dist/main.js"]).exitCode).toBe(0)
+    expect(Bun.spawnSync(["tar", "-czf", served, "-C", unpacked, "connector.json", "dist/main.js"]).exitCode).toBe(0)
   }
 
-  const pluginNamed = (name: string) => json("plugins").find((plugin: { name: string }) => plugin.name === name)
+  const connectorNamed = (name: string) => json("connectors").find((connector: { name: string }) => connector.name === name)
 
-  it("refuses a tampered official archive and leaves the plugin inert", async () => {
+  it("refuses a tampered official archive and leaves the connector inert", async () => {
     daemon = startDaemon()
     await listUntilReady()
     await tamper("file-watch")
     const refused = run(exangelos, "subscribe", "file-watch", join(root, "drops", "*.txt"), "--intent", "Watch drops", "--pull-only")
     expect(refused.status).toBe(1)
     expect(refused.stderr.trim()).toMatch(/^file-watch is unavailable: its checksum does not match the one this binary carries\./)
-    expect(pluginNamed("file-watch")).toMatchObject({ trust: "inert" })
-    expect(run(exangelos, "plugin", "remove", "file-watch").status).toBe(0)
+    expect(connectorNamed("file-watch")).toMatchObject({ trust: "inert" })
+    expect(run(exangelos, "connector", "remove", "file-watch").status).toBe(0)
     await copyFile(join(root, "tampered", archive("file-watch")), join(root, "release", archive("file-watch")))
   }, 30_000)
 
@@ -464,25 +464,25 @@ describe("official plugins from a release address", () => {
       return `${field}=${path}`
     }
     const local = `127.0.0.1:${releasePort}`
-    const plugins = [
+    const connectors = [
       { name: "github-pr", main: "o/r#1", eventType: "merge.ready", described: { label: "Pull request o/r#1" }, values: ["--secret-file", await stored("host", local)] },
       { name: "jira", main: "project = E2E", eventType: "status.changed", described: {}, values: ["email=e2e@example.invalid", "--secret-file", await stored("site", `https://${local}`)] }
     ]
-    for (const { described, eventType, main, name, values } of plugins) {
-      // Without credentials the plugin stops at Configure, before any request.
+    for (const { described, eventType, main, name, values } of connectors) {
+      // Without credentials the connector stops at Configure, before any request.
       const refused = run(exangelos, "subscribe", name, main, "--intent", "Describe only", "--pull-only")
       expect(refused.status).toBe(1)
-      expect(refused.stderr.trim()).toBe(`${name} is unavailable: its configuration is missing. Run \`exangelos plugins ${name}\` to see its state.`)
-      expect(pluginNamed(name)).toMatchObject({ trust: "enabled", origin: { _tag: "Official" } })
+      expect(refused.stderr.trim()).toBe(`${name} is unavailable: its configuration is missing. Run \`exangelos connectors ${name}\` to see its state.`)
+      expect(connectorNamed(name)).toMatchObject({ trust: "enabled", origin: { _tag: "Official" } })
 
-      const configured = run(exangelos, "plugin", "configure", name, ...values, "--secret-file", await stored("token", "not-a-secret"))
+      const configured = run(exangelos, "connector", "configure", name, ...values, "--secret-file", await stored("token", "not-a-secret"))
       expect(configured.status, configured.stdout + configured.stderr).toBe(0)
       const subscribed = run(exangelos, "--json", "subscribe", name, main, "--intent", "Describe only", "--pull-only")
       expect(subscribed.status, subscribed.stdout + subscribed.stderr).toBe(0)
       const subscription = JSON.parse(subscribed.stdout)
-      expect(subscription).toMatchObject({ plugin: name, subject: expect.any(String), ...described })
+      expect(subscription).toMatchObject({ connector: name, subject: expect.any(String), ...described })
       expect(run(exangelos, "cancel", subscription.id).status).toBe(0)
-      expect(pluginNamed(name).catalogue.eventTypes.map((spec: { type: string }) => spec.type)).toContain(eventType)
+      expect(connectorNamed(name).catalogue.eventTypes.map((spec: { type: string }) => spec.type)).toContain(eventType)
     }
     const requests = (await readFile(join(root, "release-requests.log"), "utf8")).split("\n")
     expect(requests).toEqual(expect.arrayContaining(["POST /api/graphql", "GET /rest/api/3/serverInfo", "GET /rest/api/3/myself"]))
@@ -494,13 +494,13 @@ describe("official plugins from a release address", () => {
     const drops = join(root, "drops")
     await mkdir(drops, { recursive: true })
     await eventually(() =>
-      json("plugin", "configure", "template", "interval=500", "--secret-file", `token=${join(root, "token")}`)
+      json("connector", "configure", "template", "interval=500", "--secret-file", `token=${join(root, "token")}`)
     )
     const ticks = await mcpSubscribe({ ticks: 120 }, { pullOnly: true, similarOk: json("list").map((s: { id: string }) => s.id) })
     const subscribed = run(exangelos, "--json", "subscribe", "file-watch", join(drops, "*.txt"), "--intent", "Watch drops", "--target", "t3:e2e-files")
     expect(subscribed.status, subscribed.stdout + subscribed.stderr).toBe(0)
     const files = JSON.parse(subscribed.stdout) as { id: string }
-    expect(pluginNamed("file-watch")).toMatchObject({ trust: "enabled", catalogue: { eventTypes: expect.arrayContaining([expect.objectContaining({ type: "file.created" })]) } })
+    expect(connectorNamed("file-watch")).toMatchObject({ trust: "enabled", catalogue: { eventTypes: expect.arrayContaining([expect.objectContaining({ type: "file.created" })]) } })
 
     expect(json("alerts", files.id, "on")).toMatchObject({ id: files.id, eventAlerts: true })
     expect(json("show", files.id).subscription.eventAlerts).toBe(true)
@@ -540,11 +540,11 @@ describe("official plugins from a release address", () => {
     expect(json("show", files.id).subscription.eventAlerts).toBe(false)
   }, 60_000)
 
-  it("stops and leaves no daemon or plugin process behind", async () => {
+  it("stops and leaves no daemon or connector process behind", async () => {
     expect(await stop(daemon!)).toBe(true)
     daemon = undefined
-    expect(Bun.spawnSync(["pgrep", "-f", join(home, "plugins")]).exitCode).toBe(1)
-    expect(pluginRuns()).toBe(false)
-    expect(run(exangelos, "plugins").stderr.trim()).toMatch(noDaemon)
+    expect(Bun.spawnSync(["pgrep", "-f", join(home, "connectors")]).exitCode).toBe(1)
+    expect(connectorRuns()).toBe(false)
+    expect(run(exangelos, "connectors").stderr.trim()).toMatch(noDaemon)
   }, 15_000)
 })

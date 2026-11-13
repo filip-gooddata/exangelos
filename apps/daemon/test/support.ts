@@ -13,14 +13,14 @@ import { fakes } from "@exangelos/daemon/testing"
 
 export const run = promisify(execFile)
 
-const template = Path.resolve(import.meta.dirname, "../../../plugins/template")
+const template = Path.resolve(import.meta.dirname, "../../../connectors/template")
 
 export const home = Effect.acquireRelease(
   Effect.promise(() => Fs.mkdtemp(Path.join(Os.tmpdir(), "exangelos-daemon-"))),
   (dir) => Effect.promise(() => Fs.rm(dir, { recursive: true, force: true }))
 )
 
-export const bundledPlugin = (main: string, into: string, name: string) =>
+export const bundledConnector = (main: string, into: string, name: string) =>
   Effect.promise(async (signal) => {
     const directory = Path.join(into, name)
     await run(process.execPath, [
@@ -29,13 +29,13 @@ export const bundledPlugin = (main: string, into: string, name: string) =>
       "--target=bun",
       `--outfile=${Path.join(directory, "dist/main.js")}`
     ], { env: { ...process.env, BUN_BE_BUN: "1" }, signal, timeout: 60_000 })
-    const manifest = JSON.parse(await Fs.readFile(Path.join(template, "plugin.json"), "utf8"))
-    await Fs.writeFile(Path.join(directory, "plugin.json"), JSON.stringify({ ...manifest, name }))
+    const manifest = JSON.parse(await Fs.readFile(Path.join(template, "connector.json"), "utf8"))
+    await Fs.writeFile(Path.join(directory, "connector.json"), JSON.stringify({ ...manifest, name }))
     return directory
   })
 
-export const templatePlugin = (into: string, name = "template") =>
-  bundledPlugin(Path.join(template, "src/main.ts"), into, name)
+export const templateConnector = (into: string, name = "template") =>
+  bundledConnector(Path.join(template, "src/main.ts"), into, name)
 
 export const wakeLog = (file: string) =>
   ["/bin/sh", "-c", "{ printf '%s\\n' \"$EXANGELOS_SUBSCRIPTION\"; cat; } >> \"$0\"", file] as const
@@ -50,7 +50,7 @@ export interface Running {
 
 export const start = (
   dir: string,
-  options: Partial<Choices> & { readonly officialPlugins?: ReadonlyArray<unknown>; readonly releaseUrl?: string } = {}
+  options: Partial<Choices> & { readonly officialConnectors?: ReadonlyArray<unknown>; readonly releaseUrl?: string } = {}
 ): Effect.Effect<Running, never, Scope.Scope> =>
   Effect.gen(function*() {
     const paths = Paths.layer.pipe(
@@ -62,7 +62,7 @@ export const start = (
     const daemon = Daemon.layer({
       ...fakes,
       ...options,
-      officialPlugins: options.officialPlugins ?? [],
+      officialConnectors: options.officialConnectors ?? [],
       releaseUrl: options.releaseUrl
     }).pipe(Layer.provide(platform))
 
@@ -91,9 +91,9 @@ export const quickWakes = (client: Running["client"], change: Partial<Limits.Lim
 
 export const install = (client: Running["client"], source: string, values: Record<string, string>) =>
   Effect.gen(function*() {
-    const imported = yield* client.ImportPlugin({ source: { _tag: "Directory", path: source } })
-    yield* client.EnablePlugin({ name: imported.name, digest: imported.digest })
-    yield* client.ConfigurePlugin({ name: imported.name, values }).pipe(
+    const imported = yield* client.ImportConnector({ source: { _tag: "Directory", path: source } })
+    yield* client.EnableConnector({ name: imported.name, digest: imported.digest })
+    yield* client.ConfigureConnector({ name: imported.name, values }).pipe(
       Effect.retry({ schedule: Schedule.spaced(Duration.millis(100)) }),
       Effect.timeout(Duration.seconds(15))
     )
@@ -102,7 +102,7 @@ export const install = (client: Running["client"], source: string, values: Recor
 
 export const installTemplate = (client: Running["client"], dir: string) =>
   Effect.flatMap(
-    templatePlugin(Path.join(dir, "sources")),
+    templateConnector(Path.join(dir, "sources")),
     (source) => install(client, source, { token: "not-a-secret", interval: "0" })
   )
 

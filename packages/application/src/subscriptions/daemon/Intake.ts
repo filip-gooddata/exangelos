@@ -1,6 +1,6 @@
 import { Array as Arr, DateTime, Effect, Layer, Option, Result } from "effect"
-import { Alert, Delivery, Intake, Lifecycle, PluginRules, Settings } from "@exangelos/domain"
-import type { Event, Ids, Plugin, Subscription, Wake } from "@exangelos/domain"
+import { Alert, Delivery, Intake, Lifecycle, ConnectorRules, Settings } from "@exangelos/domain"
+import type { Event, Ids, Connector, Subscription, Wake } from "@exangelos/domain"
 import * as NewId from "../../NewId.ts"
 import { AlertSink } from "../../ports/AlertSink.ts"
 import { EventRepository } from "../../ports/EventRepository.ts"
@@ -13,9 +13,9 @@ import { SubscriptionLocks } from "../Locks.ts"
 import { SubscriptionSignals } from "../Signals.ts"
 import { commit, type CommitServices } from "../Transitions.ts"
 import { requestWake } from "../Wakes.ts"
-import { RemovedPlugins, type Unavailable } from "../RemovedPlugins.ts"
+import { RemovedConnectors, type Unavailable } from "../RemovedConnectors.ts"
 
-export type IntakeServices = CommitServices | SubscriptionLocks | RemovedPlugins | AlertSink
+export type IntakeServices = CommitServices | SubscriptionLocks | RemovedConnectors | AlertSink
 
 /** Runs one subscription's load-change-store under its lock, with the subscription as stored now. */
 export const withSubscription = <A, R>(
@@ -90,7 +90,7 @@ const apply = (before: Subscription.Subscription, item: Event.WatchItem) =>
       }
       case "End": {
         const now = yield* DateTime.now
-        const ended = Lifecycle.end(before, { _tag: "Plugin", reason: item.reason }, now)
+        const ended = Lifecycle.end(before, { _tag: "Connector", reason: item.reason }, now)
         if (Result.isFailure(ended)) return unchanged(before)
         yield* commit(Option.some(before), ended.success)
         return unchanged(ended.success.subscription)
@@ -114,7 +114,7 @@ const lastSuspensionWake = (wakes: ReadonlyArray<Wake.Wake>) =>
   Option.map(Arr.findLast(wakes, (wake) => wake.reason === "suspended"), (wake) => wake.createdAt)
 
 /**
- * Brings one subscription's suspended wake in line with its plugin: requests the wake the domain
+ * Brings one subscription's suspended wake in line with its connector: requests the wake the domain
  * owes, drops an undelivered one that has nothing left to say, and tells waiting callers.
  */
 const followAvailability = (
@@ -136,47 +136,47 @@ const followAvailability = (
       yield* signals.changed(subscription.id)
     }))
 
-const subscriptionsOf = (plugin: Ids.PluginName) =>
+const subscriptionsOf = (connector: Ids.ConnectorName) =>
   Effect.gen(function*() {
     const subscriptions = yield* SubscriptionRepository
-    return yield* subscriptions.list({ plugin })
+    return yield* subscriptions.list({ connector })
   })
 
-const pluginChanged = (plugin: Plugin.Plugin) =>
+const connectorChanged = (connector: Connector.Connector) =>
   Effect.gen(function*() {
-    const removed = yield* RemovedPlugins
-    yield* removed.forget(plugin.name)
+    const removed = yield* RemovedConnectors
+    yield* removed.forget(connector.name)
     const limits = yield* currentLimits
     const now = yield* DateTime.now
-    const available = PluginRules.isAvailable(plugin)
-    for (const subscription of yield* subscriptionsOf(plugin.name)) {
+    const available = ConnectorRules.isAvailable(connector)
+    for (const subscription of yield* subscriptionsOf(connector.name)) {
       yield* followAvailability(subscription.id, available, (current, last) =>
-        Lifecycle.suspensionWake(current, plugin, last, now, limits))
+        Lifecycle.suspensionWake(current, connector, last, now, limits))
     }
   })
 
-const pluginRemoved = (plugin: Ids.PluginName, since: DateTime.Utc, problem: string) =>
+const connectorRemoved = (connector: Ids.ConnectorName, since: DateTime.Utc, problem: string) =>
   Effect.gen(function*() {
     const unavailable: Unavailable = { since, problem }
-    const removed = yield* RemovedPlugins
-    yield* removed.record(plugin, unavailable)
+    const removed = yield* RemovedConnectors
+    yield* removed.record(connector, unavailable)
     const limits = yield* currentLimits
     const now = yield* DateTime.now
-    for (const subscription of yield* subscriptionsOf(plugin)) {
+    for (const subscription of yield* subscriptionsOf(connector)) {
       yield* followAvailability(subscription.id, false, (current, last) =>
         Lifecycle.suspensionWakeWhen(current, Option.some(unavailable), last, now, limits))
     }
   })
 
-/** The subscription half's intake, as the plugin half's Watch streams and supervision call it. */
+/** The subscription half's intake, as the connector half's Watch streams and supervision call it. */
 export const layerSubscriptionIntake: Layer.Layer<SubscriptionIntake, never, IntakeServices> = Layer.effect(
   SubscriptionIntake,
   Effect.gen(function*() {
     const context = yield* Effect.context<IntakeServices>()
     return {
       ingest: (id, item) => Effect.provideContext(ingest(id, item), context),
-      pluginChanged: (plugin) => Effect.provideContext(pluginChanged(plugin), context),
-      pluginRemoved: (plugin, since, problem) => Effect.provideContext(pluginRemoved(plugin, since, problem), context)
+      connectorChanged: (connector) => Effect.provideContext(connectorChanged(connector), context),
+      connectorRemoved: (connector, since, problem) => Effect.provideContext(connectorRemoved(connector, since, problem), context)
     }
   })
 )

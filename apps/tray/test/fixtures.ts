@@ -1,4 +1,4 @@
-import { type Catalogue, type Event, Ids, Limits, type Plugin, type Session, type Settings, type Subscription, type Wake } from "@exangelos/domain"
+import { type Catalogue, type Event, Ids, Limits, type Connector, type Session, type Settings, type Subscription, type Wake } from "@exangelos/domain"
 import { DateTime, Result } from "effect"
 import type { Detail } from "../src/daemon/DaemonClient.ts"
 import * as Panel from "../src/state/Panel.ts"
@@ -6,8 +6,8 @@ import { PanelState } from "../src/state/Panel.ts"
 
 const start = DateTime.makeUnsafe("2026-11-01T10:00:00Z")
 
-export const plugin = (overrides: Partial<Plugin.Plugin> = {}): Plugin.Plugin => ({
-  name: Ids.PluginName.make("github-pr"),
+export const connector = (overrides: Partial<Connector.Connector> = {}): Connector.Connector => ({
+  name: Ids.ConnectorName.make("github-pr"),
   version: "1.0.0",
   origin: { _tag: "ArchiveFile", path: "/tmp/github-pr.tgz" },
   digest: "sha256-a",
@@ -19,7 +19,7 @@ export const plugin = (overrides: Partial<Plugin.Plugin> = {}): Plugin.Plugin =>
 
 export const subscription = (overrides: Partial<Subscription.Subscription> = {}): Subscription.Subscription => ({
   id: Ids.SubscriptionId.make("sub_7f3k"),
-  plugin: Ids.PluginName.make("github-pr"),
+  connector: Ids.ConnectorName.make("github-pr"),
   parameters: { pr: "acme/app#123" },
   subject: "acme/app#123",
   label: "acme/app#123",
@@ -47,16 +47,16 @@ const claude: Session.Session = { harness: "claude-code", sessionId: "api-gatewa
 const codex: Session.Session = { harness: "codex", sessionId: "Docs refresh" }
 
 const names = {
-  github: Ids.PluginName.make("github-pr"),
-  jira: Ids.PluginName.make("jira"),
-  files: Ids.PluginName.make("file-watch"),
-  linear: Ids.PluginName.make("linear-issues"),
-  mine: Ids.PluginName.make("my-plugin")
+  github: Ids.ConnectorName.make("github-pr"),
+  jira: Ids.ConnectorName.make("jira"),
+  files: Ids.ConnectorName.make("file-watch"),
+  linear: Ids.ConnectorName.make("linear-issues"),
+  mine: Ids.ConnectorName.make("my-connector")
 }
 
 const sample = (
   id: string,
-  plugin: Ids.PluginName,
+  connector: Ids.ConnectorName,
   subject: string,
   label: string,
   intent: string,
@@ -64,7 +64,7 @@ const sample = (
   rest: Partial<Subscription.Subscription> = {}
 ): Subscription.Subscription => ({
   id: Ids.SubscriptionId.make(id),
-  plugin,
+  connector,
   parameters: { subject },
   subject,
   label,
@@ -111,7 +111,7 @@ const open = [
 
 const closed = [
   sample("sub_a3lr", names.github, "acme/app#117", "Follow-up rebase", "Rebase the follow-up branch after this merges.", t3, {
-    state: { _tag: "Ended", reason: { _tag: "Plugin", reason: "pull request merged" } },
+    state: { _tag: "Ended", reason: { _tag: "Connector", reason: "pull request merged" } },
     stateSince: ago({ days: 2 })
   }),
   sample("sub_k7vy", names.files, "~/notes/**", "Notes", "Index new notes.", undefined, {
@@ -193,7 +193,7 @@ const details = (codexReachable: boolean): ReadonlyArray<Detail> => {
 const hexDigest = (seed: string): string =>
   Array.from({ length: 64 }, (_, i) => "0123456789abcdef"[(seed.charCodeAt(i % seed.length) * (i + 7)) % 16]).join("")
 
-const official = (name: Ids.PluginName, version: string, rest: Partial<Plugin.Plugin> = {}): Plugin.Plugin => ({
+const official = (name: Ids.ConnectorName, version: string, rest: Partial<Connector.Connector> = {}): Connector.Connector => ({
   name,
   version,
   origin: { _tag: "Official", version },
@@ -214,8 +214,8 @@ const jiraCatalogue: Catalogue.Catalogue = {
   ]
 }
 
-/** An inert third-party plugin that waits for you to enable it. */
-export const inertPlugin: Plugin.Plugin = {
+/** An inert third-party connector that waits for you to enable it. */
+export const inertConnector: Connector.Connector = {
   name: names.linear,
   version: "0.3.1",
   origin: { _tag: "GitRepository", url: "https://github.com/example/exangelos-linear", ref: "v0.3.1" },
@@ -225,7 +225,7 @@ export const inertPlugin: Plugin.Plugin = {
   process: "stopped"
 }
 
-const plugins = (needsYou: boolean): ReadonlyArray<Plugin.Plugin> => [
+const connectors = (needsYou: boolean): ReadonlyArray<Connector.Connector> => [
   official(names.github, "1.2.0"),
   needsYou
     ? official(names.jira, "1.0.3", {
@@ -236,12 +236,12 @@ const plugins = (needsYou: boolean): ReadonlyArray<Plugin.Plugin> => [
     })
     : official(names.jira, "1.0.3", { catalogue: jiraCatalogue, configuredBy: { _tag: "You" } }),
   official(names.files, "1.0.0", { configuration: { _tag: "Set" } }),
-  ...(needsYou ? [inertPlugin] : []),
+  ...(needsYou ? [inertConnector] : []),
   {
     name: names.mine,
     version: "0.0.1",
-    origin: { _tag: "DevLink", path: "~/code/my-plugin" },
-    digest: hexDigest("my-plugin"),
+    origin: { _tag: "DevLink", path: "~/code/my-connector" },
+    digest: hexDigest("my-connector"),
     trust: "dev",
     configuration: { _tag: "Set" },
     process: "running"
@@ -251,13 +251,13 @@ const plugins = (needsYou: boolean): ReadonlyArray<Plugin.Plugin> => [
 const settings: Settings.Settings = { eventAlerts: true, limits: Limits.defaults }
 
 const ready = (needsYou: boolean): PanelState => {
-  const installed = plugins(needsYou)
+  const installed = connectors(needsYou)
   return PanelState.Ready({
     subscriptions: Result.succeed([...open, ...closed]),
     details: Result.succeed(details(!needsYou)),
-    plugins: Result.succeed(installed),
+    connectors: Result.succeed(installed),
     needsYou: Result.succeed(
-      Panel.needsYou(installed, needsYou ? [{ _tag: "WaitsForEnable", plugin: names.linear }] : [])
+      Panel.needsYou(installed, needsYou ? [{ _tag: "WaitsForEnable", connector: names.linear }] : [])
     ),
     settings: Result.succeed(settings),
     status: Result.succeed({ version: "0.1.0", startMethod: "launch-agent" })
@@ -274,7 +274,7 @@ export const needsYou: PanelState = ready(true)
 export const empty: PanelState = PanelState.Ready({
   subscriptions: Result.succeed([]),
   details: Result.succeed([]),
-  plugins: Result.succeed([official(names.github, "1.2.0")]),
+  connectors: Result.succeed([official(names.github, "1.2.0")]),
   needsYou: Result.succeed([]),
   settings: Result.succeed(settings),
   status: Result.succeed({ version: "0.1.0", startMethod: "launch-agent" })

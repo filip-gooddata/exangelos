@@ -1,5 +1,5 @@
 import type { DaemonContract } from "@exangelos/contracts"
-import type { Alert, Catalogue, Ids, Plugin, Session, Settings, Subscription } from "@exangelos/domain"
+import type { Alert, Catalogue, Ids, Connector, Session, Settings, Subscription } from "@exangelos/domain"
 import { Context, Data, type Duration, Effect, Layer, Option, Ref, Result, Schedule, type Scope, Semaphore, Stream, SubscriptionRef } from "effect"
 import {
   type CallFailed,
@@ -20,7 +20,7 @@ export type PanelState = Data.TaggedEnum<{
   Ready: {
     readonly subscriptions: Section<ReadonlyArray<Subscription.Subscription>>
     readonly details: Section<ReadonlyArray<Detail>>
-    readonly plugins: Section<ReadonlyArray<Plugin.Plugin>>
+    readonly connectors: Section<ReadonlyArray<Connector.Connector>>
     readonly needsYou: Section<ReadonlyArray<Alert.Alert>>
     readonly settings: Section<Settings.Settings>
     readonly status: Section<ServiceStatus>
@@ -34,11 +34,11 @@ export type Request = Data.TaggedEnum<{
   Resume: { readonly id: Ids.SubscriptionId }
   Retarget: { readonly id: Ids.SubscriptionId; readonly target: DaemonContract.TargetChoice }
   Cancel: { readonly id: Ids.SubscriptionId }
-  ImportPlugin: { readonly source: DaemonContract.ImportSource }
-  EnablePlugin: { readonly name: Ids.PluginName; readonly digest: string }
-  DisablePlugin: { readonly name: Ids.PluginName }
-  RemovePlugin: { readonly name: Ids.PluginName }
-  ConfigurePlugin: { readonly name: Ids.PluginName; readonly values: Catalogue.ConfigurationValues }
+  ImportConnector: { readonly source: DaemonContract.ImportSource }
+  EnableConnector: { readonly name: Ids.ConnectorName; readonly digest: string }
+  DisableConnector: { readonly name: Ids.ConnectorName }
+  RemoveConnector: { readonly name: Ids.ConnectorName }
+  ConfigureConnector: { readonly name: Ids.ConnectorName; readonly values: Catalogue.ConfigurationValues }
   SetEventAlerts: { readonly id: Ids.SubscriptionId; readonly eventAlerts: boolean }
   SetSettings: { readonly settings: Settings.Settings }
   Quit: {}
@@ -53,8 +53,8 @@ export type Refusal =
   | DaemonContract.InvalidRequest
   | DaemonContract.NoWakeTarget
   | DaemonContract.ImportFailed
-  | DaemonContract.PluginNotFound
-  | DaemonContract.PluginUnavailable
+  | DaemonContract.ConnectorNotFound
+  | DaemonContract.ConnectorUnavailable
   | DaemonContract.DigestMismatch
   | DaemonContract.ConfigurationInvalid
   | DaemonContract.ConfigurationRejected
@@ -72,25 +72,25 @@ export const act = (client: DaemonClient["Service"], quit: Effect.Effect<void, H
     Resume: ({ id }) => command(client.Resume({ id })),
     Retarget: ({ id, target }) => command(client.Retarget({ id, target })),
     Cancel: ({ id }) => command(client.Cancel({ id })),
-    ImportPlugin: ({ source }) => command(client.ImportPlugin({ source })),
-    EnablePlugin: ({ digest, name }) => command(client.EnablePlugin({ name, digest })),
-    DisablePlugin: ({ name }) => command(client.DisablePlugin({ name })),
-    RemovePlugin: ({ name }) => command(client.RemovePlugin({ name })),
-    ConfigurePlugin: ({ name, values }) => command(client.ConfigurePlugin({ name, values })),
+    ImportConnector: ({ source }) => command(client.ImportConnector({ source })),
+    EnableConnector: ({ digest, name }) => command(client.EnableConnector({ name, digest })),
+    DisableConnector: ({ name }) => command(client.DisableConnector({ name })),
+    RemoveConnector: ({ name }) => command(client.RemoveConnector({ name })),
+    ConfigureConnector: ({ name, values }) => command(client.ConfigureConnector({ name, values })),
     SetEventAlerts: ({ eventAlerts, id }) => command(client.SetEventAlerts({ id, eventAlerts })),
     SetSettings: ({ settings }) => command(client.SetSettings({ settings })),
     Quit: () => quit
   })
 
 export const needsYou = (
-  plugins: ReadonlyArray<Plugin.Plugin>,
+  connectors: ReadonlyArray<Connector.Connector>,
   trustAlerts: ReadonlyArray<Alert.Alert>
 ): ReadonlyArray<Alert.Alert> => [
   ...trustAlerts,
-  ...plugins.flatMap((plugin): ReadonlyArray<Alert.Alert> => [
-    ...(plugin.process === "failing" ? [{ _tag: "Failing", plugin: plugin.name, reason: "it keeps failing" } as const] : []),
-    ...(plugin.configuration._tag === "Rejected"
-      ? [{ _tag: "CredentialsRejected", plugin: plugin.name, reason: plugin.configuration.reason } as const]
+  ...connectors.flatMap((connector): ReadonlyArray<Alert.Alert> => [
+    ...(connector.process === "failing" ? [{ _tag: "Failing", connector: connector.name, reason: "it keeps failing" } as const] : []),
+    ...(connector.configuration._tag === "Rejected"
+      ? [{ _tag: "CredentialsRejected", connector: connector.name, reason: connector.configuration.reason } as const]
       : [])
   ])
 ]
@@ -151,12 +151,12 @@ export const fromLoad = <R>(
   load: Effect.Effect<Snapshot, DaemonNotRunning, R>
 ): Effect.Effect<PanelState, never, R> =>
   load.pipe(
-    Effect.map(({ details, plugins, settings, status, subscriptions, trustAlerts }) =>
+    Effect.map(({ details, connectors, settings, status, subscriptions, trustAlerts }) =>
       PanelState.Ready({
         subscriptions,
         details,
-        plugins,
-        needsYou: Result.flatMap(plugins, (loaded) => Result.map(trustAlerts, (alerts) => needsYou(loaded, alerts))),
+        connectors,
+        needsYou: Result.flatMap(connectors, (loaded) => Result.map(trustAlerts, (alerts) => needsYou(loaded, alerts))),
         settings,
         status
       })
@@ -181,7 +181,7 @@ export interface Options {
   readonly interval: Duration.Input
 }
 
-/** Loads now and then every `interval`. After each load that lists the plugins, tells the host when the needs-you list has turned empty or non-empty; a host that refuses is told again after the next load. `perform` loads again once a request succeeds. */
+/** Loads now and then every `interval`. After each load that lists the connectors, tells the host when the needs-you list has turned empty or non-empty; a host that refuses is told again after the next load. `perform` loads again once a request succeeds. */
 export const make = ({ act, interval, load, setAttention }: Options): Effect.Effect<Panel["Service"], never, Scope.Scope> =>
   Effect.gen(function*() {
     const state = yield* SubscriptionRef.make<PanelState>(PanelState.Loading())
@@ -225,16 +225,16 @@ export const layer = (interval: Duration.Input): Layer.Layer<Panel, never, Daemo
 const describeSection = <A>(name: string, section: Section<ReadonlyArray<A>>) =>
   Result.match(section, { onSuccess: (items) => `${name} ${items.length}`, onFailure: (message) => `${name} failed (${message})` })
 
-/** Passes once the daemon has answered and the plugins have loaded; the report names every section. */
+/** Passes once the daemon has answered and the connectors have loaded; the report names every section. */
 export const smokeReport = (state: PanelState): { readonly ok: boolean; readonly report: string } =>
   PanelState.$match(state, {
     Loading: () => ({ ok: false, report: "panel still loading" }),
     DaemonNotRunning: ({ message }) => ({ ok: false, report: `daemon not running: ${message}` }),
-    Ready: ({ details, needsYou, plugins, subscriptions }) => ({
-      ok: Result.isSuccess(plugins),
+    Ready: ({ details, needsYou, connectors, subscriptions }) => ({
+      ok: Result.isSuccess(connectors),
       report: `panel ready: ${
         [
-          describeSection("plugins", plugins),
+          describeSection("connectors", connectors),
           describeSection("needs you", needsYou),
           describeSection("subscriptions", subscriptions),
           describeSection("details", details)

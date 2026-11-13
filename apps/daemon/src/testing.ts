@@ -13,4 +13,4 @@ export const fakes: Pick<Daemon.Options, "alerts" | "serviceManager" | "secretSt
   wakeTarget: layerWakeTarget
 }
 
-export const layerForTests = Daemon.layer({ ...fakes, officialPlugins: [], releaseUrl: undefined })
+export const layerForTests = Daemon.layer({ ...fakes, officialConnectors: [], releaseUrl: undefined })

@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { Ids } from "@exangelos/domain"
 
-export const fileName = "plugin.json"
+export const fileName = "connector.json"
 
 export const Platform = Schema.Literals(["darwin-arm64", "darwin-x64", "linux-arm64", "linux-x64"])
 export type Platform = typeof Platform.Type
@@ -20,7 +20,7 @@ export const Entry = Schema.TaggedUnion({
 export type Entry = typeof Entry.Type
 
 export const Manifest = Schema.Struct({
-  name: Ids.PluginName,
+  name: Ids.ConnectorName,
   version: Schema.NonEmptyString,
   entry: Entry
 })

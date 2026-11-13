@@ -7,7 +7,7 @@ import type { Outcome } from "../src/Attempt.ts"
 
 export const content: Wake.WakeContent = {
   subscription: Ids.SubscriptionId.make("sub_7f3k"),
-  plugin: "github-pr",
+  connector: "github-pr",
   subject: "acme/app#123",
   why: { _tag: "Events" },
   pending: [{ number: 4, type: "checks.failed", summary: "build and e2e failed" }]

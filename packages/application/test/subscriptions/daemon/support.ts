@@ -1,35 +1,35 @@
 import { DateTime, Effect, Layer, Option } from "effect"
 import { Ids, Lifecycle, Limits } from "@exangelos/domain"
-import type { Event, Plugin, Session, Subscription } from "@exangelos/domain"
-import { PluginAccess } from "../../../src/seam/PluginAccess.ts"
+import type { Event, Connector, Session, Subscription } from "@exangelos/domain"
+import { ConnectorAccess } from "../../../src/seam/ConnectorAccess.ts"
 import { EventRepository } from "../../../src/ports/EventRepository.ts"
-import { PluginRepository } from "../../../src/ports/PluginRepository.ts"
+import { ConnectorRepository } from "../../../src/ports/ConnectorRepository.ts"
 import { SubscriptionRepository } from "../../../src/ports/SubscriptionRepository.ts"
 import { WakeRepository } from "../../../src/ports/WakeRepository.ts"
 import { layerSubscriptionIntake } from "../../../src/subscriptions/daemon/Intake.ts"
-import { plugin } from "../../fixtures.ts"
+import { connector } from "../../fixtures.ts"
 import { layerHarness } from "../harness.ts"
 
 export const layer = Layer.provideMerge(layerSubscriptionIntake, layerHarness)
 
 export const session: Session.Session = { harness: "claude-code", sessionId: "s-1" }
 
-export const github = Ids.PluginName.make("github")
+export const github = Ids.ConnectorName.make("github")
 
 let counter = 0
 
-/** Stores the github plugin and an active subscription to it, watched, with a wake target unless told otherwise. */
+/** Stores the github connector and an active subscription to it, watched, with a wake target unless told otherwise. */
 export const seed = (
   overrides: Partial<Lifecycle.NewSubscription> = {},
-  pluginRecord: Plugin.Plugin = plugin("github")
+  connectorRecord: Connector.Connector = connector("github")
 ) =>
   Effect.gen(function*() {
-    const plugins = yield* PluginRepository
-    yield* plugins.store(pluginRecord)
+    const connectors = yield* ConnectorRepository
+    yield* connectors.store(connectorRecord)
     const now = yield* DateTime.now
     const subscription = Lifecycle.create({
       id: Ids.SubscriptionId.make(`sub_test${counter++}`),
-      plugin: github,
+      connector: github,
       parameters: { repo: "a/b" },
       subject: "a/b",
       label: "a/b",
@@ -39,7 +39,7 @@ export const seed = (
     }, now, Limits.defaults)
     const subscriptions = yield* SubscriptionRepository
     yield* subscriptions.store(subscription)
-    const access = yield* PluginAccess
+    const access = yield* ConnectorAccess
     yield* access.watch(subscription.id)
     return subscription
   })
