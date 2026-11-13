@@ -37,7 +37,7 @@ const run = (
 ) =>
   Effect.gen(function*() {
     const home = `${directory}/${name}`
-    mkdirSync(home)
+    mkdirSync(home, { recursive: true })
     const socket = `${home}/daemon.sock`
     const ran: Array<string> = []
     const manager = Layer.succeed(
@@ -87,6 +87,18 @@ describe("the exangelos entry", () => {
       expect(result.ran).toEqual(["status", "install", "start"])
       expect(result.code).toBe(0)
       expect(JSON.parse(result.stdout)).toHaveLength(1)
+    }).pipe(Effect.provide(TestConsole.layer), Effect.scoped))
+
+  it.effect("service status, as the tray runs it, installs and starts the service once and later finds it answering", () =>
+    Effect.gen(function*() {
+      const scope = yield* Effect.scope
+      const first = yield* run(["service", "status"], "tray", (socket) =>
+        Layer.buildWithScope(daemonServer(socket), scope).pipe(Effect.asVoid, Effect.orDie))
+      expect(first.ran).toEqual(["status", "install", "start"])
+      expect(first.code).toBe(0)
+      const later = yield* run(["service", "status"], "tray", () => Effect.die("started twice"))
+      expect(later.ran).toEqual([])
+      expect(later.code).toBe(0)
     }).pipe(Effect.provide(TestConsole.layer), Effect.scoped))
 
   it.effect("prints the no-daemon text with the service's reason and exits 1 when the start fails", () =>

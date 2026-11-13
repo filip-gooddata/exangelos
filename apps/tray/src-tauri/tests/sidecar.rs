@@ -3,7 +3,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixListener;
 use std::path::Path;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use exangelos_tray_lib::sidecar::{ensure_daemon, Daemon};
 
@@ -35,21 +35,34 @@ fn leaves_an_answering_daemon_alone() {
 }
 
 #[test]
-fn starts_the_sidecar_daemon_when_the_socket_is_silent() {
+fn starts_the_service_through_the_sidecar_when_the_socket_is_silent() {
     let directory = tempfile::tempdir().unwrap();
     let socket = directory.path().join("daemon.sock");
     let sidecar = fake_sidecar(directory.path());
 
-    assert!(matches!(
+    assert_eq!(ensure_daemon(&socket, &sidecar), Ok(Daemon::Started));
+    assert_eq!(
+        fs::read_to_string(directory.path().join("started")).unwrap(),
+        "service status\n"
+    );
+}
+
+#[test]
+fn reports_the_sidecar_message_when_the_start_fails() {
+    let directory = tempfile::tempdir().unwrap();
+    let socket = directory.path().join("daemon.sock");
+    let sidecar = directory.path().join("exangelos");
+    fs::write(
+        &sidecar,
+        "#!/bin/sh\necho 'No Exangelos daemon is running, and starting it failed: refused.' >&2\nexit 1\n",
+    )
+    .unwrap();
+    fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o755)).unwrap();
+
+    assert_eq!(
         ensure_daemon(&socket, &sidecar),
-        Ok(Daemon::Started { .. })
-    ));
-    let marker = directory.path().join("started");
-    let deadline = Instant::now() + Duration::from_secs(5);
-    while !marker.exists() && Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(20));
-    }
-    assert_eq!(fs::read_to_string(marker).unwrap(), "daemon\n");
+        Err("No Exangelos daemon is running, and starting it failed: refused.".to_string())
+    );
 }
 
 #[test]
