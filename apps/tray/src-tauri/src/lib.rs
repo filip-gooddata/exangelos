@@ -3,6 +3,7 @@
 //! the relay.
 
 pub mod relay;
+pub mod sidecar;
 pub mod socket;
 
 use std::process;
@@ -22,6 +23,7 @@ const PANEL: &str = "panel";
 const TRAY: &str = "main";
 const CONNECTION_HEADER: &str = "exangelos-relay-connection";
 const SMOKE_TIMEOUT: Duration = Duration::from_secs(15);
+const DAEMON_START_TIMEOUT: Duration = Duration::from_secs(5);
 
 const ICON_QUIET: &[u8] = include_bytes!("../../icons/tray-quiet.png");
 const ICON_ATTENTION: &[u8] = include_bytes!("../../icons/tray-attention.png");
@@ -111,6 +113,26 @@ fn host_smoke_report(app: AppHandle, host: State<'_, Host>, ok: bool, report: St
     app.exit(if ok { 0 } else { 1 });
 }
 
+fn start_daemon() {
+    let socket = match socket::daemon_socket_path(|name| std::env::var(name).ok()) {
+        Ok(socket) => socket,
+        Err(message) => return eprintln!("the Exangelos daemon is not running: {message}"),
+    };
+    match sidecar::sidecar_path().and_then(|sidecar| sidecar::ensure_daemon(&socket, &sidecar)) {
+        Ok(sidecar::Daemon::Answering) => {}
+        Ok(sidecar::Daemon::Started { pid }) => {
+            eprintln!("started the Exangelos daemon, pid {pid}");
+            if !sidecar::wait_until_answering(&socket, DAEMON_START_TIMEOUT) {
+                eprintln!(
+                    "the Exangelos daemon did not answer within {} s",
+                    DAEMON_START_TIMEOUT.as_secs()
+                );
+            }
+        }
+        Err(message) => eprintln!("the Exangelos daemon is not running: {message}"),
+    }
+}
+
 fn tray_image(png: &[u8]) -> Image<'static> {
     Image::from_bytes(png).expect("bundled tray icon is a valid PNG")
 }
@@ -151,8 +173,7 @@ pub fn run() {
             let window = build_panel(app.handle())?;
             platform::prepare_panel(&window)?;
             build_tray(app.handle())?;
-            // The sidecar (the daemon binary shipped with the app) starts here
-            // once it exists; see `bundle.externalBin`.
+            start_daemon();
             Ok(())
         })
         .on_window_event(|window, event| {

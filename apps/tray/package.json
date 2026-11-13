@@ -8,7 +8,9 @@
   "scripts": {
     "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
     "build:web": "vite build",
+    "build:sidecar": "bun build-sidecar.ts",
     "tauri": "tauri",
+    "bundle": "tauri build --config src-tauri/tauri.sidecar.conf.json",
     "test": "bun run --bun vitest run"
   },
   "dependencies": {
