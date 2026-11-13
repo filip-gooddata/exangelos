@@ -31,7 +31,8 @@ export type DescribeAnswer = typeof DescribeAnswer.Type
 export const WatchRequest = Schema.Struct({
   parameters: Catalogue.Parameters,
   eventTypes: Schema.Array(Ids.EventType),
-  cursor: Schema.optionalKey(Schema.String)
+  cursor: Schema.optionalKey(Schema.String),
+  wakeWindow: Schema.DurationFromMillis
 })
 export type WatchRequest = typeof WatchRequest.Type
 

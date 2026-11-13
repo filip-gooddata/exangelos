@@ -235,8 +235,13 @@ export const devUnlink = (actor: Session.Actor, name: Ids.PluginName) =>
 
 export const getSettings = SettingsStore.use((store) => store.read)
 
+/** Writes the settings. A changed wake window reaches open Watch streams through a rewatch. */
 export const setSettings = (settings: Settings.Settings) =>
-  SettingsStore.use((store) => Effect.as(store.write(settings), settings))
+  Effect.gen(function*() {
+    yield* (yield* SettingsStore).write(settings)
+    yield* (yield* PluginSupervisor).settingsChanged
+    return settings
+  })
 
 /** Whether the daemon service runs and how it started; the caller adds its own version. */
 export const serviceStatus = ServiceManager.use((manager) => manager.status)

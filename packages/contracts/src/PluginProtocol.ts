@@ -48,7 +48,9 @@ export class Watch extends Rpc.make("Watch", {
   payload: {
     parameters: Catalogue.Parameters,
     eventTypes: Schema.Array(Ids.EventType),
-    cursor: Schema.optionalKey(Schema.String)
+    cursor: Schema.optionalKey(Schema.String),
+    /** The daemon's wake window. Daemons before this field send none. */
+    wakeWindow: Schema.optionalKey(Schema.DurationFromMillis)
   },
   success: Event.WatchItem,
   error: WatchError,

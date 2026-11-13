@@ -65,7 +65,7 @@ describe("plugin supervision over the real runtime", () => {
       expect(items).toMatchObject([
         { _tag: "Event", event: { type: "tick", payload: { index: 3 }, summary: "Tick 3 of 4" }, cursor: "3" },
         { _tag: "Event", event: { type: "tick", payload: { index: 4 }, summary: "Tick 4 of 4" }, cursor: "4" },
-        { _tag: "End", reason: "Emitted 4 ticks" }
+        { _tag: "End", reason: "Emitted 4 ticks; wake window 5000 ms" }
       ])
     }).pipe(Effect.provide(layer)), 30_000)
 })
