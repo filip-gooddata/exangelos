@@ -25,7 +25,6 @@ export const home = Effect.acquireRelease(
   (dir) => Effect.promise(() => Fs.rm(dir, { recursive: true, force: true }))
 )
 
-/** A plugin directory under `name` whose entry is `main` bundled with the Bun that runs the tests. */
 export const bundledPlugin = (main: string, into: string, name: string) =>
   Effect.promise(async (signal) => {
     const directory = Path.join(into, name)
@@ -40,11 +39,9 @@ export const bundledPlugin = (main: string, into: string, name: string) =>
     return directory
   })
 
-/** A runnable copy of plugins/template under `name`. */
 export const templatePlugin = (into: string, name = "template") =>
   bundledPlugin(Path.join(template, "src/main.ts"), into, name)
 
-/** Appends each wake's subscription id and text to `file`. */
 export const wakeLog = (file: string) =>
   ["/bin/sh", "-c", "{ printf '%s\\n' \"$EXANGELOS_SUBSCRIPTION\"; cat; } >> \"$0\"", file] as const
 
@@ -63,7 +60,6 @@ export interface Running {
   readonly stop: Effect.Effect<void>
 }
 
-/** Starts the daemon on the temporary home and connects an owner client to its socket. */
 export const start = (
   dir: string,
   options: Partial<Choices> & { readonly officialPlugins?: ReadonlyArray<unknown>; readonly releaseUrl?: string } = {}
@@ -97,7 +93,6 @@ export const start = (
     }
   })
 
-/** Shortens the wake window so a wake follows its first event within the delivery loop's second. */
 export const quickWakes = (client: Running["client"], change: Partial<Limits.Limits> = {}) =>
   Effect.gen(function*() {
     const settings = yield* client.GetSettings()
@@ -106,7 +101,6 @@ export const quickWakes = (client: Running["client"], change: Partial<Limits.Lim
     })
   })
 
-/** Imports a plugin from a local directory, enables it and gives it `values` once it has started. */
 export const install = (client: Running["client"], source: string, values: Record<string, string>) =>
   Effect.gen(function*() {
     const imported = yield* client.ImportPlugin({ source: { _tag: "Directory", path: source } })
@@ -124,7 +118,6 @@ export const installTemplate = (client: Running["client"], dir: string) =>
     (source) => install(client, source, { token: "not-a-secret", interval: "0" })
   )
 
-/** Retries `check` until it succeeds, failing the test after `limit`. */
 export const eventually = <A, E, R>(check: Effect.Effect<A, E, R>, limit = Duration.seconds(20)) =>
   check.pipe(
     Effect.retry({ schedule: Schedule.spaced(Duration.millis(100)) }),

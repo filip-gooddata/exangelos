@@ -23,19 +23,11 @@ interface Caller {
   readonly headers: Headers.Headers
 }
 
-/** The calling session from the request headers; a call without one comes from the owner. */
 const actor = ({ headers }: Caller) => SessionHeaders.actorFromHeaders(headers)
 const detected = ({ headers }: Caller) => Option.toArray(SessionHeaders.fromHeaders(headers))
 
 const lookup = { SubscriptionNotFound: Errors.subscriptionNotFound } as const
 
-/**
- * Serves every DaemonContract call through its use case. It requires application services only:
- * the ports AlertSink, EventRepository, OfficialPluginSource, PluginDirectory, PluginImportSource,
- * PluginRepository, SecretStore, ServiceManager, SettingsStore, SubscriptionRepository and
- * WakeRepository, plus PluginAccess, PluginSupervisor, RemovedPlugins, SubscriptionLocks and
- * SubscriptionSignals. `Requirements` is that set as a type.
- */
 export const layer = DaemonContract.DaemonContract.toLayer({
   ListPlugins: () => listPlugins,
   Subscribe: (payload, caller) =>
@@ -137,5 +129,4 @@ export const layer = DaemonContract.DaemonContract.toLayer({
     )
 })
 
-/** What `layer` needs from the daemon's services layer. */
 export type Requirements = typeof layer extends Layer.Layer<infer _A, infer _E, infer R> ? R : never

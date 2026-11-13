@@ -11,7 +11,6 @@ import * as Root from "./commands/Root.ts"
 import * as Scaffold from "./commands/Scaffold.ts"
 import { noDaemonMessage } from "./render/Messages.ts"
 
-/** The launchd or systemd user service, as the daemon also builds it. */
 export const serviceManager = Daemon.serviceManager
 
 export const daemonClient = <R>(

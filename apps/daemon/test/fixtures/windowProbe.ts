@@ -8,10 +8,6 @@ const opened = Catalogue.event("opened", {
   payload: Schema.Struct({ wakeWindow: Schema.Number })
 })
 
-/**
- * A plugin whose watch stays open while it has the default wake window and ends, naming the
- * window, once it is opened with any other.
- */
 const plugin = Plugin.make({
   events: [opened],
   parameters: Catalogue.parameters({ main: "label", schema: Schema.Struct({ label: Schema.String }) }),

@@ -13,7 +13,6 @@ import { currentLimits, SubscriptionRepository } from "@exangelos/application"
 import { DaemonContract as Contract } from "@exangelos/contracts"
 import type { Ids, Refusal } from "@exangelos/domain"
 
-/** Turns use case errors into the errors DaemonContract declares, one function per error. */
 
 export const subscriptionNotFound = (e: SubscriptionNotFound) =>
   Effect.fail(new Contract.SubscriptionNotFound({ id: e.id }))
@@ -32,7 +31,6 @@ export const pluginNotFound = (e: PluginAccess.PluginNotFound) => Effect.fail(ne
 export const pluginUnavailable = (e: Refusal.PluginUnavailable) =>
   Effect.fail(new Contract.PluginUnavailable({ plugin: e.plugin, problem: e.problem }))
 
-/** Update declares neither missing plugin error; the nearest it has is PluginUnavailable. */
 export const pluginGoneOnUpdate = (e: PluginAccess.PluginNotFound) =>
   Effect.fail(new Contract.PluginUnavailable({ plugin: e.plugin, problem: "it is not installed" }))
 
@@ -50,10 +48,6 @@ export const subjectChanged = (e: Refusal.SubjectChanged) =>
 
 export const importFailed = (e: PluginImportSource.ImportFailed) => Effect.fail(new Contract.ImportFailed({ reason: e.reason }))
 
-/**
- * Another call removed the plugin record between a use case's write and its read back. Calls that
- * name a plugin report it as not found; an import or link reports a failed import.
- */
 export const removedDuringCall = (plugin: Ids.PluginName) => (_: Cause.NoSuchElementError) =>
   Effect.fail(new Contract.PluginNotFound({ plugin }))
 
@@ -65,14 +59,12 @@ export const humanRequired = (e: HumanRequired) => Effect.fail(new Contract.Huma
 export const digestMismatch = (e: DigestMismatch) =>
   Effect.fail(new Contract.DigestMismatch({ plugin: e.plugin, expected: e.expected, actual: e.actual }))
 
-/** configurePlugin redacts the reason before it fails, so it holds no secret value. */
 export const configurationInvalid = (e: ConfigurationInvalid) =>
   Effect.fail(new Contract.ConfigurationInvalid({ reason: e.reason }))
 
 export const configurationRejected = (e: ConfigurationRejected) =>
   Effect.fail(new Contract.ConfigurationRejected({ reason: e.reason }))
 
-/** The contract names the similar subscriptions in full, the domain by id. */
 export const similarSubscriptions = (e: Refusal.SimilarSubscriptions) =>
   Effect.gen(function*() {
     const repository = yield* SubscriptionRepository.SubscriptionRepository
@@ -84,10 +76,6 @@ export const similarSubscriptions = (e: Refusal.SimilarSubscriptions) =>
     return yield* new Contract.SimilarSubscriptions({ similar: [first, ...rest] })
   })
 
-/**
- * The contract carries the subscription's whole state, so it is reloaded after the lock is
- * released. The message names that reloaded state, so the two always agree.
- */
 export const transitionRefused = (id: Ids.SubscriptionId) => (e: Refusal.NotAllowed) =>
   Effect.gen(function*() {
     const subscription = yield* (yield* SubscriptionRepository.SubscriptionRepository).find(id)
@@ -98,10 +86,6 @@ export const transitionRefused = (id: Ids.SubscriptionId) => (e: Refusal.NotAllo
     })
   })
 
-/**
- * The limit is the backlog count in the current settings, read again after resume refused. Resume
- * also refuses when the oldest pending event is too old, and then pending can be within the limit.
- */
 export const backlogOverLimit = (e: Refusal.BacklogOverLimit) =>
   Effect.gen(function*() {
     const limits = yield* currentLimits

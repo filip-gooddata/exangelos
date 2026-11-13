@@ -34,10 +34,8 @@ import * as Handlers from "./Handlers.ts"
 export const DaemonAlreadyRunning = DaemonServer.DaemonAlreadyRunning
 export type DaemonAlreadyRunning = DaemonServer.DaemonAlreadyRunning
 
-/** What the daemon takes from the process it runs in. */
 export type Platform = FileSystem.FileSystem | Path.Path | ChildProcessSpawner.ChildProcessSpawner | Paths.Paths
 
-/** The ports that differ by platform. Tests pass fakes for them. */
 export interface Choices {
   readonly alerts: Layer.Layer<AlertSink.AlertSink, never, Platform>
   readonly serviceManager: Layer.Layer<ServiceManager.ServiceManager, never, Platform>
@@ -46,9 +44,7 @@ export interface Choices {
 }
 
 export interface Options extends Choices {
-  /** The official plugins the binary carries, as the build constant holds them. */
   readonly officialPlugins: ReadonlyArray<unknown>
-  /** Where the official plugins' release files live; undefined when the build names none. */
   readonly releaseUrl: string | undefined
   readonly runtime?: StdioPluginRuntime.Options | undefined
 }
@@ -56,7 +52,6 @@ export interface Options extends Choices {
 const unavailable = (failure: ServiceManager.ServiceFailed) =>
   ServiceManager.ServiceManager.of({ status: Effect.fail(failure), install: Effect.fail(failure), start: Effect.fail(failure) })
 
-/** The launchd or systemd user service. Unreadable service settings fail every call instead of the daemon. */
 export const serviceManager = (
   options: Service.ServiceManager.Options
 ): Layer.Layer<ServiceManager.ServiceManager, never, Platform> =>
@@ -75,7 +70,6 @@ export const serviceManager = (
       ))
   )
 
-/** The real ports for this machine, from its platform, the daemon's executable and the user's uid. */
 export const platformChoices = (options: Service.ServiceManager.Options): Choices => ({
   alerts: Alerts.layer.pipe(Layer.provide(options.platform === "darwin" ? layerMacOS : layerLinux)),
   serviceManager: serviceManager(options),
@@ -113,12 +107,6 @@ const ports = (options: Options) =>
     Layer.provideMerge(Layer.mergeAll(SettingsFile.layer, options.secretStore, PluginDirectoryLive.layer))
   )
 
-/**
- * The plugin half and the subscription intake, which need each other: the supervisor feeds the
- * intake, and the intake asks PluginAccess to describe and watch. The supervisor gets an intake
- * that waits for the real one, which is built right after the plugin half. Nothing waits in the
- * build itself, because the supervisor forks its startup.
- */
 const halves = Layer.effectContext(
   Effect.gen(function*() {
     const slot = yield* Deferred.make<SubscriptionIntake.SubscriptionIntake["Service"]>()
@@ -131,8 +119,6 @@ const halves = Layer.effectContext(
     const plugins = yield* Layer.build(
       Layer.provide(layerPlugins, Layer.succeed(SubscriptionIntake.SubscriptionIntake, late))
     )
-    // Runs before the supervisor's own finalisers, so a call still waiting on the slot when the
-    // daemon stops before the intake exists ends instead of holding the teardown.
     yield* Effect.addFinalizer(() => Deferred.interrupt(slot))
     const intake = yield* Layer.build(Layer.provide(layerSubscriptionIntake, Layer.succeedContext(plugins)))
     yield* Deferred.succeed(slot, Context.get(intake, SubscriptionIntake.SubscriptionIntake))
@@ -142,7 +128,6 @@ const halves = Layer.effectContext(
 
 const loops = Layer.effectDiscard(Effect.forkScoped(runSubscriptionDaemon))
 
-/** Every service the handlers use: the ports, both halves of the application and their loops. */
 const services = (options: Options) =>
   loops.pipe(
     Layer.provideMerge(halves),

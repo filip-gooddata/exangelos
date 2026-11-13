@@ -32,7 +32,6 @@ export interface Options {
   readonly commandFor?: CommandFor | undefined
   /** How long a plugin may take to answer the handshake. Defaults to 30 seconds. */
   readonly startTimeout?: Duration.Input | undefined
-  /** How long a plugin may take to exit after SIGTERM before it gets SIGKILL. Defaults to 5 seconds. */
   readonly stopTimeout?: Duration.Input | undefined
 }
 
