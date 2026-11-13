@@ -5,16 +5,11 @@ import * as Path from "node:path"
 import { promisify } from "node:util"
 import { BunServices } from "@effect/platform-bun"
 import { ConfigProvider, Context, Duration, Effect, Exit, Layer, Option, Schedule, Scope } from "effect"
-import {
-  layerAlertSink,
-  layerSecretStore,
-  layerServiceManager,
-  layerWakeTarget
-} from "@exangelos/application/testing"
 import { DaemonClient } from "@exangelos/daemon-client"
 import type { Limits, Session } from "@exangelos/domain"
 import { Paths } from "@exangelos/paths"
 import { Daemon } from "@exangelos/daemon"
+import { fakes } from "@exangelos/daemon/testing"
 
 export const run = promisify(execFile)
 
@@ -46,13 +41,6 @@ export const wakeLog = (file: string) =>
   ["/bin/sh", "-c", "{ printf '%s\\n' \"$EXANGELOS_SUBSCRIPTION\"; cat; } >> \"$0\"", file] as const
 
 type Choices = Pick<Daemon.Options, "alerts" | "serviceManager" | "secretStore" | "wakeTarget">
-
-export const fakes: Choices = {
-  alerts: layerAlertSink,
-  serviceManager: layerServiceManager({ method: "launch-agent", installed: true, running: true }),
-  secretStore: layerSecretStore,
-  wakeTarget: layerWakeTarget
-}
 
 export interface Running {
   readonly client: DaemonClient.DaemonClient["Service"]
