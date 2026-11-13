@@ -800,6 +800,18 @@ importers:
         specifier: workspace:*
         version: link:../../packages/contracts
 
+  connectors/slack:
+    dependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@exangelos/connector-sdk':
+        specifier: workspace:*
+        version: link:../../packages/connector-sdk
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.4
+
   connectors/template:
     dependencies:
       '@effect/platform-bun':
