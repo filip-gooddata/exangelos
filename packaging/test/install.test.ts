@@ -15,6 +15,7 @@ describe("install script (contract test with the real bun, tar and sh)", () => {
     runWithRealPrograms(buildRelease({
       buildScript: standInBuildScript,
       version: "9.9.9",
+      releaseUrl: "https://example.invalid/releases/download/v9.9.9",
       pluginDirectories: [],
       officialPluginsDirectory: join(work, "official-plugins"),
       releaseDirectory,

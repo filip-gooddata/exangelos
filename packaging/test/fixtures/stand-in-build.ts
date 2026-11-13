@@ -9,7 +9,8 @@ const { values } = parseArgs({
     target: { type: "string" },
     outfile: { type: "string" },
     version: { type: "string" },
-    "official-plugins": { type: "string" }
+    "official-plugins": { type: "string" },
+    "release-url": { type: "string" }
   }
 })
 
@@ -24,6 +25,7 @@ try {
       `--target=${values.target}`,
       `--define=EXANGELOS_VERSION=${JSON.stringify(values.version)}`,
       `--define=EXANGELOS_OFFICIAL_PLUGINS=${values["official-plugins"]}`,
+      `--define=EXANGELOS_RELEASE_URL=${JSON.stringify(values["release-url"])}`,
       `--outfile=${values.outfile}`
     ],
     { cwd: scratch, stdio: ["ignore", "ignore", "inherit"] }
