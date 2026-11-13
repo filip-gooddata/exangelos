@@ -77,6 +77,32 @@ describe("Daemon", () => {
       expect(yield* client.Events({ id: subscription.id })).toEqual(before)
     }).pipe(Effect.scoped), 60_000)
 
+  it.live("reopens an open watch with the wake window a settings change sets", () =>
+    Effect.gen(function*() {
+      const dir = yield* home
+      const { client } = yield* start(dir)
+      yield* installTemplate(client, dir, "1000")
+      const subscription = yield* client.Subscribe({
+        plugin: template,
+        parameters: { ticks: 4 },
+        intent: "Count four slow ticks",
+        target: { _tag: "PullOnly" },
+        similarOk: []
+      })
+      yield* eventually(client.Events({ id: subscription.id }).pipe(
+        Effect.filterOrFail((events) => events.length > 0)
+      ))
+      yield* quickWakes(client, { wakeWindow: Duration.millis(1234) })
+
+      const ended = yield* eventually(client.Show({ id: subscription.id }).pipe(
+        Effect.map((shown) => shown.subscription.state),
+        Effect.filterOrFail((state) => state._tag === "Ended")
+      ))
+      expect(ended).toMatchObject({ reason: { _tag: "Plugin", reason: "Emitted 4 ticks; wake window 1234 ms" } })
+      expect((yield* client.Events({ id: subscription.id })).map((event) => event.payload))
+        .toEqual([{ index: 1 }, { index: 2 }, { index: 3 }, { index: 4 }])
+    }).pipe(Effect.scoped), 60_000)
+
   it.live("reports an official plugin with a changed checksum but not one the owner disabled", () =>
     Effect.gen(function*() {
       const dir = yield* home

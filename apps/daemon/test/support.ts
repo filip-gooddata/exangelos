@@ -103,12 +103,12 @@ export const quickWakes = (client: Running["client"], change: Partial<Limits.Lim
   })
 
 /** Imports the template from a local directory, enables it and gives it the configuration it asks for. */
-export const installTemplate = (client: Running["client"], dir: string) =>
+export const installTemplate = (client: Running["client"], dir: string, interval = "0") =>
   Effect.gen(function*() {
     const source = yield* templatePlugin(Path.join(dir, "sources"))
     const imported = yield* client.ImportPlugin({ source: { _tag: "Directory", path: source } })
     yield* client.EnablePlugin({ name: imported.name, digest: imported.digest })
-    yield* client.ConfigurePlugin({ name: imported.name, values: { token: "not-a-secret", interval: "0" } }).pipe(
+    yield* client.ConfigurePlugin({ name: imported.name, values: { token: "not-a-secret", interval } }).pipe(
       Effect.retry({ schedule: Schedule.spaced(Duration.millis(100)) }),
       Effect.timeout(Duration.seconds(15))
     )
