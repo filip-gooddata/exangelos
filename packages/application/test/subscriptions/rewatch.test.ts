@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer } from "effect"
+import { Duration, Effect, Layer } from "effect"
 import { enablePlugin, importPlugin, PluginAccess } from "@exangelos/application"
 import { PluginFilesFake, PluginRuntimeFake } from "@exangelos/application/testing"
 import { layerSubscriptionLocks } from "../../src/subscriptions/Locks.ts"
@@ -29,7 +29,8 @@ describe("update of an active subscription", () => {
       expect((yield* runtime.watches(acme)).at(-1)).toEqual({
         parameters: { name: "sub_one", branch: "dev" },
         eventTypes: [tick],
-        cursor: "c1"
+        cursor: "c1",
+        wakeWindow: Duration.seconds(5)
       })
     })))
 })

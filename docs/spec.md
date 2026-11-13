@@ -306,7 +306,7 @@ Each change to a subscription or plugin records its actor: the session the CLI o
   - Handshake. Returns the plugin's protocol version and its catalogue.
   - Configure. Receives the configuration with its secrets. Answers accepted, or rejected with a reason.
   - Describe. Receives parameters. Answers the normalised parameters, the subject and a label, or why they are invalid.
-  - Watch. A streaming method. Receives parameters, the selected event types and the cursor. Streams events (type, occurred at, summary, payload, optional link, dedupe key) and cursors, and may end with a reason.
+  - Watch. A streaming method. Receives parameters, the selected event types, the cursor and the wake window. A changed wake window reopens every Watch stream from its cursor, and a plugin that receives no wake window uses 5 s. Streams events (type, occurred at, summary, payload, optional link, dedupe key) and cursors, and may end with a reason.
 - The daemon refuses a plugin whose protocol version it does not support, and says why.
 - Each subscription is one Watch stream. Configuration with secrets reaches the plugin at start through Configure.
 - A catalogue declares event types with payload schemas, subscription parameters as a schema, and configuration fields (text, choice, secret). The panel and the CLI render the configuration form from it.
