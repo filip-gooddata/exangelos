@@ -8,7 +8,7 @@ import { buildRelease, defaultBuildScript, officialConnectorDirectories, type Re
 import { hostTarget, readChecksums } from "../src/release-files.ts"
 import { extractTarGz, listTarGz } from "../src/tar.ts"
 import { Effect } from "effect"
-import { helloConnector, runWithRealPrograms, standInBuildScript, temporaryDirectory, withRealPrograms } from "./helpers.ts"
+import { helloConnectorCopy, runWithRealPrograms, standInBuildScript, temporaryDirectory, withRealPrograms } from "./helpers.ts"
 
 const releaseUrl = "https://example.invalid/releases/download/v9.9.9"
 
@@ -32,7 +32,7 @@ describe("release build for this machine (contract test with the real bun, codes
   const work = temporaryDirectory("release")
   let release: Release
   beforeAll(async () => {
-    release = await buildInto(work, "9.9.9", [helloConnector])
+    release = await buildInto(work, "9.9.9", [helloConnectorCopy(work)])
   })
 
   it("compiles a binary that reports the version and carries the release address and connector digests", () => {

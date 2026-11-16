@@ -7,14 +7,14 @@ import { limits } from "@exangelos/connector-import"
 import { Effect } from "effect"
 import { buildConnectorArchive, buildConnectorArchives, type OfficialConnector, officialConnectorsFileName } from "../src/connector-archives.ts"
 import { extractTarGz, listTarGz } from "../src/tar.ts"
-import { helloConnector, runWithRealPrograms, temporaryDirectory, withRealPrograms } from "./helpers.ts"
+import { helloConnectorCopy, runWithRealPrograms, temporaryDirectory, withRealPrograms } from "./helpers.ts"
 
 describe("official connector archives (contract test with the real bun and tar)", () => {
   const work = temporaryDirectory("connectors")
   const out = join(work, "official-connectors")
   let hello: OfficialConnector | undefined
   beforeAll(async () => {
-    ;[hello] = await runWithRealPrograms(buildConnectorArchives([helloConnector], out))
+    ;[hello] = await runWithRealPrograms(buildConnectorArchives([helloConnectorCopy(work)], out))
   })
 
   it.effect("puts the manifest and the bundled entry at the archive root", () =>
