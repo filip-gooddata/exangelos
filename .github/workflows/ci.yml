@@ -1,0 +1,48 @@
+# On every pull request, and from release.yml before every release: run the checks.
+name: CI
+
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.10.1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm typecheck
+      - name: Test
+        run: pnpm test
+      - name: CLI end-to-end tests
+        run: pnpm --filter @exangelos/cli e2e
+      - name: Build the tray web app
+        working-directory: apps/tray
+        run: pnpm build:web
+      - name: Test the tray app
+        working-directory: apps/tray/src-tauri
+        run: cargo test
+      - name: Build the release files
+        if: github.event_name == 'pull_request'
+        run: pnpm --filter @exangelos/packaging run build:release --release-url "file://$PWD/packaging/dist/release"
+      - name: Check the release checksums
+        if: github.event_name == 'pull_request'
+        working-directory: packaging/dist/release
+        run: shasum -a 256 -c SHA256SUMS
