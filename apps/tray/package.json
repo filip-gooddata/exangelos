@@ -1,5 +1,6 @@
 {
   "name": "@exangelos/tray",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {

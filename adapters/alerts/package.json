@@ -1,5 +1,6 @@
 {
   "name": "@exangelos/alerts",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {

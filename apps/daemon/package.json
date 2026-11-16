@@ -1,5 +1,6 @@
 {
   "name": "@exangelos/daemon",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {

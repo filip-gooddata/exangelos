@@ -1,5 +1,6 @@
 {
   "name": "@exangelos/connector-directory",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {

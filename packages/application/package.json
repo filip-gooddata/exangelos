@@ -1,5 +1,6 @@
 {
   "name": "@exangelos/application",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {
