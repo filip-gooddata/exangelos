@@ -1,0 +1,26 @@
+{
+  "name": "slack",
+  "version": "0.1.0",
+  "entry": {
+    "_tag": "Bundle",
+    "path": "dist/main.js"
+  },
+  "files": [
+    "direct/source.py",
+    "direct/setup.py",
+    "direct/observation.py",
+    "direct/scan.py",
+    "direct/wire.py",
+    "direct/projection.py",
+    "direct/skip_v8.py",
+    "direct/field_v8.py",
+    "direct/ledger.py",
+    "direct/vendor/ccl_leveldb.py",
+    "direct/vendor/ccl_simplesnappy/__init__.py",
+    "direct/vendor/ccl_simplesnappy/ccl_simplesnappy.py",
+    "direct/vendor/LEVELDB-LICENSE",
+    "direct/vendor/SNAPPY-LICENSE",
+    "direct/vendor/SOURCES.md",
+    "THIRD_PARTY_NOTICES.md"
+  ]
+}
