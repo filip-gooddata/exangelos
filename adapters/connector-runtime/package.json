@@ -1,5 +1,6 @@
 {
   "name": "@exangelos/connector-runtime",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {

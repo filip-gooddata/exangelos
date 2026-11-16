@@ -1,5 +1,6 @@
 {
   "name": "@exangelos/wake-targets",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {

@@ -1,5 +1,6 @@
 {
   "name": "@exangelos/domain",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {

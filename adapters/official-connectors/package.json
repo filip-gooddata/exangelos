@@ -1,5 +1,6 @@
 {
   "name": "@exangelos/official-connectors",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {

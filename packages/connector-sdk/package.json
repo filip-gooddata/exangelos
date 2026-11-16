@@ -1,5 +1,6 @@
 {
   "name": "@exangelos/connector-sdk",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {

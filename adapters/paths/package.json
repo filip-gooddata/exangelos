@@ -1,5 +1,6 @@
 {
   "name": "@exangelos/paths",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {

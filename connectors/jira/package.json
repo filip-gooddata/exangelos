@@ -1,5 +1,6 @@
 {
   "name": "@exangelos/connector-jira",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "exports": {
