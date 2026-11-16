@@ -462,8 +462,8 @@ The panel layout (structure, navigation, grouping) is decided separately. Three 
 - One multicall binary holds daemon, CLI and MCP server, built with `bun build --compile` for the four targets.
 - The tray app bundles everything: one desktop download with the binary inside the app, which also puts `exangelos` and `xng` on the PATH.
 - Headless installs use the standalone binary through a Homebrew formula or an install script.
-- Version 1 delivers build scripts for the four targets, Homebrew formula and cask definitions, an install script and a release workflow, all exercised locally. Official connector archives are built as release files with checksums the binary carries. The release build runs the connector's `build` script, then packs `connector.json`, the bundle entry and every file the `files` list names, at the same paths. It refuses a native entry, a listed path that is absolute, leaves the connector folder or does not exist, a listed path that is a link or goes through one, a link or special file under a listed folder, and an archive the connector import would refuse. The checksum is taken over the unpacked archive, so it covers the listed files.
-- Nothing is published: no tap repository, no signing, no release, no registry or domain reservation, until the owner says so. Dogfooding runs from a local install, with official connectors fetched from a local folder.
+- Version 1 delivers build scripts for the four targets, Homebrew formula and cask definitions and an install script, all exercised locally. CI runs the checks on every pull request and on every push to `main`; the release workflow then publishes a GitHub release at the latest `vX.Y.Z` tag plus a patch bump, starting at `v0.1.0`, with the four binaries, the official connector archives and `SHA256SUMS`. The binaries report that version and fetch official connectors from that release. Official connector archives are built as release files with checksums the binary carries. The release build runs the connector's `build` script, then packs `connector.json`, the bundle entry and every file the `files` list names, at the same paths. It refuses a native entry, a listed path that is absolute, leaves the connector folder or does not exist, a listed path that is a link or goes through one, a link or special file under a listed folder, and an archive the connector import would refuse. The checksum is taken over the unpacked archive, so it covers the listed files.
+- Nothing else is published: no tap repository, no signing, no registry or domain reservation, until the owner says so. Dogfooding runs from a local install, with official connectors fetched from a local folder.
 
 ### Versions
 
@@ -510,7 +510,7 @@ Prior art: the repository has no code yet. The tests use `@effect/vitest`, Effec
 
 - The Slack and Teams connectors. They wait until version 1 runs on the main workload, then get their own design session.
 - A generic `command` source connector.
-- Publishing of any kind: no tap repository, no code signing or notarization, no release, no npm publication of the gap packages, no registry or domain reservation, until the owner says so.
+- Publishing of any kind: no tap repository, no code signing or notarization, no npm publication of the gap packages, no registry or domain reservation, until the owner says so.
 - More than one person or one machine: no remote access, no network listener, no authentication beyond file permissions.
 - Named connections or more than one configuration per connector.
 - Filtering over event payloads in the core.
