@@ -1,4 +1,5 @@
-# On every push to main: run the checks, bump the version, build the release files and publish them as a GitHub release.
+# On every push to main: run the checks, bump the version, build the release files (build-release.yml) and publish them
+# as a GitHub release.
 #
 # The version is the latest vX.Y.Z tag plus a patch bump. Put #minor or #major in a commit message to bump that part
 # instead. The first release is v0.1.0.
@@ -61,40 +62,9 @@ jobs:
 
   build:
     needs: [version, checks]
-    runs-on: macos-15
-    env:
-      VERSION: ${{ needs.version.outputs.version }}
-    steps:
-      - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v6
-        with:
-          version: 12.10.1
-      - uses: actions/setup-node@v5
-        with:
-          node-version: 24
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: 1.4.2
-      - name: Install dependencies
-        run: pnpm install --frozen-lockfile
-      - name: Build official connector archives and the four binaries
-        run: pnpm --filter @exangelos/packaging run build:release --version "$VERSION" --release-url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
-      - name: Check the release files
-        working-directory: packaging/dist/release
-        run: |
-          shasum -a 256 -c SHA256SUMS
-          ./binaries/darwin-arm64/exangelos --version | grep -qx "exangelos $VERSION"
-          test -f "exangelos-$VERSION-darwin-arm64.tar.gz"
-      - name: Render the Homebrew formula and cask
-        run: pnpm --filter @exangelos/packaging run render:homebrew --version "$VERSION" --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: release
-          path: |
-            packaging/dist/release/*.tar.gz
-            packaging/dist/release/official-connectors.json
-            packaging/dist/release/SHA256SUMS
-          if-no-files-found: error
+    uses: ./.github/workflows/build-release.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
 
   release:
     needs: [version, build]

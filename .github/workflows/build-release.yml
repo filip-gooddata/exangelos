@@ -1,0 +1,145 @@
+# Builds every release file for one version and uploads them as the artifact `release`. It publishes nothing:
+# release.yml publishes the artifact, release-check.yml only builds it.
+#
+# The macOS job builds the connector archives and the four binaries. Each Linux job takes the binary for its
+# architecture from those archives and bundles it into the tray app's .deb, because Tauri cannot cross-compile. The last
+# job adds the .deb files to SHA256SUMS.
+name: Build release files
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: The version without the leading v, such as 0.1.2
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+env:
+  VERSION: ${{ inputs.version }}
+
+jobs:
+  binaries:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.10.1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Build official connector archives and the four binaries
+        run: pnpm --filter @exangelos/packaging run build:release --version "$VERSION" --release-url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
+      - name: Check the release files
+        working-directory: packaging/dist/release
+        run: |
+          shasum -a 256 -c SHA256SUMS
+          ./binaries/darwin-arm64/exangelos --version | grep -qx "exangelos $VERSION"
+          test -f "exangelos-$VERSION-darwin-arm64.tar.gz"
+      - name: Render the Homebrew formula and cask
+        run: pnpm --filter @exangelos/packaging run render:homebrew --version "$VERSION" --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-binaries
+          path: |
+            packaging/dist/release/*.tar.gz
+            packaging/dist/release/official-connectors.json
+            packaging/dist/release/SHA256SUMS
+          if-no-files-found: error
+
+  tray-linux:
+    needs: binaries
+    strategy:
+      matrix:
+        include:
+          - arch: x64
+            runner: ubuntu-24.04
+            triple: x86_64-unknown-linux-gnu
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+            triple: aarch64-unknown-linux-gnu
+    runs-on: ${{ matrix.runner }}
+    env:
+      DEB: exangelos-tray-${{ inputs.version }}-linux-${{ matrix.arch }}.deb
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.10.1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tray/src-tauri
+      - name: Install the Tauri build libraries
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+          path: release-binaries
+      - name: Put the release binary in place as the sidecar
+        run: |
+          mkdir -p unpacked apps/tray/src-tauri/binaries
+          tar -xzf "release-binaries/exangelos-$VERSION-linux-${{ matrix.arch }}.tar.gz" -C unpacked
+          mv unpacked/exangelos "apps/tray/src-tauri/binaries/exangelos-${{ matrix.triple }}"
+          "apps/tray/src-tauri/binaries/exangelos-${{ matrix.triple }}" --version | grep -qx "exangelos $VERSION"
+      - name: Bundle the tray app
+        working-directory: apps/tray
+        run: |
+          node -e 'console.log(JSON.stringify({ version: process.env.VERSION, build: { beforeBuildCommand: "pnpm run build:web" }, bundle: { externalBin: ["binaries/exangelos"] } }))' > src-tauri/tauri.release.conf.json
+          pnpm tauri build --ci --bundles deb --config src-tauri/tauri.release.conf.json
+          cp src-tauri/target/release/bundle/deb/*.deb "$GITHUB_WORKSPACE/$DEB"
+      - name: Check the package
+        run: |
+          test "$(dpkg-deb -f "$DEB" Version)" = "$VERSION"
+          dpkg-deb -f "$DEB" Package Version Architecture Depends
+          sudo apt-get install -y "./$DEB"
+          exangelos --version | grep -qx "exangelos $VERSION"
+          xng --version | grep -qx "exangelos $VERSION"
+          test -x /usr/bin/exangelos-tray
+          sudo apt-get remove -y "$(dpkg-deb -f "$DEB" Package)"
+          test ! -e /usr/bin/xng
+          test ! -e /usr/bin/exangelos
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-tray-linux-${{ matrix.arch }}
+          path: ${{ env.DEB }}
+          if-no-files-found: error
+
+  checksums:
+    needs: tray-linux
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
+      - name: Add the tray packages to SHA256SUMS
+        working-directory: release
+        run: |
+          sha256sum -c SHA256SUMS
+          { cat SHA256SUMS; sha256sum exangelos-tray-*.deb; } | LC_ALL=C sort -k2 > SHA256SUMS.new
+          mv SHA256SUMS.new SHA256SUMS
+          sha256sum -c SHA256SUMS
+          grep -c 'exangelos-tray-.*\.deb$' SHA256SUMS | grep -qx 2
+          ls -l
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release
+          path: release/*
+          if-no-files-found: error
