@@ -1,0 +1,24 @@
+# Builds every release file, the Linux tray packages included, without publishing anything. It runs on pull requests that
+# change how the release files are built, so the other pull requests skip the Linux tray build.
+name: Release check
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/build-release.yml
+      - .github/workflows/release.yml
+      - .github/workflows/release-check.yml
+      - apps/tray/package.json
+      - apps/tray/src-tauri/**
+      - packaging/**
+      - pnpm-lock.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    uses: ./.github/workflows/build-release.yml
+    with:
+      version: 0.0.0-check.${{ github.run_number }}

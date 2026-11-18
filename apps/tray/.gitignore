@@ -2,3 +2,4 @@ src-tauri/target/
 src-tauri/gen/
 dist/
 src-tauri/binaries/
+src-tauri/tauri.release.conf.json
