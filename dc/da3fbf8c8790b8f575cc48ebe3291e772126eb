@@ -1,0 +1,33 @@
+.github/workflows/build-release.yml
+  s_5f93f74b310ad3::t_72f0e125ae312e 1-145
+.github/workflows/release-check.yml
+  s_5f93f74b310ad3::t_bb7e1881ee1290 1-24
+.github/workflows/release.yml
+  s_5f93f74b310ad3::t_90376e36832d10 1-2,65-67
+apps/tray/.gitignore
+  s_5f93f74b310ad3::t_074d51b96ef519 5
+apps/tray/src-tauri/linux/postinst.sh
+  s_5f93f74b310ad3::t_8aa90c8b95b3fa 1-6
+apps/tray/src-tauri/linux/postrm.sh
+  s_5f93f74b310ad3::t_5729f1d00ac308 1-10
+apps/tray/src-tauri/tauri.conf.json
+  s_5f93f74b310ad3::t_7c53baac8a11a1 25-32
+docs/spec.md
+  s_5f93f74b310ad3::t_770b249ed2bfce 465,543
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dcda3fbf8c8790b8f575cc48ebe3291e772126eb",
+  "prompts": {},
+  "sessions": {
+    "s_5f93f74b310ad3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a6f2f5b6-ba83-4fd2-b4a5-400bc07009e7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
