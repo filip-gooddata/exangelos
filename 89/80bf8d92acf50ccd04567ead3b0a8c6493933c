@@ -1,0 +1,19 @@
+packaging/test/workflow.test.ts
+  s_5f93f74b310ad3::t_acc481ae38933d 7,9,11,16-26,41-44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8980bf8d92acf50ccd04567ead3b0a8c6493933c",
+  "prompts": {},
+  "sessions": {
+    "s_5f93f74b310ad3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a6f2f5b6-ba83-4fd2-b4a5-400bc07009e7",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
