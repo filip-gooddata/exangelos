@@ -1,0 +1,43 @@
+README.md
+  s_4e14f0fade299a::t_ddbf1aa5f1e97a 7-19
+adapters/logging/src/index.ts
+  s_4e14f0fade299a::t_aca9ae1a4f60b5 6
+apps/cli/e2e/binary.test.ts
+  s_4e14f0fade299a::t_91059aa58c741c 471-600
+apps/cli/src/commands/Debug.ts
+  s_4e14f0fade299a::t_7726e74bc9ad20 1-294
+apps/cli/src/commands/Logs.ts
+  s_4e14f0fade299a::t_a9bf630aafde40 1-79
+apps/cli/src/commands/Root.ts
+  s_4e14f0fade299a::t_5d8a02de3b0171 5-6,37-38
+apps/cli/test/harness.ts
+  s_4e14f0fade299a::t_8b4d36ec31f68a 11,199-200
+apps/tray/src-tauri/src/lib.rs
+  s_4e14f0fade299a::t_cfc57a8cded274 136-146,215,217,226
+apps/tray/src-tauri/src/sidecar.rs
+  s_4e14f0fade299a::t_a90c3851ea3dbb 70-107
+apps/tray/src-tauri/tests/sidecar.rs
+  s_4e14f0fade299a::t_9c450c529cd8fd 8,95-123
+docs/spec.md
+  s_4e14f0fade299a::t_1dd65c644767b7 393-394,406,459,462-473
+adapters/logging/src/Read.ts
+  s_4e14f0fade299a::t_ae202a1338597c 1-122
+adapters/logging/test/Read.test.ts
+  s_4e14f0fade299a::t_5256bf518cd926 1-56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "785bf469d8e2d3cfbb48cd7e997243fed11e4116",
+  "prompts": {},
+  "sessions": {
+    "s_4e14f0fade299a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "75b5e84c-2bfb-49f9-a529-413e94216c44",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
