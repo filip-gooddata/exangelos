@@ -1,0 +1,23 @@
+adapters/alerts/src/index.ts
+  s_525bbb0bc68c9c::t_e61a85d35ddf13 1,43-46
+adapters/wake-targets/src/WakeTargets.ts
+  s_525bbb0bc68c9c::t_29d9b68530d87c 22,37-40
+packages/application/src/subscriptions/daemon/Delivery.ts
+  s_525bbb0bc68c9c::t_d2103590b9936a 146-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2f47505ce9ba4085f3fe332197c054c67cf57d3d",
+  "prompts": {},
+  "sessions": {
+    "s_525bbb0bc68c9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "696c08a0-789b-4f0a-992f-7c021051f224",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
