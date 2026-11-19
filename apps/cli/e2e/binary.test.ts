@@ -764,6 +764,7 @@ describe("secrets at the connector stderr and debug report boundaries", () => {
   it("keeps an inherited token and a short stored credential out of every log and report, and payloads out by default", async () => {
     const envMarker = "e2e-env-value-7c41d0"
     const shortEnvMarker = "Wq8"
+    const multiline = ["e2e-multi-first-91", "e2e-multi-second-92"]
     const shortMarker = "qZ7"
     const payloadMarker = "e2e-echoed-note-52ab"
     const sharedHome = home
@@ -789,13 +790,21 @@ describe("secrets at the connector stderr and debug report boundaries", () => {
         JSON.stringify({ name: "echo", version: "0.1.0", entry: { _tag: "Bundle", path: "dist/main.js" } })
       )
       daemon = Bun.spawn([exangelos, "daemon"], {
-        env: { ...env(), XNG_E2E_TOKEN: envMarker, XNG_E2E_SHORT_TOKEN: shortEnvMarker },
+        env: {
+          ...env(),
+          XNG_E2E_TOKEN: envMarker,
+          XNG_E2E_SHORT_TOKEN: shortEnvMarker,
+          XNG_E2E_MULTILINE_TOKEN: multiline.join("\n")
+        },
         stdout: "ignore",
         stderr: "ignore"
       })
       await listUntilReady()
       expect(run(exangelos, "connector", "dev-link", echo).status).toBe(0)
-      expect(await echoed("startup echo", 1)).toEqual(["connector stderr startup echo [redacted] [redacted]"])
+      expect(await echoed("startup echo", 1)).toEqual(["connector stderr startup echo [redacted] [redacted] [redacted]"])
+      await eventually(async () =>
+        expect((await records()).filter((r) => r.msg === "connector stderr [redacted]" && r.ann?.connector === "echo")).toHaveLength(1)
+      )
 
       await configure(shortMarker)
       expect((await echoed("configure echo", 1)).at(-1)).toBe("connector stderr configure echo [redacted] joined[redacted]x")
@@ -807,9 +816,6 @@ describe("secrets at the connector stderr and debug report boundaries", () => {
       json("settings", "set", "logLevel=debug")
       await configure("payload")
       expect((await echoed("configure echo", 3)).at(-1)).toBe("connector stderr configure echo [redacted] joined[redacted]x")
-      const multiline = ["e2e-multi-first-91", "e2e-multi-second-92"]
-      await configure(multiline.join("\n"))
-      expect((await echoed("configure echo", 4)).at(-1)).toBe("connector stderr configure echo [redacted]")
       const replies = await mcpReplies({
         jsonrpc: "2.0",
         id: 2,

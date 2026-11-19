@@ -9,7 +9,12 @@ const echoed = Catalogue.event("echoed", {
 
 const parameters = Catalogue.parameters({ main: "note", schema: Schema.Struct({ note: Schema.String }) })
 
-console.error("startup echo", process.env.XNG_E2E_TOKEN ?? "", process.env.XNG_E2E_SHORT_TOKEN ?? "")
+console.error(
+  "startup echo",
+  process.env.XNG_E2E_TOKEN ?? "",
+  process.env.XNG_E2E_SHORT_TOKEN ?? "",
+  process.env.XNG_E2E_MULTILINE_TOKEN ?? ""
+)
 
 const connector = Connector.make({
   events: [echoed],
