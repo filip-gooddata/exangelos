@@ -87,11 +87,15 @@ export const macOS: Layer.Layer<Keychain, never, ChildProcessSpawner.ChildProces
           if (/[\0\r\n]/.test(entry.account + entry.service)) {
             return yield* fail("set")("the entry name holds a line break or NUL")
           }
-          const hex = (yield* bytes(value)).map((byte) => byte.toString(16).padStart(2, "0")).join("")
-          const line = `add-generic-password -U -a ${quote(entry.account)} -s ${quote(entry.service)} -X ${hex}\n`
-          if ((yield* bytes(line)).length > securityLineLimit) {
-            return yield* fail("set")("the secret is too long for security's input line")
+          const secretBytes = yield* bytes(value)
+          const command = `add-generic-password -U -a ${quote(entry.account)} -s ${quote(entry.service)} -X `
+          const maxBytes = Math.floor((securityLineLimit - (yield* bytes(`${command}\n`)).length) / 2)
+          if (secretBytes.length > maxBytes) {
+            return yield* fail("set")(
+              `the secret is ${secretBytes.length} bytes in UTF-8 and the macOS Keychain store takes at most ${maxBytes} for this entry, the limit of security's input line`
+            )
           }
+          const line = `${command}${secretBytes.map((byte) => byte.toString(16).padStart(2, "0")).join("")}\n`
           const outcome = yield* run(spawner, "security", ["-i"], line).pipe(Effect.mapError(() => fail("set")("security could not start")))
           if (outcome.exitCode !== 0) return yield* fail("set")(exitedWith("security", outcome))
         }),

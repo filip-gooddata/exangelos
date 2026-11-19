@@ -88,6 +88,7 @@ describe("macOS Keychain", () => {
     return Effect.gen(function*() {
       const long = yield* Effect.flip((yield* service).set(entry, Redacted.make("x".repeat(2100))))
       expect(long._tag).toEqual("KeychainFailed")
+      expect(long.reason).toContain("2100 bytes")
       expect(calls).toEqual([])
     }).pipe(provide)
   })
