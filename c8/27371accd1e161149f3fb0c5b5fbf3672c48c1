@@ -1,0 +1,21 @@
+adapters/logging/src/Redact.ts
+  s_35fc990eb76523::t_7f71e6e858d3a6 108
+apps/daemon/test/Handlers.test.ts
+  s_35fc990eb76523::t_031137bb676384 66,74-75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c827371accd1e161149f3fb0c5b5fbf3672c48c1",
+  "prompts": {},
+  "sessions": {
+    "s_35fc990eb76523": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae40c56a-5ec3-4fc1-92b8-b676dcb03f99",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
