@@ -1,0 +1,25 @@
+adapters/secrets/test/SecretStores.test.ts
+  s_14e0d9a4414e11::t_d44e304848be0f 55,59
+apps/cli/e2e/binary.test.ts
+  s_14e0d9a4414e11::t_7c9fda5c78e5d2 195-196
+gap/keychain/src/Keychain.ts
+  s_14e0d9a4414e11::t_5b575e318ac66d 1-2,61-72,90-96,98,104,108-110
+gap/keychain/test/Keychain.test.ts
+  s_14e0d9a4414e11::t_8a3c4d41b7dd8a 39,45,70-77,80-91,111-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ce02ef5bc151a334e3c0ff4c576235399b277b22",
+  "prompts": {},
+  "sessions": {
+    "s_14e0d9a4414e11": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f45b-bb30-7d82-8c28-f3c727afa227",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
