@@ -113,6 +113,27 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(setup.setup({'sourceMode': 'pinned-cache'}), request)
         self.assertFalse((base / 'connector-state/slack').exists())
 
+    def test_positional_conversation_pins_are_scoped_and_never_replace_selected(self):
+        roots = setup.locations('')
+        self.database(roots['standard'])
+        selected = setup.setup(self.values)
+        values = dict(sourceMode='subscription-ids', subscription=SELECTION[2])
+        first = setup.subscription(values)
+        handle = 'scope-' + first['expectedScope']
+        self.database(roots['sandbox'], ('T0000022', 'U0000033', SELECTION[2]))
+        with self.assertRaisesRegex(setup.SetupRejected, '23'):
+            setup.subscription(values)
+        self.assertEqual(setup.subscription(dict(values, subscription=handle)), first)
+        self.assertEqual(setup.setup(self.values), selected)
+        other = setup.subscription(dict(values, cacheRoot=str(roots['sandbox'])))
+        self.assertNotEqual(first['expectedScope'], other['expectedScope'])
+        with self.assertRaises(ValueError):
+            setup.subscription(dict(values, cacheRoot=str(roots['sandbox']), subscription=handle))
+        with self.assertRaises(ValueError):
+            setup.subscription(dict(values, selectionRevision='2', subscription=handle))
+        with self.assertRaisesRegex(setup.SetupRejected, '22'):
+            setup.subscription(dict(values, subscription='D9999999'))
+
     def test_ambiguity_between_roots_accounts_and_custom_fallback(self):
         roots = setup.locations('')
         self.database(roots['standard'])

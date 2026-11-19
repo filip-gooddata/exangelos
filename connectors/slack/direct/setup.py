@@ -1,4 +1,4 @@
-"""Configure-only discovery of an explicitly authorized persisted-cache selection."""
+"""Discovery and pin resolution after explicit persisted-cache consent."""
 import contextlib
 import fcntl
 import json
@@ -91,14 +91,25 @@ def setup(values):
         raise SetupRejected(26)
     target = conversation_target(direct) if direct else None
     roots = locations(custom)
+    directory = private_directory()
+    with locked(directory):
+        return configured(directory, roots, snippet, custom, revision, target)
+
+
+def private_directory():
     directory = safe_path(state_directory())
     require(not directory.is_relative_to(Path(__file__).resolve().parent.parent))
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     info = directory.stat()
     require(info.st_uid == os.getuid() and info.st_mode & 0o077 == 0)
+    return directory
+
+
+@contextlib.contextmanager
+def locked(directory, *, wait=False):
     with os.fdopen(private_file(directory / 'setup.lock', os.O_RDWR | os.O_CREAT), 'r+') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return configured(directory, roots, snippet, custom, revision, target)
+        fcntl.flock(lock, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
 
 
 def configured(directory, roots, snippet, custom, revision, target):
@@ -135,6 +146,14 @@ def configured(directory, roots, snippet, custom, revision, target):
     if not snippet and not target:
         raise SetupRejected(20)
     key = secrets.token_bytes(32)
+    location, epoch, request = discover(roots, key, snippet, target)
+    saved = {'version': 1, 'request': request, 'location': location, 'epoch': epoch, 'revision': revision,
+             'selector': selector_digest(key, snippet, target, custom, revision)}
+    save_json(path, saved)
+    return request
+
+
+def discover(roots, key, snippet, target):
     matches = []
     inventories = {}
     for location, path_root in roots.items():
@@ -185,19 +204,62 @@ def configured(directory, roots, snippet, custom, revision, target):
             require(not inspected.exists())
         else:
             require(source.inventory(inspected) == expected)
-    saved = {'version': 1, 'request': request, 'location': location, 'epoch': epoch, 'revision': revision,
-             'selector': selector_digest(key, snippet, target, custom, revision)}
-    fd, temporary = tempfile.mkstemp(prefix='.setup-', dir=directory)
+    return location, epoch, request
+
+
+def save_json(path, saved):
+    fd, temporary = tempfile.mkstemp(prefix='.setup-', dir=path.parent)
     try:
         with os.fdopen(fd, 'w') as handle:
             json.dump(saved, handle, separators=(',', ':'))
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, directory / 'setup.json')
+        os.replace(temporary, path)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def subscription(values):
+    require(set(values) <= {'sourceMode', 'cacheRoot', 'selectionRevision', 'subscription'})
+    require(values.get('sourceMode') == 'subscription-ids')
+    selection = values['subscription']
+    custom = values.get('cacheRoot', '')
+    revision = values.get('selectionRevision', '1')
+    require(isinstance(custom, str) and len(custom) <= 4096)
+    require(isinstance(revision, str) and 1 <= len(revision) <= 128)
+    roots = locations(custom)
+    directory = private_directory()
+    scope = re.fullmatch(r'scope-([a-f0-9]{64})', selection)
+    if scope:
+        with os.fdopen(private_file(directory / (selection + '.json'), os.O_RDONLY)) as handle:
+            saved = json.loads(handle.read(source.MAX_INPUT + 1), object_pairs_hook=source.unique_object)
+        require(saved['custom'] == custom and saved['revision'] == revision)
+        root = safe_path(roots[saved['location']])
+        require(source.inventory(root)[1] == saved['epoch'])
+        request = pinned_request(saved['request']['selection'], bytes.fromhex(saved['request']['key']), root, saved['epoch'])
+        require(request['expectedScope'] == scope[1])
+        validate(request)
+        return request
+    require(re.fullmatch(r'[CDG][A-Z0-9]{6,30}', selection))
+    # Only creation of the installation-local secret is serialized; independent scans may overlap.
+    with locked(directory, wait=True):
+        key_path = directory / 'subscriptions-key.json'
+        try:
+            fd = private_file(key_path, os.O_RDONLY)
+        except FileNotFoundError:
+            secret = secrets.token_hex(32)
+            save_json(key_path, secret)
+        else:
+            with os.fdopen(fd) as handle:
+                secret = json.loads(handle.read(128))
+        require(re.fullmatch(r'[a-f0-9]{64}', secret))
+    key = bytes.fromhex(observation.token(bytes.fromhex(secret), 'subscription-key-v1', custom, revision, selection))
+    location, epoch, request = discover(roots, key, '', (None, selection))
+    path = directory / ('scope-' + request['expectedScope'] + '.json')
+    save_json(path, {'custom': custom, 'revision': revision, 'location': location, 'epoch': epoch, 'request': request})
     return request
+
 
 
 def selector_digest(key, snippet, target, custom, revision):
@@ -224,7 +286,8 @@ def main():
         with open(os.devnull, 'w') as sink, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
             raw = sys.stdin.buffer.read(source.MAX_INPUT + 1)
             require(len(raw) <= source.MAX_INPUT)
-            result = setup(json.loads(raw, object_pairs_hook=source.unique_object))
+            values = json.loads(raw, object_pairs_hook=source.unique_object)
+            result = subscription(values) if 'subscription' in values else setup(values)
             output = json.dumps(result, separators=(',', ':'))
     except SetupRejected as error:
         return error.args[0]

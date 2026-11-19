@@ -687,6 +687,33 @@ describe("official connectors from a release address", () => {
     expect(requests.some((line) => /^GET \/rest\/api\/3\/search\/jql\?.*maxResults=1(&|$)/.test(line))).toBe(true)
   }, 60_000)
 
+  it("subscribes to two Slack IDs after consent without a selector file", async () => {
+    const cache = join(root, "positional-slack")
+    await mkdir(cache)
+    const fixture = Bun.spawnSync(["python3", "-B", "-c", [
+      "from pathlib import Path",
+      "import sys",
+      "from test_source import database, fixture",
+      "state = fixture()",
+      "state['messages']['D0000002'] = {}",
+      "database(Path(sys.argv[1]), state)"
+    ].join("\n"), cache], { cwd: join(repo, "connectors/slack/direct"), env: env() })
+    expect(fixture.exitCode, fixture.stderr.toString()).toBe(0)
+    const subscribe = (id: string) => run(exangelos, "--json", "subscribe", "slack", id, "--intent", "Observe cached messages", "--pull-only")
+    expect(subscribe("C0000001").status).toBe(1)
+    json("connector", "configure", "slack", `cacheRoot=${cache}`, "--secret-command", "sourceMode=echo subscription-ids")
+    expect(subscribe("D9999999").status).toBe(1)
+    const subscriptions = ["C0000001", "D0000002"].map((id) => {
+      const result = subscribe(id)
+      expect(result.status, result.stdout + result.stderr).toBe(0)
+      expect(result.stdout).not.toContain(id)
+      return JSON.parse(result.stdout)
+    })
+    expect(subscriptions[0].subject).not.toBe(subscriptions[1].subject)
+    for (const subscription of subscriptions) json("cancel", subscription.id)
+    json("connector", "remove", "slack")
+  }, 60_000)
+
   it("configures official Slack from a cached snippet and reconnects after clearing the selector", async () => {
     const cache = join(root, "slack-cache")
     await mkdir(cache)

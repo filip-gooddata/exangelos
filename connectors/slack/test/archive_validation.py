@@ -117,8 +117,8 @@ class Wire:
         answer = self.call('Configure', {'values': value})
         check(answer == ({'_tag': 'Accepted'} if reason is None else {'_tag': 'Rejected', 'reason': reason}), 'configure result')
 
-    def watch(self, cursor=None):
-        payload = dict(parameters={'selection': 'selected'}, eventTypes=[])
+    def watch(self, cursor=None, selection='selected'):
+        payload = dict(parameters={'selection': selection}, eventTypes=[])
         if cursor is not None:
             payload['cursor'] = cursor
         return self.request('Watch', payload)
@@ -262,6 +262,35 @@ def exercise(installed, fixtures, evidence):
             check(wire.call('Describe', {'parameters': {'selection': 'selected'}})['_tag'] == 'Invalid', 'invalid setup clears configuration')
             wire.handshake()
         cases.append('portable-' + layout + '-selection-and-replay')
+    home = homes / 'positional'
+    app = home / 'cache'
+    app.mkdir(parents=True)
+    state = fixture()
+    second = 'D0000002'
+    state['messages'][second] = {}
+    database(app, state)
+    consent = dict(sourceMode='subscription-ids', cacheRoot=str(app))
+    handles = []
+    cursors = []
+    with Wire(installed, home) as wire:
+        wire.configure(consent)
+        for conversation in (SELECTION[2], second):
+            described = wire.call('Describe', {'parameters': {'selection': conversation}})
+            check(described['_tag'] == 'Described' and conversation not in json.dumps(described), 'private normalized ID')
+            handle = described['parameters']['selection']
+            handles.append(handle)
+            cursors.append(wire.chunk(wire.watch(selection=handle))[0]['cursor'])
+    check(handles[0] != handles[1], 'distinct pinned scopes')
+    for i in (0, 1):
+        with Wire(installed, home) as wire:
+            wire.configure(consent)
+            wire.watch(cursors[1-i], handles[i])
+            answer = wire.receive()
+            check(answer['_tag'] == 'Exit' and answer['exit']['_tag'] == 'Failure'
+                  and 'SourceFailed' in json.dumps(answer), 'foreign cursor rejected')
+            wire.watch(cursors[i], handles[i])
+            wire.receive(1.2, quiet=True)
+    cases.append('positional-id-pins-restart-and-cross-cursor-rejection')
     check(setup_scopes[0] != setup_scopes[1], 'different users have distinct keys')
     after = inventory(installed)
     (evidence / 'inventory-after-runtime.json').write_text(json.dumps(after, indent=2) + '\n')

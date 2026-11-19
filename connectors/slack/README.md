@@ -33,6 +33,28 @@ rejects a ledger path there. Back up that external ledger with subscription curs
 
 ## Configuration and portable setup
 
+If you know the conversation ID, authorize per-subscription cache discovery once:
+
+```sh
+exangelos connector configure slack --secret-command 'sourceMode=echo subscription-ids'
+exangelos subscribe slack D0000002 --intent 'Watch this conversation' --pull-only
+```
+
+Replace the example ID with the Slack conversation ID. This mode needs no snippet,
+selector file or existing pin. Configure records consent without opening the cache.
+Subscribe resolves the ID against the configured cache roots and requires one
+validated persisted account and conversation. Each subscription stores an opaque
+scope handle. Restart and replay reopen that exact scope. Multiple IDs can be
+watched concurrently. An ID found under multiple accounts or roots is rejected;
+`cacheRoot` can limit discovery to a specific source. This authorizes reading
+persisted data even after logout or access changes. Slack sign-in is unverified.
+
+The positional ID is visible to the shell, process arguments and the host handling
+the Subscribe request. Use the private selector workflow below if this matters.
+Back up the entire private state directory, including the per-subscription pins
+and replay ledger. Changing the configured root or revision invalidates handles
+created under the previous settings. Use a new subscription for a new scope.
+
 Configure `sourceMode=persisted-cache` and supply one secret selector. Use
 `conversationId` for a Slack conversation ID, an HTTPS Slack workspace
 `/archives/<conversation>` link (optionally ending in a message permalink), or
@@ -109,7 +131,7 @@ read the same supported-format source on POSIX systems. This does not claim supp
 other Slack cache formats, Windows runtime, complete account enumeration, or live sign-in.
 The legacy [private selection bootstrap](direct/PRIVATE-SELECTION.md) remains available
 for existing installations only. Changing a legacy key/selection also requires a fresh
-subscription. Subscription parameters remain `selection=selected`.
+subscription. The private selector and legacy workflows use `selection=selected`.
 
 ## Source and reconciliation
 
