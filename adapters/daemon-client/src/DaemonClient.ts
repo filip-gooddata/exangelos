@@ -43,7 +43,7 @@ const started = (path: string): Effect.Effect<void, DaemonNotRunning, ServiceMan
   Effect.gen(function*() {
     const manager = yield* ServiceManager.ServiceManager
     const status = yield* manager.status
-    yield* Effect.logInfo("daemon not answering, starting service").pipe(
+    yield* Effect.logDebug("daemon not answering, starting service").pipe(
       Effect.annotateLogs({ installed: status.installed, running: status.running })
     )
     if (!status.installed) yield* manager.install
@@ -51,8 +51,8 @@ const started = (path: string): Effect.Effect<void, DaemonNotRunning, ServiceMan
   }).pipe(
     Effect.mapError((failure) => new DaemonNotRunning({ path, reason: failure.reason })),
     Effect.andThen(answering(path).pipe(Effect.retry(Schedule.spaced("100 millis").pipe(Schedule.upTo({ duration: startWait }))))),
-    Effect.tap(() => Effect.logInfo("daemon answering after service start")),
-    Effect.tapError((error) => Effect.logInfo("daemon start failed", Cause.fail(error))),
+    Effect.tap(() => Effect.logDebug("daemon answering after service start")),
+    Effect.tapError((error) => Effect.logDebug("daemon start failed", Cause.fail(error))),
     Effect.annotateLogs({ target: path })
   )
 

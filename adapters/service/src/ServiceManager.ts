@@ -103,7 +103,7 @@ export const make = Effect.gen(function*() {
 
   const logged = (action: string) => <A>(effect: Effect.Effect<A, ServiceManager.ServiceFailed>) =>
     effect.pipe(
-      Effect.tapError((error) => Effect.logInfo("service action failed", Cause.fail(error))),
+      Effect.tapError((error) => Effect.logDebug("service action failed", Cause.fail(error))),
       Effect.annotateLogs({ target: label, event: action, startMethod: method })
     )
 
@@ -120,12 +120,12 @@ export const make = Effect.gen(function*() {
       logged("status")
     ),
     install: (method === "homebrew" ? refuseOverrides : installOwnUnit).pipe(
-      Effect.tap(() => Effect.logInfo("service installed")),
+      Effect.tap(() => Effect.logDebug("service installed")),
       logged("install")
     ),
     start: userService.start(label).pipe(
       Effect.mapError(fromUserService),
-      Effect.tap(() => Effect.logInfo("service started")),
+      Effect.tap(() => Effect.logDebug("service started")),
       logged("start")
     )
   })
