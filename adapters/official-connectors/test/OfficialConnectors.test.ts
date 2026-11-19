@@ -153,12 +153,19 @@ describe("OfficialConnectorSource", () => {
       const capture = Logger.make(({ cause, fiber, message }) => {
         records.push(JSON.stringify([message, fiber.getRef(References.CurrentLogAnnotations), Cause.pretty(cause)]))
       })
-      for (const address of ["HTTPS://user:pass@releases.test/v1?tok=sample", "HTTPS:releases.test/v1?tok=sample"]) {
+      const addresses = [
+        "HTTPS://user:pass@releases.test/v1?tok=sample",
+        "HTTPS:releases.test/v1?tok=sample",
+        "https://releases.test/v1?label=first sample-tail",
+        "https://[?label=sample"
+      ]
+      for (const address of addresses) {
         yield* Effect.flip(fetch(root, "jira", { served: new Map(), releaseUrl: address })).pipe(
           Effect.provide(Logger.layer([capture]))
         )
       }
       expect(records.some((record) => record.includes("https://releases.test/v1"))).toBe(true)
       expect(records.filter((record) => /sample|user|pass/.test(record))).toEqual([])
+      expect(records.filter((record) => record.includes("official connector fetch failed") && !record.includes("Error"))).toEqual([])
     }).pipe(Effect.scoped))
 })
