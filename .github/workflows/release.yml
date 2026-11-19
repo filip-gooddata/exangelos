@@ -1,5 +1,5 @@
-# On every push to main: run the checks, bump the version, build the release files (build-release.yml) and publish them
-# as a GitHub release.
+# On every push to main: run the checks, bump the version, build the release files (build-release.yml), publish them
+# as a GitHub release and push the Homebrew formula to the tap filip-gooddata/homebrew-exangelos.
 #
 # The version is the latest vX.Y.Z tag plus a patch bump. Put #minor or #major in a commit message to bump that part
 # instead. The first release is v0.1.0.
@@ -31,8 +31,11 @@ jobs:
           fetch-depth: 0
       - id: next
         run: |
-          if git tag --points-at HEAD | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "HEAD is already released"
+          released=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+          if [ -n "$released" ]; then
+            echo "HEAD is already released as $released"
+            echo "tag=$released" >> "$GITHUB_OUTPUT"
+            echo "version=${released#v}" >> "$GITHUB_OUTPUT"
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -86,3 +89,37 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "$TAG" \
             --generate-notes
+
+  # Renders the formula from the published release's SHA256SUMS and pushes it to the tap. It also runs when HEAD is
+  # already released, so re-running a release whose tap push failed repairs the tap. Only the formula goes to the tap;
+  # the cask waits for a signed macOS app.
+  publish-tap:
+    needs: [version, release]
+    if: ${{ !cancelled() && needs.version.result == 'success' && (needs.release.result == 'success' || needs.version.outputs.skip == 'true') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.10.1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Render the formula from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir "$RUNNER_TEMP/release"
+          pnpm --filter @exangelos/packaging run render:homebrew --release "$RUNNER_TEMP/release" --version "$VERSION" --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG" --out "$RUNNER_TEMP/homebrew-tap"
+      - name: Push the formula to the tap
+        env:
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: .github/scripts/publish-homebrew-tap.sh "$RUNNER_TEMP/homebrew-tap/Formula/exangelos.rb" "$VERSION"
