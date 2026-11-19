@@ -1,7 +1,7 @@
 import { DateTime, Duration, Effect, Option, Ref, Schema, Stream } from "effect"
 import { Catalogue, Connector } from "@exangelos/connector-sdk"
 import { reconcile, validateObservation, type EventType } from "./Reconcile.ts"
-import { decodeRequest, localSource, type Request, type Source } from "./Source.ts"
+import { decodeRequest, localSource, SourceUnavailable, type Request, type Source } from "./Source.ts"
 
 const declare = (type: EventType) => Catalogue.event(type, {
   description: "A change between delayed persisted Slack snapshots; intermediate changes may be missed",
@@ -22,10 +22,11 @@ export const make = <R>(source: Source<R>) => Connector.make({
   events: [events["message.new"], events["thread.reply"], events["message.edited"], events["reaction.added"], events["reaction.removed"]],
   parameters: Catalogue.parameters({ main: "selection", schema: Schema.Struct({ selection: Schema.String }) }),
   configuration: [
-    Catalogue.choice("sourceMode", { label: "Authorize discovery across local Slack caches and use of the matching persisted account, even after logout or access changes (sign-in unverified)", choices: ["persisted-cache"], required: false }),
-    Catalogue.secret("conversationSnippet", { label: "Required for cached setup: a distinctive message snippet selecting exactly one cached account and conversation", required: false }),
+    Catalogue.choice("sourceMode", { label: "Authorize discovery across local Slack caches and use of the matching persisted account, even after logout or access changes (sign-in unverified)", choices: ["persisted-cache", "pinned-cache"], secretDestination: true, required: false }),
+    Catalogue.secret("conversationSnippet", { label: "Initial selection by literal cached message snippet", required: false }),
+    Catalogue.secret("conversationId", { label: "Initial selection by Slack conversation ID or Slack conversation link", required: false }),
     Catalogue.text("cacheRoot", { label: "Optional fallback: absolute IndexedDB folder; otherwise detect macOS Slack locations", required: false }),
-    Catalogue.text("selectionRevision", { label: "Optional reset version (default 1): change deliberately to select again; start a new subscription", required: false }),
+    Catalogue.text("selectionRevision", { label: "Optional reset version (default 1): change to clear old selectors and select again; start a new subscription", secretDestination: true, required: false }),
     Catalogue.secret("privateSource", { label: "Legacy fallback only: existing private selection and stable key JSON", required: false }),
     Catalogue.text("pollIntervalMs", { label: "Poll interval in milliseconds (not freshness; staleness is unbounded)", required: false })
   ],
@@ -40,21 +41,22 @@ export const make = <R>(source: Source<R>) => Connector.make({
         if (!Number.isSafeInteger(interval) || interval < 1000 || interval > 3600000) {
           return yield* new Connector.ConfigurationRejected({ reason })
         }
-        const setupValues = Object.fromEntries(["sourceMode", "conversationSnippet", "cacheRoot", "selectionRevision"]
+        const setupValues = Object.fromEntries(["sourceMode", "conversationSnippet", "conversationId", "cacheRoot", "selectionRevision"]
           .filter((key) => values[key] !== undefined && values[key] !== "")
           .map((key) => [key, values[key]!]))
         if (values.privateSource && Object.keys(setupValues).length > 0) return yield* new Connector.ConfigurationRejected({ reason })
         const request = values.privateSource
           ? yield* decodeRequest(values.privateSource)
-          : source.setup !== undefined && setupValues.sourceMode === "persisted-cache" && setupValues.conversationSnippet
+          : source.setup !== undefined && (setupValues.sourceMode === "persisted-cache" || setupValues.sourceMode === "pinned-cache")
           ? yield* source.setup(setupValues)
-          : yield* new Connector.ConfigurationRejected({ reason })
+          : yield* new Connector.ConfigurationRejected({ reason: "Choose persisted-cache to authorize Slack cache setup" })
         if (!values.privateSource && request.expectedScope === undefined) return yield* new Connector.ConfigurationRejected({ reason })
         const snapshot = yield* source.read(request)
         if (request.expectedScope !== undefined && snapshot.scope !== request.expectedScope) return yield* new Connector.ConfigurationRejected({ reason })
         yield* validateObservation(snapshot)
         yield* Ref.set(configured, { request, scope: snapshot.scope, interval: Duration.millis(interval) })
-      }).pipe(Effect.mapError(() => new Connector.ConfigurationRejected({ reason }))),
+      }).pipe(Effect.mapError((error) => error instanceof Connector.ConfigurationRejected ? error :
+        new Connector.ConfigurationRejected({ reason: error instanceof SourceUnavailable ? error.reason : reason }))),
       describe: ({ selection }) => Effect.gen(function*() {
         if ((yield* Ref.get(configured)) === undefined || selection !== "selected") {
           return yield* new Connector.ParametersInvalid({ reason })

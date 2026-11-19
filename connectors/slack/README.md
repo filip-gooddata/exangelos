@@ -33,8 +33,12 @@ rejects a ledger path there. Back up that external ledger with subscription curs
 
 ## Configuration and portable setup
 
-Configure `sourceMode=persisted-cache` and the secret `conversationSnippet` field.
-Use a distinctive literal message snippet from the conversation you want to watch.
+Configure `sourceMode=persisted-cache` and supply one secret selector. Use
+`conversationId` for a Slack conversation ID, an HTTPS Slack workspace
+`/archives/<conversation>` link (optionally ending in a message permalink), or
+an `https://app.slack.com/client/<workspace>/<conversation>` link. Client links
+also constrain the workspace ID. Archives links select by conversation ID.
+Alternatively, use `conversationSnippet` for literal text in a cached message.
 This explicitly authorizes discovery across cached messages in the configured roots,
 then continued use of the uniquely matching **persisted** account and conversation,
 even after logout, account switching, or access changes. It does not establish current
@@ -54,14 +58,15 @@ in public errors, Describe responses, events or cursors.
 | Field | Setup use |
 | --- | --- |
 | `sourceMode` | Required for new setup: choose `persisted-cache` to authorize cached discovery and use; sign-in remains unverified. |
-| `conversationSnippet` | Required secret for new setup: distinctive literal snippet selecting one account and conversation; not a raw ID. |
+| `conversationSnippet` | Literal snippet in a persisted message. |
+| `conversationId` | Alternative secret selector for an ID or supported conversation link. |
 | `cacheRoot` | Optional fallback: absolute IndexedDB folder for a custom installation or supported-format copied snapshot; otherwise macOS locations are detected. |
 | `selectionRevision` | Optional, default `1`: change deliberately to rediscover/reset a selection; use a new subscription without an old cursor. |
 | `pollIntervalMs` | Optional, default `30000`, range `1000`–`3600000`; controls polling, not freshness. |
 | `privateSource` | Legacy fallback only: existing private selection/key JSON; cannot be mixed with new setup fields. |
 
 Fields are catalogue-optional so any invalid Configure reaches the handler and clears
-prior in-memory configuration. New setup requires both source mode and snippet.
+prior in-memory configuration. Initial setup requires source mode and one selector.
 The SDK has static Choice/Text/Secret fields and Accepted/Rejected Configure responses,
 but no dynamic discovery picker or custom setup tool. Thus selection is through a secret
 configuration field; no external bootstrap script or manually authored private JSON is
@@ -73,7 +78,14 @@ Setup generates a stable random key and stores a pinned source/account/conversat
 `${XDG_DATA_HOME:-~/.local/share}/exangelos/connectors/slack/setup.json`.
 This connector-managed private file is external to the installation, mode 0600, with a
 mode-0700 containing directory. The snippet is represented there only by a keyed digest;
-the host manages its own secret configuration. Back up this file with the ledger/cursors.
+the host retains supplied secret fields when omitted from configuration updates.
+After successful selection, run `exangelos connector configure slack sourceMode=pinned-cache`.
+Changing mode clears the host's stored connector secrets. The connector validates the
+existing pin at the same revision and cache location. This mode cannot discover a
+replacement if the pin disappears. To retry a rejected snippet with a known ID,
+set a new `selectionRevision` and supply `--secret-file conversationId=<path>`
+in the same Configure call. Changing revision clears the old selector before the host
+stores the replacement. Back up this file with the ledger/cursors.
 While setup state is retained, unchanged settings reuse the key and selection, never
 silently discover a different account. The pinned expected scope is enforced by both
 acquisition and Configure, including the boundary between setup and the next read. Home-relative source locations are resolved again at runtime; physical cache

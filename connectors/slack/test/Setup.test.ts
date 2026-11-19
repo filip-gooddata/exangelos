@@ -17,7 +17,7 @@ it.effect("discovers only through consented Configure and passes the exact priva
     })
   }))
   const handshake = yield* client.Handshake()
-  expect(handshake.catalogue.configuration.find((field) => field.key === "sourceMode")).toMatchObject({ _tag: "Choice", choices: ["persisted-cache"] })
+  expect(handshake.catalogue.configuration.find((field) => field.key === "sourceMode")).toMatchObject({ _tag: "Choice", choices: ["persisted-cache", "pinned-cache"], secretDestination: true })
   yield* client.Describe({ parameters: { selection: "selected" } })
   expect(calls).toEqual([])
   expect((yield* client.Configure({ values: { conversationSnippet: "synthetic body" } }))._tag).toBe("Rejected")

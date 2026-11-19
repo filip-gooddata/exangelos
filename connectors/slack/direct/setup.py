@@ -5,6 +5,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import secrets
 import stat
 import sys
@@ -17,6 +18,24 @@ import source
 def require(value):
     if not value:
         raise ValueError('setup')
+
+
+class SetupRejected(ValueError):
+    """Only fixed process exit codes cross the private worker boundary."""
+
+
+def conversation_target(value):
+    conversation = r'([CDG][A-Z0-9]{6,30})'
+    match = re.fullmatch(conversation, value)
+    if match:
+        return None, match[1]
+    match = re.fullmatch(r'https://app\.slack\.com/client/(T[A-Z0-9]{6,30})/' + conversation + r'/?', value)
+    if match:
+        return match[1], match[2]
+    match = re.fullmatch(r'https://[a-z0-9-]+\.slack\.com/archives/' + conversation + r'(?:/p[0-9]+)?/?', value)
+    if match:
+        return None, match[1]
+    raise SetupRejected(20)
 
 
 def locations(custom):
@@ -50,14 +69,20 @@ def private_file(path, flags):
 
 
 def setup(values):
-    require(isinstance(values, dict) and not set(values) - {'sourceMode', 'conversationSnippet', 'cacheRoot', 'selectionRevision'})
-    require(values.get('sourceMode') == 'persisted-cache')
-    snippet = values.get('conversationSnippet')
+    require(isinstance(values, dict) and not set(values) - {'sourceMode', 'conversationSnippet', 'cacheRoot', 'selectionRevision', 'conversationId'})
+    require(values.get('sourceMode') in ('persisted-cache', 'pinned-cache'))
+    snippet = values.get('conversationSnippet', '')
+    direct = values.get('conversationId', '')
     custom = values.get('cacheRoot', '')
     revision = values.get('selectionRevision', '') or '1'
-    require(isinstance(snippet, str) and 1 <= len(snippet.encode()) <= 16384)
+    require(isinstance(snippet, str) and len(snippet.encode()) <= 16384)
     require(isinstance(custom, str) and len(custom) <= 4096)
     require(isinstance(revision, str) and 1 <= len(revision) <= 128)
+    if not isinstance(direct, str) or len(direct) > 4096 or (snippet and direct):
+        raise SetupRejected(20)
+    if values['sourceMode'] == 'pinned-cache' and (snippet or direct):
+        raise SetupRejected(26)
+    target = conversation_target(direct) if direct else None
     roots = locations(custom)
     data = os.environ.get('EXANGELOS_HOME')
     base = Path(data) if data else Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'exangelos'
@@ -68,10 +93,10 @@ def setup(values):
     require(info.st_uid == os.getuid() and info.st_mode & 0o077 == 0)
     with os.fdopen(private_file(directory / 'setup.lock', os.O_RDWR | os.O_CREAT), 'r+') as lock:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return configured(directory, roots, snippet, custom, revision)
+        return configured(directory, roots, snippet, custom, revision, target)
 
 
-def configured(directory, roots, snippet, custom, revision):
+def configured(directory, roots, snippet, custom, revision, target):
     path = directory / 'setup.json'
     previous = None
     try:
@@ -83,17 +108,27 @@ def configured(directory, roots, snippet, custom, revision):
             raw = handle.read(source.MAX_INPUT + 1)
         require(len(raw) <= source.MAX_INPUT)
         previous = json.loads(raw, object_pairs_hook=source.unique_object)
-        require(previous['version'] == 1)
+        require(previous['version'] == 1 and re.fullmatch(r'[0-9a-f]{64}', previous['selector']))
         key = bytes.fromhex(previous['request']['key'])
-        selector = observation.token(key, 'setup-selector-v1', snippet, custom, revision)
-        if secrets.compare_digest(previous['selector'], selector):
+        selector = selector_digest(key, snippet, target, custom, revision)
+        resume = not snippet and not target
+        if resume and (previous['revision'] != revision or previous['location'] not in roots):
+            raise SetupRejected(24)
+        if resume or secrets.compare_digest(previous['selector'], selector):
             root = safe_path(roots[previous['location']])
-            require(source.inventory(root)[1] == previous['epoch'])
+            if resume and custom and str(root) != previous['request']['root']:
+                raise SetupRejected(24)
+            if source.inventory(root)[1] != previous['epoch']:
+                raise SetupRejected(24)
             request = pinned_request(previous['request']['selection'], key, root, previous['epoch'])
+            require(request['expectedScope'] == previous['request']['expectedScope'])
             validate(request)
             return request
         # Selection changes are deliberate: editing a snippet alone must not silently repin an account.
-        require(previous['revision'] != revision)
+        if previous['revision'] == revision:
+            raise SetupRejected(24)
+    if not snippet and not target:
+        raise SetupRejected(20)
     key = secrets.token_bytes(32)
     matches = []
     inventories = {}
@@ -108,8 +143,18 @@ def configured(directory, roots, snippet, custom, revision):
         inventories[root] = (before, epoch)
         candidates = set()
 
+        observed = False
+
         def collect(state, generation):
+            nonlocal observed
+            observed = True
             identity = observation.scope(state)
+            if target:
+                workspace, conversation = target
+                if workspace is None or workspace == identity[0]:
+                    if any(conversation in (state.get(field) or {}) for field in ('messages', 'channels')):
+                        candidates.add((*identity, conversation))
+                return
             for conversation, messages in (state.get('messages') or {}).items():
                 for message in messages.values():
                     text = message.get('text') if isinstance(message, dict) else None
@@ -118,10 +163,15 @@ def configured(directory, roots, snippet, custom, revision):
 
         result = source.scan.run(root, observe=collect)
         require(not result['external_rejections'] and not result['files_changed'] and result['current_unchanged'])
-        require(source.inventory(root) == (before, epoch))
+        require(observed and source.inventory(root) == (before, epoch))
         for workspace, owner, conversation in candidates:
             matches.append((location, root, epoch, {'workspace': workspace, 'owner': owner, 'conversations': [conversation]}))
-    require(len(matches) == 1)
+    if not any(value is not None for value in inventories.values()):
+        raise SetupRejected(21)
+    if not matches:
+        raise SetupRejected(22)
+    if len(matches) > 1:
+        raise SetupRejected(23)
     location, root, epoch, selection = matches[0]
     request = pinned_request(selection, key, root, epoch)
     validate(request)
@@ -131,7 +181,7 @@ def configured(directory, roots, snippet, custom, revision):
         else:
             require(source.inventory(inspected) == expected)
     saved = {'version': 1, 'request': request, 'location': location, 'epoch': epoch, 'revision': revision,
-             'selector': observation.token(key, 'setup-selector-v1', snippet, custom, revision)}
+             'selector': selector_digest(key, snippet, target, custom, revision)}
     fd, temporary = tempfile.mkstemp(prefix='.setup-', dir=directory)
     try:
         with os.fdopen(fd, 'w') as handle:
@@ -143,6 +193,12 @@ def configured(directory, roots, snippet, custom, revision):
         if os.path.exists(temporary):
             os.unlink(temporary)
     return request
+
+
+def selector_digest(key, snippet, target, custom, revision):
+    if target:
+        return observation.token(key, 'setup-conversation-v1', target, custom, revision)
+    return observation.token(key, 'setup-selector-v1', snippet, custom, revision)
 
 
 def pinned_request(selection, key, root, epoch):
@@ -165,6 +221,12 @@ def main():
             require(len(raw) <= source.MAX_INPUT)
             result = setup(json.loads(raw, object_pairs_hook=source.unique_object))
             output = json.dumps(result, separators=(',', ':'))
+    except SetupRejected as error:
+        return error.args[0]
+    except (FileNotFoundError, PermissionError):
+        return 21
+    except BlockingIOError:
+        return 25
     except BaseException:
         sys.stderr.write('Slack persisted setup unavailable.\n')
         return 1

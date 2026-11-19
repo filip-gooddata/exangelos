@@ -16,8 +16,10 @@ import tarfile
 import time
 from unittest import mock
 
-PACKER = '058760f81f660aecdd7c02ff257a9566092b77de'
-REASON = 'Slack private configuration or persisted snapshot is unavailable or inconsistent'
+PACKER = 'ce38a52891e5ff20f07193888aa3672e7960fd79'
+CONSENT = 'Choose persisted-cache to authorize Slack cache setup'
+UNAVAILABLE = 'Slack persisted snapshot is unavailable or unsupported'
+MISSING = 'Slack cache or private setup files are missing or unreadable. Check the cache root and access'
 REPO = Path(__file__).resolve().parents[3]
 BUN = shutil.which('bun')
 
@@ -111,9 +113,9 @@ class Wire:
         answer = self.call('Handshake', None)
         check(answer['protocolVersion'] == 1 and len(answer['catalogue']['eventTypes']) == 5, 'handshake')
 
-    def configure(self, value, accepted=True):
+    def configure(self, value, reason=None):
         answer = self.call('Configure', {'values': value})
-        check(answer == ({'_tag': 'Accepted'} if accepted else {'_tag': 'Rejected', 'reason': REASON}), 'configure result')
+        check(answer == ({'_tag': 'Accepted'} if reason is None else {'_tag': 'Rejected', 'reason': reason}), 'configure result')
 
     def watch(self, cursor=None):
         payload = dict(parameters={'selection': 'selected'}, eventTypes=[])
@@ -158,8 +160,9 @@ def exercise(installed, fixtures, evidence):
             check(wire.call('Describe', {'parameters': {'selection': 'selected'}})['_tag'] == 'Invalid', 'deferred describe')
             wire.receive(1.2, quiet=True)
             if scenario != 'unconfigured-sentinel':
-                wire.configure({'privateSource': json.dumps(request(app))}, accepted=False)
-                wire.configure({'sourceMode': 'persisted-cache', 'conversationSnippet': 'fixture body'}, accepted=False)
+                wire.configure({'privateSource': json.dumps(request(app))}, reason=UNAVAILABLE)
+                wire.configure({'sourceMode': 'persisted-cache', 'conversationSnippet': 'fixture body', 'cacheRoot': str(app)},
+                               reason=MISSING if scenario == 'absent-app' else UNAVAILABLE)
                 wire.handshake()
                 wire.receive(1.2, quiet=True)
             else:
@@ -178,7 +181,7 @@ def exercise(installed, fixtures, evidence):
     config_path.chmod(0o600)
     with Wire(installed, home) as wire:
         wire.handshake()
-        wire.configure({}, accepted=False)
+        wire.configure({}, reason=CONSENT)
         wire.configure(json.loads(config_path.read_text()))
         check(wire.call('Describe', {'parameters': {'selection': 'selected'}})['_tag'] == 'Described', 'describe configured')
         watch = wire.watch()
@@ -218,10 +221,15 @@ def exercise(installed, fixtures, evidence):
         with mock.patch.object(test_source, 'SELECTION', identity):
             database(app, state)
         values = dict(sourceMode='persisted-cache', conversationSnippet='fixture body', pollIntervalMs='1000')
+        if layout == 'custom':
+            del values['conversationSnippet']
+            values['conversationId'] = identity[2]
         if layout == 'custom' or sys.platform != 'darwin':
             values['cacheRoot'] = str(app)
         with Wire(installed, home) as wire:
             wire.handshake()
+            wire.configure(dict(values, conversationSnippet='synthetic absent snippet', conversationId=''),
+                           reason='No conversation matched in the persisted cache. Try its conversation ID or check the cache root')
             wire.configure(values)
             saved = json.loads((home / 'state/connectors/slack/setup.json').read_text())
             check(saved['request']['selection'] == dict(workspace=identity[0], owner=identity[1], conversations=[identity[2]]), 'captured setup selection')
@@ -236,10 +244,11 @@ def exercise(installed, fixtures, evidence):
             changed = wire.chunk(str(wire.id))
             check(len(changed) == 1 and changed[0]['_tag'] == 'Event' and changed[0]['event']['type'] == 'message.edited', 'portable concrete event')
         with Wire(installed, home) as wire:
-            wire.configure(values)
+            wire.configure(dict({k: v for k, v in values.items() if k not in ('conversationSnippet', 'conversationId')},
+                                sourceMode='pinned-cache'))
             check(json.loads((home / 'state/connectors/slack/setup.json').read_text()) == saved, 'stable private pin')
             check(wire.chunk(wire.watch(portable_cursor)) == changed, 'portable exact replay after restart')
-            wire.configure(dict(values, sourceMode='unknown'), accepted=False)
+            wire.configure(dict(values, sourceMode='unknown'), reason=CONSENT)
             check(wire.call('Describe', {'parameters': {'selection': 'selected'}})['_tag'] == 'Invalid', 'invalid setup clears configuration')
             wire.handshake()
         cases.append('portable-' + layout + '-selection-and-replay')

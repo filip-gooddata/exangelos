@@ -71,6 +71,36 @@ class SetupTests(unittest.TestCase):
         self.assertNotEqual(results[0][0], results[1][0])
         self.assertNotEqual(results[0][1], results[1][1])
 
+    def test_direct_id_links_and_selector_free_resume(self):
+        root = setup.locations('')['standard']
+        self.database(root)
+        team, _, conversation = SELECTION
+        values = {'sourceMode': 'persisted-cache'}
+        for selector in (conversation, f'https://fixture.slack.com/archives/{conversation}/p123'):
+            request = setup.setup(dict(values, conversationId=selector))
+            self.assertEqual(request, setup.setup(values))
+        with self.assertRaisesRegex(setup.SetupRejected, '24'):
+            setup.setup(dict(values, selectionRevision='2'))
+        linked = setup.setup(dict(values, selectionRevision='2',
+                                  conversationId=f'https://app.slack.com/client/{team}/{conversation}'))
+        self.assertEqual(request['selection'], linked['selection'])
+        self.assertNotEqual(request['key'], linked['key'])
+
+    def test_selector_failures_do_not_create_pin(self):
+        root = setup.locations('')['standard']
+        self.database(root)
+        for selector, code in [('https://other.invalid/archives/' + SELECTION[2], 20),
+                               (f'https://app.slack.com/client/T0000022/{SELECTION[2]}', 22),
+                               ('D0000099', 22)]:
+            with self.assertRaisesRegex(setup.SetupRejected, str(code)):
+                setup.setup({'sourceMode': 'persisted-cache', 'conversationId': selector})
+        with self.assertRaisesRegex(setup.SetupRejected, '20'):
+            setup.setup(dict(self.values, conversationId=SELECTION[2]))
+        self.database(setup.locations('')['sandbox'])
+        with self.assertRaisesRegex(setup.SetupRejected, '23'):
+            setup.setup({'sourceMode': 'persisted-cache', 'conversationId': SELECTION[2]})
+        self.assertFalse((self.home / 'state/connectors/slack/setup.json').exists())
+
     def test_ambiguity_between_roots_accounts_and_custom_fallback(self):
         roots = setup.locations('')
         self.database(roots['standard'])
