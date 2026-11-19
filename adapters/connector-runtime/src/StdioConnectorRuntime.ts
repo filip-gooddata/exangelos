@@ -107,7 +107,7 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
           }
         })),
       exited: child.exitCode.pipe(
-        Effect.tap(() => Fiber.join(stderr).pipe(Effect.timeout(stderrDrain), Effect.ignore)),
+        Effect.onExit(() => Fiber.join(stderr).pipe(Effect.timeout(stderrDrain), Effect.ignore)),
         Effect.match({
           onSuccess: (code) => crashed(`The connector exited with code ${code}`),
           onFailure: (error) => crashed(error.message)

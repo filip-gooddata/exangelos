@@ -96,9 +96,10 @@ export const enableConnector = (actor: Session.Actor, name: Ids.ConnectorName, d
     const supervisor = yield* ConnectorSupervisor
     const connector = yield* found(name)
     if (connector.digest !== digest) {
-      const mismatch = new DigestMismatch({ connector: name, expected: digest, actual: connector.digest })
-      yield* Effect.logWarning("connector digest mismatch", Cause.fail(mismatch))
-      return yield* mismatch
+      yield* Effect.logWarning("connector digest mismatch", Cause.fail("DigestMismatch")).pipe(
+        Effect.annotateLogs({ actual: connector.digest })
+      )
+      return yield* new DigestMismatch({ connector: name, expected: digest, actual: connector.digest })
     }
     if (connector.trust !== "inert") return connector
     // Checked again under the write permit, so a file change racing this call cannot be trusted.
@@ -110,9 +111,10 @@ export const enableConnector = (actor: Session.Actor, name: Ids.ConnectorName, d
     if (Option.isNone(enabled)) {
       const now = yield* found(name)
       if (now.digest !== digest) {
-        const mismatch = new DigestMismatch({ connector: name, expected: digest, actual: now.digest })
-        yield* Effect.logWarning("connector digest mismatch", Cause.fail(mismatch))
-        return yield* mismatch
+        yield* Effect.logWarning("connector digest mismatch", Cause.fail("DigestMismatch")).pipe(
+          Effect.annotateLogs({ actual: now.digest })
+        )
+        return yield* new DigestMismatch({ connector: name, expected: digest, actual: now.digest })
       }
       return now
     }

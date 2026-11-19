@@ -6,7 +6,8 @@ import { OfficialConnectorSource, ConnectorImportSource, SettingsStore } from "@
 import { NamedImport } from "@exangelos/connector-import"
 
 /** The release file of an official connector: a gzip tar with `connector.json` at its root. */
-const withoutQuery = (text: string) => text.replace(/(https?:\/\/[^\s?#]*)[?#]\S*/g, "$1")
+const safeUrls = (text: string) =>
+  text.replace(/https?:\/\/\S+/g, (link) => URL.canParse(link) ? new URL(link).origin + new URL(link).pathname : "[url]")
 
 export const archiveName = (official: OfficialConnectorSource.Official) => `${official.name}-${official.version}.tar.gz`
 
@@ -55,13 +56,13 @@ export const layer = (options: {
           const current = yield* Effect.mapError(settings.read, (unreadable) => unreadable.reason)
           const from = yield* source(official, current.officialConnectorFolder)
           yield* Effect.logInfo("official connector source chosen").pipe(
-            Effect.annotateLogs({ source: from._tag, target: "path" in from ? from.path : withoutQuery(from.url) })
+            Effect.annotateLogs({ source: from._tag, target: "path" in from ? from.path : safeUrls(from.url) })
           )
           const placed = yield* Effect.mapError(imports.place(from, official.name), (failed) => failed.reason)
           yield* Effect.logInfo("official connector fetched")
           return placed
         }).pipe(
-          Effect.tapError((reason) => Effect.logWarning("official connector fetch failed", Cause.fail(withoutQuery(reason)))),
+          Effect.tapError((reason) => Effect.logWarning("official connector fetch failed", Cause.fail(safeUrls(reason)))),
           Effect.mapError((reason) => new OfficialConnectorSource.OfficialFetchFailed({ connector: official.name, reason })),
           Effect.annotateLogs({ connector: official.name, version: official.version })
         )
