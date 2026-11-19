@@ -32,11 +32,17 @@ export const redactText = (text: string, secrets: ReadonlyArray<string>): string
   return out
 }
 
-/** Walks objects and arrays: sensitive keys lose their value, and every string loses known secrets. */
+/**
+ * Walks objects and arrays: sensitive keys lose their value, and every string loses known secrets.
+ * Errors keep their name and message, and objects with toJSON (such as dates) their JSON form.
+ */
 export const redactValue = (value: unknown, secrets: ReadonlyArray<string>, depth = 0): unknown => {
   if (typeof value === "string") return redactText(value, secrets)
+  if (typeof value === "bigint") return value.toString()
   if (value === null || typeof value !== "object") return value
   if (depth >= deepest) return redacted
+  if (value instanceof Error) return redactValue({ name: value.name, message: value.message }, secrets, depth + 1)
+  if ("toJSON" in value && typeof value.toJSON === "function") return redactValue(value.toJSON(), secrets, depth + 1)
   if (Array.isArray(value)) return value.map((item) => redactValue(item, secrets, depth + 1))
   const out: Record<string, unknown> = {}
   for (const [key, item] of Object.entries(value)) {

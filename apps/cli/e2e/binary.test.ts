@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite"
-import { chmod, copyFile, lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
@@ -299,7 +299,7 @@ describe("the exangelos binary", () => {
   }, 15_000)
 
   it("serves the template connector's catalogue from a daemon that replaced a stale socket", async () => {
-    await mkdir(home)
+    await mkdir(home, { recursive: true })
     await abandonSocket(join(home, "daemon.sock"))
     daemon = startDaemon()
     expect(await listUntilReady()).toEqual([])
@@ -408,6 +408,14 @@ describe("the exangelos binary", () => {
     expect(connectorRuns()).toBe(false)
     expect(run(exangelos, "connectors").stderr.trim()).toMatch(noDaemon)
   }, 15_000)
+
+  it("logs the daemon and each command without the configured secret", async () => {
+    const logs = join(home, "logs")
+    const names = await readdir(logs)
+    expect(names).toEqual(expect.arrayContaining(["cli.jsonl", "daemon.jsonl"]))
+    for (const name of names) expect(await readFile(join(logs, name), "utf8")).not.toContain("not-a-secret")
+    expect(await readFile(join(logs, "daemon.jsonl"), "utf8")).toContain("daemon stopped")
+  })
 
   it("starts the daemon through the service manager on first use and reports its status", async () => {
     await writeFile(join(root, "service-accepts"), "")

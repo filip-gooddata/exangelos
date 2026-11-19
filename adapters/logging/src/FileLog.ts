@@ -3,7 +3,7 @@ import { Paths } from "@exangelos/paths"
 import { Effect, Layer, Logger, LogLevel, References } from "effect"
 import * as Level from "./Level.ts"
 import * as Record from "./Record.ts"
-import { redactRecord, redactValue, Secrets } from "./Redact.ts"
+import { redactRecord, redactText, redactValue, Secrets } from "./Redact.ts"
 
 export const maxBytes = 5 * 1024 * 1024
 export const keep = 5
@@ -90,16 +90,38 @@ export const record = (options: Logger.Options<unknown>, src: Record.Source): Re
   return redactRecord(Record.make({ ...options, message: redactValue(options.message, secrets) }, src, process.pid), secrets)
 }
 
+/** Stands in for a record that could not be built or encoded, such as one whose annotation getter throws. */
+const unbuilt = (options: Logger.Options<unknown>, src: Record.Source, error: unknown): Record.LogRecord => ({
+  t: options.date.toISOString(),
+  level: Record.levelOf(options.logLevel),
+  src,
+  pid: process.pid,
+  msg: redactText(`a log record could not be written: ${String(error)}`, Secrets.values())
+})
+
+const encoded = (options: Logger.Options<unknown>, src: Record.Source) => {
+  try {
+    return Record.encode(record(options, src))
+  } catch (error) {
+    return Record.encode(unbuilt(options, src, error))
+  }
+}
+
 /** Writes records at or above the live level (Level.current) to the sink. */
 export const fileLogger = (src: Record.Source, target: Sink) =>
   Logger.make<unknown, void>((options) => {
-    if (Level.enabled(options.logLevel)) target.write(Record.encode(record(options, src)))
+    if (Level.enabled(options.logLevel)) target.write(encoded(options, src))
   })
 
 /** Writes records at or above `minimum` to stderr in the human form, redacted. */
 export const stderrLogger = (src: Record.Source, minimum: LogLevel.LogLevel) =>
   Logger.make<unknown, void>((options) => {
-    if (LogLevel.isGreaterThanOrEqualTo(options.logLevel, minimum)) console.error(Record.format(record(options, src)))
+    if (!LogLevel.isGreaterThanOrEqualTo(options.logLevel, minimum)) return
+    try {
+      console.error(Record.format(record(options, src)))
+    } catch (error) {
+      console.error(Record.format(unbuilt(options, src, error)))
+    }
   })
 
 /** Passes only records at or above `minimum` to `logger`. */

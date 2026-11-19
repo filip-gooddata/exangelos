@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "@effect/vitest"
-import { Cause, Effect, Layer, Logger, References } from "effect"
+import { Cause, ConfigProvider, Effect, Layer, Logger, References } from "effect"
 import { FileLog, Level, Record, Redact, Secrets } from "../src/index.ts"
 
 const capture = (lines: Array<string>) =>
@@ -49,12 +49,32 @@ describe("Redact", () => {
 
   it.effect("keeps an event payload only at DEBUG and below", () =>
     Effect.gen(function*() {
-      yield* Level.init("debug")
+      yield* Level.init("debug").pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({}))))
       const lines: Array<string> = []
       const logged = (log: Effect.Effect<void>) =>
         log.pipe(Effect.annotateLogs({ payload: { title: "x" } }), Effect.provide(capture(lines)))
       yield* logged(Effect.logInfo("event"))
       yield* logged(Effect.logDebug("event"))
       expect(lines.map((line) => JSON.parse(line).ann?.payload !== undefined)).toEqual([false, true])
-    }).pipe(Effect.ensuring(Level.init(undefined))))
+    }).pipe(Effect.ensuring(Level.init(undefined).pipe(Effect.provide(ConfigProvider.layer(ConfigProvider.fromEnvRecord({})))))))
+
+  it("keeps the readable form of errors, dates and big numbers", () => {
+    expect(Redact.redactValue({
+      error: new Error("failed with abcdef"),
+      at: new Date("2026-11-19T10:00:00.000Z"),
+      size: 12n
+    }, ["abcdef"])).toEqual({
+      error: { name: "Error", message: "failed with [redacted]" },
+      at: "2026-11-19T10:00:00.000Z",
+      size: "12"
+    })
+  })
+
+  it.effect("writes a stand-in when an annotation cannot be read", () =>
+    Effect.gen(function*() {
+      const lines: Array<string> = []
+      const broken = { get detail(): string { throw new Error("unreadable") } }
+      yield* Effect.logWarning("odd").pipe(Effect.annotateLogs({ broken }), Effect.provide(capture(lines)))
+      expect(JSON.parse(lines[0]!).msg).toBe("a log record could not be written: Error: unreadable")
+    }))
 })

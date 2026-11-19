@@ -9,6 +9,8 @@ import { home, install, start, templateConnector } from "./support.ts"
 
 const secret = "tok-7c1f9a3b-e2e"
 
+delete process.env.EXANGELOS_LOG_LEVEL
+
 const logs = (dir: string) =>
   Effect.promise(async () => {
     const names = await Fs.readdir(Path.join(dir, "logs"))
