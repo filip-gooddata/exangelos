@@ -1,4 +1,4 @@
-import { Cause, Effect, Layer, Match } from "effect"
+import { Cause, Effect, Layer, Match, Result } from "effect"
 import { AlertSink } from "@exangelos/application"
 import { Notifications } from "@exangelos/notifications"
 import type { Notification } from "@exangelos/notifications"
@@ -40,7 +40,10 @@ export const layer: Layer.Layer<AlertSink.AlertSink, never, Notifications> = Lay
             Effect.logWarning(
               "alert failed",
               Cause.map(cause, (error) => new AlertSink.AlertFailed({ reason: `${error._tag}: the notification was not shown` }))
-            ).pipe(Effect.annotateLogs("outcome", "error"))),
+            ).pipe(Effect.annotateLogs({
+              outcome: "error",
+              error: Result.match(Cause.findError(cause), { onSuccess: (error) => error._tag, onFailure: () => "defect" })
+            }))),
           Effect.mapError((error) => new AlertSink.AlertFailed({ reason: error.reason })),
           Effect.annotateLogs({
             kind: alert._tag,

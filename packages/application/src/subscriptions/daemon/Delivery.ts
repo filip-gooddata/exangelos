@@ -143,7 +143,10 @@ const attempt = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
         duration: deliveryTimeout,
         orElse: () => {
           const failure = new DeliveryFailed({ reason: "timed out" })
-          return Effect.logWarning("wake timed out", Cause.fail(failure)).pipe(Effect.andThen(Effect.fail(failure)))
+          return Effect.logWarning("wake timed out", Cause.fail(failure)).pipe(
+            Effect.annotateLogs("error", failure.reason),
+            Effect.andThen(Effect.fail(failure))
+          )
         }
       }),
       Effect.andThen(Effect.flatMap(elapsed, (durationMs) =>

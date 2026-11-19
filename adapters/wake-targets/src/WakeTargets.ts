@@ -19,6 +19,7 @@ const defaultLimit = Duration.seconds(30)
 
 const refuse = (reason: string, logged: string = reason): Effect.Effect<never, WakeTarget.DeliveryFailed> =>
   Effect.logWarning("wake refused", Cause.fail(new WakeTarget.DeliveryFailed({ reason: logged }))).pipe(
+    Effect.annotateLogs("error", logged),
     Effect.andThen(Effect.fail(new WakeTarget.DeliveryFailed({ reason })))
   )
 
@@ -33,10 +34,10 @@ const attempt = (
     const verdict = interpret(outcome)
     const annotations = { program: planned.program, result: outcome._tag }
     if (verdict._tag === "Failed") {
-      yield* Effect.logWarning(
-        "wake command failed",
-        Cause.fail(new WakeTarget.DeliveryFailed({ reason: quietReason(planned.program, outcome) }))
-      ).pipe(Effect.annotateLogs(annotations))
+      const error = quietReason(planned.program, outcome)
+      yield* Effect.logWarning("wake command failed", Cause.fail(new WakeTarget.DeliveryFailed({ reason: error }))).pipe(
+        Effect.annotateLogs({ ...annotations, error })
+      )
       return yield* new WakeTarget.DeliveryFailed({ reason: verdict.reason })
     }
     if (verdict.note !== undefined) yield* Effect.logWarning("wake delivered with a note").pipe(Effect.annotateLogs(annotations))
