@@ -10,10 +10,11 @@ describe("debug report redaction", () => {
       "{\\\"secret\\\":\\\"x y\\\"}",
       "fetch https://user:pw@git.example/repo",
       "fetch https://cdn.example/c.zip?label=O'Neil&sig=private",
+      "upstream returned Basic dXNlcjpmYWtl",
       "ready"
     ].join("\n")
     expect(scrub(text)).toBe(
-      ["booting", ...Array.from({ length: 5 }, () => "[redacted line]"), "ready"].join("\n")
+      ["booting", ...Array.from({ length: 6 }, () => "[redacted line]"), "ready"].join("\n")
     )
   })
 
@@ -22,5 +23,7 @@ describe("debug report redaction", () => {
       .toEqual({ _tag: "Git", url: "https://git.example/repo.git", ref: "main" })
     expect(cleanValue({ _tag: "Archive", url: "https://cdn.example/c.zip?label=O'Neil&sig=private#part" }))
       .toEqual({ _tag: "Archive", url: "https://cdn.example/c.zip" })
+    expect(cleanValue({ _tag: "Archive", url: "https://cdn.example/download/token=R4Probe123/connector.tgz" }))
+      .toEqual({ _tag: "Archive", url: "https://cdn.example/[redacted]" })
   })
 })

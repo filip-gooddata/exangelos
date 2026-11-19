@@ -66,10 +66,15 @@ const readLines = (path: string, from: (id: string, size: number) => number | un
 const parsed = (lines: ReadonlyArray<string>): Array<Record.LogRecord> =>
   lines.flatMap((line) => Option.toArray(Record.parse(line)))
 
-const retained = 3
+interface Cursor {
+  readonly src: Record.Source
+  readonly offset: number
+  readonly order: number
+}
 
 export class Tail {
-  private cursors = new Map<string, { readonly offset: number; readonly missed: number }>()
+  private cursors = new Map<string, Cursor>()
+  private next = 0
 
   constructor(readonly dir: string, readonly sources: ReadonlyArray<Record.Source>) {}
 
@@ -91,13 +96,13 @@ export class Tail {
         if (read === undefined) continue
         records.push(...parsed(read.lines))
         seen.add(read.id)
-        this.cursors.set(read.id, { offset: read.offset, missed: 0 })
+        this.cursors.set(read.id, { src, offset: read.offset, order: this.cursors.get(read.id)?.order ?? this.next++ })
       }
     }
     for (const [id, cursor] of this.cursors) {
       if (seen.has(id)) continue
-      if (cursor.missed + 1 >= retained) this.cursors.delete(id)
-      else this.cursors.set(id, { offset: cursor.offset, missed: cursor.missed + 1 })
+      const newer = [...this.cursors.values()].filter((other) => other.src === cursor.src && other.order > cursor.order)
+      if (newer.length > keep) this.cursors.delete(id)
     }
     return merge(records)
   }

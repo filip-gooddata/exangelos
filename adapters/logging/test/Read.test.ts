@@ -96,4 +96,17 @@ describe("Read", () => {
     fs.renameSync(aside, rotated)
     expect(tail.poll()).toEqual([])
   })
+
+  it("keeps a cursor however many polls miss the file, until six newer files show it was deleted", () => {
+    const dir = temp()
+    const current = Path.join(dir, "daemon.jsonl")
+    const aside = Path.join(dir, "aside")
+    fs.writeFileSync(current, line("2026-11-19T10:00:00.000Z", "seen"))
+    const tail = new Read.Tail(dir, ["daemon"])
+    tail.backlog()
+    fs.renameSync(current, aside)
+    for (let i = 0; i < 5; i++) expect(tail.poll()).toEqual([])
+    fs.renameSync(aside, Path.join(dir, "daemon.3.jsonl"))
+    expect(tail.poll()).toEqual([])
+  })
 })

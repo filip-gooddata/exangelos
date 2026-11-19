@@ -17,7 +17,7 @@ import { CommandFailed, Json } from "./Output.ts"
 const daemonLogTail = 1024 * 1024
 
 const redactedLine = "[redacted line]"
-const sensitive = /token|key|secret|passw|auth|cookie|bearer|session|credential|signature|sig=/i
+const sensitive = /token|key|secret|passw|auth|cookie|bearer|\bbasic\b|session|credential|signature|sig=/i
 const addressWithExtras = /[a-z][\w+.-]*:\/\/\S*[@?#]/i
 const address = /^[a-z][\w+.-]*:\/\/\S+$/i
 
@@ -31,6 +31,7 @@ export const plainAddress = (text: string): string => {
     url.password = ""
     url.search = ""
     url.hash = ""
+    if (sensitive.test(decodeURIComponent(url.pathname))) url.pathname = `/${Redact.redacted}`
     return url.toString()
   } catch {
     return Redact.redacted
