@@ -1,0 +1,59 @@
+adapters/logging/src/FileLog.ts
+  s_35fc990eb76523::t_2444177d19c4b9 160-161,170
+adapters/logging/src/Redact.ts
+  s_35fc990eb76523::t_3b2259d4b35800 1,13-17,19-21,26,28,61-71,75,82-128,134-140
+adapters/logging/test/Redact.test.ts
+  s_35fc990eb76523::t_a7c8ea619643fc 27,31-58
+adapters/official-connectors/package.json
+  s_35fc990eb76523::t_cad4311b1751c6 17
+adapters/official-connectors/src/OfficialConnectorsLive.ts
+  s_35fc990eb76523::t_049ad449302b95 7,58-62
+adapters/sqlite/src/Offline.ts
+  s_35fc990eb76523::t_0a59158b3256a2 1-22
+adapters/sqlite/src/index.ts
+  s_35fc990eb76523::t_b61b59a3baa5ac 2
+apps/cli/e2e/binary.test.ts
+  s_35fc990eb76523::t_7c1ded0d5bc2b5 745-847
+apps/cli/e2e/echo-connector.ts
+  s_35fc990eb76523::t_e7ea3ba6c8a374 1-35
+apps/cli/package.json
+  s_35fc990eb76523::t_ab39badc712132 26-27
+apps/cli/src/commands/Debug.ts
+  s_35fc990eb76523::t_0faf4a008faaf8 14,29,50,52-54,86-102,110,113,122-126,335
+apps/cli/test/debug.test.ts
+  s_35fc990eb76523::t_98093a87c10f5a 2,29-41
+apps/daemon/src/Handlers.ts
+  s_35fc990eb76523::t_b5bb4b58e8f16b 21,71
+apps/daemon/test/Handlers.test.ts
+  s_35fc990eb76523::t_2207c23639ecad 11,20-21,59-74
+apps/mcp/src/AgentTools.ts
+  s_35fc990eb76523::t_947233f8d16750 5,173
+docs/spec.md
+  s_35fc990eb76523::t_5945f3041ebd7c 470-471,473
+pnpm-lock.yaml
+  s_5d7b2b1ea73db5::t_240ed2f4d20d70 426-428,625-627
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4a123490d0d68c7f3481e176e4d7e9fae11ffa32",
+  "prompts": {},
+  "sessions": {
+    "s_35fc990eb76523": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae40c56a-5ec3-4fc1-92b8-b676dcb03f99",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_5d7b2b1ea73db5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "51571f8d-b526-4eb9-a9f7-e00e38de8201",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
