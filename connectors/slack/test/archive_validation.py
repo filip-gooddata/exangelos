@@ -208,7 +208,6 @@ def exercise(installed, home):
     dm, group = 'D0000002', 'G0000003'
     state['messages'].update({dm: {}, group: {}})
     database(app, state)
-    # Reconstruct the previous release's positional pin and selected bootstrap records.
     secret = 'ab' * 32
     key = bytes.fromhex(token(bytes.fromhex(secret), 'subscription-key-v1', str(app), '1', CHANNEL))
     epoch = cache_inventory(app)[1]
@@ -244,7 +243,6 @@ def exercise(installed, home):
             check(len(batch) == 1 and batch[0]['_tag'] == 'Cursor', 'silent baseline')
             cursors[handle] = batch[0]['cursor']
 
-    # A reply in a different thread advances the snapshot without delivering to this thread.
     add('1700000002.000001', other)
     database(app, state, sequence=30)
 

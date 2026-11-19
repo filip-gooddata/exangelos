@@ -42,7 +42,7 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None)
     complete = True
     reactions = state.get('reactions')
     for timestamp, message in messages.items():
-        if not isinstance(message, dict) or message.get('_hidden_stub') or message.get('no_display'):
+        if not isinstance(message, dict):
             complete = False
             continue
         if message.get('ts') != timestamp or not re.fullmatch(r'[0-9]{1,20}\.[0-9]{1,10}', timestamp):
@@ -51,19 +51,24 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None)
         if any(message.get(field) not in (None, channel) for field in ('channel', 'channel_id')):
             complete = False
             continue
-        if not isinstance(message.get('text'), str):
-            complete = False
-            continue
+        thread = message.get('thread_ts')
+        hidden = message.get('_hidden_stub') or message.get('no_display')
         if not require_reactions:
-            thread = message.get('thread_ts')
-            if thread is not None and (not isinstance(thread, str) or not re.fullmatch(r'[0-9]{1,20}\.[0-9]{1,10}', thread)):
+            if thread is not None and (not isinstance(thread, str) or not re.fullmatch(TIMESTAMP, thread)):
                 raise ValueError('incomplete')
             if 'team' in message and message['team'] != workspace:
                 raise ValueError('scope')
-            if 'edited' in message and (not isinstance(message['edited'], dict) or not isinstance(message['edited'].get('ts'), str)):
+        if thread_root is not None:
+            if hidden and thread is None and timestamp != thread_root:
                 raise ValueError('incomplete')
-        if thread_root is not None and (message.get('thread_ts') != thread_root or timestamp == thread_root):
+            if thread != thread_root or timestamp == thread_root:
+                continue
+        if hidden or not isinstance(message.get('text'), str):
+            complete = False
             continue
+        if not require_reactions and 'edited' in message:
+            if not isinstance(message['edited'], dict) or not isinstance(message['edited'].get('ts'), str):
+                raise ValueError('incomplete')
         rx_key = f'message-{timestamp}-{channel}'
         if message.get('_rxn_key') != rx_key:
             complete = False

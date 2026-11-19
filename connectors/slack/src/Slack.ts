@@ -27,7 +27,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
     scope: Schema.optionalKey(Schema.String.annotate({ message: "Use scope=conversation or scope=replies" }))
   }) }),
   configuration: [
-    Catalogue.choice("subscriptionAccess", { label: "Allow reading persisted Slack cache data even after logout or access changes (sign-in unverified)", choices: ["persisted-cache", "disabled"], required: false }),
+    Catalogue.choice("subscriptionAccess", { label: "Allow reading persisted Slack cache data and sharing the selected conversation or thread label with the host, even after logout or access changes (sign-in unverified)", choices: ["persisted-cache", "disabled"], required: false }),
     Catalogue.text("cacheRoot", { label: "Optional absolute IndexedDB folder for a custom Slack installation", required: false }),
     Catalogue.text("subscriptionCacheRoot", { label: "Optional subscription cache folder override (takes precedence over cacheRoot)", required: false }),
     Catalogue.text("pollIntervalMs", { label: "Poll interval in milliseconds (staleness is unbounded)", required: false })

@@ -14,7 +14,6 @@ from test_direct import CHANNEL, TIME, SELECTION, fixture
 from test_source import database
 
 
-# Strings deliberately beyond binary64 precision with significant trailing zeroes.
 REPLY = '12345678901234567890.000010'
 OTHER = '1700000001.000005'
 
@@ -242,6 +241,39 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(self.resolve('scope-' + second['expectedScope']), second)
         url = f'https://second.slack.com/archives/{CHANNEL}/p' + TIME.replace('.', '')
         self.assertEqual(self.resolve(url, scope='replies'), second)
+
+    def test_equivalent_root_spelling_reopens_same_pin(self):
+        original = self.resolve(REPLY)
+        for suffix in ('/', '/.', '/../cache'):
+            alias = str(self.root) + suffix
+            for subject in (REPLY, 'scope-' + original['expectedScope']):
+                self.assertEqual(self.resolve(subject, cacheRoot=alias), original)
+
+    def test_hidden_reply_in_another_thread_does_not_block_replay(self):
+        pin = self.resolve(REPLY)
+        handle = 'scope-' + pin['expectedScope']
+        def observe():
+            request = self.resolve(handle)
+            request.pop('label')
+            return source.acquire(request)
+        def reconcile(snap, **kwargs):
+            return ledger.reconcile(dict(snapshot=snap, observedAt=1700000000000, **kwargs), self.home / 'ledger')
+        cursor = reconcile(observe())['cursor']
+        add_message(self.state, '1700000002.000001', TIME)
+        database(self.root, self.state, sequence=20)
+        before = observe()
+        batch = reconcile(before, cursor=cursor)
+        self.assertEqual([event['type'] for event in batch['events']], ['thread.reply'])
+        hidden = '1700000003.000001'
+        self.state['messages'][CHANNEL][hidden] = dict(ts=hidden, thread_ts=OTHER, _hidden_stub=True)
+        database(self.root, self.state, sequence=30)
+        self.assertEqual(before['snapshot'], observe()['snapshot'])
+        self.assertEqual(reconcile(observe(), cursor=cursor), batch)
+        for parent in (TIME, None):
+            self.state['messages'][CHANNEL][hidden]['thread_ts'] = parent
+            database(self.root, self.state, sequence=40)
+            with self.assertRaises(ValueError):
+                observe()
 
     def test_old_pins_replacement_and_revocation_fail_closed(self):
         current = self.resolve(REPLY)

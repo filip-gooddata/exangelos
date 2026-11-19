@@ -192,10 +192,10 @@ def candidates(state, target):
             yield workspace, owner, channel, parent, verified, conversation_label(state, workspace, channel)
 
 
-def discover(roots, secret, target, scope, custom):
+def discover(roots, secret, target, scope):
     matches = []
     inventories = {}
-    for location, path in roots.items():
+    for path in roots.values():
         root = safe_path(path)
         try:
             root.stat()
@@ -210,7 +210,7 @@ def discover(roots, secret, target, scope, custom):
             nonlocal observed
             observed = True
             for candidate in candidates(state, target):
-                matches.append((location, root, epoch, *candidate))
+                matches.append((root, epoch, *candidate))
 
         result = source.scan.run(root, observe=collect)
         require(observed and not result['external_rejections'] and not result['files_changed'] and result['current_unchanged'])
@@ -220,14 +220,14 @@ def discover(roots, secret, target, scope, custom):
         raise SetupRejected(22)
     if len(matches) != 1:
         raise SetupRejected(23)
-    location, root, epoch, workspace, owner, channel, parent, _, label = matches[0]
+    root, epoch, workspace, owner, channel, parent, _, label = matches[0]
     selection = dict(workspace=workspace, owner=owner, conversations=[channel])
     if parent:
         if scope is None and parent == target.timestamp:
             raise SetupRejected(27)
         if scope != 'conversation':
             selection['thread'] = parent
-    key = observation.token(secret, 'subscription-key-v2', location, custom, str(root), workspace, owner, channel, selection.get('thread'))
+    key = observation.token(secret, 'subscription-key-v2', str(root), workspace, owner, channel, selection.get('thread'))
     request = dict(selection=selection, key=key, root=str(root),
                    expectedScope=source.scope_token(bytes.fromhex(key), selection, epoch))
     validate(request)
@@ -236,7 +236,7 @@ def discover(roots, secret, target, scope, custom):
             require(not inspected.exists())
         else:
             require(source.inventory(inspected) == expected)
-    return location, epoch, request, label
+    return epoch, request, label
 
 
 def save_json(path, saved):
@@ -279,12 +279,12 @@ def setup(values):
             raw = stream.read(source.MAX_INPUT + 1)
         require(len(raw) <= source.MAX_INPUT)
         saved = json.loads(raw, object_pairs_hook=source.unique_object)
-        if saved.get('version') != 2 or saved.get('custom') != custom or saved.get('location') not in roots:
+        if saved.get('version') != 2:
             raise SetupRejected(24)
         request = saved['request']
         label = saved['label']
-        root = safe_path(roots[saved['location']])
-        if (request['root'] != str(root) or source.inventory(root)[1] != saved['epoch']
+        root = Path(request['root'])
+        if (root not in (safe_path(path) for path in roots.values()) or source.inventory(root)[1] != saved['epoch']
                 or request['expectedScope'] != handle[1]):
             raise SetupRejected(24)
         validate(request)
@@ -299,9 +299,9 @@ def setup(values):
                 with os.fdopen(fd) as stream:
                     secret = json.loads(stream.read(128))
             require(isinstance(secret, str) and re.fullmatch(r'[a-f0-9]{64}', secret))
-        location, epoch, request, label = discover(roots, bytes.fromhex(secret), target, scope, custom)
+        epoch, request, label = discover(roots, bytes.fromhex(secret), target, scope)
         path = directory / ('scope-' + request['expectedScope'] + '.json')
-        save_json(path, dict(version=2, custom=custom, location=location, epoch=epoch, request=request, label=label))
+        save_json(path, dict(version=2, epoch=epoch, request=request, label=label))
     selection = request['selection']
     require(isinstance(label, str) and len(label) <= 128 and label.isprintable())
     if 'thread' in selection:
