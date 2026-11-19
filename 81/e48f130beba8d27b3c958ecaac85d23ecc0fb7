@@ -1,0 +1,37 @@
+adapters/connector-import/src/Download.ts
+  s_35fc990eb76523::t_1bca87c3102dae 14
+adapters/connector-import/src/Git.ts
+  s_35fc990eb76523::t_8129c98cf69c18 21
+adapters/connector-runtime/package.json
+  s_35fc990eb76523::t_6cf216acbf571f 18
+adapters/connector-runtime/src/StdioConnectorRuntime.ts
+  s_35fc990eb76523::t_d887464551ee77 8,44,62-63,70
+adapters/logging/src/Redact.ts
+  s_35fc990eb76523::t_1c4be55afab8eb 18,23,37-46,105-106,134-145,153
+adapters/logging/test/Redact.test.ts
+  s_35fc990eb76523::t_573c1f31ee5146 38-43
+adapters/official-connectors/test/OfficialConnectors.test.ts
+  s_35fc990eb76523::t_43d820d8645948 44,59-63,180-197
+apps/cli/e2e/binary.test.ts
+  s_35fc990eb76523::t_ee0ca3b86abf12 766,791-795,798,801,805,809,836-844,847
+apps/cli/e2e/echo-connector.ts
+  s_35fc990eb76523::t_391da757f7bc53 12,19
+pnpm-lock.yaml
+  s_35fc990eb76523::t_f07e374a1ff7d7 345-347
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "81e48f130beba8d27b3c958ecaac85d23ecc0fb7",
+  "prompts": {},
+  "sessions": {
+    "s_35fc990eb76523": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae40c56a-5ec3-4fc1-92b8-b676dcb03f99",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
