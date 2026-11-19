@@ -29,7 +29,8 @@
     "effect": "catalog:",
     "@effect/platform-bun": "catalog:",
     "@exangelos/daemon-client": "workspace:*",
-    "@exangelos/notifications": "workspace:*"
+    "@exangelos/notifications": "workspace:*",
+    "@exangelos/logging": "workspace:*"
   },
   "devDependencies": {
     "@types/bun": "catalog:",

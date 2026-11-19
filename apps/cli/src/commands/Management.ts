@@ -233,7 +233,7 @@ const setPath = (encoded: unknown, path: ReadonlyArray<string>, value: string): 
       ? Effect.succeed({ ...current, [head]: Duration.toMillis(duration.value) })
       : Effect.succeed({ ...current, [head]: value })
   }
-  if (existing === undefined && head !== "officialConnectorFolder") return Effect.fail(unknownKey)
+  if (existing === undefined && head !== "officialConnectorFolder" && head !== "logLevel") return Effect.fail(unknownKey)
   return Effect.succeed({ ...current, [head]: value })
 }
 
@@ -250,7 +250,7 @@ const settingsSet = Command.make(
         const settings = yield* Schema.decodeUnknownEffect(SettingsJson)(encoded).pipe(
           Effect.mapError(() =>
             new Input.InputInvalid({
-              message: "A value does not fit its setting. Durations take a form like \"24 hours\", counts a whole number, eventAlerts true or false."
+              message: "A value does not fit its setting. Durations take a form like \"24 hours\", counts a whole number, eventAlerts true or false, logLevel one of error, warn, info, debug, trace."
             })
           )
         )

@@ -15,7 +15,8 @@
     "@exangelos/domain": "workspace:*",
     "@exangelos/daemon-client": "workspace:*",
     "effect": "catalog:",
-    "@effect/platform-bun": "catalog:"
+    "@effect/platform-bun": "catalog:",
+    "@exangelos/logging": "workspace:*"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

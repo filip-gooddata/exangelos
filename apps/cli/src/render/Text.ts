@@ -199,6 +199,7 @@ export const settings = (value: Settings.Settings): string =>
       [`limits.${key}`, Duration.isDuration(limit) ? Duration.format(limit) : parameterValue(limit)] as const
     ),
     ["officialConnectorFolder", value.officialConnectorFolder],
+    ["logLevel", value.logLevel ?? "info"],
     ...Object.entries(value.harnesses).map(([name, harness]) => [`harnesses.${name}`, commandText(harness.command)] as const)
   ]).join("\n")
 

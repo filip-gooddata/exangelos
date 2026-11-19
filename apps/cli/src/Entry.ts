@@ -2,6 +2,7 @@ import { ServiceManager } from "@exangelos/application"
 import type { Session } from "@exangelos/domain"
 import { Daemon } from "@exangelos/daemon"
 import { DaemonClient } from "@exangelos/daemon-client"
+import { FileLog } from "@exangelos/logging"
 import { AgentClient, Server } from "@exangelos/mcp"
 import { Cause, Console, Effect, Layer, Logger, type Option } from "effect"
 import { CliError, Command } from "effect/cli"
@@ -27,7 +28,14 @@ const describe = (cause: Cause.Cause<unknown>): string | undefined => {
   return Cause.pretty(cause)
 }
 
-export const logger = Logger.layer([Logger.withConsoleError(Logger.formatSimple)])
+/** cli.jsonl at the live level; the terminal sees WARN and above, as before. */
+export const logger = FileLog.layer({
+  src: "cli",
+  console: FileLog.atLeast("Warn", Logger.withConsoleError(Logger.formatSimple))
+})
+
+const started = (src: string, version: string) =>
+  Effect.logInfo(`${src} started`).pipe(Effect.annotateLogs({ version }))
 
 export const run = <R>(options: {
   readonly version: string
@@ -37,14 +45,18 @@ export const run = <R>(options: {
 (argv: ReadonlyArray<string>) =>
   Effect.gen(function*() {
     const client = Layer.provide(options.client, Layer.succeedContext(yield* Effect.context<R>()))
-    const daemon = Command.make("daemon", {}, () => Daemon.run(options.daemon)).pipe(
+    const daemon = Command.make("daemon", {}, () => Daemon.run({ ...options.daemon, version: options.version })).pipe(
       Command.withDescription("Run the daemon in the foreground, as the service definitions do")
     )
     const mcp = Command.make("mcp", {}, () =>
-      Layer.launch(Server.layer({ version: options.version }).pipe(Layer.provide(AgentClient.layer(client))))).pipe(
+      started("mcp", options.version).pipe(
+        Effect.andThen(Layer.launch(Server.layer({ version: options.version }).pipe(Layer.provide(AgentClient.layer(client))))),
+        Effect.provide(Server.logger)
+      )).pipe(
         Command.withDescription("Serve the agent tools over MCP on stdio")
       )
     const root = Root.make({ commands: [daemon, mcp], connectorCommands: [Scaffold.command] })
+    if (argv[0] !== "daemon" && argv[0] !== "mcp") yield* started("cli", options.version)
     yield* Command.runWith(root, { version: options.version })(argv).pipe(Effect.provide(Connection.layer(client)))
   }).pipe(
     Effect.tapCause((cause) => {
