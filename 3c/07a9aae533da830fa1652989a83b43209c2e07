@@ -1,0 +1,29 @@
+adapters/logging/src/Read.ts
+  s_4e14f0fade299a::t_31a1610a31a773 40-45,54,59,62-66,69-74,93-95,97,105-106,108-122,125,127
+adapters/logging/test/Read.test.ts
+  s_4e14f0fade299a::t_fdd834a9095cbf 56-70
+apps/cli/e2e/binary.test.ts
+  s_4e14f0fade299a::t_18964c02cb310b 599-620
+apps/cli/test/debug.test.ts
+  s_4e14f0fade299a::t_6690837f2ae816 1-17
+apps/cli/src/commands/Debug.ts
+  s_4e14f0fade299a::t_2c95b3d36c5d24 5,7,19,21-27,31,33,42-52,55-56,150-162,165,169,171-172,174,176-193,195-203,205-254,259-290,310,325-330,332-333
+docs/spec.md
+  s_4e14f0fade299a::t_bb52185fe6d7c3 400,449,472
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c07a9aae533da830fa1652989a83b43209c2e07",
+  "prompts": {},
+  "sessions": {
+    "s_4e14f0fade299a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "75b5e84c-2bfb-49f9-a529-413e94216c44",
+        "model": "unknown"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
