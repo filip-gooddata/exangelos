@@ -35,10 +35,9 @@ describe("Redact", () => {
     expect(Secrets.values()).toEqual(["a1"])
   })
 
-  it("hides every secret anywhere in outside text, and keeps short sensitive variables from children", () => {
+  it("hides every secret anywhere in outside text, and each line of one that spans several", () => {
     expect(Redact.redactAnywhere("echo xqZ7y and qZ7", ["qZ7"])).toBe("echo x[redacted]y and [redacted]")
-    expect(Redact.inheritableEnvironment({ API_KEY: "k9", GITHUB_TOKEN: "ghp-value", DEBUG: "1", HOME: undefined }))
-      .toEqual({ GITHUB_TOKEN: "ghp-value", DEBUG: "1" })
+    expect(Redact.redactLine("second-part tail", ["first-part\nsecond-part"])).toBe("[redacted] tail")
   })
 
   it("keeps the daemon's own annotation keys when a secret matches one", () => {
@@ -50,9 +49,11 @@ describe("Redact", () => {
     expect(record.ann).toEqual({ payload: { "[redacted]": 1 }, connector: "echo", "extra_[redacted]": 2 })
   })
 
-  it("registers the values of sensitive environment variables, leaving short flags and other names", () => {
+  it("registers the values of sensitive environment variables, the short ones for outside text only", () => {
     Secrets.registerEnvironment({ GITHUB_TOKEN: "ghp-value", API_KEY: "1", HOME: "/home/someone", SESSION_COOKIE: undefined })
     expect(Secrets.values()).toEqual(["ghp-value"])
+    expect(Secrets.all()).toEqual(["ghp-value", "1"])
+    expect(Redact.sanitise("exit 1 after 10 tries")).toBe("exit [redacted] after [redacted]0 tries")
   })
 
   it("sanitises failure text: known secrets go, and addresses keep only scheme, host and path", () => {

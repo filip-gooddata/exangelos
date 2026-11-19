@@ -44,6 +44,10 @@ export const redactText = (text: string, secrets: ReadonlyArray<string>): string
 /** Replaces every occurrence of every secret, however short, for text from outside such as a connector's stderr. */
 export const redactAnywhere = (text: string, secrets: ReadonlyArray<string>): string => hide(text, secrets, true)
 
+/** Like redactAnywhere for one line of output, which can hold only a line of a secret that spans several. */
+export const redactLine = (line: string, secrets: ReadonlyArray<string>): string =>
+  redactAnywhere(line, secrets.flatMap((secret) => secret.split(/\r?\n/)))
+
 /**
  * Walks objects and arrays: sensitive keys lose their value, and every string loses known secrets.
  * Errors keep their name and message, and objects with toJSON (such as dates) their JSON form.
@@ -103,7 +107,7 @@ export const plainAddress = (text: string): string => {
 }
 
 /** Failure text fit for a log: every known secret hidden, and every address inside reduced to its plain form. */
-export const sanitise = (text: string): string => redactAnywhere(text, Secrets.values()).replace(address, plainAddress)
+export const sanitise = (text: string): string => redactAnywhere(text, Secrets.all()).replace(address, plainAddress)
 
 const deepestCause = 4
 
@@ -131,31 +135,31 @@ export const describeFailure = (error: unknown, depth = 0): string => {
   return cause === undefined || depth >= deepestCause ? head : `${head}\ncaused by ${describeFailure(cause, depth + 1)}`
 }
 
-/**
- * The environment for a child process: everything but sensitive variables too short to hide in its
- * output without hiding everything else, which can only be flags or credentials it cannot need.
- */
-export const inheritableEnvironment = (env: Readonly<Record<string, string | undefined>>): Record<string, string> => {
-  const out: Record<string, string> = {}
-  for (const [name, value] of Object.entries(env)) {
-    if (value !== undefined && !(value.length < shortest && isSensitiveKey(name))) out[name] = value
-  }
-  return out
-}
-
 const known = new Set<string>()
+const shortEnvironment = new Set<string>()
 
-/** The process-wide set of secret values seen, so logs can hide them wherever they turn up. */
+/**
+ * The process-wide set of secret values seen, so logs can hide them wherever they turn up. Short
+ * values of sensitive environment variables are kept apart: hidden only in outside text, since as
+ * whole words they would also hide ordinary words and numbers in every record.
+ */
 export const Secrets = {
   register: (values: Iterable<string>): void => {
     for (const value of values) if (value.length > 0) known.add(value)
   },
-  /** Values of variables whose names look sensitive; connectors do not inherit the shorter ones. */
+  /** Values of variables whose names look sensitive, which child processes such as connectors inherit. */
   registerEnvironment: (env: Readonly<Record<string, string | undefined>>): void => {
     for (const [name, value] of Object.entries(env)) {
-      if (value !== undefined && value.length >= shortest && isSensitiveKey(name)) known.add(value)
+      if (value === undefined || value.length === 0 || !isSensitiveKey(name)) continue
+      if (value.length >= shortest) known.add(value)
+      else shortEnvironment.add(value)
     }
   },
   values: (): ReadonlyArray<string> => [...known],
-  clear: (): void => known.clear()
+  /** Every secret, for outside text such as a connector's stderr or a failure reason. */
+  all: (): ReadonlyArray<string> => [...known, ...shortEnvironment],
+  clear: (): void => {
+    known.clear()
+    shortEnvironment.clear()
+  }
 }

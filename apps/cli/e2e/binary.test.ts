@@ -795,7 +795,7 @@ describe("secrets at the connector stderr and debug report boundaries", () => {
       })
       await listUntilReady()
       expect(run(exangelos, "connector", "dev-link", echo).status).toBe(0)
-      expect(await echoed("startup echo", 1)).toEqual(["connector stderr startup echo [redacted] "])
+      expect(await echoed("startup echo", 1)).toEqual(["connector stderr startup echo [redacted] [redacted]"])
 
       await configure(shortMarker)
       expect((await echoed("configure echo", 1)).at(-1)).toBe("connector stderr configure echo [redacted] joined[redacted]x")
@@ -807,6 +807,9 @@ describe("secrets at the connector stderr and debug report boundaries", () => {
       json("settings", "set", "logLevel=debug")
       await configure("payload")
       expect((await echoed("configure echo", 3)).at(-1)).toBe("connector stderr configure echo [redacted] joined[redacted]x")
+      const multiline = ["e2e-multi-first-91", "e2e-multi-second-92"]
+      await configure(multiline.join("\n"))
+      expect((await echoed("configure echo", 4)).at(-1)).toBe("connector stderr configure echo [redacted]")
       const replies = await mcpReplies({
         jsonrpc: "2.0",
         id: 2,
@@ -824,6 +827,9 @@ describe("secrets at the connector stderr and debug report boundaries", () => {
       expect(run(exangelos, "debug", "report", "--output", join(root, "secrets-report.tar.gz")).status).toBe(0)
       const online = await unpack(join(root, "secrets-report.tar.gz"))
       expect(await holding(online, payloadMarker)).toEqual([])
+      expect(run(exangelos, "debug", "report", "--include-payloads", "--output", join(root, "secrets-payloads.tar.gz")).status).toBe(0)
+      const withPayloads = await unpack(join(root, "secrets-payloads.tar.gz"))
+      expect(await holding(withPayloads, payloadMarker)).not.toEqual([])
       expect(await stop(daemon)).toBe(true)
       daemon = undefined
 
@@ -844,9 +850,10 @@ describe("secrets at the connector stderr and debug report boundaries", () => {
         })
       ])
 
-      for (const marker of [envMarker, shortEnvMarker, shortMarker]) {
+      for (const marker of [envMarker, shortEnvMarker, shortMarker, ...multiline]) {
         expect(await holding(join(home, "logs"), marker)).toEqual([])
         expect(await holding(online, marker)).toEqual([])
+        expect(await holding(withPayloads, marker)).toEqual([])
         expect(await holding(offline, marker)).toEqual([])
       }
       expect(await holding(offline, payloadMarker)).toEqual([])

@@ -41,7 +41,7 @@ export interface Options {
 /**
  * A ConnectorRuntime that spawns each connector as a child process in its directory and
  * speaks the connector protocol over its stdin and stdout. Each line the connector writes to
- * stderr is logged with its name, with every known secret hidden however short. Closing the scope passed to `start` stops the process,
+ * stderr is logged with its name, with every known secret, and every line of one, hidden however short. Closing the scope passed to `start` stops the process,
  * killing it when it outlives the stop timeout.
  */
 export const make = Effect.fnUntraced(function*(options?: Options) {
@@ -59,15 +59,15 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
     const { args, command, env } = commandFor(launch)
     const child = yield* ChildProcess.make(command, args, {
       cwd: launch.directory,
-      env: { ...Redact.inheritableEnvironment(process.env), ...env },
-      extendEnv: false,
+      env,
+      extendEnv: true,
       stderr: "pipe",
       forceKillAfter: stopTimeout
     }).pipe(Effect.mapError((error) => startFailed(error.message)))
     const stderr = yield* child.stderr.pipe(
       Stream.decodeText(),
       Stream.splitLines,
-      Stream.runForEach((line) => Effect.logInfo("connector stderr", Redact.redactAnywhere(line, Secrets.values()))),
+      Stream.runForEach((line) => Effect.logInfo("connector stderr", Redact.redactLine(line, Secrets.all()))),
       Effect.catch((error) => Effect.logWarning("connector stderr unreadable", Cause.fail(error))),
       Effect.forkScoped
     )
