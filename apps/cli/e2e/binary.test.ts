@@ -191,7 +191,7 @@ const installFakes = async () => {
     `case "$1" in`,
     `  -i) cat >> ${at("secrets.log")} ;;`,
     `  find-generic-password) service=$(printf '%s\\n' "$*" | sed -n 's/.*-s \\([^ ]*\\).*/\\1/p');`,
-    `    grep -qs -- "-s \\"$service\\"" ${at("secrets.log")} || exit 44; echo not-a-secret ;;`,
+    `    grep -qs -- "-s \\"$service\\"" ${at("secrets.log")} || exit 44; echo 'password: "not-a-secret"' >&2 ;;`,
     `esac`,
     `exit 0`
   ].join("\n"))

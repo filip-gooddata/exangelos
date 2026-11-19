@@ -52,11 +52,11 @@ describe("file store", () => {
       const store = yield* fileStore((yield* temporaryFile).paths)
       expect(yield* store.get(github, "token")).toEqual(Option.none())
       yield* store.set(github, "token", Redacted.make("ghp-one"))
-      yield* store.set(github, "webhook", Redacted.make("hook"))
+      yield* store.set(github, "webhook", Redacted.make("na obědě\nřádek"))
       expect(reveal(yield* store.get(github, "token"))).toEqual(Option.some("ghp-one"))
       yield* store.delete(github, ["token", "missing"])
       expect(yield* store.get(github, "token")).toEqual(Option.none())
-      expect(reveal(yield* store.get(github, "webhook"))).toEqual(Option.some("hook"))
+      expect(reveal(yield* store.get(github, "webhook"))).toEqual(Option.some("na obědě\nřádek"))
     }).pipe(Effect.provide(Platform)))
 
   it.effect("keeps the file at mode 0600 and replaces it through a rename", () =>
