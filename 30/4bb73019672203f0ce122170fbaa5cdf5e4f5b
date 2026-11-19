@@ -1,0 +1,91 @@
+adapters/logging/package.json
+  s_ba10fe5cc18177::t_ddb22bf770e895 1-22
+adapters/logging/src/FileLog.ts
+  s_ba10fe5cc18177::t_8d0467304f508a 1-139
+adapters/logging/src/Level.ts
+  s_ba10fe5cc18177::t_64d8f1f9afe831 1-56
+adapters/logging/src/Record.ts
+  s_a70b1f76d7da41::t_15d9144f6e5123 1-126
+adapters/logging/src/Redact.ts
+  s_ba10fe5cc18177::t_b3c60ffc446f51 1-64
+adapters/logging/src/index.ts
+  s_ba10fe5cc18177::t_1c698c4f54086e 1-5
+adapters/logging/test/Level.test.ts
+  s_b40488dfd75eee::t_c0a80808e9042c 1-43
+adapters/logging/test/Redact.test.ts
+  s_ba10fe5cc18177::t_09a289857587ba 1-60
+adapters/logging/tsconfig.json
+  s_ba10fe5cc18177::t_92b806b0b00323 1-10
+apps/cli/package.json
+  s_b8ab765f5ed673::t_e93684a082ee66 25-26
+apps/cli/src/Entry.ts
+  s_ba10fe5cc18177::t_cd76ab4506e087 5,31-38,48,52-55,59
+apps/cli/src/commands/Management.ts
+  s_ba10fe5cc18177::t_612a65248f8aa3 236,253
+apps/cli/src/render/Text.ts
+  s_a70b1f76d7da41::t_ade3de291d9f6e 202
+apps/daemon/package.json
+  s_b8ab765f5ed673::t_774ce23cc3f59d 32-33
+apps/daemon/src/Daemon.ts
+  s_ba10fe5cc18177::t_b2a032fa6ca4f2 10,13,19,31,52,101-130,140,171-181,186-188
+apps/daemon/test/Logging.test.ts
+  s_ba10fe5cc18177::t_e185bd3ff1682b 1-53
+apps/mcp/package.json
+  s_ba10fe5cc18177::t_c78df93358bc62 18-19
+apps/mcp/src/Server.ts
+  s_ba10fe5cc18177::t_6d9afa85a1b7f6 1,18-20
+packages/domain/src/Settings.ts
+  s_ba10fe5cc18177::t_6b3bdc65e3e1eb 6-8,13-14
+pnpm-lock.yaml
+  s_e3151050700dd6::t_8c520623db8657 396-414,610-612,665-667,723-725
+adapters/logging/test/FileLog.test.ts
+  s_ba10fe5cc18177::t_9b6f2dd5dc3a86 1-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "304bb73019672203f0ce122170fbaa5cdf5e4f5b",
+  "prompts": {},
+  "sessions": {
+    "s_a70b1f76d7da41": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "205e061a-bf95-42d6-870a-96205ca5ac87",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_b40488dfd75eee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f37d-2638-7a60-b007-666d4cb38766",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_b8ab765f5ed673": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f37d-8cd9-79d1-a513-f1a6b002daf7",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_ba10fe5cc18177": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "41b5e9df-2720-45a6-af7c-0bffbe95b6c0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_e3151050700dd6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f380-4504-73e2-8d84-05294d87b7d8",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
