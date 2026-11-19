@@ -1,0 +1,31 @@
+adapters/secrets/test/SecretStores.test.ts
+  s_b3d66e7b12f91f::t_72be2729ab2309 55,59
+gap/keychain/src/Keychain.ts
+  s_f7bd2b6d172b0d::t_6044099eaa8b03 1-2,61-73,87,105-107
+gap/keychain/test/Keychain.test.ts
+  s_f7bd2b6d172b0d::t_3cea97bed21794 2-3,71-79,82-93,113-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3977f84036ad7e8aacf43c645b4f92cc02ba817b",
+  "prompts": {},
+  "sessions": {
+    "s_b3d66e7b12f91f": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6a307193-1576-4ee2-befc-9fef2fa08a03",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_f7bd2b6d172b0d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "53d0c703-a713-4229-a72e-32bef6a96bba",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
