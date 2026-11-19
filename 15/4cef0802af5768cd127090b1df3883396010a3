@@ -1,0 +1,55 @@
+.github/scripts/publish-homebrew-tap.sh
+  s_5968ca255ee64d::t_22e4be116b6d50 1-38
+.github/workflows/build-release.yml
+  s_1edbb418877947::t_e606defd34c059 1-2,58-62
+.github/workflows/release.yml
+  s_1edbb418877947::t_12e0dc2c0d2330 1-2,89-105
+docs/spec.md
+  s_cf8248aeee4db9::t_41d70f066a6b2f 466-467,514,567
+packaging/src/homebrew.ts
+  s_967a552327a9ac::t_87d67026b0a719 10,25,27,56-57,78
+packaging/test/homebrew.test.ts
+  s_1edbb418877947::t_861465e1e2a00a 29-30
+packaging/test/workflow.test.ts
+  s_1edbb418877947::t_7c8dd0ee807b46 18-25,29-32,59-69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "154cef0802af5768cd127090b1df3883396010a3",
+  "prompts": {},
+  "sessions": {
+    "s_1edbb418877947": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f362-54b6-72a1-9f71-76a8b0f63b77",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_5968ca255ee64d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f365-fd72-7773-bdd9-4dbe2650f47d",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_967a552327a9ac": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d47cb38a-60ae-436f-97b2-fa781cff9dc0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_cf8248aeee4db9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f362-598f-7690-8760-f366b8648f56",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
