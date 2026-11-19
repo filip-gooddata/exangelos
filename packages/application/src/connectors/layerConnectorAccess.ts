@@ -1,4 +1,4 @@
-import { DateTime, Effect, Layer, Option } from "effect"
+import { Cause, DateTime, Effect, Layer, Option } from "effect"
 import { type Ids, type Connector, ConnectorRules, Refusal, type Session, Subscribe } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
 import { OfficialConnectorSource } from "../ports/OfficialConnectorSource.ts"
@@ -36,14 +36,21 @@ export const fetchOfficial = (actor: Session.Actor, name: Ids.ConnectorName) =>
     yield* supervisor.store(connector, { connector: name, kind: "fetch", actor, at: yield* DateTime.now, detail: installed.digest })
     const alert = ConnectorRules.trustAlert(connector, checksum)
     if (Option.isSome(alert)) {
-      yield* Effect.ignore((yield* AlertSink).show(alert.value))
-      return yield* new Refusal.ConnectorUnavailable({
+      const unavailable = new Refusal.ConnectorUnavailable({
         connector: name,
         problem: "its checksum does not match the one this binary carries"
       })
+      yield* Effect.logError("official connector digest mismatch", Cause.fail(unavailable)).pipe(
+        Effect.annotateLogs({ expected: official.digest, actual: installed.digest, trust: connector.trust })
+      )
+      yield* Effect.ignore((yield* AlertSink).show(alert.value))
+      return yield* unavailable
     }
+    yield* Effect.logInfo("official connector digest matched").pipe(
+      Effect.annotateLogs({ version: installed.version, trust: connector.trust })
+    )
     yield* supervisor.restart(name)
-  })
+  }).pipe(Effect.annotateLogs({ connector: name }))
 
 /** The real ConnectorAccess over the supervisor. */
 export const layerConnectorAccess: Layer.Layer<
