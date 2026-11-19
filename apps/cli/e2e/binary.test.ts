@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite"
-import { chmod, copyFile, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
@@ -709,6 +709,21 @@ describe("official connectors from a release address", () => {
     expect(subscription).toMatchObject({ connector: "slack", subject: "slack:selected" })
     await eventually(() => lstat(join(home, "connector-state/slack/ledger.sqlite3")))
     json("cancel", subscription.id)
+    const archiveName = `slack-${connectorNamed("slack").version}.tar.gz`
+    json("connector", "remove", "slack")
+    const currentState = join(home, "connector-state/slack")
+    const legacyState = join(home, "connectors/slack")
+    await rename(currentState, legacyState)
+    const ledger = await readFile(join(legacyState, "ledger.sqlite3"))
+    const refused = run(exangelos, "connector", "import", join(root, "release", archiveName))
+    expect(refused.status).toBe(1)
+    expect(refused.stderr).toContain("Slack private state occupies the install directory")
+    expect(await readFile(join(legacyState, "setup.json"), "utf8")).toBe(pinned)
+    expect(await readFile(join(legacyState, "ledger.sqlite3"))).toEqual(ledger)
+    await rename(legacyState, currentState)
+    run(exangelos, "subscribe", "slack", "selected", "--intent", "Reinstall Slack", "--pull-only")
+    configure(`cacheRoot=${cache}`, "--secret-command", "sourceMode=echo pinned-cache")
+    expect(await readFile(pin, "utf8")).toBe(pinned)
     const conversation = join(root, "slack-conversation")
     await writeFile(conversation, "https://fixture.slack.com/archives/C0000001/p123?thread_ts=123.456&cid=C0000001")
     configure("--secret-command", "sourceMode=echo persisted-cache", "--secret-command", "selectionRevision=echo 2",

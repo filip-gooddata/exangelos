@@ -243,6 +243,16 @@ def exercise(installed, fixtures, evidence):
                 database(app, state, sequence=30)
             changed = wire.chunk(str(wire.id))
             check(len(changed) == 1 and changed[0]['_tag'] == 'Event' and changed[0]['event']['type'] == 'message.edited', 'portable concrete event')
+        if layout == 'custom':
+            current_state = home / 'state/connector-state/slack'
+            legacy_state = home / 'state/connectors/slack'
+            legacy_state.parent.mkdir(parents=True)
+            current_state.rename(legacy_state)
+            with Wire(installed, home) as wire:
+                wire.configure(dict(sourceMode='pinned-cache', cacheRoot=str(app)))
+                check(wire.chunk(wire.watch(portable_cursor)) == changed, 'exact replay from legacy state')
+            legacy_state.rename(current_state)
+            cases.append('legacy-state-relocation-and-exact-replay')
         with Wire(installed, home) as wire:
             wire.configure(dict({k: v for k, v in values.items() if k not in ('conversationSnippet', 'conversationId')},
                                 sourceMode='pinned-cache'))

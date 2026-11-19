@@ -77,6 +77,7 @@ Setup generates a stable random key and stores a pinned source/account/conversat
 `$EXANGELOS_HOME/connector-state/slack/setup.json`, or under
 `${XDG_DATA_HOME:-~/.local/share}/exangelos/connector-state/slack/setup.json`.
 Existing external state in the older `connectors/slack` directory is reused when it holds a pin or ledger and has no connector manifest.
+Before installing over legacy state, stop the daemon and back up the whole legacy state directory. If it contains only private Slack state and the new location is absent, move the entire directory to `connector-state/slack` under the same data home. This preserves the pin, ledger and SQLite sidecars together. The updated installer refuses to replace a Slack directory containing private state.
 This connector-managed private file is external to the installation, mode 0600, with a
 mode-0700 containing directory. The snippet is represented there only by a keyed digest;
 the host retains supplied secret fields when omitted from configuration updates.

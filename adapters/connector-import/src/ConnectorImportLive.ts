@@ -74,12 +74,28 @@ const make = Effect.gen(function*() {
         }
       }
 
+      const protectLegacyState = async (name: string, path: string) => {
+        if (name !== "slack") return
+        const entries: ReadonlyArray<string> = await Fs.readdir(path).catch((error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return []
+          throw error
+        })
+        const privateState = entries.some((entry) =>
+          entry === "setup.lock" || entry === "setup.json" || entry === "ledger.sqlite3" || entry.startsWith("ledger.sqlite3-")
+        )
+        if (privateState) {
+          throw new Refused({ reason: "Slack private state occupies the install directory. Move the legacy state before importing Slack." })
+        }
+      }
+
       const moveIntoPlace = (directory: string, name: string, staging: string) =>
         attempt(async () => {
           const target = Path.join(root, name)
           const previous = Path.join(root, `.${name}.previous-${Path.basename(staging)}`)
+          await protectLegacyState(name, target)
           const replaced = await Fs.rename(target, previous).then(() => true, () => false)
           try {
+            if (replaced) await protectLegacyState(name, previous)
             await Fs.rename(directory, target)
           } catch (error) {
             if (replaced) {
