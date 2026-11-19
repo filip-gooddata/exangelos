@@ -1,0 +1,21 @@
+adapters/logging/src/Read.ts
+  s_4e14f0fade299a::t_c536b71e5b12b3 55,59-60,70,75,86,92
+adapters/logging/test/Read.test.ts
+  s_4e14f0fade299a::t_873e2929c7efbd 133-149
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2bd07a3cdd46fc31b065dc9ec3a86ce8b419c67d",
+  "prompts": {},
+  "sessions": {
+    "s_4e14f0fade299a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "75b5e84c-2bfb-49f9-a529-413e94216c44",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
