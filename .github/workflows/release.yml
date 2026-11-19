@@ -95,7 +95,7 @@ jobs:
   # the cask waits for a signed macOS app.
   publish-tap:
     needs: [version, release]
-    if: always() && needs.version.result == 'success' && (needs.release.result == 'success' || needs.version.outputs.skip == 'true')
+    if: ${{ !cancelled() && needs.version.result == 'success' && (needs.release.result == 'success' || needs.version.outputs.skip == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5

@@ -61,7 +61,7 @@ describe("release workflow", () => {
     const publish = loadWorkflow<ReleaseWorkflow>("release.yml").jobs["publish-tap"]
     expect(publish.needs).toEqual(["version", "release"])
     expect(publish.if).toBe(
-      "always() && needs.version.result == 'success' && (needs.release.result == 'success' || needs.version.outputs.skip == 'true')"
+      "${{ !cancelled() && needs.version.result == 'success' && (needs.release.result == 'success' || needs.version.outputs.skip == 'true') }}"
     )
     const runs = publish.steps.flatMap((step) => (step.run === undefined ? [] : [step.run]))
     expect(runs.join("\n")).toContain('gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS')
