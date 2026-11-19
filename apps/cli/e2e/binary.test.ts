@@ -425,10 +425,12 @@ describe("the exangelos binary", () => {
       ])
       expect((await records("cli.jsonl")).filter((record) => record.pid === server.pid)).toEqual([])
     }
-    const listed = Bun.spawnSync([exangelos, "--json", "false", "settings"], { env: env(), timeout: 10_000 })
-    expect((await records("cli.jsonl")).filter((record) => record.pid === listed.pid)).toMatchObject([
-      { level: "INFO", src: "cli", msg: "cli started" }
-    ])
+    for (const args of [["--json", "false", "settings"], ["--log-level", "warn", "settings"], ["--version"], ["--help"]]) {
+      const command = Bun.spawnSync([exangelos, ...args], { env: env(), timeout: 10_000 })
+      expect((await records("cli.jsonl")).filter((record) => record.pid === command.pid)).toMatchObject([
+        { level: "INFO", src: "cli", msg: "cli started", ann: { version: expect.any(String) } }
+      ])
+    }
   }, 30_000)
 
   it("starts the daemon through the service manager on first use and reports its status", async () => {
