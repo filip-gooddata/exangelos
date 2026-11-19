@@ -53,9 +53,10 @@ const started = (path: string): Effect.Effect<void, DaemonNotRunning, ServiceMan
     Effect.mapError((failure) => new DaemonNotRunning({ path, reason: failure.reason })),
     Effect.andThen(answering(path).pipe(
       Effect.retry(Schedule.spaced("100 millis").pipe(Schedule.upTo({ duration: startWait }))),
-      Effect.tapError((error) => Effect.logDebug("daemon did not answer after service start", Cause.fail(error._tag)))
+      Effect.tapError((error) => Effect.logDebug("daemon did not answer after service start", Cause.fail(error)))
     )),
-    Effect.tap(() => Effect.logDebug("daemon answering after service start"))
+    Effect.tap(() => Effect.logDebug("daemon answering after service start")),
+    Effect.annotateLogs({ target: path })
   )
 
 const connect = ({ path, session }: Options): Layer.Layer<DaemonClient> => {
