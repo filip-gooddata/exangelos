@@ -171,5 +171,6 @@ describe("OfficialConnectorSource", () => {
       const failures = records.filter((record) => record.includes("official connector fetch failed"))
       expect(failures).toHaveLength(addresses.length)
       expect(failures.filter((record) => !record.includes("Error"))).toEqual([])
+      expect(failures.every((record) => record.includes('"event":"import"'))).toBe(true)
     }).pipe(Effect.scoped))
 })
