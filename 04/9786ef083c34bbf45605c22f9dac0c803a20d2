@@ -1,0 +1,29 @@
+adapters/official-connectors/src/OfficialConnectorsLive.ts
+  s_a70b1f76d7da41::t_4ebc987a87dcb9 9-11,60,66
+adapters/official-connectors/test/OfficialConnectors.test.ts
+  s_0824cf922812b8::t_97bdb1f18cbbb1 156-162,169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "049786ef083c34bbf45605c22f9dac0c803a20d2",
+  "prompts": {},
+  "sessions": {
+    "s_0824cf922812b8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b023a7d3-3bbf-4a9b-b16e-a42f4274df1c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_a70b1f76d7da41": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "205e061a-bf95-42d6-870a-96205ca5ac87",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
