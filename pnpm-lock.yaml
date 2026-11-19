@@ -423,6 +423,9 @@ importers:
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@exangelos/logging':
+        specifier: workspace:*
+        version: link:../logging
       effect:
         specifier: 'catalog:'
         version: 4.1.4
@@ -619,6 +622,9 @@ importers:
       '@exangelos/service':
         specifier: workspace:*
         version: link:../../adapters/service
+      '@exangelos/sqlite':
+        specifier: workspace:*
+        version: link:../../adapters/sqlite
       effect:
         specifier: 'catalog:'
         version: 4.1.4

@@ -24,8 +24,36 @@ describe("Redact", () => {
   })
 
   it("hides known secret values inside any string, leaving no fragment of overlaps", () => {
-    expect(Redact.redactText("got abcdef and cdefgh, abc", ["abcdef", "cdefgh", "abc"])).toBe("got [redacted] and [redacted], abc")
+    expect(Redact.redactText("got abcdef and cdefgh, abcx", ["abcdef", "cdefgh", "abc"])).toBe("got [redacted] and [redacted], abcx")
     expect(Redact.redactText("abcdefgh", ["abcdef", "cdefgh"])).toBe("[redacted]")
+  })
+
+  it("hides a secret shorter than four characters only where it stands as a whole word", () => {
+    expect(Redact.redactText("configure probe qZ7", ["qZ7"])).toBe("configure probe [redacted]")
+    expect(Redact.redactText("{\"token\":\"qZ7\"} qZ7x xqZ7 qZ7_", ["qZ7"])).toBe("{\"token\":\"[redacted]\"} qZ7x xqZ7 qZ7_")
+    Secrets.register(["", "a1"])
+    expect(Secrets.values()).toEqual(["a1"])
+  })
+
+  it("keeps the daemon's own annotation keys when a secret matches one", () => {
+    const record = Redact.redactRecord(
+      { t: "t", level: "DEBUG", src: "daemon", pid: 1, msg: "event payload", ann: { payload: { payload: 1 }, connector: "echo", extra_payload: 2 } },
+      ["payload"]
+    )
+    expect(record.msg).toBe("event [redacted]")
+    expect(record.ann).toEqual({ payload: { "[redacted]": 1 }, connector: "echo", "extra_[redacted]": 2 })
+  })
+
+  it("registers the values of sensitive environment variables, leaving short flags and other names", () => {
+    Secrets.registerEnvironment({ GITHUB_TOKEN: "ghp-value", API_KEY: "1", HOME: "/home/someone", SESSION_COOKIE: undefined })
+    expect(Secrets.values()).toEqual(["ghp-value"])
+  })
+
+  it("sanitises failure text: known secrets go, and addresses keep only scheme, host and path", () => {
+    Secrets.register(["hunter22"])
+    expect(Redact.sanitise("GET https://me:pw@api.example/v1/items?key=1#frag failed with hunter22"))
+      .toBe("GET https://api.example/v1/items failed with [redacted]")
+    expect(Redact.sanitise("see https://api.example/token/abc")).toBe("see https://api.example/[redacted]")
   })
 
   it.effect("redacts message parts, annotations and the cause of a logged record", () =>

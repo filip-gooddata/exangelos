@@ -157,7 +157,8 @@ const settingOf = (settingsFile: string): Level.Name | undefined => {
 
 /**
  * The loggers for one process: its log file in Paths.logDir at the live level, and `console`.
- * Reads the logLevel setting and EXANGELOS_LOG_LEVEL once.
+ * Reads the logLevel setting and EXANGELOS_LOG_LEVEL once, and registers sensitive environment values
+ * as secrets, since child processes such as connectors inherit them.
  */
 export const layer = (options: {
   readonly src: Record.Source
@@ -166,6 +167,7 @@ export const layer = (options: {
   Layer.unwrap(
     Effect.gen(function*() {
       const paths = yield* Paths.Paths
+      yield* Effect.sync(() => Secrets.registerEnvironment(process.env))
       yield* Level.init(settingOf(paths.settingsFile))
       return Layer.mergeAll(
         Logger.layer([fileLogger(options.src, sink({ dir: paths.logDir, src: options.src })), options.console]),

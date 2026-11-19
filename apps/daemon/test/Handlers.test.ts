@@ -8,6 +8,7 @@ interface Record {
   readonly message: unknown
   readonly annotations: globalThis.Record<string, unknown>
   readonly failed: boolean
+  readonly cause: string
 }
 
 const capture = (records: Array<Record>) =>
@@ -16,7 +17,8 @@ const capture = (records: Array<Record>) =>
       level: logLevel,
       message,
       annotations: fiber.getRef(References.CurrentLogAnnotations),
-      failed: Cause.hasFails(cause)
+      failed: Cause.hasFails(cause),
+      cause: Cause.pretty(cause)
     })
   })
 
@@ -53,5 +55,21 @@ describe("request logging", () => {
       const [defect] = yield* run(logged("Ack", caller, Effect.die("broken")))
       expect(defect.level).toBe("Error")
       expect(defect.annotations).toMatchObject({ method: "Ack", outcome: "error", error: "defect" })
+    }))
+
+  it.effect("keeps a failure's fields and causes, without credentials or address extras", () =>
+    Effect.gen(function*() {
+      const failure = {
+        _tag: "ConnectorUnavailable",
+        connector: "jira",
+        apiToken: "kept-out",
+        message: "fetching https://user:pass@jira.example/rest?jql=secret#top failed",
+        cause: new Error("socket closed by https://proxy.example/?sig=x")
+      }
+      const [failed] = yield* run(logged("Subscribe", caller, Effect.fail(failure)))
+      expect(failed.cause).toContain("ConnectorUnavailable: connector: jira, apiToken: [redacted]")
+      expect(failed.cause).toContain("fetching https://jira.example/rest failed")
+      expect(failed.cause).toContain("caused by Error: message: socket closed by https://proxy.example/")
+      expect(failed.cause).not.toMatch(/kept-out|user:pass|jql|sig=|#top/)
     }))
 })

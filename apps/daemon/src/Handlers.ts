@@ -18,6 +18,7 @@ import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import { Cause, Clock, Effect, Exit, type Layer, Option } from "effect"
 import type { Headers } from "effect/http"
 import { Rpc, type RpcGroup } from "effect/rpc"
+import { Redact } from "@exangelos/logging"
 import { version } from "./Build.ts"
 import * as Errors from "./ContractErrors.ts"
 
@@ -67,7 +68,7 @@ const report = (method: string, exit: Exit.Exit<unknown, unknown>): Effect.Effec
     : Cause.hasDies(cause)
     ? Effect.logError
     : Effect.logWarning
-  return log("request failed", Cause.map(cause, errorTag)).pipe(Effect.annotateLogs({ outcome: "error", error: errorOf(cause) }))
+  return log("request failed", Cause.map(cause, (error) => Redact.describeFailure(error))).pipe(Effect.annotateLogs({ outcome: "error", error: errorOf(cause) }))
 }
 
 export const logged = <A, E, R>(method: string, caller: Caller, handle: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>

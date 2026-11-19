@@ -4,6 +4,7 @@ import * as Url from "node:url"
 import { Cause, Effect, Layer } from "effect"
 import { OfficialConnectorSource, ConnectorImportSource, SettingsStore } from "@exangelos/application"
 import { NamedImport } from "@exangelos/connector-import"
+import { Redact } from "@exangelos/logging"
 
 /** The release file of an official connector: a gzip tar with `connector.json` at its root. */
 const safeUrl = (link: string) => {
@@ -54,8 +55,11 @@ export const layer = (options: {
       }
 
       const failedAt = (stage: string) => <A, R>(effect: Effect.Effect<A, string, R>) =>
-        Effect.tapError(effect, () =>
-          Effect.logWarning("official connector fetch failed", Cause.fail("OfficialFetchFailed")).pipe(
+        Effect.tapError(effect, (reason) =>
+          Effect.logWarning(
+            "official connector fetch failed",
+            Cause.fail(`OfficialFetchFailed at ${stage}: ${Redact.sanitise(reason)}`)
+          ).pipe(
             Effect.annotateLogs({ event: stage })
           ))
 

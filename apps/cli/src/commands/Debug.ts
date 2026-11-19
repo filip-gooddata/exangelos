@@ -11,6 +11,7 @@ import { Connector } from "@exangelos/domain"
 import { Level, Read, Record, Redact } from "@exangelos/logging"
 import { Paths } from "@exangelos/paths"
 import { InstallMethod } from "@exangelos/service"
+import { Offline } from "@exangelos/sqlite"
 import * as Build from "../Build.ts"
 import { CommandFailed, Json } from "./Output.ts"
 
@@ -24,22 +25,8 @@ const address = /^[a-z][\w+.-]*:\/\/\S+$/i
 export const scrub = (text: string): string =>
   text.split("\n").map((line) => sensitive.test(line) || addressWithExtras.test(line) ? redactedLine : line).join("\n")
 
-export const plainAddress = (text: string): string => {
-  try {
-    const url = new URL(text)
-    url.username = ""
-    url.password = ""
-    url.search = ""
-    url.hash = ""
-    if (sensitive.test(decodeURIComponent(url.pathname))) url.pathname = `/${Redact.redacted}`
-    return url.toString()
-  } catch {
-    return Redact.redacted
-  }
-}
-
 const scrubValue = (value: unknown): unknown => {
-  if (typeof value === "string") return address.test(value) ? plainAddress(value) : scrub(value)
+  if (typeof value === "string") return address.test(value) ? Redact.plainAddress(value) : scrub(value)
   if (Array.isArray(value)) return value.map(scrubValue)
   if (value === null || typeof value !== "object") return value
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrubValue(item)]))
@@ -60,10 +47,11 @@ const withoutEnv = (value: unknown): unknown => {
 
 export const cleanValue = (value: unknown): unknown => scrubValue(Redact.redactValue(withoutEnv(value), []))
 
-const cleanRecord = (record: Record.LogRecord, includePayloads: boolean): Record.LogRecord => {
+export const cleanRecord = (record: Record.LogRecord, includePayloads: boolean): Record.LogRecord => {
   const redacted = Redact.redactRecord(record, [])
-  const { payload: _, ...rest } = redacted.ann ?? {}
-  const ann = includePayloads ? redacted.ann : redacted.ann === undefined ? undefined : rest
+  const ann = includePayloads || redacted.ann === undefined ? redacted.ann : Object.fromEntries(
+    Object.entries(redacted.ann).filter(([key]) => key !== "payload" && !key.includes(Redact.redacted))
+  )
   return {
     t: redacted.t,
     level: redacted.level,
@@ -95,7 +83,23 @@ const digest = (path: string): string => {
 
 const encodeConnector = Schema.encodeSync(Schema.toCodecJson(Connector.Connector))
 
-const daemonState = (socketPath: string) =>
+const shownConnector = (connector: Connector.Connector) => {
+  const { catalogue: _, configuredBy: __, ...shown } = encodeConnector(connector) as { [key: string]: unknown }
+  return cleanValue(shown)
+}
+
+const storedConnectors = (databaseFile: string) => {
+  try {
+    return Offline.connectors(databaseFile).map((connector) => ({
+      ...(shownConnector(connector) as { [key: string]: unknown }),
+      process: "unavailable while the daemon is not running"
+    }))
+  } catch (error) {
+    return `unreadable: ${scrub(error instanceof Error ? error.message : String(error))}`
+  }
+}
+
+const daemonState = (paths: Paths.Paths["Service"]) =>
   Effect.gen(function*() {
     const client = yield* DaemonClient.DaemonClient
     const service = yield* client.ServiceStatus()
@@ -103,13 +107,10 @@ const daemonState = (socketPath: string) =>
     return {
       running: true as const,
       service,
-      connectors: connectors.map((connector) => {
-        const { catalogue: _, configuredBy: __, ...shown } = encodeConnector(connector) as { [key: string]: unknown }
-        return cleanValue(shown)
-      })
+      connectors: connectors.map(shownConnector)
     }
   }).pipe(
-    Effect.provide(DaemonClient.layer({ path: socketPath, session: Option.none() })),
+    Effect.provide(DaemonClient.layer({ path: paths.socketPath, session: Option.none() })),
     Effect.timeout("5 seconds"),
     Effect.catchCause((cause) => {
       const error = Cause.squash(cause)
@@ -118,7 +119,11 @@ const daemonState = (socketPath: string) =>
         : error instanceof Error
         ? error.message
         : String(error)
-      return Effect.succeed({ running: false as const, reason: scrub(reason) })
+      return Effect.sync(() => ({
+        running: false as const,
+        reason: scrub(reason),
+        connectors: storedConnectors(paths.databaseFile)
+      }))
     })
   )
 
@@ -327,7 +332,7 @@ const report = Command.make(
       }
       const json = yield* Json
       const paths = yield* Paths.Paths
-      const daemon = yield* daemonState(paths.socketPath)
+      const daemon = yield* daemonState(paths)
       const written = yield* write({
         paths,
         output: Option.getOrUndefined(output),

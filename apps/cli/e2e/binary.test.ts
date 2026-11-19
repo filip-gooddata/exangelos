@@ -742,3 +742,106 @@ describe("official connectors from a release address", () => {
     expect(run(exangelos, "connectors").stderr.trim()).toMatch(noDaemon)
   }, 15_000)
 })
+
+describe("secrets at the connector stderr and debug report boundaries", () => {
+  const filesUnder = async (directory: string): Promise<Array<string>> =>
+    (await readdir(directory, { recursive: true, withFileTypes: true }))
+      .filter((entry) => entry.isFile())
+      .map((entry) => join(entry.parentPath, entry.name))
+
+  const unpack = async (archive: string) => {
+    const directory = await mkdtemp(join(root, "unpacked-"))
+    expect(Bun.spawnSync(["tar", "-xzf", archive, "-C", directory]).exitCode).toBe(0)
+    return directory
+  }
+
+  const holding = async (directory: string, value: string) => {
+    const found: Array<string> = []
+    for (const file of await filesUnder(directory)) if ((await readFile(file, "utf8")).includes(value)) found.push(file)
+    return found
+  }
+
+  it("keeps an inherited token and a short stored credential out of every log and report, and payloads out by default", async () => {
+    const envMarker = "e2e-env-value-7c41d0"
+    const shortMarker = "qZ7"
+    const payloadMarker = "e2e-echoed-note-52ab"
+    const sharedHome = home
+    home = join(root, "h-secrets")
+    const echo = join(root, "sources", "echo")
+    const records = async () =>
+      (await readFile(join(home, "logs", "daemon.jsonl"), "utf8")).trim().split("\n").map((line) => JSON.parse(line))
+    const echoed = (prefix: string, count: number) =>
+      eventually(async () => {
+        const found = (await records()).filter((r) => r.msg.startsWith(`connector stderr ${prefix}`) && r.ann?.connector === "echo")
+        expect(found.length).toBeGreaterThanOrEqual(count)
+        return found.map((r) => r.msg as string)
+      })
+    const configure = async (token: string) => {
+      await writeFile(join(root, "echo-token"), token)
+      json("connector", "configure", "echo", "--secret-file", `token=${join(root, "echo-token")}`)
+    }
+    try {
+      await mkdir(home, { recursive: true })
+      build("build", "apps/cli/e2e/echo-connector.ts", "--target=bun", `--outfile=${join(echo, "dist", "main.js")}`)
+      await writeFile(
+        join(echo, "connector.json"),
+        JSON.stringify({ name: "echo", version: "0.1.0", entry: { _tag: "Bundle", path: "dist/main.js" } })
+      )
+      daemon = Bun.spawn([exangelos, "daemon"], { env: { ...env(), XNG_E2E_TOKEN: envMarker }, stdout: "ignore", stderr: "ignore" })
+      await listUntilReady()
+      expect(run(exangelos, "connector", "dev-link", echo).status).toBe(0)
+      expect(await echoed("startup echo", 1)).toEqual(["connector stderr startup echo [redacted]"])
+
+      await configure(shortMarker)
+      expect((await echoed("configure echo", 1)).at(-1)).toBe("connector stderr configure echo [redacted]")
+      expect(await stop(daemon)).toBe(true)
+      daemon = startDaemon()
+      await listUntilReady()
+      expect((await echoed("configure echo", 2)).at(-1)).toBe("connector stderr configure echo [redacted]")
+
+      json("settings", "set", "logLevel=debug")
+      await configure("payload")
+      expect((await echoed("configure echo", 3)).at(-1)).toBe("connector stderr configure echo [redacted]")
+      const replies = await mcpReplies({
+        jsonrpc: "2.0",
+        id: 2,
+        method: "tools/call",
+        params: { name: "subscribe", arguments: { connector: "echo", parameters: { note: payloadMarker }, intent: "Echo a note", pullOnly: true } }
+      })
+      const subscription = replies[1].result.structuredContent.id as string
+      const event = await eventually(async () => {
+        const found = (await records()).find((r) => r.level === "DEBUG" && r.ann?.subscription === subscription && r.ann?.payload)
+        expect(found).toBeDefined()
+        return found
+      })
+      expect(JSON.stringify(event.ann.payload)).toContain(payloadMarker)
+
+      expect(run(exangelos, "debug", "report", "--output", join(root, "secrets-report.tar.gz")).status).toBe(0)
+      const online = await unpack(join(root, "secrets-report.tar.gz"))
+      expect(await holding(online, payloadMarker)).toEqual([])
+      expect(await stop(daemon)).toBe(true)
+      daemon = undefined
+
+      expect(run(exangelos, "debug", "report", "--output", join(root, "secrets-offline.tar.gz")).status).toBe(0)
+      const offline = await unpack(join(root, "secrets-offline.tar.gz"))
+      const [reportFile] = (await filesUnder(offline)).filter((file) => file.endsWith("report.json"))
+      const report = JSON.parse(await readFile(reportFile!, "utf8"))
+      expect(report.daemon.running).toBe(false)
+      expect(report.daemon.connectors).toEqual([
+        expect.objectContaining({ name: "echo", version: "0.1.0", trust: "dev", process: "unavailable while the daemon is not running" })
+      ])
+
+      for (const marker of [envMarker, shortMarker]) {
+        expect(await holding(join(home, "logs"), marker)).toEqual([])
+        expect(await holding(online, marker)).toEqual([])
+        expect(await holding(offline, marker)).toEqual([])
+      }
+      expect(await holding(offline, payloadMarker)).toEqual([])
+    } finally {
+      if (daemon) await stop(daemon)
+      daemon = undefined
+      Bun.spawnSync(["pkill", "-f", join(echo, "dist", "main.js")])
+      home = sharedHome
+    }
+  }, 60_000)
+})
