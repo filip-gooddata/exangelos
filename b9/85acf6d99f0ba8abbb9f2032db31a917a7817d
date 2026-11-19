@@ -1,0 +1,25 @@
+adapters/logging/src/Read.ts
+  s_4e14f0fade299a::t_1d4ef9d0c0a425 69-73,76-77,99,104-105
+adapters/logging/test/Read.test.ts
+  s_4e14f0fade299a::t_8f3c97d19eef7d 99-111
+apps/cli/src/commands/Debug.ts
+  s_4e14f0fade299a::t_d05d00f5cdf466 20,34
+apps/cli/test/debug.test.ts
+  s_4e14f0fade299a::t_e97c54d6b08031 13,17,26-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b985acf6d99f0ba8abbb9f2032db31a917a7817d",
+  "prompts": {},
+  "sessions": {
+    "s_4e14f0fade299a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "75b5e84c-2bfb-49f9-a529-413e94216c44",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
