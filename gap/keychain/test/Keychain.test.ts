@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Option, Redacted } from "effect"
+import { Effect, Layer, Option, Redacted, Result } from "effect"
+import { Hex } from "effect/encoding"
 import { ChildProcessSpawner } from "effect/process"
 import { Keychain } from "../src/index.ts"
 import * as FakeSpawner from "./FakeSpawner.ts"
@@ -67,13 +68,29 @@ describe("macOS Keychain", () => {
     }).pipe(provide)
   })
 
-  it.effect("refuses a secret security cannot store or return intact, before running it", () => {
-    const { calls, provide } = keychain(Keychain.macOS, () => ({}))
+  it.effect("round-trips a multiline UTF-8 secret through what security stores", () => {
+    const unicode = "na obědě\nřádek"
+    let stored = ""
+    const { calls, provide } = keychain(Keychain.macOS, (call) => {
+      if (call.args[0] !== "-i") return { stdout: `${stored}\n` }
+      const hex = /-X ([0-9a-f]+)\n$/.exec(call.stdin)![1]!
+      stored = Result.getOrThrow(Hex.decodeString(hex))
+      return {}
+    })
     return Effect.gen(function*() {
       const keychain = yield* service
-      const unicode = yield* Effect.flip(keychain.set(entry, Redacted.make("pässword")))
-      const long = yield* Effect.flip(keychain.set(entry, Redacted.make("x".repeat(2100))))
-      expect([unicode._tag, long._tag]).toEqual(["KeychainFailed", "KeychainFailed"])
+      yield* keychain.set(entry, Redacted.make(unicode))
+      expect(stored).toMatch(/^[\x20-\x7e]+$/)
+      expect(Option.map(yield* keychain.get(entry), Redacted.value)).toEqual(Option.some(unicode))
+      expect(noArgumentHolds(calls, unicode)).toBe(true)
+    }).pipe(provide)
+  })
+
+  it.effect("refuses a secret too long for security's input line, before running it", () => {
+    const { calls, provide } = keychain(Keychain.macOS, () => ({}))
+    return Effect.gen(function*() {
+      const long = yield* Effect.flip((yield* service).set(entry, Redacted.make("x".repeat(2100))))
+      expect(long._tag).toEqual("KeychainFailed")
       expect(calls).toEqual([])
     }).pipe(provide)
   })
@@ -90,6 +107,17 @@ describe("Secret Service", () => {
         stdin: secret
       }])
       expect(noArgumentHolds(calls, secret)).toBe(true)
+    }).pipe(provide)
+  })
+
+  it.effect("passes a multiline UTF-8 secret through unchanged", () => {
+    const unicode = "na obědě\nřádek"
+    const { calls, provide } = keychain(Keychain.secretService, (call) => call.args[0] === "lookup" ? { stdout: unicode } : {})
+    return Effect.gen(function*() {
+      const keychain = yield* service
+      yield* keychain.set(entry, Redacted.make(unicode))
+      expect(calls[0]!.stdin).toEqual(unicode)
+      expect(Option.map(yield* keychain.get(entry), Redacted.value)).toEqual(Option.some(unicode))
     }).pipe(provide)
   })
 
