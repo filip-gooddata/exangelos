@@ -1,10 +1,10 @@
-import { Duration, Effect, Layer, Record } from "effect"
+import { Cause, Duration, Effect, Layer, Record } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import { SettingsStore, WakeTarget } from "@exangelos/application"
 import { CommandHarness, Session } from "@exangelos/domain"
 import { WakeText } from "@exangelos/contracts"
 import type { Invocation, Outcome, Verdict } from "./Attempt.ts"
-import { run } from "./Attempt.ts"
+import { quietReason, run } from "./Attempt.ts"
 import * as ClaudeCode from "./ClaudeCode.ts"
 import * as Codex from "./Codex.ts"
 import * as Command from "./Command.ts"
@@ -17,16 +17,31 @@ export interface Options {
 
 const defaultLimit = Duration.seconds(30)
 
+const refuse = (reason: string, logged: string = reason): Effect.Effect<never, WakeTarget.DeliveryFailed> =>
+  Effect.logWarning("wake refused", Cause.fail(new WakeTarget.DeliveryFailed({ reason: logged }))).pipe(
+    Effect.annotateLogs("error", logged),
+    Effect.andThen(Effect.fail(new WakeTarget.DeliveryFailed({ reason })))
+  )
+
 const attempt = (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
   planned: Invocation,
   interpret: (outcome: Outcome) => Verdict,
-  limit: Duration.Duration
+  limit: Duration.Duration,
+  label: string
 ): Effect.Effect<void, WakeTarget.DeliveryFailed> =>
   Effect.gen(function*() {
-    const verdict = interpret(yield* run(spawner, planned, limit))
-    if (verdict._tag === "Failed") return yield* new WakeTarget.DeliveryFailed({ reason: verdict.reason })
-    if (verdict.note !== undefined) yield* Effect.logWarning(verdict.note)
+    const outcome = yield* run(spawner, planned, limit)
+    const verdict = interpret(outcome)
+    const annotations = { command: label, result: outcome._tag }
+    if (verdict._tag === "Failed") {
+      const error = quietReason(label, outcome)
+      yield* Effect.logWarning("wake command failed", Cause.fail(new WakeTarget.DeliveryFailed({ reason: error }))).pipe(
+        Effect.annotateLogs({ ...annotations, error })
+      )
+      return yield* new WakeTarget.DeliveryFailed({ reason: verdict.reason })
+    }
+    if (verdict.note !== undefined) yield* Effect.logWarning("wake delivered with a note").pipe(Effect.annotateLogs(annotations))
   })
 
 const named = (
@@ -38,10 +53,11 @@ const named = (
 ): Effect.Effect<void, WakeTarget.DeliveryFailed> =>
   Effect.gen(function*() {
     const current = yield* settings.read.pipe(
-      Effect.mapError((error) => new WakeTarget.DeliveryFailed({ reason: `the settings could not be read: ${error.reason}` }))
+      Effect.catch((error) =>
+        refuse(`the settings could not be read: ${error.reason}`, "the settings could not be read"))
     )
     if (!Record.has(current.harnesses, target.harness)) {
-      return yield* new WakeTarget.DeliveryFailed({ reason: `no harness named "${target.harness}" in the settings` })
+      return yield* refuse(`no harness named "${target.harness}" in the settings`)
     }
     const command = CommandHarness.substitute(current.harnesses[target.harness]!.command, {
       session: target.sessionId,
@@ -51,7 +67,8 @@ const named = (
       spawner,
       Command.invocation(command, target, content.subscription, WakeText.render(content)),
       (outcome) => Command.interpret(command[0], outcome),
-      limit
+      limit,
+      "command"
     )
   })
 
@@ -68,11 +85,11 @@ export const layer = (
         const session = target
         switch (session.harness) {
           case "t3":
-            return attempt(spawner, T3.invocation(session.sessionId, WakeText.render(content)), T3.interpret, limit)
+            return attempt(spawner, T3.invocation(session.sessionId, WakeText.render(content)), T3.interpret, limit, "t3")
           case "codex":
-            return attempt(spawner, Codex.invocation(session.sessionId, WakeText.render(content)), Codex.interpret, limit)
+            return attempt(spawner, Codex.invocation(session.sessionId, WakeText.render(content)), Codex.interpret, limit, "codex")
           case "claude-code":
-            return Effect.fail(new WakeTarget.DeliveryFailed({ reason: ClaudeCode.noRoute(content.subscription) }))
+            return refuse(ClaudeCode.noRoute(content.subscription))
         }
       }
     }
@@ -92,7 +109,8 @@ export const layerCommand = (
           spawner,
           Command.invocation(command, session, content.subscription, WakeText.render(content)),
           (outcome) => Command.interpret(command[0], outcome),
-          limit
+          limit,
+          "command"
         )
     }
   }))
