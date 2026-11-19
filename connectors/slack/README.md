@@ -33,15 +33,41 @@ rejects a ledger path there. Back up that external ledger with subscription curs
 
 ## Configuration and portable setup
 
-Configure `sourceMode=persisted-cache` and the secret `conversationSnippet` field.
-Use a distinctive literal message snippet from the conversation you want to watch.
+With the official Slack connector enabled, authorize per-subscription cache discovery once. On a fresh installation, the first Subscribe command installs the official connector and stops at Configure. After granting consent, repeat Subscribe with the conversation ID:
+
+```sh
+exangelos connector configure slack subscriptionAccess=persisted-cache
+exangelos subscribe slack D0000002 --intent 'Watch this conversation' --pull-only
+```
+
+Replace the example ID with the Slack conversation ID. This permission adds positional subscriptions alongside existing private selections. Set `subscriptionAccess=disabled` to revoke it. It needs no snippet,
+selector file or existing pin. Configure records consent without opening the cache.
+Subscribe resolves the ID against the configured cache roots and requires one
+validated persisted account and conversation. Each subscription stores an opaque
+scope handle. Restart and replay reopen that exact scope. Multiple IDs can be
+watched concurrently. An ID found under multiple accounts or roots is rejected;
+`cacheRoot` can limit discovery to a specific source. This authorizes reading
+persisted data even after logout or access changes. Slack sign-in is unverified.
+
+The positional ID is visible to the shell, process arguments and the host handling
+the Subscribe request. Use the private selector workflow below if this matters.
+Back up the entire private state directory, including the per-subscription pins
+and replay ledger. Changing the configured root or revision invalidates handles
+created under the previous settings. Use a new subscription for a new scope.
+
+Configure `sourceMode=persisted-cache` and supply one secret selector. Use
+`conversationId` for a Slack conversation ID, an HTTPS Slack workspace
+`/archives/<conversation>` link (optionally ending in a message permalink), or
+an `https://app.slack.com/client/<workspace>/<conversation>` link. Client links
+also constrain the workspace ID. Archives links select by conversation ID.
+Alternatively, use `conversationSnippet` for literal text in a cached message.
 This explicitly authorizes discovery across cached messages in the configured roots,
 then continued use of the uniquely matching **persisted** account and conversation,
 even after logout, account switching, or access changes. It does not establish current
 sign-in or permission. Do not choose this mode if current authenticated access is required.
 The connector has no live authority adapter and never extracts tokens or sessions.
 
-During Configure only, the connector detects the current user's macOS home and tries
+For the private selector workflow, Configure detects the current user's macOS home and tries
 Slack's standard `Library/Application Support/Slack/IndexedDB` and App Store sandbox
 `Library/Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/IndexedDB`
 locations. It derives workspace, account and conversation IDs from validated persisted
@@ -53,27 +79,46 @@ in public errors, Describe responses, events or cursors.
 
 | Field | Setup use |
 | --- | --- |
-| `sourceMode` | Required for new setup: choose `persisted-cache` to authorize cached discovery and use; sign-in remains unverified. |
-| `conversationSnippet` | Required secret for new setup: distinctive literal snippet selecting one account and conversation; not a raw ID. |
+| `subscriptionAccess` | `persisted-cache` authorizes positional ID discovery. Existing private selection credentials are retained. |
+| `sourceMode` | `persisted-cache` sets up the private selector, and `pinned-cache` reopens that private selection. |
+| `conversationSnippet` | Literal snippet in a persisted message. |
+| `conversationId` | Alternative secret selector for an ID or supported conversation link. |
+| `subscriptionCacheRoot` | Optional source folder for positional subscriptions. Defaults to `cacheRoot` or the standard locations. |
 | `cacheRoot` | Optional fallback: absolute IndexedDB folder for a custom installation or supported-format copied snapshot; otherwise macOS locations are detected. |
 | `selectionRevision` | Optional, default `1`: change deliberately to rediscover/reset a selection; use a new subscription without an old cursor. |
 | `pollIntervalMs` | Optional, default `30000`, range `1000`–`3600000`; controls polling, not freshness. |
 | `privateSource` | Legacy fallback only: existing private selection/key JSON; cannot be mixed with new setup fields. |
 
 Fields are catalogue-optional so any invalid Configure reaches the handler and clears
-prior in-memory configuration. New setup requires both source mode and snippet.
+prior in-memory configuration. Private selector setup requires source mode and one selector.
 The SDK has static Choice/Text/Secret fields and Accepted/Rejected Configure responses,
-but no dynamic discovery picker or custom setup tool. Thus selection is through a secret
+but no dynamic discovery picker or custom setup tool. The private workflow selects through a secret
 configuration field; no external bootstrap script or manually authored private JSON is
 needed. Use the host's secret-field input (`--secret-file` or `--secret-command` for CLI
 users); never put snippets in command arguments, subscription parameters or logs.
 
 Setup generates a stable random key and stores a pinned source/account/conversation in
-`$EXANGELOS_HOME/connectors/slack/setup.json`, or under
-`${XDG_DATA_HOME:-~/.local/share}/exangelos/connectors/slack/setup.json`.
+`$EXANGELOS_HOME/connector-state/slack/setup.json`, or under
+`${XDG_DATA_HOME:-~/.local/share}/exangelos/connector-state/slack/setup.json`.
+Existing external state in the older `connectors/slack` directory is reused when it holds a pin or ledger and has no connector manifest.
+Before installing over legacy state, stop the daemon and back up the whole legacy state directory. If it contains only private Slack state and the new location is absent, move the entire directory to `connector-state/slack` under the same data home. This preserves the pin, ledger and SQLite sidecars together. The updated installer refuses to replace a Slack directory containing private state.
 This connector-managed private file is external to the installation, mode 0600, with a
 mode-0700 containing directory. The snippet is represented there only by a keyed digest;
-the host manages its own secret configuration. Back up this file with the ledger/cursors.
+the host retains supplied secret fields when omitted from configuration updates.
+Use the CLI's secret-input flags for the mode and revision fields as well. For example:
+
+```sh
+exangelos connector configure slack --secret-command 'sourceMode=echo persisted-cache' --secret-file conversationSnippet=/path/to/snippet
+exangelos connector configure slack --secret-command 'sourceMode=echo pinned-cache'
+```
+
+The second command retains the pin and drops the stored selector.
+Changing mode clears the host's stored connector secrets. The connector validates the
+existing pin at the same revision and cache location. This mode cannot discover a
+replacement if the pin disappears. To retry a rejected snippet with a known ID,
+supply a new revision such as `--secret-command 'selectionRevision=echo 2'` and `--secret-file conversationId=<path>`
+in the same Configure call. Changing revision clears the old selector before the host
+stores the replacement. Back up this file with the ledger/cursors.
 While setup state is retained, unchanged settings reuse the key and selection, never
 silently discover a different account. The pinned expected scope is enforced by both
 acquisition and Configure, including the boundary between setup and the next read. Home-relative source locations are resolved again at runtime; physical cache
@@ -88,7 +133,7 @@ read the same supported-format source on POSIX systems. This does not claim supp
 other Slack cache formats, Windows runtime, complete account enumeration, or live sign-in.
 The legacy [private selection bootstrap](direct/PRIVATE-SELECTION.md) remains available
 for existing installations only. Changing a legacy key/selection also requires a fresh
-subscription. Subscription parameters remain `selection=selected`.
+subscription. The private selector and legacy workflows use `selection=selected`.
 
 ## Source and reconciliation
 
@@ -112,8 +157,8 @@ coverage does not imply removal. Bounds are 500 messages per observed snapshot a
 Restart requires the same key, selection, saved cursor and local ledger.
 
 Reconciliation uses Python's standard-library SQLite runtime. The ledger lives at
-`$EXANGELOS_HOME/connectors/slack/ledger.sqlite3`, or otherwise at
-`${XDG_DATA_HOME:-~/.local/share}/exangelos/connectors/slack/ledger.sqlite3`.
+`$EXANGELOS_HOME/connector-state/slack/ledger.sqlite3`, or otherwise at
+`${XDG_DATA_HOME:-~/.local/share}/exangelos/connector-state/slack/ledger.sqlite3`.
 It persists only keyed message/body/reaction markers, coverage flags, revisions,
 scope and generation metadata, and immutable event batches. No message bodies,
 credentials or content-bearing event payloads are stored. The cursor is a bounded

@@ -12,6 +12,8 @@ import sqlite3
 import sys
 import uuid
 
+from state_directory import state_directory
+
 
 ERROR = 'Slack observation or cursor is incomplete, unsupported, or inconsistent'
 TOKEN = re.compile(r'[a-f0-9]{64}\Z')
@@ -43,9 +45,7 @@ def packed(value):
 
 
 def ledger_path():
-    home = os.environ.get('EXANGELOS_HOME')
-    root = Path(home) if home else Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'exangelos'
-    path = root / 'connectors/slack/ledger.sqlite3'
+    path = state_directory() / 'ledger.sqlite3'
     installed = Path(__file__).resolve().parent.parent
     require(not path.resolve().is_relative_to(installed))
     return path

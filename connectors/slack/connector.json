@@ -1,6 +1,6 @@
 {
   "name": "slack",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "entry": {
     "_tag": "Bundle",
     "path": "dist/main.js"
@@ -8,6 +8,7 @@
   "files": [
     "direct/source.py",
     "direct/setup.py",
+    "direct/state_directory.py",
     "direct/observation.py",
     "direct/scan.py",
     "direct/wire.py",

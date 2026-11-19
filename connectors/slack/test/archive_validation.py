@@ -16,8 +16,10 @@ import tarfile
 import time
 from unittest import mock
 
-PACKER = '058760f81f660aecdd7c02ff257a9566092b77de'
-REASON = 'Slack private configuration or persisted snapshot is unavailable or inconsistent'
+PACKER = 'ce38a52891e5ff20f07193888aa3672e7960fd79'
+CONSENT = 'Authorize Slack cache discovery with subscriptionAccess or sourceMode'
+UNAVAILABLE = 'Slack persisted snapshot is unavailable or unsupported'
+MISSING = 'Slack cache or private setup files are missing or unreadable. Check the cache root and access'
 REPO = Path(__file__).resolve().parents[3]
 BUN = shutil.which('bun')
 
@@ -111,12 +113,12 @@ class Wire:
         answer = self.call('Handshake', None)
         check(answer['protocolVersion'] == 1 and len(answer['catalogue']['eventTypes']) == 5, 'handshake')
 
-    def configure(self, value, accepted=True):
+    def configure(self, value, reason=None):
         answer = self.call('Configure', {'values': value})
-        check(answer == ({'_tag': 'Accepted'} if accepted else {'_tag': 'Rejected', 'reason': REASON}), 'configure result')
+        check(answer == ({'_tag': 'Accepted'} if reason is None else {'_tag': 'Rejected', 'reason': reason}), 'configure result')
 
-    def watch(self, cursor=None):
-        payload = dict(parameters={'selection': 'selected'}, eventTypes=[])
+    def watch(self, cursor=None, selection='selected'):
+        payload = dict(parameters={'selection': selection}, eventTypes=[])
         if cursor is not None:
             payload['cursor'] = cursor
         return self.request('Watch', payload)
@@ -158,8 +160,9 @@ def exercise(installed, fixtures, evidence):
             check(wire.call('Describe', {'parameters': {'selection': 'selected'}})['_tag'] == 'Invalid', 'deferred describe')
             wire.receive(1.2, quiet=True)
             if scenario != 'unconfigured-sentinel':
-                wire.configure({'privateSource': json.dumps(request(app))}, accepted=False)
-                wire.configure({'sourceMode': 'persisted-cache', 'conversationSnippet': 'fixture body'}, accepted=False)
+                wire.configure({'privateSource': json.dumps(request(app))}, reason=UNAVAILABLE)
+                wire.configure({'sourceMode': 'persisted-cache', 'conversationSnippet': 'fixture body', 'cacheRoot': str(app)},
+                               reason=MISSING if scenario == 'absent-app' else UNAVAILABLE)
                 wire.handshake()
                 wire.receive(1.2, quiet=True)
             else:
@@ -178,7 +181,7 @@ def exercise(installed, fixtures, evidence):
     config_path.chmod(0o600)
     with Wire(installed, home) as wire:
         wire.handshake()
-        wire.configure({}, accepted=False)
+        wire.configure({}, reason=CONSENT)
         wire.configure(json.loads(config_path.read_text()))
         check(wire.call('Describe', {'parameters': {'selection': 'selected'}})['_tag'] == 'Described', 'describe configured')
         watch = wire.watch()
@@ -218,12 +221,17 @@ def exercise(installed, fixtures, evidence):
         with mock.patch.object(test_source, 'SELECTION', identity):
             database(app, state)
         values = dict(sourceMode='persisted-cache', conversationSnippet='fixture body', pollIntervalMs='1000')
+        if layout == 'custom':
+            del values['conversationSnippet']
+            values['conversationId'] = identity[2]
         if layout == 'custom' or sys.platform != 'darwin':
             values['cacheRoot'] = str(app)
         with Wire(installed, home) as wire:
             wire.handshake()
+            wire.configure(dict(values, conversationSnippet='synthetic absent snippet', conversationId=''),
+                           reason='No conversation matched in the persisted cache. Try its conversation ID or check the cache root')
             wire.configure(values)
-            saved = json.loads((home / 'state/connectors/slack/setup.json').read_text())
+            saved = json.loads((home / 'state/connector-state/slack/setup.json').read_text())
             check(saved['request']['selection'] == dict(workspace=identity[0], owner=identity[1], conversations=[identity[2]]), 'captured setup selection')
             check(saved['request']['root'] == str(app), 'captured setup root')
             setup_scopes.append(saved['request']['key'])
@@ -235,14 +243,91 @@ def exercise(installed, fixtures, evidence):
                 database(app, state, sequence=30)
             changed = wire.chunk(str(wire.id))
             check(len(changed) == 1 and changed[0]['_tag'] == 'Event' and changed[0]['event']['type'] == 'message.edited', 'portable concrete event')
+        if layout == 'custom':
+            current_state = home / 'state/connector-state/slack'
+            legacy_state = home / 'state/connectors/slack'
+            legacy_state.parent.mkdir(parents=True)
+            current_state.rename(legacy_state)
+            with Wire(installed, home) as wire:
+                wire.configure(dict(sourceMode='pinned-cache', cacheRoot=str(app)))
+                check(wire.chunk(wire.watch(portable_cursor)) == changed, 'exact replay from legacy state')
+            legacy_state.rename(current_state)
+            cases.append('legacy-state-relocation-and-exact-replay')
         with Wire(installed, home) as wire:
-            wire.configure(values)
-            check(json.loads((home / 'state/connectors/slack/setup.json').read_text()) == saved, 'stable private pin')
+            wire.configure(dict({k: v for k, v in values.items() if k not in ('conversationSnippet', 'conversationId')},
+                                sourceMode='pinned-cache'))
+            check(json.loads((home / 'state/connector-state/slack/setup.json').read_text()) == saved, 'stable private pin')
             check(wire.chunk(wire.watch(portable_cursor)) == changed, 'portable exact replay after restart')
-            wire.configure(dict(values, sourceMode='unknown'), accepted=False)
+            wire.configure(dict(values, sourceMode='unknown'), reason=CONSENT)
             check(wire.call('Describe', {'parameters': {'selection': 'selected'}})['_tag'] == 'Invalid', 'invalid setup clears configuration')
             wire.handshake()
         cases.append('portable-' + layout + '-selection-and-replay')
+    home = homes / 'positional'
+    app = home / 'cache'
+    app.mkdir(parents=True)
+    state = fixture()
+    second = 'D0000002'
+    state['messages'][second] = {}
+    database(app, state)
+    consent = dict(subscriptionAccess='persisted-cache', cacheRoot=str(app))
+    handles = []
+    cursors = []
+    with Wire(installed, home) as wire:
+        wire.configure(consent)
+        for conversation in (SELECTION[2], second):
+            described = wire.call('Describe', {'parameters': {'selection': conversation}})
+            check(described['_tag'] == 'Described' and conversation not in json.dumps(described), 'private normalized ID')
+            handle = described['parameters']['selection']
+            handles.append(handle)
+            cursors.append(wire.chunk(wire.watch(selection=handle))[0]['cursor'])
+    check(handles[0] != handles[1], 'distinct pinned scopes')
+    for i in (0, 1):
+        with Wire(installed, home) as wire:
+            wire.configure(consent)
+            wire.watch(cursors[1-i], handles[i])
+            answer = wire.receive()
+            check(answer['_tag'] == 'Exit' and answer['exit']['_tag'] == 'Failure'
+                  and 'SourceFailed' in json.dumps(answer), 'foreign cursor rejected')
+            wire.watch(cursors[i], handles[i])
+            wire.receive(1.2, quiet=True)
+    with Wire(installed, home) as wire:
+        wire.configure(dict(consent, subscriptionAccess='disabled'))
+        check(wire.call('Describe', {'parameters': {'selection': handles[0]}})['_tag'] == 'Invalid', 'disabled pin')
+    next(iter(state['messages'][SELECTION[2]].values()))['text'] += ' positional edit'
+    database(app, state, sequence=30)
+    with Wire(installed, home) as wire:
+        wire.configure(consent)
+        delta = wire.chunk(wire.watch(cursors[0], handles[0]))
+        check(len(delta) == 1 and delta[0]['event']['type'] == 'message.edited', 'resumed positional edit')
+    with Wire(installed, home) as wire:
+        wire.configure(consent)
+        check(wire.chunk(wire.watch(cursors[0], handles[0])) == delta, 'exact positional replay')
+    cases.append('positional-revocation-and-replay-after-restart')
+    for legacy in (True, False):
+        home = homes / ('coexist-legacy' if legacy else 'coexist-selected')
+        home.mkdir()
+        original = (dict(privateSource=json.dumps(request(app))) if legacy else
+                    dict(sourceMode='persisted-cache', conversationId=SELECTION[2], cacheRoot=str(app)))
+        combined = dict(original, subscriptionAccess='persisted-cache', subscriptionCacheRoot=str(app))
+        with Wire(installed, home) as wire:
+            wire.configure(original)
+            cursor = wire.chunk(wire.watch())[0]['cursor']
+        next(iter(state['messages'][SELECTION[2]].values()))['text'] += ' edited'
+        database(app, state, sequence=40 if legacy else 50)
+        with Wire(installed, home) as wire:
+            wire.configure(combined)
+            described = wire.call('Describe', {'parameters': {'selection': second}})
+            check(described['_tag'] == 'Described', 'additive positional consent')
+            wire.chunk(wire.watch(selection=described['parameters']['selection']))
+            selected = wire.call('Describe', {'parameters': {'selection': 'selected'}})
+            check(selected['_tag'] == 'Described', 'existing selection still available')
+            batch = wire.chunk(wire.watch(cursor))
+            check(len(batch) == 1 and batch[0]['event']['type'] == 'message.edited', 'existing cursor delivers edit')
+        with Wire(installed, home) as wire:
+            wire.configure(combined)
+            check(wire.chunk(wire.watch(cursor)) == batch, 'selected cursor replay with positional consent')
+    cases.append('additive-consent-with-selected-and-legacy-cursor-replay')
+    cases.append('positional-id-pins-restart-and-cross-cursor-rejection')
     check(setup_scopes[0] != setup_scopes[1], 'different users have distinct keys')
     after = inventory(installed)
     (evidence / 'inventory-after-runtime.json').write_text(json.dumps(after, indent=2) + '\n')

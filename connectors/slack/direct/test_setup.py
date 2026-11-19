@@ -58,7 +58,7 @@ class SetupTests(unittest.TestCase):
                 self.assertEqual(len(snapshot['messages']), 1)
                 self.assertTrue(snapshot['complete'])
                 results.append((request['key'], snapshot['scope']))
-                path = home / 'private-state/connectors/slack/setup.json'
+                path = home / 'private-state/connector-state/slack/setup.json'
                 self.assertEqual(path.stat().st_mode & 0o777, 0o600)
                 self.assertNotIn('fixture body', path.read_text())
                 renamed = self.home / (location + '-renamed')
@@ -71,13 +71,76 @@ class SetupTests(unittest.TestCase):
         self.assertNotEqual(results[0][0], results[1][0])
         self.assertNotEqual(results[0][1], results[1][1])
 
+    def test_direct_id_links_and_selector_free_resume(self):
+        root = setup.locations('')['standard']
+        self.database(root)
+        team, _, conversation = SELECTION
+        values = {'sourceMode': 'persisted-cache'}
+        for selector in (conversation, f'https://fixture.slack.com/archives/{conversation}/p123',
+                         f'https://fixture.slack.com/archives/{conversation}/p123?thread_ts=123.456&cid={conversation}'):
+            request = setup.setup(dict(values, conversationId=selector))
+            self.assertEqual(request, setup.setup(values))
+        with self.assertRaisesRegex(setup.SetupRejected, '24'):
+            setup.setup(dict(values, selectionRevision='2'))
+        linked = setup.setup(dict(values, selectionRevision='2',
+                                  conversationId=f'https://app.slack.com/client/{team}/{conversation}'))
+        self.assertEqual(request['selection'], linked['selection'])
+        self.assertNotEqual(request['key'], linked['key'])
+
+    def test_selector_failures_do_not_create_pin(self):
+        root = setup.locations('')['standard']
+        self.database(root)
+        for selector, code in [('https://other.invalid/archives/' + SELECTION[2], 20),
+                               (f'https://app.slack.com/client/T0000022/{SELECTION[2]}', 22),
+                               (f'https://fixture.slack.com/archives/{SELECTION[2]}/p123?cid=D0000099&thread_ts=123.456', 20),
+                               ('D0000099', 22)]:
+            with self.assertRaisesRegex(setup.SetupRejected, str(code)):
+                setup.setup({'sourceMode': 'persisted-cache', 'conversationId': selector})
+        with self.assertRaisesRegex(setup.SetupRejected, '20'):
+            setup.setup(dict(self.values, conversationId=SELECTION[2]))
+        self.database(setup.locations('')['sandbox'])
+        with self.assertRaisesRegex(setup.SetupRejected, '23'):
+            setup.setup({'sourceMode': 'persisted-cache', 'conversationId': SELECTION[2]})
+        self.assertFalse((self.home / 'state/connector-state/slack/setup.json').exists())
+
+    def test_reconnect_to_existing_external_state_directory(self):
+        self.database(setup.locations('')['standard'])
+        request = setup.setup(self.values)
+        base = self.home / 'state'
+        legacy = base / 'connectors/slack'
+        legacy.parent.mkdir()
+        (base / 'connector-state/slack').rename(legacy)
+        self.assertEqual(setup.setup({'sourceMode': 'pinned-cache'}), request)
+        self.assertFalse((base / 'connector-state/slack').exists())
+
+    def test_positional_conversation_pins_are_scoped_and_never_replace_selected(self):
+        roots = setup.locations('')
+        self.database(roots['standard'])
+        selected = setup.setup(self.values)
+        values = dict(subscriptionAccess='persisted-cache', subscription=SELECTION[2])
+        first = setup.subscription(values)
+        handle = 'scope-' + first['expectedScope']
+        self.database(roots['sandbox'], ('T0000022', 'U0000033', SELECTION[2]))
+        with self.assertRaisesRegex(setup.SetupRejected, '23'):
+            setup.subscription(values)
+        self.assertEqual(setup.subscription(dict(values, subscription=handle)), first)
+        self.assertEqual(setup.setup(self.values), selected)
+        other = setup.subscription(dict(values, cacheRoot=str(roots['sandbox'])))
+        self.assertNotEqual(first['expectedScope'], other['expectedScope'])
+        with self.assertRaises(ValueError):
+            setup.subscription(dict(values, cacheRoot=str(roots['sandbox']), subscription=handle))
+        with self.assertRaises(ValueError):
+            setup.subscription(dict(values, selectionRevision='2', subscription=handle))
+        with self.assertRaisesRegex(setup.SetupRejected, '22'):
+            setup.subscription(dict(values, subscription='D9999999'))
+
     def test_ambiguity_between_roots_accounts_and_custom_fallback(self):
         roots = setup.locations('')
         self.database(roots['standard'])
         self.database(roots['sandbox'], ('T0000022', 'U0000033', SELECTION[2]))
         with self.assertRaises(ValueError):
             setup.setup(self.values)
-        self.assertFalse((self.home / 'state/connectors/slack/setup.json').exists())
+        self.assertFalse((self.home / 'state/connector-state/slack/setup.json').exists())
         request = setup.setup(dict(self.values, cacheRoot=str(roots['sandbox'])))
         self.assertEqual(request['selection']['owner'], 'U0000033')
         self.assertEqual(request['root'], str(roots['sandbox']))
@@ -95,7 +158,7 @@ class SetupTests(unittest.TestCase):
         with mock.patch.object(source.scan, 'run', side_effect=scan):
             with self.assertRaises(ValueError):
                 setup.setup(self.values)
-        self.assertFalse((self.home / 'state/connectors/slack/setup.json').exists())
+        self.assertFalse((self.home / 'state/connector-state/slack/setup.json').exists())
 
     def test_missing_consent_does_not_read_app_or_write_state(self):
         with mock.patch.object(source, 'inventory', side_effect=AssertionError('app read')):
@@ -108,11 +171,11 @@ class SetupTests(unittest.TestCase):
         root = setup.locations('')['standard']
         self.database(root)
         request = setup.setup(self.values)
-        saved = (self.home / 'state/connectors/slack/setup.json').read_bytes()
+        saved = (self.home / 'state/connector-state/slack/setup.json').read_bytes()
         self.database(root, ('T0000022', 'U0000033', SELECTION[2]))
         with self.assertRaises(ValueError):
             setup.setup(self.values)
-        self.assertEqual(saved, (self.home / 'state/connectors/slack/setup.json').read_bytes())
+        self.assertEqual(saved, (self.home / 'state/connector-state/slack/setup.json').read_bytes())
         new = setup.setup(dict(self.values, selectionRevision='2'))
         self.assertEqual(new['selection']['owner'], 'U0000033')
         self.assertNotEqual(new['key'], request['key'])
@@ -162,7 +225,7 @@ class SetupTests(unittest.TestCase):
         root = setup.locations('')['standard']
         self.database(root)
         setup.setup(self.values)
-        path = self.home / 'state/connectors/slack/setup.json'
+        path = self.home / 'state/connector-state/slack/setup.json'
         path.chmod(0o644)
         with self.assertRaises(ValueError):
             setup.setup(self.values)

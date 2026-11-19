@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite"
-import { chmod, copyFile, lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises"
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
@@ -189,9 +189,12 @@ const installFakes = async () => {
   await fake("security", [
     `echo "security $*" >> ${at("secret-calls.log")}`,
     `case "$1" in`,
-    `  -i) cat >> ${at("secrets.log")} ;;`,
-    `  find-generic-password) service=$(printf '%s\\n' "$*" | sed -n 's/.*-s \\([^ ]*\\).*/\\1/p');`,
-    `    grep -qs -- "-s \\"$service\\"" ${at("secrets.log")} || exit 44; echo 'password: "not-a-secret"' >&2 ;;`,
+    `  -i) read -r command; printf '%s\\n' "$command" >> ${at("secrets.log")};`,
+    String.raw`    printf '%s\n' "$command" | sed -n 's/^add-generic-password -U -a "\([^"]*\)" -s "\([^"]*\)" -X \([a-f0-9]*\)$/\1 \2 \3/p' | while read -r account service hex; do`,
+    `      printf '%s' "$hex" > ${at("fixture-key")}-"$service"-"$account"; done ;;`,
+    `  find-generic-password) file=${at("fixture-key")}-"$5"-"$3"; [ -f "$file" ] || exit 44; [ "$6" = "-g" ] || exit 1;`,
+    `    printf 'password: 0x%s\\n' "$(cat "$file")" >&2 ;;`,
+    `  delete-generic-password) rm -f ${at("fixture-key")}-"$5"-"$3" ;;`,
     `esac`,
     `exit 0`
   ].join("\n"))
@@ -241,7 +244,7 @@ const serveRelease = async (directory: string) => {
 }
 
 beforeAll(async () => {
-  root = await mkdtemp("/tmp/xng-")
+  root = await realpath(await mkdtemp("/tmp/xng-"))
   home = join(root, "h")
   exangelos = join(root, "bin", "exangelos")
   xng = join(root, "bin", "xng")
@@ -682,6 +685,90 @@ describe("official connectors from a release address", () => {
     expect(requests).toEqual(expect.arrayContaining(["POST /api/graphql", "GET /rest/api/3/serverInfo", "GET /rest/api/3/myself"]))
     // Jira's Describe checks the JQL with a one-result search; Watch searches without that limit.
     expect(requests.some((line) => /^GET \/rest\/api\/3\/search\/jql\?.*maxResults=1(&|$)/.test(line))).toBe(true)
+  }, 60_000)
+
+  it("subscribes to two Slack IDs after consent without a selector file", async () => {
+    const cache = join(root, "positional-slack")
+    await mkdir(cache)
+    const fixture = Bun.spawnSync(["python3", "-B", "-c", [
+      "from pathlib import Path",
+      "import sys",
+      "from test_source import database, fixture",
+      "state = fixture()",
+      "state['messages']['D0000002'] = {}",
+      "database(Path(sys.argv[1]), state)"
+    ].join("\n"), cache], { cwd: join(repo, "connectors/slack/direct"), env: env() })
+    expect(fixture.exitCode, fixture.stderr.toString()).toBe(0)
+    const subscribe = (id: string) => run(exangelos, "--json", "subscribe", "slack", id, "--intent", "Observe cached messages", "--pull-only")
+    expect(subscribe("C0000001").status).toBe(1)
+    json("connector", "configure", "slack", `cacheRoot=${cache}`, "subscriptionAccess=persisted-cache")
+    expect(subscribe("D9999999").status).toBe(1)
+    const subscriptions = ["C0000001", "D0000002"].map((id) => {
+      const result = subscribe(id)
+      expect(result.status, result.stdout + result.stderr).toBe(0)
+      expect(result.stdout).not.toContain(id)
+      return JSON.parse(result.stdout)
+    })
+    expect(subscriptions[0].subject).not.toBe(subscriptions[1].subject)
+    for (const subscription of subscriptions) json("cancel", subscription.id)
+    json("connector", "configure", "slack", "subscriptionAccess=disabled")
+    expect(connectorNamed("slack").configuration._tag).toBe("Set")
+    expect(subscribe("C0000001").status).toBe(1)
+    json("connector", "configure", "slack", "subscriptionAccess=persisted-cache")
+    const resumed = subscribe("C0000001")
+    expect(resumed.status, resumed.stdout + resumed.stderr).toBe(0)
+    expect(JSON.parse(resumed.stdout).subject).toBe(subscriptions[0].subject)
+    json("cancel", JSON.parse(resumed.stdout).id)
+    json("connector", "remove", "slack")
+  }, 60_000)
+
+  it("configures official Slack from a cached snippet and reconnects after clearing the selector", async () => {
+    const cache = join(root, "slack-cache")
+    await mkdir(cache)
+    const fixture = Bun.spawnSync(["python3", "-B", "-c",
+      "from pathlib import Path; import sys; from test_source import database; database(Path(sys.argv[1]))", cache
+    ], { cwd: join(repo, "connectors/slack/direct"), env: env() })
+    expect(fixture.exitCode, fixture.stderr.toString()).toBe(0)
+    const snippet = join(root, "slack-snippet")
+    await writeFile(snippet, "fixture body", { mode: 0o600 })
+    run(exangelos, "subscribe", "slack", "selected", "--intent", "Install Slack", "--pull-only")
+    expect(connectorNamed("slack")).toMatchObject({ trust: "enabled", origin: { _tag: "Official" } })
+    const configure = (...fields: Array<string>) => json("connector", "configure", "slack", ...fields)
+    configure(`cacheRoot=${cache}`, "--secret-command", "sourceMode=echo persisted-cache",
+      "--secret-file", `conversationSnippet=${snippet}`)
+    const pin = join(home, "connector-state/slack/setup.json")
+    const pinned = await readFile(pin, "utf8")
+    configure("subscriptionAccess=persisted-cache")
+    expect(await readFile(pin, "utf8")).toBe(pinned)
+    configure("--secret-command", "sourceMode=echo pinned-cache")
+    expect(await readFile(pin, "utf8")).toBe(pinned)
+    const subscription = json("subscribe", "slack", "selected", "--intent", "Watch cached conversation", "--pull-only")
+    expect(subscription).toMatchObject({ connector: "slack", subject: "slack:selected" })
+    await eventually(() => lstat(join(home, "connector-state/slack/ledger.sqlite3")))
+    json("cancel", subscription.id)
+    const archiveName = `slack-${connectorNamed("slack").version}.tar.gz`
+    json("connector", "remove", "slack")
+    const currentState = join(home, "connector-state/slack")
+    const legacyState = join(home, "connectors/slack")
+    await rename(currentState, legacyState)
+    const ledger = await readFile(join(legacyState, "ledger.sqlite3"))
+    const refused = run(exangelos, "connector", "import", join(root, "release", archiveName))
+    expect(refused.status).toBe(1)
+    expect(refused.stderr).toContain("Slack private state occupies the install directory")
+    expect(await readFile(join(legacyState, "setup.json"), "utf8")).toBe(pinned)
+    expect(await readFile(join(legacyState, "ledger.sqlite3"))).toEqual(ledger)
+    await rename(legacyState, currentState)
+    run(exangelos, "subscribe", "slack", "selected", "--intent", "Reinstall Slack", "--pull-only")
+    configure(`cacheRoot=${cache}`, "--secret-command", "sourceMode=echo pinned-cache")
+    expect(await readFile(pin, "utf8")).toBe(pinned)
+    const conversation = join(root, "slack-conversation")
+    await writeFile(conversation, "https://fixture.slack.com/archives/C0000001/p123?thread_ts=123.456&cid=C0000001")
+    configure("--secret-command", "sourceMode=echo persisted-cache", "--secret-command", "selectionRevision=echo 2",
+      "--secret-file", `conversationId=${conversation}`)
+    const reset = JSON.parse(await readFile(pin, "utf8"))
+    expect(reset.request.selection).toEqual(JSON.parse(pinned).request.selection)
+    expect(reset.request.key).not.toBe(JSON.parse(pinned).request.key)
+    json("connector", "remove", "slack")
   }, 60_000)
 
   it("wakes once for a file event beside a template subscription, and switches event alerts", async () => {

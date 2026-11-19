@@ -25,10 +25,21 @@ export const Snapshot = Schema.Struct({
   generation: Schema.String.check(Schema.isPattern(/^(0|[1-9][0-9]{0,19})$/)),
   snapshot: Token
 })
+const snapshotReason = "Slack persisted snapshot is unavailable or unsupported"
+const setupReasons: Readonly<Record<number, string>> = {
+  1: "Slack setup could not validate private state or a stable, supported persisted snapshot",
+  20: "Initial setup needs one secret selector: a literal snippet, conversation ID or supported Slack link",
+  21: "Slack cache or private setup files are missing or unreadable. Check the cache root and access",
+  22: "No conversation matched in the persisted cache. Try its conversation ID or check the cache root",
+  23: "Multiple cached accounts or conversations matched. Narrow the cache root or selector",
+  24: "Pinned selection or cache changed. Restore its settings or deliberately change the selection revision",
+  25: "Another Slack setup is running. Retry Configure",
+  26: "Pinned-cache mode accepts no selector. Use persisted-cache for initial selection"
+}
 export class SourceUnavailable extends Schema.TaggedError<SourceUnavailable>()("SourceUnavailable", {
-  reason: Schema.Literal("Slack persisted snapshot is unavailable or unsupported")
+  reason: Schema.String
 }) {}
-const unavailable = () => new SourceUnavailable({ reason: "Slack persisted snapshot is unavailable or unsupported" })
+const unavailable = () => new SourceUnavailable({ reason: snapshotReason })
 export interface Source<R = never> {
   readonly setup?: (values: Readonly<Record<string, string>>) => Effect.Effect<typeof Request.Type, SourceUnavailable, R>
   readonly read: (request: typeof Request.Type) => Effect.Effect<typeof Snapshot.Type, SourceUnavailable, R>
@@ -60,9 +71,10 @@ const runPython = (script: "source" | "setup", request: unknown) => Effect.gen(f
         }, catch: unavailable
       }))), child.exitCode
     ], { concurrency: "unbounded" })
-    if (code !== 0) return yield* unavailable()
+    if (code !== 0) return yield* new SourceUnavailable({ reason: script === "setup"
+      ? setupReasons[code] ?? snapshotReason : snapshotReason })
     return text + decoder.decode()
-  }).pipe(Effect.scoped, Effect.timeout("45 seconds"), Effect.mapError(unavailable))
+  }).pipe(Effect.scoped, Effect.timeout("45 seconds"), Effect.mapError((error) => error instanceof SourceUnavailable ? error : unavailable()))
 
 export const localSource: Source<ChildProcessSpawner.ChildProcessSpawner> = {
   setup: (values) => runPython("setup", values).pipe(Effect.flatMap(decodeRequest)),

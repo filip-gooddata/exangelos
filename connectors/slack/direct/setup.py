@@ -1,10 +1,11 @@
-"""Configure-only discovery of an explicitly authorized persisted-cache selection."""
+"""Discovery and pin resolution after explicit persisted-cache consent."""
 import contextlib
 import fcntl
 import json
 import logging
 import os
 from pathlib import Path
+import re
 import secrets
 import stat
 import sys
@@ -12,11 +13,36 @@ import tempfile
 
 import observation
 import source
+from state_directory import state_directory
 
 
 def require(value):
     if not value:
         raise ValueError('setup')
+
+
+class SetupRejected(ValueError):
+    """Only fixed process exit codes cross the private worker boundary."""
+
+
+def conversation_target(value):
+    conversation = r'([CDG][A-Z0-9]{6,30})'
+    match = re.fullmatch(conversation, value)
+    if match:
+        return None, match[1]
+    match = re.fullmatch(r'https://app\.slack\.com/client/(T[A-Z0-9]{6,30})/' + conversation + r'/?', value)
+    if match:
+        return match[1], match[2]
+    path, separator, query = value.partition('?')
+    match = re.fullmatch(r'https://[a-z0-9-]+\.slack\.com/archives/' + conversation + r'(/p[0-9]+)?/?', path)
+    if match:
+        if separator:
+            fields = query.split('&')
+            if (not match[2] or len(fields) != 2 or 'cid=' + match[1] not in fields
+                    or not any(re.fullmatch(r'thread_ts=[0-9]{1,20}\.[0-9]{1,10}', field) for field in fields)):
+                raise SetupRejected(20)
+        return None, match[1]
+    raise SetupRejected(20)
 
 
 def locations(custom):
@@ -50,28 +76,43 @@ def private_file(path, flags):
 
 
 def setup(values):
-    require(isinstance(values, dict) and not set(values) - {'sourceMode', 'conversationSnippet', 'cacheRoot', 'selectionRevision'})
-    require(values.get('sourceMode') == 'persisted-cache')
-    snippet = values.get('conversationSnippet')
+    require(isinstance(values, dict) and not set(values) - {'sourceMode', 'conversationSnippet', 'cacheRoot', 'selectionRevision', 'conversationId'})
+    require(values.get('sourceMode') in ('persisted-cache', 'pinned-cache'))
+    snippet = values.get('conversationSnippet', '')
+    direct = values.get('conversationId', '')
     custom = values.get('cacheRoot', '')
     revision = values.get('selectionRevision', '') or '1'
-    require(isinstance(snippet, str) and 1 <= len(snippet.encode()) <= 16384)
+    require(isinstance(snippet, str) and len(snippet.encode()) <= 16384)
     require(isinstance(custom, str) and len(custom) <= 4096)
     require(isinstance(revision, str) and 1 <= len(revision) <= 128)
+    if not isinstance(direct, str) or len(direct) > 4096 or (snippet and direct):
+        raise SetupRejected(20)
+    if values['sourceMode'] == 'pinned-cache' and (snippet or direct):
+        raise SetupRejected(26)
+    target = conversation_target(direct) if direct else None
     roots = locations(custom)
-    data = os.environ.get('EXANGELOS_HOME')
-    base = Path(data) if data else Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'exangelos'
-    directory = safe_path(base / 'connectors/slack')
+    directory = private_directory()
+    with locked(directory):
+        return configured(directory, roots, snippet, custom, revision, target)
+
+
+def private_directory():
+    directory = safe_path(state_directory())
     require(not directory.is_relative_to(Path(__file__).resolve().parent.parent))
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     info = directory.stat()
     require(info.st_uid == os.getuid() and info.st_mode & 0o077 == 0)
+    return directory
+
+
+@contextlib.contextmanager
+def locked(directory, *, wait=False):
     with os.fdopen(private_file(directory / 'setup.lock', os.O_RDWR | os.O_CREAT), 'r+') as lock:
-        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        return configured(directory, roots, snippet, custom, revision)
+        fcntl.flock(lock, fcntl.LOCK_EX if wait else fcntl.LOCK_EX | fcntl.LOCK_NB)
+        yield
 
 
-def configured(directory, roots, snippet, custom, revision):
+def configured(directory, roots, snippet, custom, revision, target):
     path = directory / 'setup.json'
     previous = None
     try:
@@ -83,18 +124,36 @@ def configured(directory, roots, snippet, custom, revision):
             raw = handle.read(source.MAX_INPUT + 1)
         require(len(raw) <= source.MAX_INPUT)
         previous = json.loads(raw, object_pairs_hook=source.unique_object)
-        require(previous['version'] == 1)
+        require(previous['version'] == 1 and re.fullmatch(r'[0-9a-f]{64}', previous['selector']))
         key = bytes.fromhex(previous['request']['key'])
-        selector = observation.token(key, 'setup-selector-v1', snippet, custom, revision)
-        if secrets.compare_digest(previous['selector'], selector):
+        selector = selector_digest(key, snippet, target, custom, revision)
+        resume = not snippet and not target
+        if resume and (previous['revision'] != revision or previous['location'] not in roots):
+            raise SetupRejected(24)
+        if resume or secrets.compare_digest(previous['selector'], selector):
             root = safe_path(roots[previous['location']])
-            require(source.inventory(root)[1] == previous['epoch'])
+            if resume and custom and str(root) != previous['request']['root']:
+                raise SetupRejected(24)
+            if source.inventory(root)[1] != previous['epoch']:
+                raise SetupRejected(24)
             request = pinned_request(previous['request']['selection'], key, root, previous['epoch'])
+            require(request['expectedScope'] == previous['request']['expectedScope'])
             validate(request)
             return request
         # Selection changes are deliberate: editing a snippet alone must not silently repin an account.
-        require(previous['revision'] != revision)
+        if previous['revision'] == revision:
+            raise SetupRejected(24)
+    if not snippet and not target:
+        raise SetupRejected(20)
     key = secrets.token_bytes(32)
+    location, epoch, request = discover(roots, key, snippet, target)
+    saved = {'version': 1, 'request': request, 'location': location, 'epoch': epoch, 'revision': revision,
+             'selector': selector_digest(key, snippet, target, custom, revision)}
+    save_json(path, saved)
+    return request
+
+
+def discover(roots, key, snippet, target):
     matches = []
     inventories = {}
     for location, path_root in roots.items():
@@ -108,8 +167,18 @@ def configured(directory, roots, snippet, custom, revision):
         inventories[root] = (before, epoch)
         candidates = set()
 
+        observed = False
+
         def collect(state, generation):
+            nonlocal observed
+            observed = True
             identity = observation.scope(state)
+            if target:
+                workspace, conversation = target
+                if workspace is None or workspace == identity[0]:
+                    if any(conversation in (state.get(field) or {}) for field in ('messages', 'channels')):
+                        candidates.add((*identity, conversation))
+                return
             for conversation, messages in (state.get('messages') or {}).items():
                 for message in messages.values():
                     text = message.get('text') if isinstance(message, dict) else None
@@ -118,10 +187,15 @@ def configured(directory, roots, snippet, custom, revision):
 
         result = source.scan.run(root, observe=collect)
         require(not result['external_rejections'] and not result['files_changed'] and result['current_unchanged'])
-        require(source.inventory(root) == (before, epoch))
+        require(observed and source.inventory(root) == (before, epoch))
         for workspace, owner, conversation in candidates:
             matches.append((location, root, epoch, {'workspace': workspace, 'owner': owner, 'conversations': [conversation]}))
-    require(len(matches) == 1)
+    if not any(value is not None for value in inventories.values()):
+        raise SetupRejected(21)
+    if not matches:
+        raise SetupRejected(22)
+    if len(matches) > 1:
+        raise SetupRejected(23)
     location, root, epoch, selection = matches[0]
     request = pinned_request(selection, key, root, epoch)
     validate(request)
@@ -130,19 +204,67 @@ def configured(directory, roots, snippet, custom, revision):
             require(not inspected.exists())
         else:
             require(source.inventory(inspected) == expected)
-    saved = {'version': 1, 'request': request, 'location': location, 'epoch': epoch, 'revision': revision,
-             'selector': observation.token(key, 'setup-selector-v1', snippet, custom, revision)}
-    fd, temporary = tempfile.mkstemp(prefix='.setup-', dir=directory)
+    return location, epoch, request
+
+
+def save_json(path, saved):
+    fd, temporary = tempfile.mkstemp(prefix='.setup-', dir=path.parent)
     try:
         with os.fdopen(fd, 'w') as handle:
             json.dump(saved, handle, separators=(',', ':'))
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, directory / 'setup.json')
+        os.replace(temporary, path)
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def subscription(values):
+    require(set(values) <= {'subscriptionAccess', 'cacheRoot', 'selectionRevision', 'subscription'})
+    require(values.get('subscriptionAccess') == 'persisted-cache')
+    selection = values['subscription']
+    custom = values.get('cacheRoot', '')
+    revision = values.get('selectionRevision', '1')
+    require(isinstance(custom, str) and len(custom) <= 4096)
+    require(isinstance(revision, str) and 1 <= len(revision) <= 128)
+    roots = locations(custom)
+    directory = private_directory()
+    scope = re.fullmatch(r'scope-([a-f0-9]{64})', selection)
+    if scope:
+        with os.fdopen(private_file(directory / (selection + '.json'), os.O_RDONLY)) as handle:
+            saved = json.loads(handle.read(source.MAX_INPUT + 1), object_pairs_hook=source.unique_object)
+        require(saved['custom'] == custom and saved['revision'] == revision)
+        root = safe_path(roots[saved['location']])
+        require(source.inventory(root)[1] == saved['epoch'])
+        request = pinned_request(saved['request']['selection'], bytes.fromhex(saved['request']['key']), root, saved['epoch'])
+        require(request['expectedScope'] == scope[1])
+        validate(request)
+        return request
+    require(re.fullmatch(r'[CDG][A-Z0-9]{6,30}', selection))
+    with locked(directory, wait=True):
+        key_path = directory / 'subscriptions-key.json'
+        try:
+            fd = private_file(key_path, os.O_RDONLY)
+        except FileNotFoundError:
+            secret = secrets.token_hex(32)
+            save_json(key_path, secret)
+        else:
+            with os.fdopen(fd) as handle:
+                secret = json.loads(handle.read(128))
+        require(re.fullmatch(r'[a-f0-9]{64}', secret))
+    key = bytes.fromhex(observation.token(bytes.fromhex(secret), 'subscription-key-v1', custom, revision, selection))
+    location, epoch, request = discover(roots, key, '', (None, selection))
+    path = directory / ('scope-' + request['expectedScope'] + '.json')
+    save_json(path, {'custom': custom, 'revision': revision, 'location': location, 'epoch': epoch, 'request': request})
     return request
+
+
+
+def selector_digest(key, snippet, target, custom, revision):
+    if target:
+        return observation.token(key, 'setup-conversation-v1', target, custom, revision)
+    return observation.token(key, 'setup-selector-v1', snippet, custom, revision)
 
 
 def pinned_request(selection, key, root, epoch):
@@ -163,8 +285,15 @@ def main():
         with open(os.devnull, 'w') as sink, contextlib.redirect_stdout(sink), contextlib.redirect_stderr(sink):
             raw = sys.stdin.buffer.read(source.MAX_INPUT + 1)
             require(len(raw) <= source.MAX_INPUT)
-            result = setup(json.loads(raw, object_pairs_hook=source.unique_object))
+            values = json.loads(raw, object_pairs_hook=source.unique_object)
+            result = subscription(values) if 'subscription' in values else setup(values)
             output = json.dumps(result, separators=(',', ':'))
+    except SetupRejected as error:
+        return error.args[0]
+    except (FileNotFoundError, PermissionError):
+        return 21
+    except BlockingIOError:
+        return 25
     except BaseException:
         sys.stderr.write('Slack persisted setup unavailable.\n')
         return 1
