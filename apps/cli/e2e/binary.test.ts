@@ -416,14 +416,20 @@ describe("the exangelos binary", () => {
     for (const name of names) expect(await readFile(join(logs, name), "utf8")).not.toContain("not-a-secret")
     expect(await readFile(join(logs, "daemon.jsonl"), "utf8")).toContain("daemon stopped")
 
-    const server = Bun.spawnSync([exangelos, "--json", "mcp"], { env: env(), stdin: "ignore", timeout: 10_000 })
     const records = async (name: string) =>
       (await readFile(join(logs, name), "utf8")).trim().split("\n").map((line) => JSON.parse(line))
-    expect((await records("mcp.jsonl")).filter((record) => record.pid === server.pid)).toMatchObject([
-      { level: "INFO", src: "mcp", msg: "mcp started", ann: { version: expect.any(String) } }
+    for (const flags of [["--json"], ["--json", "false"]]) {
+      const server = Bun.spawnSync([exangelos, ...flags, "mcp"], { env: env(), stdin: "ignore", timeout: 10_000 })
+      expect((await records("mcp.jsonl")).filter((record) => record.pid === server.pid)).toMatchObject([
+        { level: "INFO", src: "mcp", msg: "mcp started", ann: { version: expect.any(String) } }
+      ])
+      expect((await records("cli.jsonl")).filter((record) => record.pid === server.pid)).toEqual([])
+    }
+    const listed = Bun.spawnSync([exangelos, "--json", "false", "settings"], { env: env(), timeout: 10_000 })
+    expect((await records("cli.jsonl")).filter((record) => record.pid === listed.pid)).toMatchObject([
+      { level: "INFO", src: "cli", msg: "cli started" }
     ])
-    expect((await records("cli.jsonl")).filter((record) => record.pid === server.pid)).toEqual([])
-  }, 20_000)
+  }, 30_000)
 
   it("starts the daemon through the service manager on first use and reports its status", async () => {
     await writeFile(join(root, "service-accepts"), "")
