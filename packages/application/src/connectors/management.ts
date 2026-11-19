@@ -1,4 +1,4 @@
-import { DateTime, Effect, Option, Redacted, Schema } from "effect"
+import { Cause, DateTime, Effect, Option, Redacted, Schema } from "effect"
 import { Catalogue, Ids, Connector, ConnectorRules, Refusal, Session, Settings } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
 import { ConnectorDirectory } from "../ports/ConnectorDirectory.ts"
@@ -96,8 +96,9 @@ export const enableConnector = (actor: Session.Actor, name: Ids.ConnectorName, d
     const supervisor = yield* ConnectorSupervisor
     const connector = yield* found(name)
     if (connector.digest !== digest) {
-      yield* Effect.logWarning("connector digest mismatch").pipe(Effect.annotateLogs({ expected: digest, actual: connector.digest }))
-      return yield* new DigestMismatch({ connector: name, expected: digest, actual: connector.digest })
+      const mismatch = new DigestMismatch({ connector: name, expected: digest, actual: connector.digest })
+      yield* Effect.logWarning("connector digest mismatch", Cause.fail(mismatch))
+      return yield* mismatch
     }
     if (connector.trust !== "inert") return connector
     // Checked again under the write permit, so a file change racing this call cannot be trusted.
@@ -109,8 +110,9 @@ export const enableConnector = (actor: Session.Actor, name: Ids.ConnectorName, d
     if (Option.isNone(enabled)) {
       const now = yield* found(name)
       if (now.digest !== digest) {
-        yield* Effect.logWarning("connector digest mismatch").pipe(Effect.annotateLogs({ expected: digest, actual: now.digest }))
-        return yield* new DigestMismatch({ connector: name, expected: digest, actual: now.digest })
+        const mismatch = new DigestMismatch({ connector: name, expected: digest, actual: now.digest })
+        yield* Effect.logWarning("connector digest mismatch", Cause.fail(mismatch))
+        return yield* mismatch
       }
       return now
     }

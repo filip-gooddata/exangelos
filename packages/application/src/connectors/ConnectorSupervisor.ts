@@ -1,4 +1,4 @@
-import { Context, DateTime, Deferred, Duration, Effect, FiberMap, Layer, Option, Redacted, Ref, Semaphore, Stream } from "effect"
+import { Cause, Context, DateTime, Deferred, Duration, Effect, FiberMap, Layer, Option, Redacted, Ref, Semaphore, Stream } from "effect"
 import { Catalogue, Ids, Connector, ConnectorRules, Refusal, Settings } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
 import { ConnectorDirectory } from "../ports/ConnectorDirectory.ts"
@@ -396,7 +396,7 @@ export const layerConnectorSupervisor: Layer.Layer<
         }
         if (outcome._tag === "Incompatible") {
           yield* update(name, (connector) => ({ ...connector, process: "failing" }))
-          yield* Effect.logError("connector incompatible").pipe(Effect.annotateLogs({ error: outcome.reason }))
+          yield* Effect.logError("connector incompatible", Cause.fail(outcome.reason))
           return
         }
         const ran = DateTime.toEpochMillis(yield* DateTime.now) - startedAt
@@ -404,8 +404,8 @@ export const layerConnectorSupervisor: Layer.Layer<
         const state = failures >= restartPolicy.failingAfter ? "failing" : "restarting"
         yield* update(name, (connector) => ({ ...connector, process: connector.process === "failing" ? "failing" : state }))
         const delay = backoff(failures)
-        yield* Effect.logWarning("connector crashed").pipe(
-          Effect.annotateLogs({ error: outcome.reason, failures, state, retryInMs: Duration.toMillis(delay) })
+        yield* Effect.logWarning("connector crashed", Cause.fail(outcome.reason)).pipe(
+          Effect.annotateLogs({ failures, state, retryInMs: Duration.toMillis(delay) })
         )
         yield* Effect.sleep(delay)
       }

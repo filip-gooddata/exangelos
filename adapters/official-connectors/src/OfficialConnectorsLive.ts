@@ -1,11 +1,13 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import * as Url from "node:url"
-import { Effect, Layer } from "effect"
+import { Cause, Effect, Layer } from "effect"
 import { OfficialConnectorSource, ConnectorImportSource, SettingsStore } from "@exangelos/application"
 import { NamedImport } from "@exangelos/connector-import"
 
 /** The release file of an official connector: a gzip tar with `connector.json` at its root. */
+const withoutQuery = (text: string) => text.replace(/(https?:\/\/[^\s?#]*)[?#]\S*/g, "$1")
+
 export const archiveName = (official: OfficialConnectorSource.Official) => `${official.name}-${official.version}.tar.gz`
 
 /**
@@ -53,13 +55,13 @@ export const layer = (options: {
           const current = yield* Effect.mapError(settings.read, (unreadable) => unreadable.reason)
           const from = yield* source(official, current.officialConnectorFolder)
           yield* Effect.logInfo("official connector source chosen").pipe(
-            Effect.annotateLogs({ source: from._tag, target: "path" in from ? from.path : from.url })
+            Effect.annotateLogs({ source: from._tag, target: "path" in from ? from.path : withoutQuery(from.url) })
           )
           const placed = yield* Effect.mapError(imports.place(from, official.name), (failed) => failed.reason)
           yield* Effect.logInfo("official connector fetched")
           return placed
         }).pipe(
-          Effect.tapError((reason) => Effect.logWarning("official connector fetch failed").pipe(Effect.annotateLogs({ error: reason }))),
+          Effect.tapError((reason) => Effect.logWarning("official connector fetch failed", Cause.fail(withoutQuery(reason)))),
           Effect.mapError((reason) => new OfficialConnectorSource.OfficialFetchFailed({ connector: official.name, reason })),
           Effect.annotateLogs({ connector: official.name, version: official.version })
         )

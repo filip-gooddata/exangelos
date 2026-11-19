@@ -49,5 +49,9 @@ describe("request logging", () => {
 
       const [polled] = yield* run(logged("List", caller, Effect.succeed([])))
       expect(polled.level).toBe("Debug")
+
+      const [defect] = yield* run(logged("Ack", caller, Effect.die("broken")))
+      expect(defect.level).toBe("Error")
+      expect(defect.annotations).toMatchObject({ method: "Ack", outcome: "error", error: "defect" })
     }))
 })

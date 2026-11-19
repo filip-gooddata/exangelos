@@ -162,6 +162,9 @@ const untilTime = (until: string | undefined): Effect.Effect<{ readonly until?: 
       onSome: (time) => Effect.succeed({ until: DateTime.toUtc(time) })
     })
 
+const errorTag = (error: unknown): string =>
+  typeof error === "object" && error !== null && "_tag" in error ? String(error._tag) : typeof error
+
 const report = (exit: Exit.Exit<unknown, unknown>): Effect.Effect<void> => {
   if (Exit.isSuccess(exit)) return Effect.logInfo("tool called").pipe(Effect.annotateLogs({ outcome: "ok" }))
   const log = Cause.hasInterruptsOnly(exit.cause)
@@ -169,7 +172,7 @@ const report = (exit: Exit.Exit<unknown, unknown>): Effect.Effect<void> => {
     : Cause.hasDies(exit.cause)
     ? Effect.logError
     : Effect.logWarning
-  return log("tool failed", exit.cause).pipe(Effect.annotateLogs({ outcome: "error" }))
+  return log("tool failed", Cause.map(exit.cause, errorTag)).pipe(Effect.annotateLogs({ outcome: "error" }))
 }
 
 const logged = (tool: string) => <A, E, R>(handle: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>

@@ -47,11 +47,13 @@ const callerAnnotations = (caller: Caller): Record<string, string> => {
     : { actor: "you" }
 }
 
+const errorTag = (error: unknown): string =>
+  typeof error === "object" && error !== null && "_tag" in error ? String(error._tag) : typeof error
+
 const errorOf = (cause: Cause.Cause<unknown>): string =>
   Option.match(Cause.findErrorOption(cause), {
     onNone: () => Cause.hasInterruptsOnly(cause) ? "interrupted" : "defect",
-    onSome: (error) =>
-      typeof error === "object" && error !== null && "_tag" in error ? String(error._tag) : String(error)
+    onSome: errorTag
   })
 
 const report = (method: string, exit: Exit.Exit<unknown, unknown>): Effect.Effect<void> => {
@@ -65,10 +67,9 @@ const report = (method: string, exit: Exit.Exit<unknown, unknown>): Effect.Effec
     : Cause.hasDies(cause)
     ? Effect.logError
     : Effect.logWarning
-  return log("request failed", cause).pipe(Effect.annotateLogs({ outcome: "error", error: errorOf(cause) }))
+  return log("request failed", Cause.map(cause, errorTag)).pipe(Effect.annotateLogs({ outcome: "error", error: errorOf(cause) }))
 }
 
-/** Logs one record per request: method, caller, duration and outcome, under a fresh request id. */
 export const logged = <A, E, R>(method: string, caller: Caller, handle: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
     handle.pipe(
@@ -208,7 +209,7 @@ export const layer = DaemonContract.DaemonContract.toLayer(instrumented({
     serviceStatus.pipe(
       Effect.map((status) => status.method),
       Effect.catchTag("ServiceFailed", (e) =>
-        Effect.as(Effect.logWarning("service status unavailable").pipe(Effect.annotateLogs({ error: e.reason })), e.method)),
+        Effect.as(Effect.logWarning("service status unavailable", Cause.fail(e)), e.method)),
       Effect.map((startMethod) => ({ version, startMethod }))
     ),
   SetEventAlerts: (payload, caller) =>

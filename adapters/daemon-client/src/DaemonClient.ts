@@ -49,11 +49,13 @@ const started = (path: string): Effect.Effect<void, DaemonNotRunning, ServiceMan
     if (!status.installed) yield* manager.install
     yield* manager.start
   }).pipe(
+    Effect.tapError((failure) => Effect.logDebug("daemon start failed", Cause.fail(failure))),
     Effect.mapError((failure) => new DaemonNotRunning({ path, reason: failure.reason })),
-    Effect.andThen(answering(path).pipe(Effect.retry(Schedule.spaced("100 millis").pipe(Schedule.upTo({ duration: startWait }))))),
-    Effect.tap(() => Effect.logDebug("daemon answering after service start")),
-    Effect.tapError((error) => Effect.logDebug("daemon start failed", Cause.fail(error))),
-    Effect.annotateLogs({ target: path })
+    Effect.andThen(answering(path).pipe(
+      Effect.retry(Schedule.spaced("100 millis").pipe(Schedule.upTo({ duration: startWait }))),
+      Effect.tapError((error) => Effect.logDebug("daemon did not answer after service start", Cause.fail(error._tag)))
+    )),
+    Effect.tap(() => Effect.logDebug("daemon answering after service start"))
   )
 
 const connect = ({ path, session }: Options): Layer.Layer<DaemonClient> => {

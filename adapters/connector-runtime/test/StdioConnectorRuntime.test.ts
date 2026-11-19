@@ -1,6 +1,6 @@
 import { BunServices } from "@effect/platform-bun"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Exit, Fiber, Layer, Schema, Scope, Stream } from "effect"
+import { Effect, Exit, Fiber, Layer, Logger, References, Schema, Scope, Stream } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import type { ChildProcessHandle } from "effect/process/ChildProcessSpawner"
 import { dirname } from "node:path"
@@ -84,6 +84,21 @@ describe("StdioConnectorRuntime", () => {
       expect(yield* Effect.flip(items)).toMatchObject(crashed)
       expect(yield* Effect.flip(connector.describe({ ticks: 1 }))).toMatchObject(crashed)
       expect(yield* connector.exited).toMatchObject(crashed)
+    }).pipe(Effect.scoped, Effect.provide(runtime)))
+
+  it.live("logs each stderr line with the connector's name, through its exit", () =>
+    Effect.gen(function*() {
+      const lines: Array<{ readonly message: unknown; readonly connector: unknown }> = []
+      const capture = Logger.make(({ fiber, message }) => {
+        lines.push({ message, connector: fiber.getRef(References.CurrentLogAnnotations).connector })
+      })
+      yield* start(launch(`${import.meta.dirname}/fixture`, "noisy.ts")).pipe(
+        Effect.flatMap((connector) => connector.exited),
+        Effect.scoped,
+        Effect.provide(Logger.layer([capture]))
+      )
+      expect(lines).toContainEqual({ message: ["connector stderr", "noisy starting"], connector: "template" })
+      expect(lines).toContainEqual({ message: ["connector stderr", "noisy last words"], connector: "template" })
     }).pipe(Effect.scoped, Effect.provide(runtime)))
 
   it.live("stops a connector that does not answer the handshake in time", () =>

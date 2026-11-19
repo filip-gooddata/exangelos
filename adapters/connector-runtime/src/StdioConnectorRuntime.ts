@@ -1,5 +1,5 @@
 import { resolve } from "node:path"
-import { Cause, Duration, Effect, Exit, Layer, Scope, Stream } from "effect"
+import { Cause, Duration, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { RpcClient } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc"
@@ -25,6 +25,8 @@ export const defaultCommand: CommandFor = (launch) => {
     ? { command: process.execPath, args: [entry], env: { BUN_BE_BUN: "1" } }
     : { command: entry, args: [], env: {} }
 }
+
+const stderrDrain = Duration.seconds(1)
 
 export const supportedVersions: ReadonlyArray<number> = [ConnectorProtocol.version]
 
@@ -61,7 +63,7 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
       stderr: "pipe",
       forceKillAfter: stopTimeout
     }).pipe(Effect.mapError((error) => startFailed(error.message)))
-    yield* child.stderr.pipe(
+    const stderr = yield* child.stderr.pipe(
       Stream.decodeText(),
       Stream.splitLines,
       Stream.runForEach((line) => Effect.logInfo("connector stderr", line)),
@@ -105,6 +107,7 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
           }
         })),
       exited: child.exitCode.pipe(
+        Effect.tap(() => Fiber.join(stderr).pipe(Effect.timeout(stderrDrain), Effect.ignore)),
         Effect.match({
           onSuccess: (code) => crashed(`The connector exited with code ${code}`),
           onFailure: (error) => crashed(error.message)
