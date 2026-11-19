@@ -1,4 +1,5 @@
-import { Context, Effect, Layer, Option, Redacted, Schema, Stream } from "effect"
+import { Context, Effect, Layer, Option, Redacted, Result, Schema, Stream } from "effect"
+import { Hex } from "effect/encoding"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 
 export interface Entry {
@@ -57,6 +58,18 @@ const quote = (word: string) => `"${word.replace(/[\\"]/g, (character) => `\\${c
 
 const macOSNotFound = 44
 
+// security find-generic-password -g prints the password to stderr as `password: "text"` when every byte is printable
+// ASCII and as `password: 0x<hex>  "escaped"` otherwise, so the stored bytes come back exactly either way.
+const passwordOf = (stderr: string): Option.Option<string> => {
+  const line = stderr.split("\n").find((candidate) => candidate.startsWith("password: "))
+  if (line === undefined) return Option.none()
+  const shown = line.slice("password: ".length)
+  if (shown === "") return Option.some("")
+  const hex = /^0x([0-9A-Fa-f]*)(\s|$)/.exec(shown)
+  if (hex !== null) return Result.getSuccess(Hex.decodeString(hex[1]!))
+  return shown.length >= 2 && shown.startsWith("\"") && shown.endsWith("\"") ? Option.some(shown.slice(1, -1)) : Option.none()
+}
+
 // security -i reads lines into a 4096 byte buffer, NUL included, and runs any overflow as a further command.
 const securityLineLimit = 4095
 
@@ -71,27 +84,30 @@ export const macOS: Layer.Layer<Keychain, never, ChildProcessSpawner.ChildProces
       set: (entry, secret) =>
         Effect.gen(function*() {
           const value = Redacted.value(secret)
-          if (!/^[\x20-\x7e]*$/.test(value)) {
-            return yield* fail("set")("the macOS Keychain store takes printable ASCII secrets only")
-          }
           if (/[\0\r\n]/.test(entry.account + entry.service)) {
             return yield* fail("set")("the entry name holds a line break or NUL")
           }
-          const hex = (yield* bytes(value)).map((byte) => byte.toString(16).padStart(2, "0")).join("")
-          const line = `add-generic-password -U -a ${quote(entry.account)} -s ${quote(entry.service)} -X ${hex}\n`
-          if ((yield* bytes(line)).length > securityLineLimit) {
-            return yield* fail("set")("the secret is too long for security's input line")
+          const secretBytes = yield* bytes(value)
+          const command = `add-generic-password -U -a ${quote(entry.account)} -s ${quote(entry.service)} -X `
+          const maxBytes = Math.floor((securityLineLimit - (yield* bytes(`${command}\n`)).length) / 2)
+          if (secretBytes.length > maxBytes) {
+            return yield* fail("set")(
+              `the secret is ${secretBytes.length} bytes in UTF-8 and the macOS Keychain store takes at most ${maxBytes} for this entry, the limit of security's input line`
+            )
           }
+          const line = `${command}${secretBytes.map((byte) => byte.toString(16).padStart(2, "0")).join("")}\n`
           const outcome = yield* run(spawner, "security", ["-i"], line).pipe(Effect.mapError(() => fail("set")("security could not start")))
           if (outcome.exitCode !== 0) return yield* fail("set")(exitedWith("security", outcome))
         }),
       get: (entry) =>
         Effect.gen(function*() {
-          const outcome = yield* run(spawner, "security", ["find-generic-password", "-a", entry.account, "-s", entry.service, "-w"])
+          const outcome = yield* run(spawner, "security", ["find-generic-password", "-a", entry.account, "-s", entry.service, "-g"])
             .pipe(Effect.mapError((error) => fail("get")(error.message)))
           if (outcome.exitCode === macOSNotFound) return Option.none()
           if (outcome.exitCode !== 0) return yield* fail("get")(reasonOf("security", outcome))
-          return Option.some(Redacted.make(outcome.stdout.replace(/\n$/, "")))
+          const value = passwordOf(outcome.stderr)
+          if (Option.isNone(value)) return yield* fail("get")("security did not print the password in a known form")
+          return Option.some(Redacted.make(value.value))
         }),
       delete: (entry) =>
         Effect.gen(function*() {

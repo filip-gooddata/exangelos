@@ -192,7 +192,8 @@ const installFakes = async () => {
     `  -i) read -r command; printf '%s\\n' "$command" >> ${at("secrets.log")};`,
     String.raw`    printf '%s\n' "$command" | sed -n 's/^add-generic-password -U -a "\([^"]*\)" -s "\([^"]*\)" -X \([a-f0-9]*\)$/\1 \2 \3/p' | while read -r account service hex; do`,
     `      printf '%s' "$hex" > ${at("fixture-key")}-"$service"-"$account"; done ;;`,
-    `  find-generic-password) file=${at("fixture-key")}-"$5"-"$3"; [ -f "$file" ] || exit 44; xxd -r -p "$file" ;;`,
+    `  find-generic-password) file=${at("fixture-key")}-"$5"-"$3"; [ -f "$file" ] || exit 44; [ "$6" = "-g" ] || exit 1;`,
+    `    printf 'password: 0x%s\\n' "$(cat "$file")" >&2 ;;`,
     `  delete-generic-password) rm -f ${at("fixture-key")}-"$5"-"$3" ;;`,
     `esac`,
     `exit 0`

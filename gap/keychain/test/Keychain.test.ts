@@ -36,13 +36,13 @@ describe("macOS Keychain", () => {
   it.effect("reads a password and reports a missing one as none", () => {
     const { calls, provide } = keychain(
       Keychain.macOS,
-      (call) => call.args.includes("missing") ? { exitCode: 44, stderr: "The specified item could not be found" } : { stdout: `${secret}\n` }
+      (call) => call.args.includes("missing") ? { exitCode: 44, stderr: "The specified item could not be found" } : { stdout: "keychain: \"login\"\n", stderr: `password: "${secret}"\n` }
     )
     return Effect.gen(function*() {
       const keychain = yield* service
       expect(Option.map(yield* keychain.get(entry), Redacted.value)).toEqual(Option.some(secret))
       expect(yield* keychain.get({ ...entry, account: "missing" })).toEqual(Option.none())
-      expect(calls[0]!.args).toEqual(["find-generic-password", "-a", "token", "-s", "exangelos.github", "-w"])
+      expect(calls[0]!.args).toEqual(["find-generic-password", "-a", "token", "-s", "exangelos.github", "-g"])
     }).pipe(provide)
   })
 
@@ -67,13 +67,28 @@ describe("macOS Keychain", () => {
     }).pipe(provide)
   })
 
-  it.effect("refuses a secret security cannot store or return intact, before running it", () => {
-    const { calls, provide } = keychain(Keychain.macOS, () => ({}))
+  it.effect("round-trips a multiline UTF-8 secret through what security stores", () => {
+    const unicode = "na obědě\nřádek"
+    let storedHex = ""
+    const { calls, provide } = keychain(Keychain.macOS, (call) => {
+      if (call.args[0] !== "-i") return { stderr: `password: 0x${storedHex.toUpperCase()}  "na ob\\304\\233d\\304\\233..."\n` }
+      storedHex = /-X ([0-9a-f]+)\n$/.exec(call.stdin)![1]!
+      return {}
+    })
     return Effect.gen(function*() {
       const keychain = yield* service
-      const unicode = yield* Effect.flip(keychain.set(entry, Redacted.make("pässword")))
-      const long = yield* Effect.flip(keychain.set(entry, Redacted.make("x".repeat(2100))))
-      expect([unicode._tag, long._tag]).toEqual(["KeychainFailed", "KeychainFailed"])
+      yield* keychain.set(entry, Redacted.make(unicode))
+      expect(Option.map(yield* keychain.get(entry), Redacted.value)).toEqual(Option.some(unicode))
+      expect(noArgumentHolds(calls, unicode)).toBe(true)
+    }).pipe(provide)
+  })
+
+  it.effect("refuses a secret too long for security's input line, before running it", () => {
+    const { calls, provide } = keychain(Keychain.macOS, () => ({}))
+    return Effect.gen(function*() {
+      const long = yield* Effect.flip((yield* service).set(entry, Redacted.make("x".repeat(2100))))
+      expect(long._tag).toEqual("KeychainFailed")
+      expect(long.reason).toContain("2100 bytes")
       expect(calls).toEqual([])
     }).pipe(provide)
   })
@@ -90,6 +105,17 @@ describe("Secret Service", () => {
         stdin: secret
       }])
       expect(noArgumentHolds(calls, secret)).toBe(true)
+    }).pipe(provide)
+  })
+
+  it.effect("passes a multiline UTF-8 secret through unchanged", () => {
+    const unicode = "na obědě\nřádek"
+    const { calls, provide } = keychain(Keychain.secretService, (call) => call.args[0] === "lookup" ? { stdout: unicode } : {})
+    return Effect.gen(function*() {
+      const keychain = yield* service
+      yield* keychain.set(entry, Redacted.make(unicode))
+      expect(calls[0]!.stdin).toEqual(unicode)
+      expect(Option.map(yield* keychain.get(entry), Redacted.value)).toEqual(Option.some(unicode))
     }).pipe(provide)
   })
 
