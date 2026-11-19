@@ -1,0 +1,23 @@
+apps/cli/e2e/binary.test.ts
+  s_14e0d9a4414e11::t_ad026ee536c17a 714-721
+connectors/slack/src/Slack.ts
+  s_14e0d9a4414e11::t_eceab17ba877ad 74-76
+connectors/slack/test/archive_validation.py
+  s_14e0d9a4414e11::t_6ceb2733ff2b62 293-305
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "112df7cf9b997878dde5f012513fafeed4575ab9",
+  "prompts": {},
+  "sessions": {
+    "s_14e0d9a4414e11": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f45b-bb30-7d82-8c28-f3c727afa227",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
