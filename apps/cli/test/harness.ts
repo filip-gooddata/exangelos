@@ -8,6 +8,7 @@ import { TestConsole } from "effect/testing"
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import { Catalogue, Ids, Connector, Subscription } from "@exangelos/domain"
 import { DaemonClient, DaemonServer } from "@exangelos/daemon-client"
+import { Paths } from "@exangelos/paths"
 import * as Connection from "../src/commands/Connection.ts"
 import * as Root from "../src/commands/Root.ts"
 
@@ -195,7 +196,8 @@ export const run = (
       Stdio.layerTest({}),
       Layer.succeed(Terminal.Terminal, terminal),
       Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner(options.commandOutput ?? "", ran)),
-      Connection.layer(client)
+      Connection.layer(client),
+      Paths.layer
     )
     const exit = yield* Command.runWith(Root.make(), { version: "0.0.0-test" })(argv).pipe(
       Effect.provide(environment),

@@ -468,6 +468,158 @@ describe("the exangelos binary", () => {
   }, 120_000)
 })
 
+describe("local logs and the debug report", () => {
+  const seeded = ["seeded-token-value", "seeded-key-value", "seeded-bearer-value", "seeded-env-value", "payload-marker-123", "seeded-cookie-value"]
+  let logsHome: string
+  const logsEnv = (extra: Record<string, string> = {}) => ({ ...env(), EXANGELOS_HOME: logsHome, ...extra })
+  const inLogs = (...args: Array<string>) => {
+    const result = Bun.spawnSync([exangelos, ...args], { cwd: root, env: logsEnv(), stdout: "pipe", stderr: "pipe", timeout: 20_000 })
+    return { status: result.exitCode, stdout: result.stdout.toString(), stderr: result.stderr.toString() }
+  }
+  const at = (minutesAgo: number) => new Date(Date.now() - minutesAgo * 60_000).toISOString()
+  const record = (fields: Record<string, unknown>) => `${JSON.stringify({ pid: 41, src: "daemon", ...fields })}\n`
+
+  beforeAll(async () => {
+    logsHome = join(root, "logs-home")
+    const logs = join(logsHome, "logs")
+    await mkdir(logs, { recursive: true })
+    await writeFile(join(logs, "daemon.1.jsonl"), record({ t: at(180), level: "INFO", msg: "daemon started", ann: { connector: "jira" } }))
+    await writeFile(
+      join(logs, "daemon.jsonl"),
+      record({
+        t: at(30),
+        level: "DEBUG",
+        msg: "event received",
+        ann: { connector: "jira", apiToken: "seeded-token-value", payload: { body: "payload-marker-123" } }
+      }) + "not a record\n" + record({ t: at(20), level: "WARN", msg: "wake failed apiKey=seeded-key-value", ann: { connector: "github-pr" } })
+    )
+    await writeFile(join(logs, "mcp.jsonl"), record({ t: at(10), level: "INFO", src: "mcp", msg: "mcp started" }))
+    await writeFile(join(logs, "daemon.log"), "booting\nAuthorization: Bearer seeded-bearer-value\nCookie: sid=first; session=seeded-cookie-value\n")
+    await writeFile(
+      join(logsHome, "settings.json"),
+      JSON.stringify({ logLevel: "debug", harnesses: { mine: { command: ["run"], env: { GITHUB_TOKEN: "seeded-env-value" } } } })
+    )
+  })
+
+  it("prints recent records, merged and filtered, as JSON or for people", () => {
+    const records = (result: { stdout: string }) => result.stdout.trim().split("\n").map((line) => JSON.parse(line).msg)
+    expect(records(inLogs("--json", "logs", "--level", "warn"))).toEqual(["wake failed apiKey=seeded-key-value"])
+    expect(records(inLogs("--json", "logs", "--since", "1h", "--connector", "jira"))).toEqual(["event received"])
+    expect(records(inLogs("--json", "logs", "--source", "daemon"))).toEqual([
+      "daemon started",
+      "event received",
+      "wake failed apiKey=seeded-key-value"
+    ])
+    const people = inLogs("logs", "--source", "daemon", "-n", "2")
+    expect(people.status).toBe(0)
+    const lines = people.stdout.trim().split("\n")
+    expect(lines).toHaveLength(2)
+    expect(lines[0]).toMatch(/^\S+Z DEBUG daemon\[41\] event received connector=jira/)
+    expect(lines[1]).toMatch(/^\S+Z WARN  daemon\[41\] wake failed/)
+    const wrong = inLogs("logs", "--since", "yesterday")
+    expect(wrong.status).not.toBe(0)
+    expect(wrong.stderr).toContain("--since takes a span")
+  })
+
+  it("follows new records with -f", async () => {
+    const follower = Bun.spawn([exangelos, "logs", "-f", "--source", "mcp", "-n", "0"], { env: logsEnv(), stdout: "pipe", stderr: "ignore" })
+    let seen = ""
+    const reading = (async () => {
+      for await (const chunk of follower.stdout) seen += Buffer.from(chunk).toString()
+    })()
+    try {
+      await Bun.sleep(1_000)
+      await writeFile(join(logsHome, "logs", "mcp.jsonl"), record({ t: at(0), level: "INFO", src: "mcp", msg: "followed line" }), { flag: "a" })
+      await eventually(() => expect(seen).toContain("followed line"), 10_000)
+      expect(seen).not.toContain("mcp started")
+    } finally {
+      follower.kill()
+      await reading
+    }
+  }, 20_000)
+
+  it("writes a redacted debug report without starting the daemon", async () => {
+    const callsBefore = await serviceCalls()
+    const archive = join(root, "debug-report.tar.gz")
+    const made = inLogs("debug", "report", "--output", archive)
+    expect(made.stderr).toBe("")
+    expect(made.status).toBe(0)
+    expect(made.stdout).toContain(`Wrote ${archive}`)
+    expect(made.stdout).toContain("report.json")
+    expect(await serviceCalls()).toBe(callsBefore)
+
+    const listing = Bun.spawnSync(["tar", "-tzf", archive]).stdout.toString().trim().split("\n").map((name) => name.replace(/^[^/]+\//, ""))
+    expect(listing).toEqual(expect.arrayContaining([
+      "report.json",
+      "daemon.log",
+      "logs/daemon.jsonl",
+      "logs/daemon.1.jsonl",
+      "logs/mcp.jsonl",
+      "logs/cli.jsonl"
+    ]))
+    const unpacked = join(root, "debug-report")
+    await mkdir(unpacked)
+    expect(Bun.spawnSync(["tar", "-xzf", archive, "-C", unpacked]).exitCode).toBe(0)
+    const [top] = await readdir(unpacked)
+    const files = (await readdir(join(unpacked, top!), { recursive: true })).filter((name) => name.includes("."))
+    for (const name of files) {
+      const content = await readFile(join(unpacked, top!, name), "utf8")
+      for (const secret of seeded) expect(content, `${name} holds ${secret}`).not.toContain(secret)
+    }
+    const report = JSON.parse(await readFile(join(unpacked, top!, "report.json"), "utf8"))
+    expect(report).toMatchObject({
+      exangelos: { version, digest: expect.stringMatching(/^sha256:[0-9a-f]{64}$/) },
+      os: { platform: process.platform, arch: process.arch },
+      installMethod: { _tag: "Standalone" },
+      paths: { logDir: join(logsHome, "logs") },
+      logLevel: { setting: "debug", envVar: "EXANGELOS_LOG_LEVEL", envVarSet: false },
+      settings: { harnesses: { mine: { env: { GITHUB_TOKEN: "[redacted]" } } } },
+      daemon: { running: false },
+      connectorDirectory: [],
+      logs: { payloads: "dropped", skippedLines: 1 }
+    })
+  }, 30_000)
+
+  it("keeps payloads on request, writes to the reports folder by default, and refuses agent sessions", async () => {
+    const made = JSON.parse(inLogs("--json", "debug", "report", "--include-payloads").stdout)
+    expect(made.path.startsWith(join(logsHome, "reports", "exangelos-debug-"))).toBe(true)
+    expect(made.path).toMatch(/exangelos-debug-\d{8}T\d{6}Z\.tar\.gz$/)
+    const unpacked = join(root, "debug-report-payloads")
+    await mkdir(unpacked)
+    expect(Bun.spawnSync(["tar", "-xzf", made.path, "-C", unpacked]).exitCode).toBe(0)
+    const [top] = await readdir(unpacked)
+    const daemonLog = await readFile(join(unpacked, top!, "logs", "daemon.jsonl"), "utf8")
+    expect(daemonLog).toContain("payload-marker-123")
+    expect(daemonLog).not.toContain("seeded-token-value")
+
+    const refused = Bun.spawnSync([exangelos, "debug", "report"], { env: logsEnv({ CODEX_THREAD_ID: "thread-1" }), timeout: 10_000 })
+    expect(refused.exitCode).not.toBe(0)
+    expect(refused.stderr.toString()).toContain("inside an agent session")
+  }, 30_000)
+
+  it("keeps an existing file, and leaves nothing behind when tar fails", async () => {
+    const existing = join(root, "kept.tar.gz")
+    await writeFile(existing, "keep me")
+    const taken = inLogs("debug", "report", "--output", existing)
+    expect(taken.status).not.toBe(0)
+    expect(taken.stderr).toContain("already exists")
+    expect(await readFile(existing, "utf8")).toBe("keep me")
+
+    const broken = join(root, "broken-tar")
+    await mkdir(broken, { recursive: true })
+    await writeFile(join(broken, "tar"), "#!/bin/sh\nexit 3\n")
+    await chmod(join(broken, "tar"), 0o755)
+    const out = join(root, "failed", "report.tar.gz")
+    const failed = Bun.spawnSync([exangelos, "debug", "report", "--output", out], {
+      env: logsEnv({ PATH: `${broken}:${process.env.PATH}` }),
+      timeout: 20_000
+    })
+    expect(failed.exitCode).not.toBe(0)
+    expect(failed.stderr.toString()).toContain("tar exited with code 3")
+    expect(await readdir(join(root, "failed"))).toEqual([])
+  }, 30_000)
+})
+
 describe("official connectors from a release address", () => {
   const archive = (name: string) => `${name}-0.1.0.tar.gz`
 

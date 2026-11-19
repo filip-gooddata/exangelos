@@ -67,3 +67,41 @@ pub fn ensure_daemon(socket: &Path, sidecar: &Path, deadline: Duration) -> Resul
         message
     })
 }
+
+/// Runs `exangelos --json debug report` and returns the path of the archive it wrote.
+pub fn debug_report(sidecar: &Path) -> Result<PathBuf, String> {
+    let output = Command::new(sidecar)
+        .args(["--json", "debug", "report"])
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| format!("starting {} failed: {error}", sidecar.display()))?;
+    if !output.status.success() {
+        let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if message.is_empty() {
+            format!("{} debug report failed: {}", sidecar.display(), output.status)
+        } else {
+            message
+        });
+    }
+    let written: serde_json::Value = serde_json::from_slice(&output.stdout)
+        .map_err(|error| format!("{} debug report printed no JSON: {error}", sidecar.display()))?;
+    written["path"]
+        .as_str()
+        .map(PathBuf::from)
+        .ok_or_else(|| format!("{} debug report printed no path", sidecar.display()))
+}
+
+/// Shows `path` in the file manager: selected in Finder on macOS, its folder elsewhere.
+pub fn reveal(path: &Path) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    let status = Command::new("open").arg("-R").arg(path).status();
+    #[cfg(not(target_os = "macos"))]
+    let status = Command::new("xdg-open")
+        .arg(path.parent().unwrap_or(path))
+        .status();
+    match status {
+        Ok(status) if status.success() => Ok(()),
+        Ok(status) => Err(format!("showing {} failed: {status}", path.display())),
+        Err(error) => Err(format!("showing {} failed: {error}", path.display())),
+    }
+}
