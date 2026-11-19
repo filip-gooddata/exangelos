@@ -52,24 +52,26 @@ export const exitReason = (program: string, outcome: Extract<Outcome, { _tag: "E
 export const timedOutReason = (program: string, outcome: Extract<Outcome, { _tag: "TimedOut" }>): string =>
   `${program} did not finish within ${Duration.format(outcome.limit)}`
 
+export const quietReason = (program: string, outcome: Outcome): string => {
+  switch (outcome._tag) {
+    case "Exited":
+      return `${program} exited with ${outcome.exitCode}`
+    case "TimedOut":
+      return timedOutReason(program, outcome)
+    case "NotStarted":
+      return `${program} did not start`
+  }
+}
+
 const logOutcome = (invocation: Invocation, outcome: Outcome, durationMs: number) =>
-  Effect.gen(function*() {
-    const annotations = { program: invocation.program, result: outcome._tag, durationMs }
-    switch (outcome._tag) {
-      case "Exited":
-        yield* Effect.logDebug("wake command exited").pipe(
-          Effect.annotateLogs({ ...annotations, exitCode: outcome.exitCode, stdout: outcome.stdout, stderr: outcome.stderr })
-        )
-        return
-      case "TimedOut":
-        yield* Effect.logDebug("wake command timed out").pipe(Effect.annotateLogs(annotations))
-        return
-      case "NotStarted":
-        yield* Effect.logDebug("wake command not started").pipe(
-          Effect.annotateLogs({ ...annotations, error: outcome.reason })
-        )
-    }
-  })
+  Effect.logDebug("wake command finished").pipe(
+    Effect.annotateLogs({
+      program: invocation.program,
+      result: outcome._tag,
+      durationMs,
+      ...(outcome._tag === "Exited" ? { exitCode: outcome.exitCode } : {})
+    })
+  )
 
 /**
  * Runs the invocation once and gives up at the limit. The process is killed when it runs over. When

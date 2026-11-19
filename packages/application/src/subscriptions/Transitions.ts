@@ -17,31 +17,34 @@ export interface Outcome {
   readonly events?: ReadonlyArray<Event.Event>
 }
 
-/** The ids a subscription's log lines carry. */
 export const logAnnotations = (subscription: Subscription.Subscription): Record<string, string> => ({
   subscription: subscription.id,
   connector: subscription.connector,
   ...(subscription.wakeTarget === undefined ? {} : { session: subscription.wakeTarget.sessionId })
 })
 
-const reasonOf = (state: Subscription.State): string | undefined => {
+const reasonOf = (state: Subscription.State, change: Subscription.Change | undefined): string => {
+  if (change !== undefined) return change.kind
   switch (state._tag) {
     case "Paused":
       return state.reason._tag
     case "Ended":
       return state.reason._tag
+    case "Expired":
+      return "expiry"
     case "Cancelled":
-      return state.actor._tag
+      return "retention"
     default:
-      return undefined
+      return "daemon"
   }
 }
 
-const logTransition = (before: Option.Option<Subscription.Subscription>, subscription: Subscription.Subscription) => {
+const logTransition = (before: Option.Option<Subscription.Subscription>, outcome: Outcome) => {
+  const { subscription } = outcome
   const from = Option.match(before, { onNone: () => "none", onSome: (previous) => previous.state._tag })
   const to = subscription.state._tag
   if (from === to) return Effect.void
-  const reason = reasonOf(subscription.state)
+  const reason = reasonOf(subscription.state, outcome.change)
   const backlog = subscription.state._tag === "Paused" && subscription.state.reason._tag !== "Actor"
   const message = from === "none"
     ? "subscription created"
@@ -49,7 +52,12 @@ const logTransition = (before: Option.Option<Subscription.Subscription>, subscri
     ? "subscription resumed"
     : `subscription ${to.toLowerCase()}`
   return (backlog ? Effect.logWarning(message) : Effect.logInfo(message)).pipe(
-    Effect.annotateLogs({ from, to, ...(reason === undefined ? {} : { reason }) })
+    Effect.annotateLogs({
+      from,
+      to,
+      reason,
+      ...(outcome.change === undefined ? {} : { actor: outcome.change.actor._tag })
+    })
   )
 }
 
@@ -90,5 +98,5 @@ export const commit = (
     if (wasActive && !isActive) yield* access.unwatch(subscription.id)
     const signals = yield* SubscriptionSignals
     yield* signals.changed(subscription.id)
-    yield* logTransition(before, subscription)
+    yield* logTransition(before, outcome)
   }).pipe(Effect.annotateLogs(logAnnotations(outcome.subscription)))

@@ -141,7 +141,10 @@ const attempt = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
     yield* sender.deliver(session, content).pipe(
       Effect.timeoutOrElse({
         duration: deliveryTimeout,
-        orElse: () => Effect.fail(new DeliveryFailed({ reason: "timed out" }))
+        orElse: () => {
+          const failure = new DeliveryFailed({ reason: "timed out" })
+          return Effect.logWarning("wake timed out", Cause.fail(failure)).pipe(Effect.andThen(Effect.fail(failure)))
+        }
       }),
       Effect.andThen(Effect.flatMap(elapsed, (durationMs) =>
         Effect.logInfo("wake delivered").pipe(Effect.annotateLogs({ outcome: "ok", durationMs })))),
@@ -149,13 +152,13 @@ const attempt = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
       Effect.catchTag("DeliveryFailed", (failure) =>
         elapsed.pipe(
           Effect.flatMap((durationMs) =>
-            Effect.logWarning("wake failed", Cause.fail(failure)).pipe(
-              Effect.annotateLogs({ outcome: "error", durationMs, error: failure.reason, attempt: wake.attempts.count + 1 })
+            Effect.logWarning("wake failed").pipe(
+              Effect.annotateLogs({ outcome: "error", durationMs, attempt: wake.attempts.count + 1 })
             )),
           Effect.andThen(DateTime.now),
           Effect.flatMap((failedAt) => settle(Delivery.retry(wake, failure.reason, failedAt, limits)))
         )),
-      Effect.annotateLogs({ session: session.sessionId, target: session.harness })
+      Effect.annotateLogs({ connector: content.connector, session: session.sessionId, target: session.harness })
     )
   }).pipe(Effect.annotateLogs({ subscription: listed.subscription, wake: listed.id, reason: listed.reason }))
 

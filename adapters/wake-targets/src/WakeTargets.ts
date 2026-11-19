@@ -1,10 +1,10 @@
-import { Duration, Effect, Layer, Record } from "effect"
+import { Cause, Duration, Effect, Layer, Record } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import { SettingsStore, WakeTarget } from "@exangelos/application"
 import { CommandHarness, Session } from "@exangelos/domain"
 import { WakeText } from "@exangelos/contracts"
 import type { Invocation, Outcome, Verdict } from "./Attempt.ts"
-import { run } from "./Attempt.ts"
+import { quietReason, run } from "./Attempt.ts"
 import * as ClaudeCode from "./ClaudeCode.ts"
 import * as Codex from "./Codex.ts"
 import * as Command from "./Command.ts"
@@ -17,6 +17,11 @@ export interface Options {
 
 const defaultLimit = Duration.seconds(30)
 
+const refuse = (reason: string, logged: string = reason): Effect.Effect<never, WakeTarget.DeliveryFailed> =>
+  Effect.logWarning("wake refused", Cause.fail(new WakeTarget.DeliveryFailed({ reason: logged }))).pipe(
+    Effect.andThen(Effect.fail(new WakeTarget.DeliveryFailed({ reason })))
+  )
+
 const attempt = (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
   planned: Invocation,
@@ -24,12 +29,17 @@ const attempt = (
   limit: Duration.Duration
 ): Effect.Effect<void, WakeTarget.DeliveryFailed> =>
   Effect.gen(function*() {
-    const verdict = interpret(yield* run(spawner, planned, limit))
-    if (verdict._tag === "Failed") return yield* new WakeTarget.DeliveryFailed({ reason: verdict.reason })
-    if (verdict.note !== undefined) {
-      yield* Effect.logWarning("wake delivered with a note")
-      yield* Effect.logDebug("wake note").pipe(Effect.annotateLogs("note", verdict.note))
+    const outcome = yield* run(spawner, planned, limit)
+    const verdict = interpret(outcome)
+    const annotations = { program: planned.program, result: outcome._tag }
+    if (verdict._tag === "Failed") {
+      yield* Effect.logWarning(
+        "wake command failed",
+        Cause.fail(new WakeTarget.DeliveryFailed({ reason: quietReason(planned.program, outcome) }))
+      ).pipe(Effect.annotateLogs(annotations))
+      return yield* new WakeTarget.DeliveryFailed({ reason: verdict.reason })
     }
+    if (verdict.note !== undefined) yield* Effect.logWarning("wake delivered with a note").pipe(Effect.annotateLogs(annotations))
   })
 
 const named = (
@@ -41,10 +51,11 @@ const named = (
 ): Effect.Effect<void, WakeTarget.DeliveryFailed> =>
   Effect.gen(function*() {
     const current = yield* settings.read.pipe(
-      Effect.mapError((error) => new WakeTarget.DeliveryFailed({ reason: `the settings could not be read: ${error.reason}` }))
+      Effect.catch((error) =>
+        refuse(`the settings could not be read: ${error.reason}`, "the settings could not be read"))
     )
     if (!Record.has(current.harnesses, target.harness)) {
-      return yield* new WakeTarget.DeliveryFailed({ reason: `no harness named "${target.harness}" in the settings` })
+      return yield* refuse(`no harness named "${target.harness}" in the settings`)
     }
     const command = CommandHarness.substitute(current.harnesses[target.harness]!.command, {
       session: target.sessionId,
@@ -75,7 +86,7 @@ export const layer = (
           case "codex":
             return attempt(spawner, Codex.invocation(session.sessionId, WakeText.render(content)), Codex.interpret, limit)
           case "claude-code":
-            return Effect.fail(new WakeTarget.DeliveryFailed({ reason: ClaudeCode.noRoute(content.subscription) }))
+            return refuse(ClaudeCode.noRoute(content.subscription))
         }
       }
     }

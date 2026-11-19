@@ -62,7 +62,7 @@ const admitEvent = (
     const admission = Intake.admit({ subscription: before, reported, cursor, duplicate, id, now })
     if (Option.isNone(admission.event)) {
       yield* Effect.logDebug(duplicate ? "event dropped as duplicate" : "event not admitted").pipe(
-        Effect.annotateLogs({ type: reported.type, dedupeKey: reported.dedupeKey })
+        Effect.annotateLogs({ type: reported.type, payload: { dedupeKey: reported.dedupeKey } })
       )
       if (admission.subscription !== before) yield* commit(Option.some(before), { ...admission, wake: Option.none() })
       return { subscription: admission.subscription, stored: Option.none<Event.Event>() }
