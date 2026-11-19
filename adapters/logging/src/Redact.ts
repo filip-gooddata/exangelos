@@ -46,7 +46,7 @@ export const redactAnywhere = (text: string, secrets: ReadonlyArray<string>): st
 
 /** Like redactAnywhere for one line of output, which can hold only a line of a secret that spans several. */
 export const redactLine = (line: string, secrets: ReadonlyArray<string>): string =>
-  redactAnywhere(line, secrets.flatMap((secret) => secret.split(/\r?\n/)))
+  redactAnywhere(line, secrets.flatMap((secret) => secret.split(/\r\n|\r|\n/)))
 
 /**
  * Walks objects and arrays: sensitive keys lose their value, and every string loses known secrets.

@@ -38,6 +38,7 @@ describe("Redact", () => {
   it("hides every secret anywhere in outside text, and each line of one that spans several", () => {
     expect(Redact.redactAnywhere("echo xqZ7y and qZ7", ["qZ7"])).toBe("echo x[redacted]y and [redacted]")
     expect(Redact.redactLine("second-part tail", ["first-part\nsecond-part"])).toBe("[redacted] tail")
+    expect(Redact.redactLine("second-part tail", ["first-part\rsecond-part"])).toBe("[redacted] tail")
   })
 
   it("keeps the daemon's own annotation keys when a secret matches one", () => {
