@@ -1,0 +1,21 @@
+apps/cli/e2e/binary.test.ts
+  s_35fc990eb76523::t_6e748b879078c5 767,793-798,804-807
+apps/cli/e2e/echo-connector.ts
+  s_35fc990eb76523::t_55716c22479d24 12-17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "35b66d02cd4da673192789c3d0af05276896dc33",
+  "prompts": {},
+  "sessions": {
+    "s_35fc990eb76523": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae40c56a-5ec3-4fc1-92b8-b676dcb03f99",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
