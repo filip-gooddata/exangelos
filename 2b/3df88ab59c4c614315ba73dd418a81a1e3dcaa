@@ -1,0 +1,19 @@
+apps/daemon/src/Handlers.ts
+  s_a70b1f76d7da41::t_82e59a9cfebbe0 20,86-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2b3df88ab59c4c614315ba73dd418a81a1e3dcaa",
+  "prompts": {},
+  "sessions": {
+    "s_a70b1f76d7da41": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "205e061a-bf95-42d6-870a-96205ca5ac87",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
