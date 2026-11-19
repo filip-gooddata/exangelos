@@ -37,13 +37,19 @@ export const sink = (options: {
   let ready = false
   let reported = false
 
+  const owned = (path: string, mode: number) => {
+    try {
+      fs.chmodSync(path, mode)
+    } catch (error) {
+      if ((error as { code?: unknown }).code !== "ENOENT") throw error
+    }
+  }
+
   const prepare = () => {
     fs.mkdirSync(options.dir, { recursive: true, mode: 0o700 })
-    try {
-      fs.chmodSync(options.dir, 0o700)
-    } catch {
-      // A directory someone else owns keeps its mode; writing may still work.
-    }
+    owned(options.dir, 0o700)
+    owned(file, 0o600)
+    for (let n = 1; n <= count; n++) owned(generation(n), 0o600)
     ready = true
   }
 
@@ -90,13 +96,21 @@ export const record = (options: Logger.Options<unknown>, src: Record.Source): Re
   return redactRecord(Record.make({ ...options, message: redactValue(options.message, secrets) }, src, process.pid), secrets)
 }
 
+const describe = (error: unknown) => {
+  try {
+    return String(error)
+  } catch {
+    return "an unprintable error"
+  }
+}
+
 /** Stands in for a record that could not be built or encoded, such as one whose annotation getter throws. */
 const unbuilt = (options: Logger.Options<unknown>, src: Record.Source, error: unknown): Record.LogRecord => ({
   t: options.date.toISOString(),
   level: Record.levelOf(options.logLevel),
   src,
   pid: process.pid,
-  msg: redactText(`a log record could not be written: ${String(error)}`, Secrets.values())
+  msg: redactText(`a log record could not be written: ${describe(error)}`, Secrets.values())
 })
 
 const encoded = (options: Logger.Options<unknown>, src: Record.Source) => {

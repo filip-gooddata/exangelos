@@ -38,7 +38,7 @@ export const redactText = (text: string, secrets: ReadonlyArray<string>): string
  */
 export const redactValue = (value: unknown, secrets: ReadonlyArray<string>, depth = 0): unknown => {
   if (typeof value === "string") return redactText(value, secrets)
-  if (typeof value === "bigint") return value.toString()
+  if (typeof value === "bigint") return redactText(value.toString(), secrets)
   if (value === null || typeof value !== "object") return value
   if (depth >= deepest) return redacted
   if (value instanceof Error) return redactValue({ name: value.name, message: value.message }, secrets, depth + 1)
@@ -55,6 +55,9 @@ export const redactRecord = (record: LogRecord, secrets: ReadonlyArray<string>):
   ...record,
   msg: redactText(record.msg, secrets),
   ...(record.ann === undefined ? {} : { ann: redactValue(record.ann, secrets) as Record<string, unknown> }),
+  ...(record.spans === undefined ? {} : {
+    spans: Object.fromEntries(Object.entries(record.spans).map(([label, ms]) => [redactText(label, secrets), ms]))
+  }),
   ...(record.cause === undefined ? {} : { cause: redactText(record.cause, secrets) })
 })
 

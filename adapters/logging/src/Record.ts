@@ -68,11 +68,11 @@ const part = (value: unknown): string => {
 
 const text = (message: unknown) => (Array.isArray(message) ? message : [message]).map(part).join(" ")
 
-/** Builds the record for one log call. An event payload is kept only at DEBUG and below. */
+/** Builds the record for one log call. An event payload is kept only at DEBUG. */
 export const make = (options: Logger.Options<unknown>, src: Source, pid: number): LogRecord => {
   const level = levelOf(options.logLevel)
   const ann: Record<string, unknown> = { ...options.fiber.getRef(References.CurrentLogAnnotations) }
-  if (rank(level) > rank("DEBUG")) delete ann.payload
+  if (level !== "DEBUG") delete ann.payload
   const now = options.date.getTime()
   const spans: Record<string, number> = {}
   for (const [label, start] of options.fiber.getRef(References.CurrentLogSpans)) spans[label] = now - start

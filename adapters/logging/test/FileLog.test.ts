@@ -28,6 +28,17 @@ describe("FileLog.sink", () => {
     expect(Fs.statSync(logs).mode & 0o777).toBe(0o700)
   })
 
+  it("narrows an existing log and its directory to the owner before writing", () => {
+    const logs = Path.join(dir, "logs")
+    Fs.mkdirSync(logs, { mode: 0o755 })
+    Fs.writeFileSync(Path.join(logs, "cli.jsonl"), "", { mode: 0o644 })
+    Fs.writeFileSync(Path.join(logs, "cli.1.jsonl"), "", { mode: 0o644 })
+    FileLog.sink({ dir: logs, src: "cli" }).write(line(1))
+    expect(Fs.statSync(logs).mode & 0o777).toBe(0o700)
+    expect(Fs.statSync(Path.join(logs, "cli.jsonl")).mode & 0o777).toBe(0o600)
+    expect(Fs.statSync(Path.join(logs, "cli.1.jsonl")).mode & 0o777).toBe(0o600)
+  })
+
   it("drops records it cannot write and reports that once", () => {
     const blocked = Path.join(dir, "blocked")
     Fs.writeFileSync(blocked, "")

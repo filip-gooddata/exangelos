@@ -34,6 +34,16 @@ export const logger = FileLog.layer({
   console: FileLog.atLeast("Warn", Logger.withConsoleError(Logger.formatSimple))
 })
 
+/** The command argv names, past the global flags; `--log-level` and `--completions` take a value. */
+const commandOf = (argv: ReadonlyArray<string>): string | undefined => {
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i]!
+    if (arg === "--log-level" || arg === "--completions") i++
+    else if (!arg.startsWith("-")) return arg
+  }
+  return undefined
+}
+
 const started = (src: string, version: string) =>
   Effect.logInfo(`${src} started`).pipe(Effect.annotateLogs({ version }))
 
@@ -56,7 +66,8 @@ export const run = <R>(options: {
         Command.withDescription("Serve the agent tools over MCP on stdio")
       )
     const root = Root.make({ commands: [daemon, mcp], connectorCommands: [Scaffold.command] })
-    if (argv[0] !== "daemon" && argv[0] !== "mcp") yield* started("cli", options.version)
+    const command = commandOf(argv)
+    if (command !== "daemon" && command !== "mcp") yield* started("cli", options.version)
     yield* Command.runWith(root, { version: options.version })(argv).pipe(Effect.provide(Connection.layer(client)))
   }).pipe(
     Effect.tapCause((cause) => {
