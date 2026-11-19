@@ -109,4 +109,25 @@ describe("Read", () => {
     fs.renameSync(aside, Path.join(dir, "daemon.3.jsonl"))
     expect(tail.poll()).toEqual([])
   })
+
+  it("keeps a cursor when older files are found after it, judging eviction by when files were made", () => {
+    const dir = temp()
+    const pause = () => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5)
+    const older = Array.from({ length: 6 }, (_, i) => {
+      const path = Path.join(dir, `older-${i}`)
+      fs.writeFileSync(path, line(`2026-11-19T09:00:0${i}.000Z`, `older ${i}`))
+      pause()
+      return path
+    })
+    const current = Path.join(dir, "daemon.jsonl")
+    const aside = Path.join(dir, "aside")
+    fs.writeFileSync(current, line("2026-11-19T10:00:00.000Z", "seen"))
+    const tail = new Read.Tail(dir, ["daemon"])
+    expect(tail.backlog().map((record) => record.msg)).toEqual(["seen"])
+    fs.renameSync(current, aside)
+    older.forEach((path, i) => fs.renameSync(path, i === 5 ? current : Path.join(dir, `daemon.${5 - i}.jsonl`)))
+    expect(tail.poll()).toHaveLength(6)
+    fs.renameSync(aside, Path.join(dir, "daemon.5.jsonl"))
+    expect(tail.poll()).toEqual([])
+  })
 })

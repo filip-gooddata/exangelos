@@ -35,6 +35,7 @@ export const files = (dir: string, src: Record.Source): Array<string> => [
 interface Chunk {
   readonly lines: Array<string>
   readonly id: string
+  readonly born: number
   readonly offset: number
 }
 
@@ -52,12 +53,13 @@ const readLines = (path: string, from: (id: string, size: number) => number | un
     const id = identity(info)
     const offset = from(id, info.size)
     if (offset === undefined) return undefined
-    if (info.size <= offset) return { lines: [], id, offset }
+    const born = info.birthtimeMs
+    if (info.size <= offset) return { lines: [], id, born, offset }
     const buffer = Buffer.alloc(info.size - offset)
     const read = fs.readSync(fd, buffer, 0, buffer.length, offset)
     const end = buffer.subarray(0, read).lastIndexOf(0x0a)
-    if (end === -1) return { lines: [], id, offset }
-    return { lines: buffer.subarray(0, end).toString("utf8").split("\n"), id, offset: offset + end + 1 }
+    if (end === -1) return { lines: [], id, born, offset }
+    return { lines: buffer.subarray(0, end).toString("utf8").split("\n"), id, born, offset: offset + end + 1 }
   } finally {
     fs.closeSync(fd)
   }
@@ -69,12 +71,11 @@ const parsed = (lines: ReadonlyArray<string>): Array<Record.LogRecord> =>
 interface Cursor {
   readonly src: Record.Source
   readonly offset: number
-  readonly order: number
+  readonly born: number
 }
 
 export class Tail {
   private cursors = new Map<string, Cursor>()
-  private next = 0
 
   constructor(readonly dir: string, readonly sources: ReadonlyArray<Record.Source>) {}
 
@@ -96,12 +97,12 @@ export class Tail {
         if (read === undefined) continue
         records.push(...parsed(read.lines))
         seen.add(read.id)
-        this.cursors.set(read.id, { src, offset: read.offset, order: this.cursors.get(read.id)?.order ?? this.next++ })
+        this.cursors.set(read.id, { src, offset: read.offset, born: read.born })
       }
     }
     for (const [id, cursor] of this.cursors) {
-      if (seen.has(id)) continue
-      const newer = [...this.cursors.values()].filter((other) => other.src === cursor.src && other.order > cursor.order)
+      if (seen.has(id) || cursor.born <= 0) continue
+      const newer = [...this.cursors.values()].filter((other) => other.src === cursor.src && other.born > cursor.born)
       if (newer.length > keep) this.cursors.delete(id)
     }
     return merge(records)
