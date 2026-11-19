@@ -1,4 +1,4 @@
-import { Context, DateTime, Deferred, Duration, Effect, FiberMap, Layer, Option, Redacted, Ref, Semaphore, Stream } from "effect"
+import { Cause, Context, DateTime, Deferred, Duration, Effect, FiberMap, Layer, Option, Redacted, Ref, Semaphore, Stream } from "effect"
 import { Catalogue, Ids, Connector, ConnectorRules, Refusal, Settings } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
 import { ConnectorDirectory } from "../ports/ConnectorDirectory.ts"
@@ -342,6 +342,7 @@ export const layerConnectorSupervisor: Layer.Layer<
       const { launch, digest } = found.value
       if (connector.value.trust !== "dev" && digest !== connector.value.digest) {
         // The files changed after they were trusted; the file watch rules apply, on their own fiber.
+        yield* Effect.logWarning("connector files changed since trusted")
         yield* Effect.forkDetach(filesChanged(name, launch.directory, true))
         return stopped
       }
@@ -362,6 +363,7 @@ export const layerConnectorSupervisor: Layer.Layer<
       // Available only once configured. A failing connector stays unavailable until it has run for `stableAfter`.
       const wasFailing = Option.exists(yield* connectors.find(name), (p) => p.process === "failing")
       yield* update(name, (p) => ({ ...p, process: wasFailing ? "failing" : "running" }))
+      yield* Effect.logInfo("connector started").pipe(Effect.annotateLogs({ state: wasFailing ? "failing" : "running" }))
       if (wasFailing) {
         yield* Effect.forkScoped(Effect.andThen(
           Effect.sleep(restartPolicy.stableAfter),
@@ -388,18 +390,29 @@ export const layerConnectorSupervisor: Layer.Layer<
       while (true) {
         const startedAt = DateTime.toEpochMillis(yield* DateTime.now)
         const outcome = yield* attempt(name)
-        if (outcome._tag === "Stopped") return
+        if (outcome._tag === "Stopped") {
+          yield* Effect.logInfo("connector stopped")
+          return
+        }
         if (outcome._tag === "Incompatible") {
           yield* update(name, (connector) => ({ ...connector, process: "failing" }))
+          yield* Effect.logError("connector incompatible", Cause.fail(outcome.reason))
           return
         }
         const ran = DateTime.toEpochMillis(yield* DateTime.now) - startedAt
         failures = ran >= Duration.toMillis(restartPolicy.stableAfter) ? 1 : failures + 1
         const state = failures >= restartPolicy.failingAfter ? "failing" : "restarting"
         yield* update(name, (connector) => ({ ...connector, process: connector.process === "failing" ? "failing" : state }))
-        yield* Effect.sleep(backoff(failures))
+        const delay = backoff(failures)
+        yield* Effect.logWarning("connector crashed", Cause.fail(outcome.reason)).pipe(
+          Effect.annotateLogs({ failures, state, retryInMs: Duration.toMillis(delay) })
+        )
+        yield* Effect.sleep(delay)
       }
-    })
+    }).pipe(
+      Effect.onInterrupt(() => Effect.logInfo("connector supervision ended")),
+      Effect.annotateLogs({ connector: name })
+    )
 
   /** A third-party connector returns to inert, an official one that no longer matches too, a dev one restarts. */
   const filesChanged = (name: Ids.ConnectorName, at: string, onlyIfDigestDiffers: boolean) =>

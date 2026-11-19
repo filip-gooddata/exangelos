@@ -18,7 +18,7 @@ const checkUrl = (url: string) => {
   try {
     parsed = new URL(url)
   } catch {
-    throw new Refused({ reason: `${url} is not a URL` })
+    throw new Refused({ reason: "the git repository address is not a URL" })
   }
   if (parsed.protocol !== "https:") throw new Refused({ reason: "only https git repositories are accepted" })
 }

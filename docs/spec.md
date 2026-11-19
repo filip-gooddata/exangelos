@@ -390,18 +390,20 @@ Commands for you only (not offered through MCP):
 | `exangelos connector scaffold <name>` | write a renamed copy of the template |
 | `exangelos settings` | read and change settings; `settings harness set` and `settings harness remove` define and remove harnesses |
 | `exangelos service status` | daemon running, version, start method |
+| `exangelos logs [-f] [--level <level>] [--since <span or time>] [--connector <name>] [--source daemon\|mcp\|cli] [-n <count>]` | the recent local log records of every process, merged by time; `-f` follows them; works with the daemon down |
+| `exangelos debug report [--include-payloads] [--output <path>]` | write a `.tar.gz` of the logs, versions and settings with secrets removed, to attach to an issue |
 | `exangelos daemon` | run the daemon in the foreground (used by the service definitions) |
 | `exangelos mcp` | run the MCP server over stdio |
 
 The CLI reads a secret source once, at configure time. An agent may run `connector configure` with a command or file source, because the CLI process reads the secret with the agent's permissions and hands the value to the daemon without printing it.
 
-Any CLI or MCP call that finds no daemon starts it (see service management).
+Any CLI or MCP call that finds no daemon starts it (see service management), except `logs` and `debug report`, which read the files and never start it.
 
 ### MCP server
 
 - `exangelos mcp` serves MCP over stdio and forwards every call to the daemon over the unix socket. It reads the session identity from its environment for wake addressing.
 - MCP tools: list connectors with catalogues, subscribe, update, list, show, events, ack, wait, pause, resume, retarget, cancel, set event alerts. Subscribe requires the intent. Set event alerts works only on a subscription the calling session created.
-- Deliberately not MCP tools: connector import, enable, disable, remove, configure, dev link, scaffold, settings (the global event alerts setting and harnesses among them), service status. An agent that needs to configure a connector uses the CLI with a command or file secret source.
+- Deliberately not MCP tools: connector import, enable, disable, remove, configure, dev link, scaffold, settings (the global event alerts setting and harnesses among them), service status, logs, debug report. An agent that needs to configure a connector uses the CLI with a command or file secret source.
 
 ### Tray host and panel
 
@@ -444,7 +446,7 @@ The panel layout (structure, navigation, grouping) is decided separately. Three 
 
 ### Service management
 
-- Start on first use. Any CLI or MCP call that finds no daemon detects the install method and starts the service through it.
+- Start on first use. Any CLI or MCP call that finds no daemon, other than `logs` and `debug report`, detects the install method and starts the service through it.
 - The daemon uses the installer's own service support where it has one. A Homebrew formula install uses the formula's service definition. The bundled desktop install has no service support of its own, so the binary installs its own LaunchAgent (macOS) or systemd user unit (Linux) pointing at itself on first use. The daemon then starts at login and outlives the tray. The install script uses the same own unit.
 - Services are user-scoped so the daemon can reach your configuration and keychain.
 - The service label is `exangelos.daemon`. It is built from the name alone, so it claims no domain before anything is published.
@@ -454,8 +456,21 @@ The panel layout (structure, navigation, grouping) is decided separately. Three 
 - XDG layout on macOS and Linux: configuration under `~/.config`, data under `~/.local/share`, state under `~/.local/state`, honouring the XDG variables.
 - The configuration directory holds the single settings file. The CLI and the tray edit it.
 - The data directory holds the database and the connector directory.
-- The state directory holds the unix socket and the logs.
+- The state directory holds the unix socket, the logs in `logs/` and debug reports in `reports/`.
 - The environment variable `EXANGELOS_HOME` collapses every directory into a single one, for tests and side-by-side installs.
+
+### Logging
+
+- Every build, release included, writes structured logs on this machine only. Nothing leaves it: there is no remote telemetry, analytics or crash reporting.
+- Each process writes one JSON record per line to its own file in `<state>/logs`: `daemon.jsonl`, `mcp.jsonl` and `cli.jsonl`. A record has the time, level, process, pid, message, and optional annotations (connector, subscription, session, request, method, duration, outcome), spans and cause.
+- A file that reaches 5 MiB rotates to `.1.jsonl`; five rotations are kept. Files are mode 0600 in a 0700 directory.
+- `daemon.log` in the same directory is the service's own stdout and stderr, for failures before the logger is up.
+- Levels are error, warn, info (the default), debug and trace. `exangelos settings set logLevel=debug` changes the level, and the daemon applies it without a restart. Only you change it (rule 21). The environment variable `EXANGELOS_LOG_LEVEL` overrides the setting for the process it is set on.
+- Event payloads are logged only at debug.
+- Every request from the CLI or an MCP server to the daemon is logged with its method, duration and outcome. A successful request that changes something logs at info; a successful read-only request, which the tray and agents poll, logs at debug so polling does not push history out of the rotated files. A failed request logs at warn, or at error for a defect, with the failure's tag, its fields and the chain of causes, redacted and with every address inside reduced to its scheme, host and path.
+- Every record is redacted before it is written: the value of any key whose name contains token, key, secret, password, auth or cookie is replaced, and so is every stored secret value wherever it appears; a stored secret shorter than four characters is replaced where it stands as a whole word. The values of environment variables whose names contain those words are treated as secrets too, since connectors inherit them; a value shorter than four characters is hidden only in connector output and failure text, wherever it appears there. A connector's output and failure text also lose every stored secret wherever it appears, however short, and each line of a secret that spans several. So environment values of sensitive-named variables are redacted everywhere when they have four or more characters, while stored connector secrets are redacted at any length; a shorter environment value is not a usable credential and is hidden only in connector output and failure text. Environment values are never logged, only their names.
+- `exangelos logs` reads the files directly, so it works while the daemon is down.
+- `exangelos debug report` writes `<state>/reports/exangelos-debug-<UTC time>.tar.gz`. The archive holds the log files and the end of `daemon.log`, redacted again: event payloads are left out unless `--include-payloads` is given, a line of free text that names a credential or carries a URL with credentials, a query or a fragment is replaced whole, and a URL value keeps only its scheme, host and path. It also holds `report.json` with the binary's version and checksum, the connectors' versions, checksums, origins, trust and states (read from the database without changing it when the daemon is down, with the process state marked unavailable), the settings with harness environment values and sensitive keys removed, OS and architecture, install method, the paths in use, and whether `EXANGELOS_LOG_LEVEL` is set. It never overwrites an existing file, starts the daemon or reads the keychain, and it sends nothing. Agent sessions are refused, as for settings.
 
 ### Packaging and release scope
 

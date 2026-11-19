@@ -1,3 +1,4 @@
+import { FileLog } from "@exangelos/logging"
 import { Layer } from "effect"
 import { McpProtocol, McpServer } from "effect/ai"
 import { handlers, toolkit } from "./AgentTools.ts"
@@ -14,3 +15,6 @@ export const layer = (options: { readonly version: string }) =>
     ),
     Layer.provide(handlers)
   )
+
+/** mcp.jsonl at the live level; WARN and above also to stderr, since stdout carries the protocol. */
+export const logger = FileLog.layer({ src: "mcp", console: FileLog.stderrLogger("mcp", "Warn") })

@@ -3,7 +3,7 @@ import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import type { Session } from "@exangelos/domain"
 import { Paths } from "@exangelos/paths"
 import { BunSocket } from "@effect/platform-bun"
-import { Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
+import { Cause, Context, Duration, Effect, Layer, Option, Schedule, Schema } from "effect"
 import { RpcClient, RpcSerialization } from "effect/rpc"
 import { Socket } from "effect/socket"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
@@ -43,11 +43,20 @@ const started = (path: string): Effect.Effect<void, DaemonNotRunning, ServiceMan
   Effect.gen(function*() {
     const manager = yield* ServiceManager.ServiceManager
     const status = yield* manager.status
+    yield* Effect.logDebug("daemon not answering, starting service").pipe(
+      Effect.annotateLogs({ installed: status.installed, running: status.running })
+    )
     if (!status.installed) yield* manager.install
     yield* manager.start
   }).pipe(
+    Effect.tapError((failure) => Effect.logDebug("daemon start failed", Cause.fail(failure))),
     Effect.mapError((failure) => new DaemonNotRunning({ path, reason: failure.reason })),
-    Effect.andThen(answering(path).pipe(Effect.retry(Schedule.spaced("100 millis").pipe(Schedule.upTo({ duration: startWait })))))
+    Effect.andThen(answering(path).pipe(
+      Effect.retry(Schedule.spaced("100 millis").pipe(Schedule.upTo({ duration: startWait }))),
+      Effect.tapError((error) => Effect.logDebug("daemon did not answer after service start", Cause.fail(error)))
+    )),
+    Effect.tap(() => Effect.logDebug("daemon answering after service start")),
+    Effect.annotateLogs({ target: path })
   )
 
 const connect = ({ path, session }: Options): Layer.Layer<DaemonClient> => {

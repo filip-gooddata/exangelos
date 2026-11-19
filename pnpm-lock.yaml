@@ -342,6 +342,9 @@ importers:
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@exangelos/logging':
+        specifier: workspace:*
+        version: link:../logging
       '@exangelos/rpc-stdio':
         specifier: workspace:*
         version: link:../../gap/rpc-stdio
@@ -393,6 +396,25 @@ importers:
         specifier: 'catalog:'
         version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
 
+  adapters/logging:
+    dependencies:
+      '@exangelos/paths':
+        specifier: workspace:*
+        version: link:../paths
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.4
+    devDependencies:
+      '@effect/vitest':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)(vitest@5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6)))
+      '@types/bun':
+        specifier: 'catalog:'
+        version: 1.4.2
+      vitest:
+        specifier: 'catalog:'
+        version: 5.1.0(@types/node@26.6.6)(vite@8.3.8(@types/node@26.6.6))
+
   adapters/official-connectors:
     dependencies:
       '@exangelos/application':
@@ -404,6 +426,9 @@ importers:
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@exangelos/logging':
+        specifier: workspace:*
+        version: link:../logging
       effect:
         specifier: 'catalog:'
         version: 4.1.4
@@ -588,6 +613,9 @@ importers:
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@exangelos/logging':
+        specifier: workspace:*
+        version: link:../../adapters/logging
       '@exangelos/mcp':
         specifier: workspace:*
         version: link:../mcp
@@ -597,6 +625,9 @@ importers:
       '@exangelos/service':
         specifier: workspace:*
         version: link:../../adapters/service
+      '@exangelos/sqlite':
+        specifier: workspace:*
+        version: link:../../adapters/sqlite
       effect:
         specifier: 'catalog:'
         version: 4.1.4
@@ -640,6 +671,9 @@ importers:
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@exangelos/logging':
+        specifier: workspace:*
+        version: link:../../adapters/logging
       '@exangelos/notifications':
         specifier: workspace:*
         version: link:../../gap/notifications
@@ -695,6 +729,9 @@ importers:
       '@exangelos/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@exangelos/logging':
+        specifier: workspace:*
+        version: link:../../adapters/logging
       effect:
         specifier: 'catalog:'
         version: 4.1.4

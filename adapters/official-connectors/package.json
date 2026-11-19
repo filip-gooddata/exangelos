@@ -14,6 +14,7 @@
     "@exangelos/application": "workspace:*",
     "@exangelos/domain": "workspace:*",
     "@exangelos/connector-import": "workspace:*",
+    "@exangelos/logging": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {

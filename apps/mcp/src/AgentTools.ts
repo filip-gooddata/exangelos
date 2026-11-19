@@ -1,7 +1,8 @@
-import { DateTime, Effect, Option, Schema } from "effect"
+import { Cause, Clock, DateTime, Effect, Exit, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
 import { Catalogue, Event, Ids, Connector, Session, Subscription, Wake } from "@exangelos/domain"
+import { Redact } from "@exangelos/logging"
 import * as AgentClient from "./AgentClient.ts"
 import { type AgentFailure, failureMessage, wakeHint } from "./Messages.ts"
 
@@ -162,11 +163,40 @@ const untilTime = (until: string | undefined): Effect.Effect<{ readonly until?: 
       onSome: (time) => Effect.succeed({ until: DateTime.toUtc(time) })
     })
 
+const report = (exit: Exit.Exit<unknown, unknown>): Effect.Effect<void> => {
+  if (Exit.isSuccess(exit)) return Effect.logInfo("tool called").pipe(Effect.annotateLogs({ outcome: "ok" }))
+  const log = Cause.hasInterruptsOnly(exit.cause)
+    ? Effect.logDebug
+    : Cause.hasDies(exit.cause)
+    ? Effect.logError
+    : Effect.logWarning
+  return log("tool failed", Cause.map(exit.cause, (error) => Redact.describeFailure(error))).pipe(Effect.annotateLogs({ outcome: "error" }))
+}
+
+const logged = (tool: string) => <A, E, R>(handle: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
+    handle.pipe(
+      Effect.onExit((exit) =>
+        Effect.flatMap(Clock.currentTimeMillis, (endedAt) =>
+          report(exit).pipe(Effect.annotateLogs({ durationMs: endedAt - startedAt }))))
+    )).pipe(Effect.annotateLogs({ request: crypto.randomUUID(), method: tool }))
+
+type Handlers = Toolkit.HandlersFrom<Toolkit.Tools<typeof toolkit>>
+
+const instrumented = <H extends Handlers>(handlers: H): H =>
+  Object.fromEntries(
+    Object.entries(handlers).map(([tool, handle]) => [
+      tool,
+      (input: never, context: never) =>
+        logged(tool)((handle as (input: never, context: never) => Effect.Effect<unknown, unknown>)(input, context))
+    ])
+  ) as unknown as H
+
 export const handlers = toolkit.toLayer(Effect.gen(function*() {
   const { connect } = yield* AgentClient.AgentClient
   const call = <A>(use: (client: AgentClient.AgentRpcs) => Effect.Effect<A, AgentFailure>, subscription?: string) =>
     Effect.scoped(Effect.flatMap(connect, use)).pipe(Effect.mapError((failure) => fail(failure, subscription)))
-  return {
+  return instrumented({
     list_connectors: () => call((client) => client.ListConnectors()).pipe(Effect.map((connectors) => ({ connectors }))),
     subscribe: ({ target, pullOnly, until, similarOk, ...rest }) =>
       Effect.all([targetChoice({ target, pullOnly }), untilTime(until)]).pipe(
@@ -190,5 +220,5 @@ export const handlers = toolkit.toLayer(Effect.gen(function*() {
       targetChoice(choice).pipe(Effect.flatMap((target) => call((client) => client.Retarget({ id, target })))),
     cancel: (input) => call((client) => client.Cancel(input)),
     set_event_alerts: (input) => call((client) => client.SetEventAlerts(input), input.id)
-  }
+  })
 }))

@@ -1,11 +1,17 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import * as Url from "node:url"
-import { Effect, Layer } from "effect"
+import { Cause, Effect, Layer } from "effect"
 import { OfficialConnectorSource, ConnectorImportSource, SettingsStore } from "@exangelos/application"
 import { NamedImport } from "@exangelos/connector-import"
+import { Redact } from "@exangelos/logging"
 
 /** The release file of an official connector: a gzip tar with `connector.json` at its root. */
+const safeUrl = (link: string) => {
+  const url = URL.canParse(link) ? new URL(link) : undefined
+  return url !== undefined && (url.protocol === "https:" || url.protocol === "http:") ? url.origin + url.pathname : "[url]"
+}
+
 export const archiveName = (official: OfficialConnectorSource.Official) => `${official.name}-${official.version}.tar.gz`
 
 /**
@@ -48,12 +54,31 @@ export const layer = (options: {
         return Effect.succeed<ConnectorImportSource.Source>({ _tag: "HttpsLink", url: `${releaseUrl.replace(/\/$/, "")}/${file}` })
       }
 
+      const failedAt = (stage: string) => <A, R>(effect: Effect.Effect<A, string, R>) =>
+        Effect.tapError(effect, (reason) =>
+          Effect.logWarning(
+            "official connector fetch failed",
+            Cause.fail(`OfficialFetchFailed at ${stage}: ${Redact.sanitise(reason)}`)
+          ).pipe(
+            Effect.annotateLogs({ event: stage })
+          ))
+
       const fetch = (official: OfficialConnectorSource.Official) =>
         Effect.gen(function*() {
-          const current = yield* Effect.mapError(settings.read, (unreadable) => unreadable.reason)
-          const from = yield* source(official, current.officialConnectorFolder)
-          return yield* Effect.mapError(imports.place(from, official.name), (failed) => failed.reason)
-        }).pipe(Effect.mapError((reason) => new OfficialConnectorSource.OfficialFetchFailed({ connector: official.name, reason })))
+          const current = yield* Effect.mapError(settings.read, (unreadable) => unreadable.reason).pipe(failedAt("settings"))
+          const from = yield* source(official, current.officialConnectorFolder).pipe(failedAt("source"))
+          yield* Effect.logInfo("official connector source chosen").pipe(
+            Effect.annotateLogs({ source: from._tag, target: "path" in from ? from.path : safeUrl(from.url) })
+          )
+          const placed = yield* Effect.mapError(imports.place(from, official.name), (failed) => failed.reason).pipe(
+            failedAt("import")
+          )
+          yield* Effect.logInfo("official connector fetched")
+          return placed
+        }).pipe(
+          Effect.mapError((reason) => new OfficialConnectorSource.OfficialFetchFailed({ connector: official.name, reason })),
+          Effect.annotateLogs({ connector: official.name, version: official.version })
+        )
 
       return { known: options.known, fetch }
     })

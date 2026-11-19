@@ -7,15 +7,16 @@ import {
   layerSubscriptionSignals,
   OfficialConnectorSource,
   runSubscriptionDaemon,
-  type SecretStore,
+  SecretStore,
   ServiceManager,
   SubscriptionIntake,
-  type SettingsStore,
+  SettingsStore,
   type WakeTarget
 } from "@exangelos/application"
 import * as Alerts from "@exangelos/alerts"
 import { DaemonContract } from "@exangelos/contracts"
 import { DaemonServer } from "@exangelos/daemon-client"
+import { FileLog, Level, Secrets } from "@exangelos/logging"
 import { layerLinux, layerMacOS } from "@exangelos/notifications"
 import * as OfficialConnectors from "@exangelos/official-connectors"
 import { Paths } from "@exangelos/paths"
@@ -27,7 +28,7 @@ import * as Service from "@exangelos/service"
 import { SettingsFile } from "@exangelos/settings"
 import { Database, Repositories } from "@exangelos/sqlite"
 import * as WakeTargets from "@exangelos/wake-targets"
-import { Context, Deferred, Effect, FileSystem, Layer, Path, Schema } from "effect"
+import { Context, Deferred, Effect, FileSystem, Layer, Option, Path, Redacted, Schema } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import { RpcServer } from "effect/rpc"
 import * as Handlers from "./Handlers.ts"
@@ -48,6 +49,7 @@ export interface Options extends Choices {
   readonly officialConnectors: ReadonlyArray<unknown>
   readonly releaseUrl: string | undefined
   readonly runtime?: StdioConnectorRuntime.Options | undefined
+  readonly version?: string | undefined
 }
 
 const unavailable = (failure: ServiceManager.ServiceFailed) =>
@@ -96,6 +98,36 @@ const officialConnectors = (options: Options) =>
     )
   ).pipe(Layer.provideMerge(ConnectorImport.layer), Layer.provide(ConnectorImport.layerFetchHttpClient))
 
+/** Applies a written logLevel to the live level, so a SetSettings takes effect at once. */
+const settings = Layer.effect(
+  SettingsStore.SettingsStore,
+  Effect.gen(function*() {
+    const store = yield* SettingsStore.SettingsStore
+    return SettingsStore.SettingsStore.of({
+      read: store.read,
+      write: (value) => Effect.tap(store.write(value), () => Level.apply(value.logLevel)),
+      update: (change) => Effect.tap(store.update(change), (value) => Level.apply(value.logLevel))
+    })
+  })
+).pipe(Layer.provide(SettingsFile.layer))
+
+const remember = (value: Redacted.Redacted<string>) => Effect.sync(() => Secrets.register([Redacted.value(value)]))
+
+/** Every secret value read or stored is known to the logs, which hide it wherever it turns up. */
+const knownSecrets = (store: Choices["secretStore"]) =>
+  Layer.effect(
+    SecretStore.SecretStore,
+    Effect.gen(function*() {
+      const secrets = yield* SecretStore.SecretStore
+      return SecretStore.SecretStore.of({
+        ...secrets,
+        set: (connector, field, value) => Effect.andThen(remember(value), secrets.set(connector, field, value)),
+        get: (connector, field) =>
+          Effect.tap(secrets.get(connector, field), Option.match({ onNone: () => Effect.void, onSome: remember }))
+      })
+    })
+  ).pipe(Layer.provide(store))
+
 const ports = (options: Options) =>
   Layer.mergeAll(
     officialConnectors(options),
@@ -105,7 +137,7 @@ const ports = (options: Options) =>
     options.wakeTarget,
     StdioConnectorRuntime.layer(options.runtime)
   ).pipe(
-    Layer.provideMerge(Layer.mergeAll(SettingsFile.layer, options.secretStore, ConnectorDirectoryLive.layer))
+    Layer.provideMerge(Layer.mergeAll(settings, knownSecrets(options.secretStore), ConnectorDirectoryLive.layer))
   )
 
 const halves = Layer.effectContext(
@@ -136,11 +168,24 @@ const services = (options: Options) =>
     Layer.provideMerge(ports(options))
   )
 
+const lifecycle = (options: Options) =>
+  Layer.effectDiscard(
+    Effect.gen(function*() {
+      yield* Effect.logInfo("daemon started").pipe(Effect.annotateLogs({ version: options.version ?? "unknown" }))
+      yield* Effect.addFinalizer(() => Effect.logInfo("daemon stopped"))
+    })
+  )
+
+/** daemon.jsonl at the live level; ERROR and above also to stderr, which the service keeps in daemon.log. */
+export const logger = FileLog.layer({ src: "daemon", console: FileLog.stderrLogger("daemon", "Error") })
+
 export const layer = (options: Options) =>
   RpcServer.layer(DaemonContract.DaemonContract, { disableFatalDefects: true }).pipe(
     Layer.provide(Handlers.layer),
     Layer.provide(services(options)),
-    Layer.provide(DaemonServer.layerFromPaths)
+    Layer.provide(DaemonServer.layerFromPaths),
+    Layer.provideMerge(lifecycle(options)),
+    Layer.provide(logger)
   )
 
 export const run = (options: Options) => Layer.launch(layer(options))

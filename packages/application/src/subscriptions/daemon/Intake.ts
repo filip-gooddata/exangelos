@@ -11,7 +11,7 @@ import { SubscriptionIntake, type Verdict } from "../../seam/SubscriptionIntake.
 import { currentLimits } from "../Limits.ts"
 import { SubscriptionLocks } from "../Locks.ts"
 import { SubscriptionSignals } from "../Signals.ts"
-import { commit, type CommitServices } from "../Transitions.ts"
+import { commit, type CommitServices, logAnnotations } from "../Transitions.ts"
 import { requestWake } from "../Wakes.ts"
 import { RemovedConnectors, type Unavailable } from "../RemovedConnectors.ts"
 
@@ -61,6 +61,9 @@ const admitEvent = (
     const now = yield* DateTime.now
     const admission = Intake.admit({ subscription: before, reported, cursor, duplicate, id, now })
     if (Option.isNone(admission.event)) {
+      yield* Effect.logDebug(duplicate ? "event dropped as duplicate" : "event not admitted").pipe(
+        Effect.annotateLogs({ type: reported.type, payload: { dedupeKey: reported.dedupeKey } })
+      )
       if (admission.subscription !== before) yield* commit(Option.some(before), { ...admission, wake: Option.none() })
       return { subscription: admission.subscription, stored: Option.none<Event.Event>() }
     }
@@ -72,6 +75,15 @@ const admitEvent = (
       () => admission
     )
     yield* commit(Option.some(before), { subscription: step.subscription, wake: step.wake, events: [event] })
+    yield* Effect.logInfo("event received").pipe(
+      Effect.annotateLogs({ event: event.id, number: event.number, type: event.type })
+    )
+    yield* Effect.logDebug("event payload").pipe(
+      Effect.annotateLogs({
+        event: event.id,
+        payload: { summary: event.summary, payload: event.payload, link: event.link, dedupeKey: event.dedupeKey }
+      })
+    )
     return { subscription: step.subscription, stored: Option.some(event) }
   })
 
@@ -79,24 +91,31 @@ const unchanged = (subscription: Subscription.Subscription) => ({ subscription, 
 
 const apply = (before: Subscription.Subscription, item: Event.WatchItem) =>
   Effect.gen(function*() {
-    if (before.state._tag !== "Active") return unchanged(before)
+    if (before.state._tag !== "Active") {
+      yield* Effect.logDebug("watch item ignored").pipe(Effect.annotateLogs({ item: item._tag, state: before.state._tag }))
+      return unchanged(before)
+    }
     switch (item._tag) {
       case "Event":
         return yield* admitEvent(before, item.event, Option.fromUndefinedOr(item.cursor))
       case "Cursor": {
         const subscription = { ...before, cursor: item.cursor }
         yield* commit(Option.some(before), { subscription, wake: Option.none() })
+        yield* Effect.logDebug("cursor advanced")
         return unchanged(subscription)
       }
       case "End": {
         const now = yield* DateTime.now
         const ended = Lifecycle.end(before, { _tag: "Connector", reason: item.reason }, now)
-        if (Result.isFailure(ended)) return unchanged(before)
+        if (Result.isFailure(ended)) {
+          yield* Effect.logDebug("end ignored")
+          return unchanged(before)
+        }
         yield* commit(Option.some(before), ended.success)
         return unchanged(ended.success.subscription)
       }
     }
-  })
+  }).pipe(Effect.annotateLogs(logAnnotations(before)))
 
 const ingest = (id: Ids.SubscriptionId, item: Event.WatchItem) =>
   Effect.gen(function*() {
@@ -108,7 +127,7 @@ const ingest = (id: Ids.SubscriptionId, item: Event.WatchItem) =>
       ? "continue"
       : "stop"
     return verdict
-  })
+  }).pipe(Effect.annotateLogs("subscription", id))
 
 const lastSuspensionWake = (wakes: ReadonlyArray<Wake.Wake>) =>
   Option.map(Arr.findLast(wakes, (wake) => wake.reason === "suspended"), (wake) => wake.createdAt)
@@ -129,12 +148,18 @@ const followAvailability = (
       const stale = Arr.findFirst(all, (wake) =>
         wake.reason === "suspended" && Delivery.isUndelivered(wake) &&
         !Delivery.hasSomethingToSayWhen(wake, subscription, available))
-      if (Option.isSome(stale)) yield* wakes.update({ ...stale.value, state: "dropped" })
+      if (Option.isSome(stale)) {
+        yield* wakes.update({ ...stale.value, state: "dropped" })
+        yield* Effect.logDebug("suspended wake dropped").pipe(Effect.annotateLogs("wake", stale.value.id))
+      }
       const why = suspensionWake(subscription, lastSuspensionWake(all))
-      if (Option.isSome(why)) yield* requestWake(subscription, why.value)
+      if (Option.isSome(why)) {
+        yield* requestWake(subscription, why.value)
+        yield* Effect.logInfo("suspension wake requested").pipe(Effect.annotateLogs("reason", why.value._tag))
+      }
       const signals = yield* SubscriptionSignals
       yield* signals.changed(subscription.id)
-    }))
+    }).pipe(Effect.annotateLogs(logAnnotations(subscription))))
 
 const subscriptionsOf = (connector: Ids.ConnectorName) =>
   Effect.gen(function*() {
@@ -153,7 +178,7 @@ const connectorChanged = (connector: Connector.Connector) =>
       yield* followAvailability(subscription.id, available, (current, last) =>
         Lifecycle.suspensionWake(current, connector, last, now, limits))
     }
-  })
+  }).pipe(Effect.annotateLogs("connector", connector.name))
 
 const connectorRemoved = (connector: Ids.ConnectorName, since: DateTime.Utc, problem: string) =>
   Effect.gen(function*() {
@@ -166,7 +191,7 @@ const connectorRemoved = (connector: Ids.ConnectorName, since: DateTime.Utc, pro
       yield* followAvailability(subscription.id, false, (current, last) =>
         Lifecycle.suspensionWakeWhen(current, Option.some(unavailable), last, now, limits))
     }
-  })
+  }).pipe(Effect.annotateLogs("connector", connector))
 
 /** The subscription half's intake, as the connector half's Watch streams and supervision call it. */
 export const layerSubscriptionIntake: Layer.Layer<SubscriptionIntake, never, IntakeServices> = Layer.effect(

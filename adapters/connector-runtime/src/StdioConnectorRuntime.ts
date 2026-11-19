@@ -1,10 +1,11 @@
 import { resolve } from "node:path"
-import { Duration, Effect, Exit, Layer, Scope, Stream } from "effect"
+import { Cause, Duration, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { RpcClient } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc"
 import { ConnectorRuntime } from "@exangelos/application"
 import { ConnectorProtocol } from "@exangelos/contracts"
+import { Redact, Secrets } from "@exangelos/logging"
 import { RpcStdio } from "@exangelos/rpc-stdio"
 
 export interface Command {
@@ -26,6 +27,8 @@ export const defaultCommand: CommandFor = (launch) => {
     : { command: entry, args: [], env: {} }
 }
 
+const stderrDrain = Duration.seconds(1)
+
 export const supportedVersions: ReadonlyArray<number> = [ConnectorProtocol.version]
 
 export interface Options {
@@ -37,9 +40,9 @@ export interface Options {
 
 /**
  * A ConnectorRuntime that spawns each connector as a child process in its directory and
- * speaks the connector protocol over its stdin and stdout. The connector's stderr goes
- * to the daemon's stderr. Closing the scope passed to `start` stops the process, killing it
- * when it outlives the stop timeout.
+ * speaks the connector protocol over its stdin and stdout. Each line the connector writes to
+ * stderr is logged with its name, with every known secret, and every line of one, hidden however short. Closing the scope passed to `start` stops the process,
+ * killing it when it outlives the stop timeout.
  */
 export const make = Effect.fnUntraced(function*(options?: Options) {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
@@ -58,9 +61,16 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
       cwd: launch.directory,
       env,
       extendEnv: true,
-      stderr: "inherit",
+      stderr: "pipe",
       forceKillAfter: stopTimeout
     }).pipe(Effect.mapError((error) => startFailed(error.message)))
+    const stderr = yield* child.stderr.pipe(
+      Stream.decodeText(),
+      Stream.splitLines,
+      Stream.runForEach((line) => Effect.logInfo("connector stderr", Redact.redactLine(line, Secrets.all()))),
+      Effect.catch((error) => Effect.logWarning("connector stderr unreadable", Cause.fail(error))),
+      Effect.forkScoped
+    )
 
     const { catalogue, client } = yield* Effect.gen(function*() {
       const protocol = yield* RpcStdio.makeProtocol(child)
@@ -80,6 +90,7 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
         ({ version }) => new ConnectorRuntime.IncompatibleProtocol({ connector, version, supported: supportedVersions })
       )
     )
+    yield* Effect.logDebug("connector process ready").pipe(Effect.annotateLogs({ pid: child.pid }))
 
     return {
       catalogue,
@@ -97,6 +108,7 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
           }
         })),
       exited: child.exitCode.pipe(
+        Effect.onExit(() => Fiber.join(stderr).pipe(Effect.timeout(stderrDrain), Effect.ignore)),
         Effect.match({
           onSuccess: (code) => crashed(`The connector exited with code ${code}`),
           onFailure: (error) => crashed(error.message)
@@ -108,6 +120,7 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
   const start = Effect.fnUntraced(function*(launch: ConnectorRuntime.Launch) {
     const scope = yield* Scope.fork(yield* Scope.Scope)
     return yield* acquire(launch).pipe(
+      Effect.annotateLogs({ connector: launch.name }),
       Scope.provide(scope),
       Effect.onError((cause) => Scope.close(scope, Exit.failCause(cause)))
     )

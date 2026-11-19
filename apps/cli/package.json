@@ -22,7 +22,9 @@
     "@exangelos/paths": "workspace:*",
     "@exangelos/service": "workspace:*",
     "effect": "catalog:",
-    "@effect/platform-bun": "catalog:"
+    "@effect/platform-bun": "catalog:",
+    "@exangelos/logging": "workspace:*",
+    "@exangelos/sqlite": "workspace:*"
   },
   "devDependencies": {
     "@effect/vitest": "catalog:",

@@ -133,6 +133,17 @@ fn start_daemon() {
     }
 }
 
+fn make_debug_report() {
+    thread::spawn(|| {
+        let shown = sidecar::sidecar_path()
+            .and_then(|sidecar| sidecar::debug_report(&sidecar))
+            .and_then(|archive| sidecar::reveal(&archive));
+        if let Err(message) = shown {
+            eprintln!("making a debug report failed: {message}");
+        }
+    });
+}
+
 fn tray_image(png: &[u8]) -> Image<'static> {
     Image::from_bytes(png).expect("bundled tray icon is a valid PNG")
 }
@@ -201,8 +212,9 @@ fn build_panel(app: &AppHandle) -> tauri::Result<WebviewWindow> {
 
 fn build_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
     let open = MenuItem::with_id(app, "open", "Open panel", true, None::<&str>)?;
+    let report = MenuItem::with_id(app, "report", "Make a debug report", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Exangelos", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&open, &quit])?;
+    let menu = Menu::with_items(app, &[&open, &report, &quit])?;
     TrayIconBuilder::with_id(TRAY)
         .icon(tray_image(ICON_QUIET))
         .icon_as_template(true)
@@ -211,6 +223,7 @@ fn build_tray(app: &AppHandle) -> tauri::Result<TrayIcon> {
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id().as_ref() {
             "open" => platform::show_panel(app, None),
+            "report" => make_debug_report(),
             "quit" => tray_quit(app.clone()),
             _ => {}
         })

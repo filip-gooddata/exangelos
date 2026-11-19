@@ -2,8 +2,9 @@ import { ServiceManager } from "@exangelos/application"
 import type { Session } from "@exangelos/domain"
 import { Daemon } from "@exangelos/daemon"
 import { DaemonClient } from "@exangelos/daemon-client"
+import { FileLog } from "@exangelos/logging"
 import { AgentClient, Server } from "@exangelos/mcp"
-import { Cause, Console, Effect, Layer, Logger, type Option } from "effect"
+import { Cause, Console, Effect, Layer, Logger, type Option, References } from "effect"
 import { CliError, Command } from "effect/cli"
 import * as Connection from "./commands/Connection.ts"
 import { CommandFailed } from "./commands/Output.ts"
@@ -27,7 +28,18 @@ const describe = (cause: Cause.Cause<unknown>): string | undefined => {
   return Cause.pretty(cause)
 }
 
-export const logger = Logger.layer([Logger.withConsoleError(Logger.formatSimple)])
+/** cli.jsonl at the live level; the terminal sees WARN and above, as before. */
+export const logger = FileLog.layer({
+  src: "cli",
+  console: FileLog.atLeast("Warn", Logger.withConsoleError(Logger.formatSimple))
+})
+
+/** The start record, past any `--log-level`, so the file log's own level decides. */
+const started = (src: string, version: string) =>
+  Effect.logInfo(`${src} started`).pipe(
+    Effect.annotateLogs({ version }),
+    Effect.provideService(References.MinimumLogLevel, "Trace")
+  )
 
 export const run = <R>(options: {
   readonly version: string
@@ -37,15 +49,34 @@ export const run = <R>(options: {
 (argv: ReadonlyArray<string>) =>
   Effect.gen(function*() {
     const client = Layer.provide(options.client, Layer.succeedContext(yield* Effect.context<R>()))
-    const daemon = Command.make("daemon", {}, () => Daemon.run(options.daemon)).pipe(
+    let announced = false
+    const announce = (src: string) =>
+      Effect.suspend(() => {
+        if (announced) return Effect.void
+        announced = true
+        return src === "cli" ? started(src, options.version) : Effect.void
+      })
+    const daemon = Command.make("daemon", {}, () =>
+      Effect.andThen(announce("daemon"), Daemon.run({ ...options.daemon, version: options.version }))).pipe(
       Command.withDescription("Run the daemon in the foreground, as the service definitions do")
     )
     const mcp = Command.make("mcp", {}, () =>
-      Layer.launch(Server.layer({ version: options.version }).pipe(Layer.provide(AgentClient.layer(client))))).pipe(
+      announce("mcp").pipe(
+        Effect.andThen(started("mcp", options.version)),
+        Effect.andThen(Layer.launch(Server.layer({ version: options.version }).pipe(Layer.provide(AgentClient.layer(client))))),
+        Effect.provide(Server.logger)
+      )).pipe(
         Command.withDescription("Serve the agent tools over MCP on stdio")
       )
-    const root = Root.make({ commands: [daemon, mcp], connectorCommands: [Scaffold.command] })
-    yield* Command.runWith(root, { version: options.version })(argv).pipe(Effect.provide(Connection.layer(client)))
+    const root = Root.make({
+      commands: [daemon, mcp],
+      connectorCommands: [Scaffold.command],
+      started: announce("cli")
+    })
+    yield* Command.runWith(root, { version: options.version })(argv).pipe(
+      Effect.provide(Connection.layer(client)),
+      Effect.ensuring(announce("cli"))
+    )
   }).pipe(
     Effect.tapCause((cause) => {
       const message = describe(cause)

@@ -4,7 +4,7 @@ import * as Path from "node:path"
 import * as Url from "node:url"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { Cause, ConfigProvider, Effect, Layer, Logger, References } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import * as Tar from "tar"
 import { OfficialConnectorSource, SettingsStore } from "@exangelos/application"
@@ -41,7 +41,7 @@ const buildArchive = (root: string, folder: string) =>
 const fetch = (
   root: string,
   name: string,
-  options: { folder?: string; served?: Map<string, Uint8Array>; releaseUrl?: string | undefined }
+  options: { folder?: string; served?: Map<string, Uint8Array>; releaseUrl?: string | undefined; redirect?: string }
 ) => {
   const settings = Layer.succeed(SettingsStore.SettingsStore, {
     read: Effect.succeed<Settings.Settings>(
@@ -56,7 +56,11 @@ const fetch = (
       const body = options.served?.get(url.href)
       return Effect.succeed(HttpClientResponse.fromWeb(
         request,
-        body === undefined ? new Response("missing", { status: 404 }) : new Response(body)
+        options.redirect !== undefined
+          ? new Response(null, { status: 302, headers: { location: options.redirect } })
+          : body === undefined
+          ? new Response("missing", { status: 404 })
+          : new Response(body)
       ))
     })
   )
@@ -144,5 +148,51 @@ describe("OfficialConnectorSource", () => {
 
       expect([local._tag, local.connector, local.reason]).toEqual(["OfficialFetchFailed", "jira", `jira-0.1.0.tar.gz is not in ${Path.join(root, "dist")}`])
       expect(release.reason).toMatch(/not found/)
+    }).pipe(Effect.scoped))
+
+  it.live("logs a release address without its credentials or query", () =>
+    Effect.gen(function*() {
+      const root = yield* workspace
+      const records: Array<string> = []
+      const capture = Logger.make(({ cause, fiber, message }) => {
+        records.push(JSON.stringify([message, fiber.getRef(References.CurrentLogAnnotations), Cause.pretty(cause)]))
+      })
+      const addresses = [
+        "HTTPS://user:pass@releases.test/v1?tok=sample",
+        "HTTPS:releases.test/v1?tok=sample",
+        "https://releases.test/v1?label=first sample-tail",
+        "https://[?label=sample",
+        "https://[?contact=a@b&label=sample",
+        "blob:https://user:pass@releases.test/v1"
+      ]
+      for (const address of addresses) {
+        yield* Effect.flip(fetch(root, "jira", { served: new Map(), releaseUrl: address })).pipe(
+          Effect.provide(Logger.layer([capture]))
+        )
+      }
+      expect(records.some((record) => record.includes("https://releases.test/v1"))).toBe(true)
+      expect(records.filter((record) => /sample|user|pass/.test(record))).toEqual([])
+      const failures = records.filter((record) => record.includes("official connector fetch failed"))
+      expect(failures).toHaveLength(addresses.length)
+      expect(failures.filter((record) => !record.includes("Error"))).toEqual([])
+      expect(failures.every((record) => record.includes('"event":"import"'))).toBe(true)
+    }).pipe(Effect.scoped))
+
+  it.live("logs a redirect to a malformed address without the address", () =>
+    Effect.gen(function*() {
+      const root = yield* workspace
+      const records: Array<string> = []
+      const capture = Logger.make(({ cause, message }) => {
+        records.push(JSON.stringify([message, Cause.pretty(cause)]))
+      })
+      const failed = yield* Effect.flip(fetch(root, "jira", { served: new Map(), redirect: "//[?token=sample" })).pipe(
+        Effect.provide(Logger.layer([capture]))
+      )
+      expect(failed.reason).not.toContain("sample")
+      const failures = records.filter((record) => record.includes("official connector fetch failed"))
+      expect(failures).toHaveLength(1)
+      expect(failures[0]).toContain("OfficialFetchFailed at import")
+      expect(failures[0]).toContain("the link redirects to an address that is not a URL")
+      expect(records.filter((record) => record.includes("sample"))).toEqual([])
     }).pipe(Effect.scoped))
 })

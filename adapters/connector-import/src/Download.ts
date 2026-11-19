@@ -11,7 +11,7 @@ const httpsUrl = (raw: string, base?: string) => {
   try {
     url = new URL(raw, base)
   } catch {
-    throw new Refused({ reason: `${raw} is not a URL` })
+    throw new Refused({ reason: base === undefined ? "the link is not a URL" : "the link redirects to an address that is not a URL" })
   }
   if (url.protocol !== "https:") throw new Refused({ reason: `only https links are accepted, not ${url.protocol}` })
   return url
