@@ -9,6 +9,6 @@ def state_directory():
     current = base / 'connector-state/slack'
     legacy = base / 'connectors/slack'
     if not current.exists() and not (legacy / 'connector.json').exists():
-        if any((legacy / name).exists() for name in ('setup.json', 'ledger.sqlite3')):
+        if any((legacy / name).exists() for name in ('setup.json', 'ledger.sqlite3', 'subscriptions-key.json')):
             return legacy
     return current

@@ -33,7 +33,7 @@ rejects a ledger path there. Back up that external ledger with subscription curs
 
 ## Configuration and portable setup
 
-If you know the conversation ID, authorize per-subscription cache discovery once:
+With the official Slack connector enabled, authorize per-subscription cache discovery once. On a fresh installation, the first Subscribe command installs the official connector and stops at Configure. After granting consent, repeat Subscribe with the conversation ID:
 
 ```sh
 exangelos connector configure slack --secret-command 'sourceMode=echo subscription-ids'
@@ -67,7 +67,7 @@ even after logout, account switching, or access changes. It does not establish c
 sign-in or permission. Do not choose this mode if current authenticated access is required.
 The connector has no live authority adapter and never extracts tokens or sessions.
 
-During Configure only, the connector detects the current user's macOS home and tries
+For the private selector workflow, Configure detects the current user's macOS home and tries
 Slack's standard `Library/Application Support/Slack/IndexedDB` and App Store sandbox
 `Library/Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/IndexedDB`
 locations. It derives workspace, account and conversation IDs from validated persisted
@@ -79,7 +79,7 @@ in public errors, Describe responses, events or cursors.
 
 | Field | Setup use |
 | --- | --- |
-| `sourceMode` | Required for new setup: choose `persisted-cache` to authorize cached discovery and use; sign-in remains unverified. |
+| `sourceMode` | `subscription-ids` authorizes positional ID discovery, `persisted-cache` sets up the private selector, and `pinned-cache` reopens that private selection. |
 | `conversationSnippet` | Literal snippet in a persisted message. |
 | `conversationId` | Alternative secret selector for an ID or supported conversation link. |
 | `cacheRoot` | Optional fallback: absolute IndexedDB folder for a custom installation or supported-format copied snapshot; otherwise macOS locations are detected. |
@@ -88,9 +88,9 @@ in public errors, Describe responses, events or cursors.
 | `privateSource` | Legacy fallback only: existing private selection/key JSON; cannot be mixed with new setup fields. |
 
 Fields are catalogue-optional so any invalid Configure reaches the handler and clears
-prior in-memory configuration. Initial setup requires source mode and one selector.
+prior in-memory configuration. Private selector setup requires source mode and one selector.
 The SDK has static Choice/Text/Secret fields and Accepted/Rejected Configure responses,
-but no dynamic discovery picker or custom setup tool. Thus selection is through a secret
+but no dynamic discovery picker or custom setup tool. The private workflow selects through a secret
 configuration field; no external bootstrap script or manually authored private JSON is
 needed. Use the host's secret-field input (`--secret-file` or `--secret-command` for CLI
 users); never put snippets in command arguments, subscription parameters or logs.

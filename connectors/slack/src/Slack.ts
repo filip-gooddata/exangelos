@@ -69,7 +69,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
           ? yield* decodeRequest(values.privateSource)
           : source.setup !== undefined && (setupValues.sourceMode === "persisted-cache" || setupValues.sourceMode === "pinned-cache")
           ? yield* source.setup(setupValues)
-          : yield* new Connector.ConfigurationRejected({ reason: "Choose persisted-cache to authorize Slack cache setup" })
+          : yield* new Connector.ConfigurationRejected({ reason: "Choose subscription-ids or persisted-cache to authorize Slack cache discovery" })
         if (!values.privateSource && request.expectedScope === undefined) return yield* new Connector.ConfigurationRejected({ reason })
         const snapshot = yield* source.read(request)
         if (request.expectedScope !== undefined && snapshot.scope !== request.expectedScope) return yield* new Connector.ConfigurationRejected({ reason })

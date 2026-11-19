@@ -17,7 +17,7 @@ import time
 from unittest import mock
 
 PACKER = 'ce38a52891e5ff20f07193888aa3672e7960fd79'
-CONSENT = 'Choose persisted-cache to authorize Slack cache setup'
+CONSENT = 'Choose subscription-ids or persisted-cache to authorize Slack cache discovery'
 UNAVAILABLE = 'Slack persisted snapshot is unavailable or unsupported'
 MISSING = 'Slack cache or private setup files are missing or unreadable. Check the cache root and access'
 REPO = Path(__file__).resolve().parents[3]
