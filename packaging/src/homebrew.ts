@@ -7,6 +7,7 @@ export interface HomebrewRelease {
 }
 
 const description = "Daemon with which agents subscribe to events from external sources"
+export const homepage = "https://github.com/filip-gooddata/exangelos"
 
 const sha256Of = (release: HomebrewRelease, file: string): string => {
   const line = release.checksums.find((entry) => entry.file === file)
@@ -21,8 +22,9 @@ const binaryResource = (release: HomebrewRelease, platform: string, indent: stri
 
 export const renderFormula = (release: HomebrewRelease): string => `class Exangelos < Formula
   desc "${description}"
-  homepage "${release.baseUrl}"
+  homepage "${homepage}"
   version "${release.version}"
+  license "MIT"
 
   on_macos do
     on_arm do
@@ -51,7 +53,8 @@ ${binaryResource(release, "linux-x64", "      ")}    end
   end
 
   test do
-    assert_match version.to_s, shell_output("#{bin}/exangelos --version")
+    assert_equal "exangelos #{version}", shell_output("#{bin}/exangelos --version").strip
+    assert_equal "exangelos #{version}", shell_output("#{bin}/xng --version").strip
   end
 end
 `
@@ -72,7 +75,7 @@ export const renderCask = (release: HomebrewRelease): string => {
   url "${release.baseUrl}/Exangelos_#{version}_#{arch}.dmg"
   name "Exangelos"
   desc "${description}"
-  homepage "${release.baseUrl}"
+  homepage "${homepage}"
 
   conflicts_with formula: "exangelos"
 

@@ -15,11 +15,21 @@ const loadWorkflow = <A>(file: string): A =>
 
 interface BuildWorkflow {
   readonly env: Record<string, string>
-  readonly jobs: { readonly binaries: { readonly steps: ReadonlyArray<{ readonly run?: string }> } }
+  readonly jobs: { readonly binaries: { readonly steps: ReadonlyArray<Step> } }
+}
+
+interface Step {
+  readonly uses?: string
+  readonly run?: string
+  readonly with?: Record<string, string>
+  readonly env?: Record<string, string>
 }
 
 interface ReleaseWorkflow {
-  readonly jobs: { readonly build: { readonly uses: string; readonly with: Record<string, string> } }
+  readonly jobs: {
+    readonly build: { readonly uses: string; readonly with: Record<string, string> }
+    readonly "publish-tap": { readonly needs: ReadonlyArray<string>; readonly if: string; readonly steps: ReadonlyArray<Step> }
+  }
 }
 
 const buildRunSteps = (): ReadonlyArray<string> =>
@@ -45,5 +55,19 @@ describe("release workflow", () => {
     expect(buildRunSteps()).toContain(
       'pnpm --filter @exangelos/packaging run build:release --version "$VERSION" --release-url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"'
     )
+  })
+
+  it("renders the formula from the published release and pushes it to the tap, also when HEAD is already released", () => {
+    const publish = loadWorkflow<ReleaseWorkflow>("release.yml").jobs["publish-tap"]
+    expect(publish.needs).toEqual(["version", "release"])
+    expect(publish.if).toBe(
+      "${{ !cancelled() && needs.version.result == 'success' && (needs.release.result == 'success' || needs.version.outputs.skip == 'true') }}"
+    )
+    const runs = publish.steps.flatMap((step) => (step.run === undefined ? [] : [step.run]))
+    expect(runs.join("\n")).toContain('gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS')
+    expect(runs.join("\n")).toContain("pnpm --filter @exangelos/packaging run render:homebrew")
+    const push = publish.steps.find((step) => step.run?.includes("publish-homebrew-tap.sh"))
+    expect(push?.run).toBe('.github/scripts/publish-homebrew-tap.sh "$RUNNER_TEMP/homebrew-tap/Formula/exangelos.rb" "$VERSION"')
+    expect(push?.env?.HOMEBREW_TAP_DEPLOY_KEY).toBe("${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}")
   })
 })

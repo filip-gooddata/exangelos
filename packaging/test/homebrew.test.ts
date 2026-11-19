@@ -26,6 +26,8 @@ describe("Homebrew definitions", () => {
     expect(formula).toContain(`url "file:///tmp/release/exangelos-1.0.0-linux-arm64.tar.gz"\n      sha256 "${"3".repeat(64)}"`)
     expect(formula).toContain(`name macos: "exangelos.daemon", linux: "exangelos.daemon"`)
     expect(formula).toContain(`bin.install_symlink "exangelos" => "xng"`)
+    expect(formula).toContain(`homepage "https://github.com/filip-gooddata/exangelos"`)
+    expect(formula).toContain(`assert_equal "exangelos #{version}", shell_output("#{bin}/xng --version").strip`)
   })
 
   it("renders a cask that parses and links the sidecar under both names", () => {
