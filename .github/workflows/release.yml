@@ -1,5 +1,5 @@
-# On every push to main: run the checks, bump the version, build the release files (build-release.yml) and publish them
-# as a GitHub release.
+# On every push to main: run the checks, bump the version, build the release files (build-release.yml), publish them
+# as a GitHub release and push the Homebrew formula to the tap filip-gooddata/homebrew-exangelos.
 #
 # The version is the latest vX.Y.Z tag plus a patch bump. Put #minor or #major in a commit message to bump that part
 # instead. The first release is v0.1.0.
@@ -86,3 +86,20 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "$TAG" \
             --generate-notes
+
+  # Runs after the release exists, so the formula's URLs resolve. Only the formula goes to the tap; the cask waits for
+  # a signed macOS app.
+  publish-tap:
+    needs: [version, build, release]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: homebrew-formula
+          path: homebrew-formula
+      - name: Push the formula to the tap
+        env:
+          HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: .github/scripts/publish-homebrew-tap.sh homebrew-formula/exangelos.rb "$VERSION"

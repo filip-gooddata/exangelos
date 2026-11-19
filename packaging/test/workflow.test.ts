@@ -15,11 +15,21 @@ const loadWorkflow = <A>(file: string): A =>
 
 interface BuildWorkflow {
   readonly env: Record<string, string>
-  readonly jobs: { readonly binaries: { readonly steps: ReadonlyArray<{ readonly run?: string }> } }
+  readonly jobs: { readonly binaries: { readonly steps: ReadonlyArray<Step> } }
+}
+
+interface Step {
+  readonly uses?: string
+  readonly run?: string
+  readonly with?: Record<string, string>
+  readonly env?: Record<string, string>
 }
 
 interface ReleaseWorkflow {
-  readonly jobs: { readonly build: { readonly uses: string; readonly with: Record<string, string> } }
+  readonly jobs: {
+    readonly build: { readonly uses: string; readonly with: Record<string, string> }
+    readonly "publish-tap": { readonly needs: ReadonlyArray<string>; readonly steps: ReadonlyArray<Step> }
+  }
 }
 
 const buildRunSteps = (): ReadonlyArray<string> =>
@@ -45,5 +55,16 @@ describe("release workflow", () => {
     expect(buildRunSteps()).toContain(
       'pnpm --filter @exangelos/packaging run build:release --version "$VERSION" --release-url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"'
     )
+  })
+
+  it("pushes only the rendered formula to the tap, after the release its URLs point at exists", () => {
+    const uploads = loadWorkflow<BuildWorkflow>("build-release.yml").jobs.binaries.steps.filter((step) => step.with?.name === "homebrew-formula")
+    expect(uploads.map((step) => step.with?.path)).toEqual(["packaging/dist/homebrew-tap/Formula/exangelos.rb"])
+    const publish = loadWorkflow<ReleaseWorkflow>("release.yml").jobs["publish-tap"]
+    expect(publish.needs).toEqual(expect.arrayContaining(["version", "build", "release"]))
+    expect(publish.steps.find((step) => step.uses?.startsWith("actions/download-artifact"))?.with?.name).toBe("homebrew-formula")
+    const push = publish.steps.find((step) => step.run?.includes("publish-homebrew-tap.sh"))
+    expect(push?.run).toBe('.github/scripts/publish-homebrew-tap.sh homebrew-formula/exangelos.rb "$VERSION"')
+    expect(push?.env?.HOMEBREW_TAP_DEPLOY_KEY).toBe("${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}")
   })
 })
