@@ -1,0 +1,35 @@
+adapters/connector-runtime/src/StdioConnectorRuntime.ts
+  s_35fc990eb76523::t_c64c2c8f73cafc 44,62-63,70
+adapters/logging/src/Redact.ts
+  s_35fc990eb76523::t_3950dd2b02b2c0 47-50,110,139,141-145,150,153-155,159-164
+adapters/logging/test/Redact.test.ts
+  s_35fc990eb76523::t_c5abbc61b9f23d 38,40,52,55-56
+apps/cli/e2e/binary.test.ts
+  s_4cfe525b873cee::t_8e7c1ec6de4715 798,810-812,830-832,853,856
+docs/spec.md
+  s_35fc990eb76523::t_ef681f0958e123 471
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ec2e649c0f31b5e7ad29ff8775602e60460e37ae",
+  "prompts": {},
+  "sessions": {
+    "s_35fc990eb76523": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ae40c56a-5ec3-4fc1-92b8-b676dcb03f99",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_4cfe525b873cee": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f80a2015-1d8d-407c-b673-e2af52a82f43",
+        "model": "claude-fable-5-2"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
