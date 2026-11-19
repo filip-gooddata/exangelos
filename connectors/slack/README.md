@@ -74,16 +74,24 @@ needed. Use the host's secret-field input (`--secret-file` or `--secret-command`
 users); never put snippets in command arguments, subscription parameters or logs.
 
 Setup generates a stable random key and stores a pinned source/account/conversation in
-`$EXANGELOS_HOME/connectors/slack/setup.json`, or under
-`${XDG_DATA_HOME:-~/.local/share}/exangelos/connectors/slack/setup.json`.
+`$EXANGELOS_HOME/connector-state/slack/setup.json`, or under
+`${XDG_DATA_HOME:-~/.local/share}/exangelos/connector-state/slack/setup.json`.
+Existing external state in the older `connectors/slack` directory is reused when it holds a pin or ledger and has no connector manifest.
 This connector-managed private file is external to the installation, mode 0600, with a
 mode-0700 containing directory. The snippet is represented there only by a keyed digest;
 the host retains supplied secret fields when omitted from configuration updates.
-After successful selection, run `exangelos connector configure slack sourceMode=pinned-cache`.
+Use the CLI's secret-input flags for the mode and revision fields as well. For example:
+
+```sh
+exangelos connector configure slack --secret-command 'sourceMode=echo persisted-cache' --secret-file conversationSnippet=/path/to/snippet
+exangelos connector configure slack --secret-command 'sourceMode=echo pinned-cache'
+```
+
+The second command retains the pin and drops the stored selector.
 Changing mode clears the host's stored connector secrets. The connector validates the
 existing pin at the same revision and cache location. This mode cannot discover a
 replacement if the pin disappears. To retry a rejected snippet with a known ID,
-set a new `selectionRevision` and supply `--secret-file conversationId=<path>`
+supply a new revision such as `--secret-command 'selectionRevision=echo 2'` and `--secret-file conversationId=<path>`
 in the same Configure call. Changing revision clears the old selector before the host
 stores the replacement. Back up this file with the ledger/cursors.
 While setup state is retained, unchanged settings reuse the key and selection, never
@@ -124,8 +132,8 @@ coverage does not imply removal. Bounds are 500 messages per observed snapshot a
 Restart requires the same key, selection, saved cursor and local ledger.
 
 Reconciliation uses Python's standard-library SQLite runtime. The ledger lives at
-`$EXANGELOS_HOME/connectors/slack/ledger.sqlite3`, or otherwise at
-`${XDG_DATA_HOME:-~/.local/share}/exangelos/connectors/slack/ledger.sqlite3`.
+`$EXANGELOS_HOME/connector-state/slack/ledger.sqlite3`, or otherwise at
+`${XDG_DATA_HOME:-~/.local/share}/exangelos/connector-state/slack/ledger.sqlite3`.
 It persists only keyed message/body/reaction markers, coverage flags, revisions,
 scope and generation metadata, and immutable event batches. No message bodies,
 credentials or content-bearing event payloads are stored. The cursor is a bounded

@@ -8,6 +8,7 @@
   "files": [
     "direct/source.py",
     "direct/setup.py",
+    "direct/state_directory.py",
     "direct/observation.py",
     "direct/scan.py",
     "direct/wire.py",

@@ -31,7 +31,7 @@ class LedgerTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.path = Path(self.temp.name) / 'connectors/slack/ledger.sqlite3'
+        self.path = Path(self.temp.name) / 'connector-state/slack/ledger.sqlite3'
 
     def call(self, snap, cursor=None):
         request = {'snapshot': snap, 'observedAt': 1700000000000}
@@ -57,7 +57,7 @@ class LedgerTests(unittest.TestCase):
                             ledger.ledger_path()
                 external = root / 'external'
                 with patch.dict(os.environ, {'EXANGELOS_HOME': str(external)}):
-                    self.assertEqual(ledger.ledger_path(), external / 'connectors/slack/ledger.sqlite3')
+                    self.assertEqual(ledger.ledger_path(), external / 'connector-state/slack/ledger.sqlite3')
                 self.assertEqual(list(package.iterdir()), [package / 'direct'])
                 self.assertFalse(external.exists())
 
@@ -253,9 +253,9 @@ class LedgerTests(unittest.TestCase):
             self.assertEqual(result.stdout, '')
             self.assertEqual(result.stderr, ledger.ERROR + '\n')
         with patch.dict(os.environ, {'EXANGELOS_HOME': '', 'XDG_DATA_HOME': self.temp.name}):
-            self.assertEqual(ledger.ledger_path(), Path(self.temp.name) / 'exangelos/connectors/slack/ledger.sqlite3')
+            self.assertEqual(ledger.ledger_path(), Path(self.temp.name) / 'exangelos/connector-state/slack/ledger.sqlite3')
         with patch.dict(os.environ, {'EXANGELOS_HOME': '', 'XDG_DATA_HOME': ''}):
-            self.assertEqual(ledger.ledger_path(), Path.home() / '.local/share/exangelos/connectors/slack/ledger.sqlite3')
+            self.assertEqual(ledger.ledger_path(), Path.home() / '.local/share/exangelos/connector-state/slack/ledger.sqlite3')
 
 
 if __name__ == '__main__':

@@ -231,7 +231,7 @@ def exercise(installed, fixtures, evidence):
             wire.configure(dict(values, conversationSnippet='synthetic absent snippet', conversationId=''),
                            reason='No conversation matched in the persisted cache. Try its conversation ID or check the cache root')
             wire.configure(values)
-            saved = json.loads((home / 'state/connectors/slack/setup.json').read_text())
+            saved = json.loads((home / 'state/connector-state/slack/setup.json').read_text())
             check(saved['request']['selection'] == dict(workspace=identity[0], owner=identity[1], conversations=[identity[2]]), 'captured setup selection')
             check(saved['request']['root'] == str(app), 'captured setup root')
             setup_scopes.append(saved['request']['key'])
@@ -246,7 +246,7 @@ def exercise(installed, fixtures, evidence):
         with Wire(installed, home) as wire:
             wire.configure(dict({k: v for k, v in values.items() if k not in ('conversationSnippet', 'conversationId')},
                                 sourceMode='pinned-cache'))
-            check(json.loads((home / 'state/connectors/slack/setup.json').read_text()) == saved, 'stable private pin')
+            check(json.loads((home / 'state/connector-state/slack/setup.json').read_text()) == saved, 'stable private pin')
             check(wire.chunk(wire.watch(portable_cursor)) == changed, 'portable exact replay after restart')
             wire.configure(dict(values, sourceMode='unknown'), reason=CONSENT)
             check(wire.call('Describe', {'parameters': {'selection': 'selected'}})['_tag'] == 'Invalid', 'invalid setup clears configuration')

@@ -13,6 +13,7 @@ import tempfile
 
 import observation
 import source
+from state_directory import state_directory
 
 
 def require(value):
@@ -32,8 +33,14 @@ def conversation_target(value):
     match = re.fullmatch(r'https://app\.slack\.com/client/(T[A-Z0-9]{6,30})/' + conversation + r'/?', value)
     if match:
         return match[1], match[2]
-    match = re.fullmatch(r'https://[a-z0-9-]+\.slack\.com/archives/' + conversation + r'(?:/p[0-9]+)?/?', value)
+    path, separator, query = value.partition('?')
+    match = re.fullmatch(r'https://[a-z0-9-]+\.slack\.com/archives/' + conversation + r'(/p[0-9]+)?/?', path)
     if match:
+        if separator:
+            fields = query.split('&')
+            if (not match[2] or len(fields) != 2 or 'cid=' + match[1] not in fields
+                    or not any(re.fullmatch(r'thread_ts=[0-9]{1,20}\.[0-9]{1,10}', field) for field in fields)):
+                raise SetupRejected(20)
         return None, match[1]
     raise SetupRejected(20)
 
@@ -84,9 +91,7 @@ def setup(values):
         raise SetupRejected(26)
     target = conversation_target(direct) if direct else None
     roots = locations(custom)
-    data = os.environ.get('EXANGELOS_HOME')
-    base = Path(data) if data else Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'exangelos'
-    directory = safe_path(base / 'connectors/slack')
+    directory = safe_path(state_directory())
     require(not directory.is_relative_to(Path(__file__).resolve().parent.parent))
     directory.mkdir(parents=True, exist_ok=True, mode=0o700)
     info = directory.stat()
