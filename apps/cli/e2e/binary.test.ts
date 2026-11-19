@@ -596,6 +596,28 @@ describe("local logs and the debug report", () => {
     expect(refused.exitCode).not.toBe(0)
     expect(refused.stderr.toString()).toContain("inside an agent session")
   }, 30_000)
+
+  it("keeps an existing file, and leaves nothing behind when tar fails", async () => {
+    const existing = join(root, "kept.tar.gz")
+    await writeFile(existing, "keep me")
+    const taken = inLogs("debug", "report", "--output", existing)
+    expect(taken.status).not.toBe(0)
+    expect(taken.stderr).toContain("already exists")
+    expect(await readFile(existing, "utf8")).toBe("keep me")
+
+    const broken = join(root, "broken-tar")
+    await mkdir(broken, { recursive: true })
+    await writeFile(join(broken, "tar"), "#!/bin/sh\nexit 3\n")
+    await chmod(join(broken, "tar"), 0o755)
+    const out = join(root, "failed", "report.tar.gz")
+    const failed = Bun.spawnSync([exangelos, "debug", "report", "--output", out], {
+      env: logsEnv({ PATH: `${broken}:${process.env.PATH}` }),
+      timeout: 20_000
+    })
+    expect(failed.exitCode).not.toBe(0)
+    expect(failed.stderr.toString()).toContain("tar exited with code 3")
+    expect(await readdir(join(root, "failed"))).toEqual([])
+  }, 30_000)
 })
 
 describe("official connectors from a release address", () => {

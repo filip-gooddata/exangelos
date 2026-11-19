@@ -1,10 +1,10 @@
-import { spawnSync } from "node:child_process"
 import { createHash } from "node:crypto"
 import * as fs from "node:fs"
 import * as os from "node:os"
 import * as Path from "node:path"
-import { Cause, Console, Effect, Option, Schema } from "effect"
+import { Cause, Console, Data, Effect, Option, Schema } from "effect"
 import { Command, Flag } from "effect/cli"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { SessionHeaders } from "@exangelos/contracts"
 import { DaemonClient } from "@exangelos/daemon-client"
 import { Connector } from "@exangelos/domain"
@@ -16,14 +16,21 @@ import { CommandFailed, Json } from "./Output.ts"
 
 const daemonLogTail = 1024 * 1024
 
+const userinfo = /\b([a-z][\w+.-]*:\/\/)[^\s/@"'\\]+@/gi
 const bearer = /\b(Bearer|Basic)\s+[\w.~+/=-]+/gi
-const assignment = /\b([\w.-]*(?:token|key|secret|password|auth|cookie)[\w.-]*)(["']?\s*[:=]\s*["']?)([^\s"',;}&]+)/gi
+const assignment =
+  /\b([\w.-]*(?:token|key|secret|password|auth|cookie)[\w.-]*)(\\?["']?\s*[:=]\s*)(\\"(?:(?!\\")[^\n])*(?:\\")?|"(?:[^"\\\n]|\\.)*"?|'[^'\n]*'?|[^\s"',;}&\\]+)/gi
 
-/** Hides values that free text pairs with a sensitive name, such as `apiToken=…` or `Authorization: Bearer …`. */
+const hidden = (value: string) => {
+  const quote = value.startsWith("\\\"") ? "\\\"" : value.startsWith("\"") || value.startsWith("'") ? value[0]! : ""
+  return `${quote}${Redact.redacted}${quote}`
+}
+
 export const scrub = (text: string): string =>
   text
+    .replace(userinfo, (_, scheme: string) => `${scheme}${Redact.redacted}@`)
     .replace(bearer, (_, scheme: string) => `${scheme} ${Redact.redacted}`)
-    .replace(assignment, (_, key: string, separator: string) => `${key}${separator}${Redact.redacted}`)
+    .replace(assignment, (_, key: string, separator: string, value: string) => `${key}${separator}${hidden(value)}`)
 
 const scrubValue = (value: unknown): unknown => {
   if (typeof value === "string") return scrub(value)
@@ -32,22 +39,20 @@ const scrubValue = (value: unknown): unknown => {
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrubValue(item)]))
 }
 
-/** Drops every value of an `env` map, keeping the names, then applies the key rule and the text rule. */
-const cleanValue = (value: unknown): unknown => {
-  const withoutEnv = (item: unknown): unknown => {
-    if (Array.isArray(item)) return item.map(withoutEnv)
-    if (item === null || typeof item !== "object") return item
-    return Object.fromEntries(
-      Object.entries(item).map(([key, inner]) => [
-        key,
-        key === "env" && inner !== null && typeof inner === "object" && !Array.isArray(inner)
-          ? Object.fromEntries(Object.keys(inner).map((name) => [name, Redact.redacted]))
-          : withoutEnv(inner)
-      ])
-    )
-  }
-  return scrubValue(Redact.redactValue(withoutEnv(value), []))
+const withoutEnv = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(withoutEnv)
+  if (value === null || typeof value !== "object") return value
+  return Object.fromEntries(
+    Object.entries(value).map(([key, inner]) => [
+      key,
+      key === "env" && inner !== null && typeof inner === "object" && !Array.isArray(inner)
+        ? Object.fromEntries(Object.keys(inner).map((name) => [name, Redact.redacted]))
+        : withoutEnv(inner)
+    ])
+  )
 }
+
+export const cleanValue = (value: unknown): unknown => scrubValue(Redact.redactValue(withoutEnv(value), []))
 
 const cleanRecord = (record: Record.LogRecord, includePayloads: boolean): Record.LogRecord => {
   const redacted = Redact.redactRecord(record, [])
@@ -142,101 +147,146 @@ const tailOf = (path: string): string | undefined => {
 
 const stamp = (date: Date) => date.toISOString().replace(/[-:]/g, "").replace(/\.\d+Z$/, "Z")
 
+export class ReportNotWritten extends Data.TaggedError("ReportNotWritten")<{ readonly reason: string }> {}
+
+const attempt = <A>(work: () => A) =>
+  Effect.try({
+    try: work,
+    catch: (error) => new ReportNotWritten({ reason: error instanceof Error ? error.message : String(error) })
+  })
+
+interface Entry {
+  readonly name: string
+  readonly about: string
+}
+
 interface Written {
   readonly path: string
-  readonly entries: ReadonlyArray<{ readonly name: string; readonly about: string }>
+  readonly entries: ReadonlyArray<Entry>
   readonly payloads: boolean
+}
+
+const stage = (options: {
+  readonly paths: Paths.Paths["Service"]
+  readonly root: string
+  readonly name: string
+  readonly includePayloads: boolean
+  readonly daemon: { readonly running: boolean }
+  readonly now: Date
+}): Array<Entry> => {
+  const { paths, includePayloads, name } = options
+  const root = Path.join(options.root, name)
+  fs.mkdirSync(Path.join(root, "logs"), { recursive: true, mode: 0o700 })
+  const entries: Array<Entry> = []
+  const put = (relative: string, content: string, about: string) => {
+    fs.writeFileSync(Path.join(root, relative), content, { mode: 0o600 })
+    entries.push({ name: `${name}/${relative}`, about })
+  }
+  let skipped = 0
+  const logFiles: Array<string> = []
+  for (const src of Record.sources) {
+    for (const file of Read.files(paths.logDir, src)) {
+      let text: string
+      try {
+        text = fs.readFileSync(file, "utf8")
+      } catch {
+        continue
+      }
+      const lines: Array<string> = []
+      for (const line of text.split("\n")) {
+        if (line === "") continue
+        const record = Record.parse(line)
+        if (Option.isNone(record)) skipped++
+        else lines.push(Record.encode(cleanRecord(record.value, includePayloads)))
+      }
+      logFiles.push(Path.basename(file))
+      put(`logs/${Path.basename(file)}`, lines.length === 0 ? "" : `${lines.join("\n")}\n`, `${src} log records, redacted`)
+    }
+  }
+  const daemonLog = tailOf(paths.logFile)
+  if (daemonLog !== undefined) put("daemon.log", scrub(daemonLog), "the end of the service's own output, redacted")
+  const settings = readJson(paths.settingsFile)
+  const levelSetting = typeof settings === "object" && settings !== null && "logLevel" in settings
+    ? settings.logLevel
+    : undefined
+  const report = {
+    generatedAt: options.now.toISOString(),
+    exangelos: { version: Build.version, executable: process.execPath, digest: digest(process.execPath) },
+    os: { platform: process.platform, arch: process.arch, release: os.release(), bun: process.versions.bun },
+    installMethod: InstallMethod.detect(fs.realpathSync(process.execPath)),
+    paths: {
+      configDir: paths.configDir,
+      dataDir: paths.dataDir,
+      stateDir: paths.stateDir,
+      settingsFile: paths.settingsFile,
+      databaseFile: paths.databaseFile,
+      connectorDir: paths.connectorDir,
+      socketPath: paths.socketPath,
+      logDir: paths.logDir,
+      logFile: paths.logFile
+    },
+    logLevel: {
+      setting: levelSetting ?? "info",
+      envVar: Level.envVar,
+      envVarSet: Object.hasOwn(process.env, Level.envVar)
+    },
+    settings,
+    daemon: options.daemon,
+    ...(options.daemon.running ? {} : { connectorDirectory: installed(paths.connectorDir) }),
+    logs: { files: logFiles, payloads: includePayloads ? "included" : "dropped", skippedLines: skipped }
+  }
+  put(
+    "report.json",
+    `${JSON.stringify(report, null, 2)}\n`,
+    "versions, digests, connectors, settings without secrets, OS, install method, paths"
+  )
+  return [entries.pop()!, ...entries]
+}
+
+const publish = (archive: string, out: string, numbered: boolean): string => {
+  for (let copy = 0;; copy++) {
+    const target = copy === 0 ? out : out.replace(/\.tar\.gz$/, `-${copy}.tar.gz`)
+    try {
+      fs.linkSync(archive, target)
+      return target
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error
+      if (!numbered || copy >= 99) throw new Error(`${target} already exists; choose another --output`)
+    }
+  }
 }
 
 const write = (options: {
   readonly paths: Paths.Paths["Service"]
   readonly output: string | undefined
   readonly includePayloads: boolean
-  readonly daemon: unknown
+  readonly daemon: { readonly running: boolean }
   readonly now: Date
-}): Written => {
-  const { paths, includePayloads, now } = options
-  const name = `exangelos-debug-${stamp(now)}`
-  const reports = Path.join(paths.stateDir, "reports")
-  const out = options.output === undefined ? Path.join(reports, `${name}.tar.gz`) : Path.resolve(options.output)
-  fs.mkdirSync(Path.dirname(out), { recursive: true, mode: 0o700 })
-  const stage = fs.mkdtempSync(Path.join(os.tmpdir(), "exangelos-debug-"))
-  try {
-    const root = Path.join(stage, name)
-    fs.mkdirSync(Path.join(root, "logs"), { recursive: true, mode: 0o700 })
-    const entries: Array<{ name: string; about: string }> = []
-    const put = (relative: string, content: string, about: string) => {
-      fs.writeFileSync(Path.join(root, relative), content, { mode: 0o600 })
-      entries.push({ name: `${name}/${relative}`, about })
-    }
-    let skipped = 0
-    const logFiles: Array<string> = []
-    for (const src of Record.sources) {
-      for (const file of Read.files(paths.logDir, src)) {
-        let text: string
-        try {
-          text = fs.readFileSync(file, "utf8")
-        } catch {
-          continue
-        }
-        const lines: Array<string> = []
-        for (const line of text.split("\n")) {
-          if (line === "") continue
-          const record = Record.parse(line)
-          if (Option.isNone(record)) skipped++
-          else lines.push(Record.encode(cleanRecord(record.value, includePayloads)))
-        }
-        logFiles.push(Path.basename(file))
-        put(`logs/${Path.basename(file)}`, lines.length === 0 ? "" : `${lines.join("\n")}\n`, `${src} log records, redacted`)
-      }
-    }
-    const daemonLog = tailOf(paths.logFile)
-    if (daemonLog !== undefined) put("daemon.log", scrub(daemonLog), "the end of the service's own output, redacted")
-    const settings = readJson(paths.settingsFile)
-    const levelSetting = typeof settings === "object" && settings !== null && "logLevel" in settings
-      ? settings.logLevel
-      : undefined
-    const report = {
-      generatedAt: now.toISOString(),
-      exangelos: { version: Build.version, executable: process.execPath, digest: digest(process.execPath) },
-      os: { platform: process.platform, arch: process.arch, release: os.release(), bun: process.versions.bun },
-      installMethod: InstallMethod.detect(fs.realpathSync(process.execPath)),
-      paths: {
-        configDir: paths.configDir,
-        dataDir: paths.dataDir,
-        stateDir: paths.stateDir,
-        settingsFile: paths.settingsFile,
-        databaseFile: paths.databaseFile,
-        connectorDir: paths.connectorDir,
-        socketPath: paths.socketPath,
-        logDir: paths.logDir,
-        logFile: paths.logFile
-      },
-      logLevel: {
-        setting: levelSetting ?? "info",
-        envVar: Level.envVar,
-        envVarSet: (process.env[Level.envVar] ?? "") !== ""
-      },
-      settings,
-      daemon: options.daemon,
-      ...(typeof options.daemon === "object" && options.daemon !== null && "running" in options.daemon &&
-          options.daemon.running === false
-        ? { connectorDirectory: installed(paths.connectorDir) }
-        : {}),
-      logs: { files: logFiles, payloads: includePayloads ? "included" : "dropped", skippedLines: skipped }
-    }
-    put("report.json", `${JSON.stringify(report, null, 2)}\n`, "versions, digests, connectors, settings without secrets, OS, install method, paths")
-    entries.unshift(entries.pop()!)
-    fs.rmSync(out, { force: true })
-    const tar = spawnSync("tar", ["-czf", out, "-C", stage, name], { encoding: "utf8" })
-    if (tar.error !== undefined) throw new Error(`tar did not run: ${tar.error.message}`)
-    if (tar.status !== 0) throw new Error(`tar exited with ${tar.status}: ${tar.stderr.trim()}`)
-    fs.chmodSync(out, 0o600)
-    return { path: out, entries, payloads: includePayloads }
-  } finally {
-    fs.rmSync(stage, { recursive: true, force: true })
-  }
-}
+}) =>
+  Effect.gen(function*() {
+    const name = `exangelos-debug-${stamp(options.now)}`
+    const out = options.output === undefined
+      ? Path.join(options.paths.stateDir, "reports", `${name}.tar.gz`)
+      : Path.resolve(options.output)
+    yield* attempt(() => fs.mkdirSync(Path.dirname(out), { recursive: true, mode: 0o700 }))
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    return yield* Effect.acquireUseRelease(
+      attempt(() => fs.mkdtempSync(Path.join(Path.dirname(out), ".exangelos-debug-"))),
+      (root) =>
+        Effect.gen(function*() {
+          const entries = yield* attempt(() => stage({ ...options, root, name }))
+          const archive = Path.join(root, "archive.tar.gz")
+          const code = yield* spawner.exitCode(ChildProcess.make("tar", ["-czf", archive, "-C", root, name])).pipe(
+            Effect.mapError((error) => new ReportNotWritten({ reason: `tar did not run: ${error.message}` }))
+          )
+          if (code !== 0) return yield* new ReportNotWritten({ reason: `tar exited with code ${code}` })
+          yield* attempt(() => fs.chmodSync(archive, 0o600))
+          const path = yield* attempt(() => publish(archive, out, options.output === undefined))
+          return { path, entries, payloads: options.includePayloads } satisfies Written
+        }),
+      (root) => Effect.sync(() => fs.rmSync(root, { recursive: true, force: true }))
+    )
+  })
 
 const text = (written: Written) =>
   [
@@ -257,7 +307,7 @@ const report = Command.make(
       Flag.withDescription("Keep the event payloads that debug-level records carry")
     ),
     output: Flag.String("output").pipe(
-      Flag.withDescription("Where to write the archive, instead of <state dir>/reports"),
+      Flag.withDescription("Where to write the archive, instead of <state dir>/reports; an existing file is kept"),
       Flag.optional
     )
   },
@@ -272,13 +322,15 @@ const report = Command.make(
       const json = yield* Json
       const paths = yield* Paths.Paths
       const daemon = yield* daemonState(paths.socketPath)
-      const written = yield* Effect.try({
-        try: () =>
-          write({ paths, output: Option.getOrUndefined(output), includePayloads, daemon, now: new Date() }),
-        catch: (error) => (error instanceof Error ? error.message : String(error))
+      const written = yield* write({
+        paths,
+        output: Option.getOrUndefined(output),
+        includePayloads,
+        daemon,
+        now: new Date()
       }).pipe(
-        Effect.tapError((error) => Console.error(`Writing the debug report failed: ${error}`)),
-        Effect.mapError(() => new CommandFailed({ tag: "ReportFailed" }))
+        Effect.tapError((error) => Console.error(`Writing the debug report failed: ${error.reason}`)),
+        Effect.mapError((error) => new CommandFailed({ tag: error._tag }))
       )
       yield* Console.log(json ? JSON.stringify(written) : text(written))
     })

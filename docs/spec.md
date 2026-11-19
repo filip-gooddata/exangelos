@@ -397,7 +397,7 @@ Commands for you only (not offered through MCP):
 
 The CLI reads a secret source once, at configure time. An agent may run `connector configure` with a command or file source, because the CLI process reads the secret with the agent's permissions and hands the value to the daemon without printing it.
 
-Any CLI or MCP call that finds no daemon starts it (see service management).
+Any CLI or MCP call that finds no daemon starts it (see service management), except `logs` and `debug report`, which read the files and never start it.
 
 ### MCP server
 
@@ -446,7 +446,7 @@ The panel layout (structure, navigation, grouping) is decided separately. Three 
 
 ### Service management
 
-- Start on first use. Any CLI or MCP call that finds no daemon detects the install method and starts the service through it.
+- Start on first use. Any CLI or MCP call that finds no daemon, other than `logs` and `debug report`, detects the install method and starts the service through it.
 - The daemon uses the installer's own service support where it has one. A Homebrew formula install uses the formula's service definition. The bundled desktop install has no service support of its own, so the binary installs its own LaunchAgent (macOS) or systemd user unit (Linux) pointing at itself on first use. The daemon then starts at login and outlives the tray. The install script uses the same own unit.
 - Services are user-scoped so the daemon can reach your configuration and keychain.
 - The service label is `exangelos.daemon`. It is built from the name alone, so it claims no domain before anything is published.
@@ -469,7 +469,7 @@ The panel layout (structure, navigation, grouping) is decided separately. Three 
 - Event payloads are logged only at debug.
 - Every record is redacted before it is written: the value of any key whose name contains token, key, secret, password, auth or cookie is replaced, and so is every stored secret value wherever it appears. Environment values are never logged, only their names.
 - `exangelos logs` reads the files directly, so it works while the daemon is down.
-- `exangelos debug report` writes `<state>/reports/exangelos-debug-<UTC time>.tar.gz`. The archive holds the log files redacted again, without event payloads unless `--include-payloads` is given, and the end of `daemon.log`. It also holds `report.json` with the binary's version and checksum, the connectors' versions, checksums, origins, trust and states, the settings with harness environment values and sensitive keys removed, OS and architecture, install method, the paths in use, and whether `EXANGELOS_LOG_LEVEL` is set. The report sends nothing. Agent sessions are refused, as for settings.
+- `exangelos debug report` writes `<state>/reports/exangelos-debug-<UTC time>.tar.gz`. The archive holds the log files redacted again, without event payloads unless `--include-payloads` is given, and the end of `daemon.log`. It also holds `report.json` with the binary's version and checksum, the connectors' versions, checksums, origins, trust and states, the settings with harness environment values and sensitive keys removed, OS and architecture, install method, the paths in use, and whether `EXANGELOS_LOG_LEVEL` is set. It never overwrites an existing file, starts the daemon or reads the keychain, and it sends nothing. Agent sessions are refused, as for settings.
 
 ### Packaging and release scope
 
