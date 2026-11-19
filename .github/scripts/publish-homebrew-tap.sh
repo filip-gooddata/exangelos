@@ -23,6 +23,14 @@ export GIT_SSH_COMMAND="ssh -i $work/key -o IdentitiesOnly=yes -o StrictHostKeyC
 git clone --depth 1 "git@github.com:$tap.git" "$work/tap"
 cd "$work/tap"
 mkdir -p Formula
+if [ -f Formula/exangelos.rb ]; then
+  current=$(sed -n 's/^  version "\(.*\)"$/\1/p' Formula/exangelos.rb)
+  if [ -n "$current" ] && [ "$current" != "$version" ] &&
+    [ "$(printf '%s\n%s\n' "$current" "$version" | sort -V | tail -n1)" = "$current" ]; then
+    echo "The tap already has exangelos $current, newer than $version; leaving it"
+    exit 0
+  fi
+fi
 cp "$formula" Formula/exangelos.rb
 git add Formula/exangelos.rb
 if git diff --cached --quiet; then

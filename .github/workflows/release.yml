@@ -31,8 +31,11 @@ jobs:
           fetch-depth: 0
       - id: next
         run: |
-          if git tag --points-at HEAD | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "HEAD is already released"
+          released=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
+          if [ -n "$released" ]; then
+            echo "HEAD is already released as $released"
+            echo "tag=$released" >> "$GITHUB_OUTPUT"
+            echo "version=${released#v}" >> "$GITHUB_OUTPUT"
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -87,19 +90,36 @@ jobs:
             --title "$TAG" \
             --generate-notes
 
-  # Runs after the release exists, so the formula's URLs resolve. Only the formula goes to the tap; the cask waits for
-  # a signed macOS app.
+  # Renders the formula from the published release's SHA256SUMS and pushes it to the tap. It also runs when HEAD is
+  # already released, so re-running a release whose tap push failed repairs the tap. Only the formula goes to the tap;
+  # the cask waits for a signed macOS app.
   publish-tap:
-    needs: [version, build, release]
+    needs: [version, release]
+    if: always() && needs.version.result == 'success' && (needs.release.result == 'success' || needs.version.outputs.skip == 'true')
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: actions/download-artifact@v4
+      - uses: pnpm/action-setup@v6
         with:
-          name: homebrew-formula
-          path: homebrew-formula
+          version: 12.10.1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.2
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - name: Render the formula from the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.version.outputs.tag }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir "$RUNNER_TEMP/release"
+          pnpm --filter @exangelos/packaging run render:homebrew --release "$RUNNER_TEMP/release" --version "$VERSION" --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG" --out "$RUNNER_TEMP/homebrew-tap"
       - name: Push the formula to the tap
         env:
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           VERSION: ${{ needs.version.outputs.version }}
-        run: .github/scripts/publish-homebrew-tap.sh homebrew-formula/exangelos.rb "$VERSION"
+        run: .github/scripts/publish-homebrew-tap.sh "$RUNNER_TEMP/homebrew-tap/Formula/exangelos.rb" "$VERSION"
