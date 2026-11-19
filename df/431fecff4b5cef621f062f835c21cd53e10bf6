@@ -1,0 +1,29 @@
+adapters/alerts/src/index.ts
+  s_525bbb0bc68c9c::t_9b2882c7dac4fe 1,39-43
+adapters/wake-targets/src/Attempt.ts
+  s_525bbb0bc68c9c::t_bed1c2b48e70c2 55-65,67-74
+adapters/wake-targets/src/WakeTargets.ts
+  s_525bbb0bc68c9c::t_4e774ee6f0b4dd 1,7,20-24,32-40,42,54-55,58,89
+packages/application/src/subscriptions/Transitions.ts
+  s_525bbb0bc68c9c::t_1ccf2eb277f814 26-27,33-34,36,38,42-43,47,55-60,101
+packages/application/src/subscriptions/daemon/Delivery.ts
+  s_525bbb0bc68c9c::t_3ab62fa6111fa0 144-147,155-156,161
+packages/application/src/subscriptions/daemon/Intake.ts
+  s_525bbb0bc68c9c::t_8a543f79d25437 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "df431fecff4b5cef621f062f835c21cd53e10bf6",
+  "prompts": {},
+  "sessions": {
+    "s_525bbb0bc68c9c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "696c08a0-789b-4f0a-992f-7c021051f224",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
