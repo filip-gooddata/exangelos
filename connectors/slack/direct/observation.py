@@ -5,6 +5,9 @@ import json
 import re
 
 
+TIMESTAMP = r'[0-9]{1,20}\.[0-9]{1,10}'
+
+
 def token(key, kind, *values):
     return hmac.new(key, json.dumps([kind, *values], ensure_ascii=False, separators=(',', ':')).encode(), hashlib.sha256).hexdigest()
 
@@ -12,16 +15,19 @@ def token(key, kind, *values):
 def scope(state):
     boot = state.get('bootData') or {}
     identities = state.get('selfTeamIds') or {}
-    workspace = identities.get('teamId') or identities.get('defaultWorkspaceId') or boot.get('team_id')
+    workspace_ids = [row[field] for row, field in ((identities, 'teamId'), (identities, 'defaultWorkspaceId'),
+                                                    (boot, 'team_id')) if field in row]
     owner = boot.get('user_id')
-    if not isinstance(workspace, str) or not isinstance(owner, str):
+    if not workspace_ids or not isinstance(owner, str) or not re.fullmatch(r'[UW][A-Z0-9]{6,30}', owner):
         raise ValueError('scope')
-    if any(value != workspace for value in (*identities.values(), boot.get('team_id')) if isinstance(value, str)):
+    workspace = workspace_ids[0]
+    if (not isinstance(workspace, str) or not re.fullmatch(r'T[A-Z0-9]{6,30}', workspace)
+            or any(value != workspace for value in workspace_ids)):
         raise ValueError('scope')
     return workspace, owner
 
 
-def snapshot(state, selection, key, *, require_reactions=True):
+def snapshot(state, selection, key, *, require_reactions=True, thread_root=None):
     """Return keyed fields only. Caller supplies one private conversation selection."""
     if len(key) < 32 or not isinstance(selection, tuple) or len(selection) != 3:
         raise ValueError('selection')
@@ -56,6 +62,8 @@ def snapshot(state, selection, key, *, require_reactions=True):
                 raise ValueError('scope')
             if 'edited' in message and (not isinstance(message['edited'], dict) or not isinstance(message['edited'].get('ts'), str)):
                 raise ValueError('incomplete')
+        if thread_root is not None and (message.get('thread_ts') != thread_root or timestamp == thread_root):
+            continue
         rx_key = f'message-{timestamp}-{channel}'
         if message.get('_rxn_key') != rx_key:
             complete = False

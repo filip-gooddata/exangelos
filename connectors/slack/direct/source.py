@@ -16,11 +16,16 @@ MAX_FILES = 10000
 MAX_MESSAGES = 10000
 
 
+def scope_token(key, selection, epoch):
+    return observation.token(key, 'selected-scope-v2', selection['workspace'], selection['owner'],
+                             sorted(selection['conversations']), selection.get('thread'), epoch)
+
+
 def acquire(request):
     if not isinstance(request, dict) or set(request) - {'selection', 'key', 'root', 'expectedScope'}:
         raise ValueError('request')
     selection = request.get('selection')
-    if not isinstance(selection, dict) or set(selection) != {'workspace', 'owner', 'conversations'}:
+    if not isinstance(selection, dict) or set(selection) not in ({'workspace', 'owner', 'conversations'}, {'workspace', 'owner', 'conversations', 'thread'}):
         raise ValueError('selection')
     workspace, owner = selection['workspace'], selection['owner']
     conversations = selection['conversations']
@@ -31,6 +36,10 @@ def acquire(request):
     if not isinstance(conversations, list) or not 1 <= len(conversations) <= 1000:
         raise ValueError('selection')
     if any(not isinstance(c, str) or not re.fullmatch(r'[CDG][A-Z0-9]{6,30}', c) for c in conversations):
+        raise ValueError('selection')
+    thread = selection.get('thread')
+    if 'thread' in selection and (len(conversations) != 1 or not isinstance(thread, str)
+                                   or not re.fullmatch(observation.TIMESTAMP, thread)):
         raise ValueError('selection')
     if len(set(conversations)) != len(conversations):
         raise ValueError('selection')
@@ -43,7 +52,7 @@ def acquire(request):
         raise ValueError('symlink')
     root = root.resolve(strict=True)
     before, epoch = inventory(root)
-    scope = observation.token(key, 'selected-scope-v1', workspace, owner, sorted(conversations), epoch)
+    scope = scope_token(key, selection, epoch)
     if 'expectedScope' in request and request['expectedScope'] != scope:
         raise ValueError('scope')
     candidates = []
@@ -61,7 +70,7 @@ def acquire(request):
         raise ValueError('generation')
     messages = []
     for conversation in sorted(conversations):
-        selected = observation.snapshot(state, (workspace, owner, conversation), key, require_reactions=False)
+        selected = observation.snapshot(state, (workspace, owner, conversation), key, require_reactions=False, thread_root=thread)
         if not selected['complete']:
             raise ValueError('incomplete')
         messages.extend(selected['messages'])

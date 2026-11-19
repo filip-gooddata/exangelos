@@ -8,11 +8,17 @@ export const Request = Schema.Struct({
   selection: Schema.Struct({
     workspace: Identifier,
     owner: Identifier,
+    thread: Schema.optional(Identifier),
     conversations: Schema.Array(Identifier).check(Schema.isMinLength(1), Schema.isMaxLength(500))
   }),
   key: Token,
   expectedScope: Schema.optional(Token),
   root: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096)))
+})
+const Resolved = Schema.Struct({
+  ...Request.fields,
+  expectedScope: Token,
+  label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))
 })
 export const Snapshot = Schema.Struct({
   scope: Token,
@@ -28,26 +34,27 @@ export const Snapshot = Schema.Struct({
 const snapshotReason = "Slack persisted snapshot is unavailable or unsupported"
 const setupReasons: Readonly<Record<number, string>> = {
   1: "Slack setup could not validate private state or a stable, supported persisted snapshot",
-  20: "Initial setup needs one secret selector: a literal snippet, conversation ID or supported Slack link",
+  20: "Use a D/C/G conversation ID, Slack message permalink, timestamp, or CHANNEL:TIMESTAMP. For a message use scope=conversation or scope=replies",
   21: "Slack cache or private setup files are missing or unreadable. Check the cache root and access",
-  22: "No conversation matched in the persisted cache. Try its conversation ID or check the cache root",
-  23: "Multiple cached accounts or conversations matched. Narrow the cache root or selector",
-  24: "Pinned selection or cache changed. Restore its settings or deliberately change the selection revision",
-  25: "Another Slack setup is running. Retry Configure",
-  26: "Pinned-cache mode accepts no selector. Use persisted-cache for initial selection"
+  22: "No matching conversation or message in this persisted cache. Check the reference and cache root. For an unverified permalink domain, use CHANNEL:TIMESTAMP",
+  23: "Multiple cached sources matched. Specify CHANNEL:TIMESTAMP or narrow cacheRoot to one source",
+  24: "The saved Slack scope or cache changed. Check cacheRoot and subscribe again using the original conversation ID or message reference",
+  25: "Another Slack setup is running. Retry Subscribe",
+  26: "Configure subscriptionAccess=persisted-cache and retry with a Slack conversation ID or message reference",
+  27: 'Top-level message. For the whole conversation retry exangelos subscribe slack "<reference>" scope=conversation --intent "<intent>" --pull-only. For its replies use scope=replies. In MCP subscribe, set parameters to {"selection":"<reference>","scope":"conversation"} or {"selection":"<reference>","scope":"replies"}'
 }
 export class SourceUnavailable extends Schema.TaggedError<SourceUnavailable>()("SourceUnavailable", {
   reason: Schema.String
 }) {}
 const unavailable = () => new SourceUnavailable({ reason: snapshotReason })
 export interface Source<R = never> {
-  readonly setup?: (values: Readonly<Record<string, string>>) => Effect.Effect<typeof Request.Type, SourceUnavailable, R>
+  readonly setup: (values: Readonly<Record<string, string>>) => Effect.Effect<typeof Resolved.Type, SourceUnavailable, R>
   readonly read: (request: typeof Request.Type) => Effect.Effect<typeof Snapshot.Type, SourceUnavailable, R>
 }
-export const decodeRequest = (text: string) => Effect.gen(function*() {
+const decodeResolved = (text: string) => Effect.gen(function*() {
   if (text.length > 65536) return yield* unavailable()
   const input = yield* Effect.try({ try: () => JSON.parse(text) as unknown, catch: unavailable })
-  const request = yield* Schema.decodeUnknownEffect(Request)(input).pipe(Effect.mapError(unavailable))
+  const request = yield* Schema.decodeUnknownEffect(Resolved)(input).pipe(Effect.mapError(unavailable))
   if (new Set(request.selection.conversations).size !== request.selection.conversations.length) return yield* unavailable()
   return request
 })
@@ -77,7 +84,7 @@ const runPython = (script: "source" | "setup", request: unknown) => Effect.gen(f
   }).pipe(Effect.scoped, Effect.timeout("45 seconds"), Effect.mapError((error) => error instanceof SourceUnavailable ? error : unavailable()))
 
 export const localSource: Source<ChildProcessSpawner.ChildProcessSpawner> = {
-  setup: (values) => runPython("setup", values).pipe(Effect.flatMap(decodeRequest)),
+  setup: (values) => runPython("setup", values).pipe(Effect.flatMap(decodeResolved)),
   read: (request) => runPython("source", request).pipe(
     Effect.flatMap((text) => Effect.try({ try: () => JSON.parse(text) as unknown, catch: unavailable })),
     Effect.flatMap(Schema.decodeUnknownEffect(Snapshot)),

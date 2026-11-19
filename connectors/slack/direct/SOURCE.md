@@ -1,11 +1,10 @@
 # Persisted acquisition contract
 
-Run `python3 connectors/slack/direct/source.py` with one JSON document on stdin:
-`{"selection":{"workspace":"<private workspace>","owner":"<private owner>","conversations":["<private conversation>"]},"key":"<64 hex characters>","root":"<optional IndexedDB directory>"}`.
-Supply private values directly through the parent process, never arguments, logs,
-reports or agent context. Without `root`, the command uses the owner's standard
-macOS Slack IndexedDB directory. Python 3.10+ and the existing vendored decoder
-are sufficient. Nothing opens the database for writing.
+After the host authorizes persisted-cache access and resolves a positional subject,
+the connector sends its pinned request to `direct/source.py` on stdin. The request
+contains the resolved root, workspace, owner, conversation, optional thread root,
+private key and expected scope. Python 3.10+ and the vendored decoder read the
+database without opening it for writing.
 
 Success exits 0 with one JSON object and no stderr. Its fields are `scope`
 (64 hex), `complete: true`, `messages`, `generation` (decimal string), and
@@ -17,7 +16,7 @@ Missing reactions do not prevent acquisition and must never imply removals.
 The existing diagnostic's stricter completeness behavior is preserved.
 
 Scope binds the key, workspace, owner, sorted unique conversation selection and
-local database directory epoch (device, inode, birth time when available).
+optional thread root and local database directory epoch (device, inode, birth time when available).
 Snapshot is a stable keyed marker of sorted projected state, independent of
 acquisition time and generation. Generation is the maximum persisted LevelDB
 sequence of the selected Redux record and its blob metadata. Multiple matching
@@ -54,7 +53,4 @@ cursor; it should impose its own process timeout.
 
 The owner has accepted unbounded snapshot staleness and missed intermediate
 changes, waiving the former 60-second requirement. No browser or Teams path is
-included. This command requires an explicit private selection. No automatic
-selection or live acquisition was performed in this implementation. Historical
-aggregate evidence remains diagnostic evidence, not validation of this new command
-against live state. The parent owns SDK/Reconcile integration and combined review.
+included.

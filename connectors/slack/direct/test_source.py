@@ -16,21 +16,23 @@ def framed(data):
     return struct.pack('<IHB', masked, len(data), 1) + data
 
 
-def database(root, state=None, sequence=10):
+def database(root, state=None, sequence=10, *, additional_accounts=()):
     folder = root / 'https_app.slack.com_0.indexeddb.leveldb'
     folder.mkdir(exist_ok=True)
     (folder / 'CURRENT').write_bytes(b'MANIFEST-000001\n')
     (folder / 'MANIFEST-000001').write_bytes(framed(b'\x02\x02'))
-    blob = b'\xff\x12\xff\x10' + encode(state or fixture())
     path = root / 'https_app.slack.com_0.indexeddb.blob/1/00'
     path.mkdir(parents=True, exist_ok=True)
-    (path / '1').write_bytes(blob)
-    name = 'persist:slack-fixture-' + '-'.join(SELECTION[:2])
-    suffix = b'\x01' + uint(len(name)) + name.encode('utf-16-be')
     rows = [(b'\x00\x01\x00\x00\x01', 'reduxPersistence'.encode('utf-16-be')),
-            (b'\x00\x01\x00\x00\x32\x01\x00', 'reduxPersistenceStore'.encode('utf-16-be')),
-            (b'\x00\x01\x01\x01' + suffix, b'\x00\xff\x11\x01' + uint(len(blob)) + b'\x00'),
-            (b'\x00\x01\x01\x03' + suffix, b'\x00\x01\x00' + uint(len(blob)))]
+            (b'\x00\x01\x00\x00\x32\x01\x00', 'reduxPersistenceStore'.encode('utf-16-be'))]
+    accounts = [(SELECTION[:2], state or fixture()), *additional_accounts]
+    for number, (identity, document) in enumerate(accounts, 1):
+        blob = b'\xff\x12\xff\x10' + encode(document)
+        (path / f'{number:x}').write_bytes(blob)
+        name = 'persist:slack-fixture-' + '-'.join(identity)
+        suffix = b'\x01' + uint(len(name)) + name.encode('utf-16-be')
+        rows.append((b'\x00\x01\x01\x01' + suffix, b'\x00\xff\x11\x01' + uint(len(blob)) + b'\x00'))
+        rows.append((b'\x00\x01\x01\x03' + suffix, b'\x00' + uint(number) + b'\x00' + uint(len(blob))))
     data = struct.pack('<QI', sequence, len(rows))
     data += b''.join(b'\x01' + uint(len(k)) + k + uint(len(v)) + v for k, v in rows)
     (folder / '000002.log').write_bytes(framed(data))

@@ -81,7 +81,8 @@ const make = Effect.gen(function*() {
           throw error
         })
         const privateState = entries.some((entry) =>
-          entry === "setup.lock" || entry === "setup.json" || entry === "subscriptions-key.json" || /^scope-[a-f0-9]{64}\.json$/.test(entry) ||
+          entry === "setup.lock" || entry === "setup.json" || entry.startsWith(".setup-") ||
+          entry === "subscriptions-key.json" || /^scope-[a-f0-9]{64}\.json$/.test(entry) ||
           entry === "ledger.sqlite3" || entry.startsWith("ledger.sqlite3-")
         )
         if (privateState) {

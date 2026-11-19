@@ -1,24 +1,20 @@
-# Validation
+# Validate the Slack connector
 
-Publication validation uses synthetic inputs only. Historical machine-specific and account-derived observations are omitted.
+Run these checks from the repository root:
 
-Run `pnpm --filter @exangelos/connector-slack test` and `pnpm --filter @exangelos/connector-slack typecheck`. Python fixtures are in `direct/test_*.py`.
+```sh
+pnpm --filter @exangelos/connector-slack typecheck
+pnpm --filter @exangelos/connector-slack test
+python3 -B -m unittest discover -s connectors/slack/direct -p 'test_*.py'
+python3 -B connectors/slack/test/archive_validation.py <new-evidence-directory>
+```
 
-For the installed release contract, run `python3 connectors/slack/test/archive_validation.py <new-evidence-directory>` from the repository root. The harness overlays committed Slack files onto its pinned packer revision and uses an isolated synthetic home. It checks archive closure, startup without Python/app/configuration, deferred source access, immutable installation, configuration, reconciliation and durable replay. Keep generated evidence outside tracked publication content.
+The Python fixtures encode synthetic Slack snapshots into the IndexedDB format.
+SDK tests exercise consent, normalized parameters, private ledger replay and
+cancellation. The archive check builds the public release, verifies its checksum
+and exercises its bundled entry point in an isolated home. CLI end-to-end tests
+cover positional arguments, MCP parameters and installer protection for legacy
+private state. Keep generated evidence outside the checkout.
 
-These commands describe verification; they are not claims about a particular execution.
-
-## Portable configuration acceptance
-
-`direct/test_setup.py` uses synthetic home directories, different persisted accounts,
-standard and sandbox layouts, a renamed home, and explicit custom roots. It verifies
-captured selection/key/scope, ambiguous roots/accounts, missing consent, stale pinned
-accounts, deliberate reset, private file permissions, and the installed-path guard.
-`test/Setup.test.ts` checks the Configure-only discovery boundary and exact resolved
-request. `test/archive_validation.py` additionally exercises the unpacked release's new
-setup fields, private pin, concrete changed-message event and exact replay after restart
-under two distinct fixture users, retaining startup/immutability acceptance.
-
-No live Slack data is used by these checks. Current sign-in authority is not claimed or
-tested: the configuration explicitly authorizes persisted-cache discovery/use. The
-original delayed-snapshot and missed-intermediate-event limitations remain unchanged.
+These tests establish behavior for persisted snapshots. Staleness is unbounded,
+and intermediate events can be missed. See the [source evidence](direct/evidence.md).

@@ -1,6 +1,6 @@
 # Third-party notices
 
-The bundle uses Effect. The ws and slacrawl notices are retained conservatively; this does not assert that all their code is distributed.
+The Slack archive contains the Effect-based connector bundle and the Python persisted-cache reader. The ws and slacrawl notices below cover the transitive dependency and the consulted schema decoder.
 
 The CCL LevelDB and Snappy implementations retain their source headers and complete licences in direct/vendor/LEVELDB-LICENSE and direct/vendor/SNAPPY-LICENSE. See direct/vendor/SOURCES.md for pinned provenance. The local V8 readers also consulted CCL format definitions; the CCL notices cover any adapted portions.
 
