@@ -5,7 +5,7 @@ use std::path::Path;
 use std::thread;
 use std::time::Duration;
 
-use exangelos_tray_lib::sidecar::{ensure_daemon, Daemon};
+use exangelos_tray_lib::sidecar::{debug_report, ensure_daemon, Daemon};
 
 const DEADLINE: Duration = Duration::from_secs(5);
 
@@ -91,4 +91,33 @@ fn kills_a_sidecar_that_outlives_the_deadline() {
 
     let error = ensure_daemon(&socket, &sidecar, Duration::from_millis(300)).unwrap_err();
     assert!(error.contains("did not finish within"), "{error}");
+}
+
+fn script(directory: &Path, body: &str) -> std::path::PathBuf {
+    let sidecar = directory.join("exangelos");
+    fs::write(&sidecar, format!("#!/bin/sh\n{body}\n")).unwrap();
+    fs::set_permissions(&sidecar, fs::Permissions::from_mode(0o755)).unwrap();
+    sidecar
+}
+
+#[test]
+fn makes_a_debug_report_through_the_sidecar() {
+    let directory = tempfile::tempdir().unwrap();
+    let sidecar = script(
+        directory.path(),
+        "[ \"$*\" = \"--json debug report\" ] || exit 2\necho '{\"path\":\"/state/reports/r.tar.gz\",\"entries\":[],\"payloads\":false}'",
+    );
+
+    assert_eq!(
+        debug_report(&sidecar),
+        Ok(std::path::PathBuf::from("/state/reports/r.tar.gz"))
+    );
+}
+
+#[test]
+fn reports_why_the_debug_report_failed() {
+    let directory = tempfile::tempdir().unwrap();
+    let sidecar = script(directory.path(), "echo 'no space left' >&2\nexit 1");
+
+    assert_eq!(debug_report(&sidecar), Err("no space left".to_string()));
 }

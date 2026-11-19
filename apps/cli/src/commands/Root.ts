@@ -2,6 +2,8 @@ import { Effect } from "effect"
 import { Command } from "effect/cli"
 import { WakeText } from "@exangelos/contracts"
 import * as Agent from "./Agent.ts"
+import * as Debug from "./Debug.ts"
+import * as Logs from "./Logs.ts"
 import * as Management from "./Management.ts"
 import { Json } from "./Output.ts"
 
@@ -32,6 +34,8 @@ export const make = <
       ...loggedAll(Agent.commands),
       connector,
       ...loggedAll(Management.commands),
+      logged(Logs.command),
+      logged(Debug.command),
       ...(extra.commands ?? [])
     ]),
     Command.withGlobalFlags([Json])
