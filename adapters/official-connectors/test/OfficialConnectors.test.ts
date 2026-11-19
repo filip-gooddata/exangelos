@@ -157,7 +157,9 @@ describe("OfficialConnectorSource", () => {
         "HTTPS://user:pass@releases.test/v1?tok=sample",
         "HTTPS:releases.test/v1?tok=sample",
         "https://releases.test/v1?label=first sample-tail",
-        "https://[?label=sample"
+        "https://[?label=sample",
+        "https://[?contact=a@b&label=sample",
+        "blob:https://user:pass@releases.test/v1"
       ]
       for (const address of addresses) {
         yield* Effect.flip(fetch(root, "jira", { served: new Map(), releaseUrl: address })).pipe(
@@ -166,6 +168,8 @@ describe("OfficialConnectorSource", () => {
       }
       expect(records.some((record) => record.includes("https://releases.test/v1"))).toBe(true)
       expect(records.filter((record) => /sample|user|pass/.test(record))).toEqual([])
-      expect(records.filter((record) => record.includes("official connector fetch failed") && !record.includes("Error"))).toEqual([])
+      const failures = records.filter((record) => record.includes("official connector fetch failed"))
+      expect(failures).toHaveLength(addresses.length)
+      expect(failures.filter((record) => !record.includes("Error"))).toEqual([])
     }).pipe(Effect.scoped))
 })

@@ -6,9 +6,12 @@ import { OfficialConnectorSource, ConnectorImportSource, SettingsStore } from "@
 import { NamedImport } from "@exangelos/connector-import"
 
 /** The release file of an official connector: a gzip tar with `connector.json` at its root. */
-const safeUrl = (link: string) => URL.canParse(link) ? new URL(link).origin + new URL(link).pathname : "[url]"
+const safeUrl = (link: string) => {
+  const url = URL.canParse(link) ? new URL(link) : undefined
+  return url !== undefined && (url.protocol === "https:" || url.protocol === "http:") ? url.origin + url.pathname : "[url]"
+}
 
-const withoutUrlSecrets = (text: string) => text.replace(/\/\/[^/]*@/g, "//").split(/[?#]/)[0]!
+const withoutUrlSecrets = (text: string) => text.split(/[?#]/)[0]!.replace(/\/\/[^/]*@/g, "//")
 
 export const archiveName = (official: OfficialConnectorSource.Official) => `${official.name}-${official.version}.tar.gz`
 
