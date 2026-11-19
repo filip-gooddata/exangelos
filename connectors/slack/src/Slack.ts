@@ -22,9 +22,11 @@ export const make = <R>(source: Source<R>) => Connector.make({
   events: [events["message.new"], events["thread.reply"], events["message.edited"], events["reaction.added"], events["reaction.removed"]],
   parameters: Catalogue.parameters({ main: "selection", schema: Schema.Struct({ selection: Schema.String }) }),
   configuration: [
-    Catalogue.choice("sourceMode", { label: "Authorize discovery across local Slack caches and use of the matching persisted account, even after logout or access changes (sign-in unverified)", choices: ["persisted-cache", "pinned-cache", "subscription-ids"], secretDestination: true, required: false }),
+    Catalogue.choice("sourceMode", { label: "Authorize discovery across local Slack caches and use of the matching persisted account, even after logout or access changes (sign-in unverified)", choices: ["persisted-cache", "pinned-cache"], secretDestination: true, required: false }),
+    Catalogue.choice("subscriptionAccess", { label: "Allow positional IDs to resolve and monitor persisted Slack cache data, even after logout or access changes (sign-in unverified)", choices: ["persisted-cache", "disabled"], required: false }),
     Catalogue.secret("conversationSnippet", { label: "Initial selection by literal cached message snippet", required: false }),
     Catalogue.secret("conversationId", { label: "Initial selection by Slack conversation ID or Slack conversation link", required: false }),
+    Catalogue.text("subscriptionCacheRoot", { label: "Optional IndexedDB folder for positional subscriptions (defaults to cacheRoot or macOS discovery)", required: false }),
     Catalogue.text("cacheRoot", { label: "Optional fallback: absolute IndexedDB folder; otherwise detect macOS Slack locations", required: false }),
     Catalogue.text("selectionRevision", { label: "Optional reset version (default 1): change to clear old selectors and select again; start a new subscription", secretDestination: true, required: false }),
     Catalogue.secret("privateSource", { label: "Legacy fallback only: existing private selection and stable key JSON", required: false }),
@@ -58,23 +60,28 @@ export const make = <R>(source: Source<R>) => Connector.make({
         const setupValues = Object.fromEntries(["sourceMode", "conversationSnippet", "conversationId", "cacheRoot", "selectionRevision"]
           .filter((key) => values[key] !== undefined && values[key] !== "")
           .map((key) => [key, values[key]!]))
-        if (values.privateSource && Object.keys(setupValues).length > 0) return yield* new Connector.ConfigurationRejected({ reason })
-        if (setupValues.sourceMode === "subscription-ids") {
-          if (setupValues.conversationSnippet || setupValues.conversationId || !source.setup) {
-            return yield* new Connector.ConfigurationRejected({ reason: "Subscription ID mode takes its selector from Subscribe" })
-          }
-          return yield* Ref.set(configured, { discovery: setupValues, interval: Duration.millis(interval) })
+        const subscriptionRoot = values.subscriptionCacheRoot || setupValues.cacheRoot
+        const discovery = values.subscriptionAccess === "persisted-cache" && source.setup ? {
+          subscriptionAccess: "persisted-cache",
+          ...(subscriptionRoot && { cacheRoot: subscriptionRoot }),
+          ...(setupValues.selectionRevision && { selectionRevision: setupValues.selectionRevision })
+        } : undefined
+        const settings = { interval: Duration.millis(interval), ...(discovery && { discovery }) }
+        const hasSelector = Boolean(setupValues.sourceMode || setupValues.conversationSnippet || setupValues.conversationId)
+        if (values.privateSource && Object.keys(setupValues).length > 0) {
+          return yield* new Connector.ConfigurationRejected({ reason })
         }
+        if (discovery && !hasSelector && !values.privateSource) return yield* Ref.set(configured, settings)
         const request = values.privateSource
           ? yield* decodeRequest(values.privateSource)
           : source.setup !== undefined && (setupValues.sourceMode === "persisted-cache" || setupValues.sourceMode === "pinned-cache")
           ? yield* source.setup(setupValues)
-          : yield* new Connector.ConfigurationRejected({ reason: "Choose subscription-ids or persisted-cache to authorize Slack cache discovery" })
+          : yield* new Connector.ConfigurationRejected({ reason: "Authorize Slack cache discovery with subscriptionAccess or sourceMode" })
         if (!values.privateSource && request.expectedScope === undefined) return yield* new Connector.ConfigurationRejected({ reason })
         const snapshot = yield* source.read(request)
         if (request.expectedScope !== undefined && snapshot.scope !== request.expectedScope) return yield* new Connector.ConfigurationRejected({ reason })
         yield* validateObservation(snapshot)
-        yield* Ref.set(configured, { selected: { request, scope: snapshot.scope }, interval: Duration.millis(interval) })
+        yield* Ref.set(configured, { ...settings, selected: { request, scope: snapshot.scope } })
       }).pipe(Effect.mapError((error) => error instanceof Connector.ConfigurationRejected ? error :
         new Connector.ConfigurationRejected({ reason: error instanceof SourceUnavailable ? error.reason : reason }))),
       describe: ({ selection }) => Effect.gen(function*() {

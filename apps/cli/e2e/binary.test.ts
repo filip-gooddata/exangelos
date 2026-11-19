@@ -701,7 +701,7 @@ describe("official connectors from a release address", () => {
     expect(fixture.exitCode, fixture.stderr.toString()).toBe(0)
     const subscribe = (id: string) => run(exangelos, "--json", "subscribe", "slack", id, "--intent", "Observe cached messages", "--pull-only")
     expect(subscribe("C0000001").status).toBe(1)
-    json("connector", "configure", "slack", `cacheRoot=${cache}`, "--secret-command", "sourceMode=echo subscription-ids")
+    json("connector", "configure", "slack", `cacheRoot=${cache}`, "subscriptionAccess=persisted-cache")
     expect(subscribe("D9999999").status).toBe(1)
     const subscriptions = ["C0000001", "D0000002"].map((id) => {
       const result = subscribe(id)
@@ -730,6 +730,8 @@ describe("official connectors from a release address", () => {
       "--secret-file", `conversationSnippet=${snippet}`)
     const pin = join(home, "connector-state/slack/setup.json")
     const pinned = await readFile(pin, "utf8")
+    configure("subscriptionAccess=persisted-cache")
+    expect(await readFile(pin, "utf8")).toBe(pinned)
     configure("--secret-command", "sourceMode=echo pinned-cache")
     expect(await readFile(pin, "utf8")).toBe(pinned)
     const subscription = json("subscribe", "slack", "selected", "--intent", "Watch cached conversation", "--pull-only")

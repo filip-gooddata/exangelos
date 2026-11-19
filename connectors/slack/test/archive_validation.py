@@ -17,7 +17,7 @@ import time
 from unittest import mock
 
 PACKER = 'ce38a52891e5ff20f07193888aa3672e7960fd79'
-CONSENT = 'Choose subscription-ids or persisted-cache to authorize Slack cache discovery'
+CONSENT = 'Authorize Slack cache discovery with subscriptionAccess or sourceMode'
 UNAVAILABLE = 'Slack persisted snapshot is unavailable or unsupported'
 MISSING = 'Slack cache or private setup files are missing or unreadable. Check the cache root and access'
 REPO = Path(__file__).resolve().parents[3]
@@ -269,7 +269,7 @@ def exercise(installed, fixtures, evidence):
     second = 'D0000002'
     state['messages'][second] = {}
     database(app, state)
-    consent = dict(sourceMode='subscription-ids', cacheRoot=str(app))
+    consent = dict(subscriptionAccess='persisted-cache', cacheRoot=str(app))
     handles = []
     cursors = []
     with Wire(installed, home) as wire:
@@ -290,6 +290,30 @@ def exercise(installed, fixtures, evidence):
                   and 'SourceFailed' in json.dumps(answer), 'foreign cursor rejected')
             wire.watch(cursors[i], handles[i])
             wire.receive(1.2, quiet=True)
+    for legacy in (True, False):
+        home = homes / ('coexist-legacy' if legacy else 'coexist-selected')
+        home.mkdir()
+        original = (dict(privateSource=json.dumps(request(app))) if legacy else
+                    dict(sourceMode='persisted-cache', conversationId=SELECTION[2], cacheRoot=str(app)))
+        combined = dict(original, subscriptionAccess='persisted-cache', subscriptionCacheRoot=str(app))
+        with Wire(installed, home) as wire:
+            wire.configure(original)
+            cursor = wire.chunk(wire.watch())[0]['cursor']
+        next(iter(state['messages'][SELECTION[2]].values()))['text'] += ' edited'
+        database(app, state, sequence=40 if legacy else 50)
+        with Wire(installed, home) as wire:
+            wire.configure(combined)
+            described = wire.call('Describe', {'parameters': {'selection': second}})
+            check(described['_tag'] == 'Described', 'additive positional consent')
+            wire.chunk(wire.watch(selection=described['parameters']['selection']))
+            selected = wire.call('Describe', {'parameters': {'selection': 'selected'}})
+            check(selected['_tag'] == 'Described', 'existing selection still available')
+            batch = wire.chunk(wire.watch(cursor))
+            check(len(batch) == 1 and batch[0]['event']['type'] == 'message.edited', 'existing cursor delivers edit')
+        with Wire(installed, home) as wire:
+            wire.configure(combined)
+            check(wire.chunk(wire.watch(cursor)) == batch, 'selected cursor replay with positional consent')
+    cases.append('additive-consent-with-selected-and-legacy-cursor-replay')
     cases.append('positional-id-pins-restart-and-cross-cursor-rejection')
     check(setup_scopes[0] != setup_scopes[1], 'different users have distinct keys')
     after = inventory(installed)

@@ -36,11 +36,11 @@ rejects a ledger path there. Back up that external ledger with subscription curs
 With the official Slack connector enabled, authorize per-subscription cache discovery once. On a fresh installation, the first Subscribe command installs the official connector and stops at Configure. After granting consent, repeat Subscribe with the conversation ID:
 
 ```sh
-exangelos connector configure slack --secret-command 'sourceMode=echo subscription-ids'
+exangelos connector configure slack subscriptionAccess=persisted-cache
 exangelos subscribe slack D0000002 --intent 'Watch this conversation' --pull-only
 ```
 
-Replace the example ID with the Slack conversation ID. This mode needs no snippet,
+Replace the example ID with the Slack conversation ID. This permission adds positional subscriptions alongside existing private selections. Set `subscriptionAccess=disabled` to revoke it. It needs no snippet,
 selector file or existing pin. Configure records consent without opening the cache.
 Subscribe resolves the ID against the configured cache roots and requires one
 validated persisted account and conversation. Each subscription stores an opaque
@@ -79,9 +79,11 @@ in public errors, Describe responses, events or cursors.
 
 | Field | Setup use |
 | --- | --- |
-| `sourceMode` | `subscription-ids` authorizes positional ID discovery, `persisted-cache` sets up the private selector, and `pinned-cache` reopens that private selection. |
+| `subscriptionAccess` | `persisted-cache` authorizes positional ID discovery. Existing private selection credentials are retained. |
+| `sourceMode` | `persisted-cache` sets up the private selector, and `pinned-cache` reopens that private selection. |
 | `conversationSnippet` | Literal snippet in a persisted message. |
 | `conversationId` | Alternative secret selector for an ID or supported conversation link. |
+| `subscriptionCacheRoot` | Optional source folder for positional subscriptions. Defaults to `cacheRoot` or the standard locations. |
 | `cacheRoot` | Optional fallback: absolute IndexedDB folder for a custom installation or supported-format copied snapshot; otherwise macOS locations are detected. |
 | `selectionRevision` | Optional, default `1`: change deliberately to rediscover/reset a selection; use a new subscription without an old cursor. |
 | `pollIntervalMs` | Optional, default `30000`, range `1000`–`3600000`; controls polling, not freshness. |

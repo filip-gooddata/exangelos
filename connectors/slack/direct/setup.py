@@ -221,8 +221,8 @@ def save_json(path, saved):
 
 
 def subscription(values):
-    require(set(values) <= {'sourceMode', 'cacheRoot', 'selectionRevision', 'subscription'})
-    require(values.get('sourceMode') == 'subscription-ids')
+    require(set(values) <= {'subscriptionAccess', 'cacheRoot', 'selectionRevision', 'subscription'})
+    require(values.get('subscriptionAccess') == 'persisted-cache')
     selection = values['subscription']
     custom = values.get('cacheRoot', '')
     revision = values.get('selectionRevision', '1')
@@ -242,7 +242,6 @@ def subscription(values):
         validate(request)
         return request
     require(re.fullmatch(r'[CDG][A-Z0-9]{6,30}', selection))
-    # Only creation of the installation-local secret is serialized; independent scans may overlap.
     with locked(directory, wait=True):
         key_path = directory / 'subscriptions-key.json'
         try:

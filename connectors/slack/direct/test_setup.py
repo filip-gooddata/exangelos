@@ -117,7 +117,7 @@ class SetupTests(unittest.TestCase):
         roots = setup.locations('')
         self.database(roots['standard'])
         selected = setup.setup(self.values)
-        values = dict(sourceMode='subscription-ids', subscription=SELECTION[2])
+        values = dict(subscriptionAccess='persisted-cache', subscription=SELECTION[2])
         first = setup.subscription(values)
         handle = 'scope-' + first['expectedScope']
         self.database(roots['sandbox'], ('T0000022', 'U0000033', SELECTION[2]))
