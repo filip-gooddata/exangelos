@@ -7,7 +7,7 @@ import { NamedImport } from "@exangelos/connector-import"
 
 /** The release file of an official connector: a gzip tar with `connector.json` at its root. */
 const safeUrls = (text: string) =>
-  text.replace(/https?:\/\/\S+/g, (link) => URL.canParse(link) ? new URL(link).origin + new URL(link).pathname : "[url]")
+  text.replace(/https?:\/\/\S+/gi, (link) => URL.canParse(link) ? new URL(link).origin + new URL(link).pathname : "[url]")
 
 export const archiveName = (official: OfficialConnectorSource.Official) => `${official.name}-${official.version}.tar.gz`
 
