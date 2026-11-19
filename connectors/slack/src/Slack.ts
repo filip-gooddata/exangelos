@@ -71,7 +71,9 @@ export const make = <R>(source: Source<R>) => Connector.make({
         if (values.privateSource && Object.keys(setupValues).length > 0) {
           return yield* new Connector.ConfigurationRejected({ reason })
         }
-        if (discovery && !hasSelector && !values.privateSource) return yield* Ref.set(configured, settings)
+        if (!hasSelector && !values.privateSource && (discovery || values.subscriptionAccess === "disabled")) {
+          return yield* Ref.set(configured, settings)
+        }
         const request = values.privateSource
           ? yield* decodeRequest(values.privateSource)
           : source.setup !== undefined && (setupValues.sourceMode === "persisted-cache" || setupValues.sourceMode === "pinned-cache")

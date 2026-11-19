@@ -290,6 +290,19 @@ def exercise(installed, fixtures, evidence):
                   and 'SourceFailed' in json.dumps(answer), 'foreign cursor rejected')
             wire.watch(cursors[i], handles[i])
             wire.receive(1.2, quiet=True)
+    with Wire(installed, home) as wire:
+        wire.configure(dict(consent, subscriptionAccess='disabled'))
+        check(wire.call('Describe', {'parameters': {'selection': handles[0]}})['_tag'] == 'Invalid', 'disabled pin')
+    next(iter(state['messages'][SELECTION[2]].values()))['text'] += ' positional edit'
+    database(app, state, sequence=30)
+    with Wire(installed, home) as wire:
+        wire.configure(consent)
+        delta = wire.chunk(wire.watch(cursors[0], handles[0]))
+        check(len(delta) == 1 and delta[0]['event']['type'] == 'message.edited', 'resumed positional edit')
+    with Wire(installed, home) as wire:
+        wire.configure(consent)
+        check(wire.chunk(wire.watch(cursors[0], handles[0])) == delta, 'exact positional replay')
+    cases.append('positional-revocation-and-replay-after-restart')
     for legacy in (True, False):
         home = homes / ('coexist-legacy' if legacy else 'coexist-selected')
         home.mkdir()
