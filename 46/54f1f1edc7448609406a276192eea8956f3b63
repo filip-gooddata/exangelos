@@ -1,0 +1,25 @@
+adapters/connector-import/src/ConnectorImportLive.ts
+  s_14e0d9a4414e11::t_4b42f0b1e77b7d 77-90,95,98
+apps/cli/e2e/binary.test.ts
+  s_14e0d9a4414e11::t_7eb26cb950122b 2,712-726
+connectors/slack/README.md
+  s_14e0d9a4414e11::t_7e4bb39cc4fa2f 80
+connectors/slack/test/archive_validation.py
+  s_14e0d9a4414e11::t_bec4a4ed7000bc 246-255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4654f1f1edc7448609406a276192eea8956f3b63",
+  "prompts": {},
+  "sessions": {
+    "s_14e0d9a4414e11": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f45b-bb30-7d82-8c28-f3c727afa227",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
