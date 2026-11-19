@@ -17,7 +17,7 @@ import {
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import { Cause, Clock, Effect, Exit, type Layer, Option } from "effect"
 import type { Headers } from "effect/http"
-import type { RpcGroup } from "effect/rpc"
+import { Rpc, type RpcGroup } from "effect/rpc"
 import { version } from "./Build.ts"
 import * as Errors from "./ContractErrors.ts"
 
@@ -83,7 +83,14 @@ const instrumented = (handlers: Handlers): Handlers =>
   Object.fromEntries(
     Object.entries(handlers).map(([method, handle]) => [
       method,
-      (payload: unknown, caller: Caller) => logged(method, caller, handle(payload as never, caller as never) as Effect.Effect<unknown, unknown, unknown>)
+      (payload: unknown, caller: Caller) => {
+        const result = handle(payload as never, caller as never) as
+          | Effect.Effect<unknown, unknown, unknown>
+          | Rpc.Wrapper<Effect.Effect<unknown, unknown, unknown>>
+        return Rpc.isWrapper(result)
+          ? Rpc.wrap({ fork: result.fork, uninterruptible: result.uninterruptible })(logged(method, caller, result.value))
+          : logged(method, caller, result)
+      }
     ])
   ) as unknown as Handlers
 
