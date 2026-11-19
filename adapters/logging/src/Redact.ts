@@ -105,7 +105,7 @@ const deepestCause = 4
 const shown = (value: unknown): string => {
   if (typeof value === "string") return sanitise(value)
   try {
-    return sanitise(JSON.stringify(value) ?? String(value))
+    return sanitise(JSON.stringify(redactValue(value, [])) ?? String(value))
   } catch {
     return String(value)
   }

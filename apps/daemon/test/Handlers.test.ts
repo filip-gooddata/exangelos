@@ -63,6 +63,7 @@ describe("request logging", () => {
         _tag: "ConnectorUnavailable",
         connector: "jira",
         apiToken: "kept-out",
+        details: { status: 503, headers: { Authorization: "nested-out" } },
         message: "fetching https://user:pass@jira.example/rest?jql=secret#top failed",
         cause: new Error("socket closed by https://proxy.example/?sig=x")
       }
@@ -70,6 +71,7 @@ describe("request logging", () => {
       expect(failed.cause).toContain("ConnectorUnavailable: connector: jira, apiToken: [redacted]")
       expect(failed.cause).toContain("fetching https://jira.example/rest failed")
       expect(failed.cause).toContain("caused by Error: message: socket closed by https://proxy.example/")
-      expect(failed.cause).not.toMatch(/kept-out|user:pass|jql|sig=|#top/)
+      expect(failed.cause).toContain('details: {"status":503,"headers":{"Authorization":"[redacted]"}}')
+      expect(failed.cause).not.toMatch(/kept-out|nested-out|user:pass|jql|sig=|#top/)
     }))
 })
