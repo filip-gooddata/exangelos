@@ -185,14 +185,14 @@ const logged = (tool: string) => <A, E, R>(handle: Effect.Effect<A, E, R>): Effe
 
 type Handlers = Toolkit.HandlersFrom<Toolkit.Tools<typeof toolkit>>
 
-const instrumented = (handlers: Handlers): Handlers =>
+const instrumented = <H extends Handlers>(handlers: H): H =>
   Object.fromEntries(
     Object.entries(handlers).map(([tool, handle]) => [
       tool,
       (input: never, context: never) =>
         logged(tool)((handle as (input: never, context: never) => Effect.Effect<unknown, unknown>)(input, context))
     ])
-  ) as unknown as Handlers
+  ) as unknown as H
 
 export const handlers = toolkit.toLayer(Effect.gen(function*() {
   const { connect } = yield* AgentClient.AgentClient

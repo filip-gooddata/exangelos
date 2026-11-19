@@ -80,7 +80,7 @@ export const logged = <A, E, R>(method: string, caller: Caller, handle: Effect.E
 
 type Handlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof DaemonContract.DaemonContract>>
 
-const instrumented = (handlers: Handlers): Handlers =>
+const instrumented = <H extends Handlers>(handlers: H): H =>
   Object.fromEntries(
     Object.entries(handlers).map(([method, handle]) => [
       method,
@@ -93,7 +93,7 @@ const instrumented = (handlers: Handlers): Handlers =>
           : logged(method, caller, result)
       }
     ])
-  ) as unknown as Handlers
+  ) as unknown as H
 
 export const layer = DaemonContract.DaemonContract.toLayer(instrumented({
   ListConnectors: () => listConnectors,
