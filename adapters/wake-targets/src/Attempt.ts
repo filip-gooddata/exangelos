@@ -63,10 +63,9 @@ export const quietReason = (program: string, outcome: Outcome): string => {
   }
 }
 
-const logOutcome = (invocation: Invocation, outcome: Outcome, durationMs: number) =>
+const logOutcome = (outcome: Outcome, durationMs: number) =>
   Effect.logDebug("wake command finished").pipe(
     Effect.annotateLogs({
-      program: invocation.program,
       result: outcome._tag,
       durationMs,
       ...(outcome._tag === "Exited" ? { exitCode: outcome.exitCode } : {})
@@ -103,6 +102,6 @@ export const run = (
     Effect.map(Option.getOrElse((): Outcome => ({ _tag: "TimedOut", limit }))),
     Effect.catch((error) => Effect.succeed<Outcome>({ _tag: "NotStarted", reason: error.message })),
     Effect.timed,
-    Effect.tap(([duration, outcome]) => logOutcome(invocation, outcome, Duration.toMillis(duration))),
+    Effect.tap(([duration, outcome]) => logOutcome(outcome, Duration.toMillis(duration))),
     Effect.map(([, outcome]) => outcome)
   )

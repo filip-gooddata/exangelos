@@ -27,14 +27,15 @@ const attempt = (
   spawner: ChildProcessSpawner.ChildProcessSpawner["Service"],
   planned: Invocation,
   interpret: (outcome: Outcome) => Verdict,
-  limit: Duration.Duration
+  limit: Duration.Duration,
+  label: string
 ): Effect.Effect<void, WakeTarget.DeliveryFailed> =>
   Effect.gen(function*() {
     const outcome = yield* run(spawner, planned, limit)
     const verdict = interpret(outcome)
-    const annotations = { program: planned.program, result: outcome._tag }
+    const annotations = { command: label, result: outcome._tag }
     if (verdict._tag === "Failed") {
-      const error = quietReason(planned.program, outcome)
+      const error = quietReason(label, outcome)
       yield* Effect.logWarning("wake command failed", Cause.fail(new WakeTarget.DeliveryFailed({ reason: error }))).pipe(
         Effect.annotateLogs({ ...annotations, error })
       )
@@ -66,7 +67,8 @@ const named = (
       spawner,
       Command.invocation(command, target, content.subscription, WakeText.render(content)),
       (outcome) => Command.interpret(command[0], outcome),
-      limit
+      limit,
+      "command"
     )
   })
 
@@ -83,9 +85,9 @@ export const layer = (
         const session = target
         switch (session.harness) {
           case "t3":
-            return attempt(spawner, T3.invocation(session.sessionId, WakeText.render(content)), T3.interpret, limit)
+            return attempt(spawner, T3.invocation(session.sessionId, WakeText.render(content)), T3.interpret, limit, "t3")
           case "codex":
-            return attempt(spawner, Codex.invocation(session.sessionId, WakeText.render(content)), Codex.interpret, limit)
+            return attempt(spawner, Codex.invocation(session.sessionId, WakeText.render(content)), Codex.interpret, limit, "codex")
           case "claude-code":
             return refuse(ClaudeCode.noRoute(content.subscription))
         }
@@ -107,7 +109,8 @@ export const layerCommand = (
           spawner,
           Command.invocation(command, session, content.subscription, WakeText.render(content)),
           (outcome) => Command.interpret(command[0], outcome),
-          limit
+          limit,
+          "command"
         )
     }
   }))

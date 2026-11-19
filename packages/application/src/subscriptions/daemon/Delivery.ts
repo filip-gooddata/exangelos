@@ -155,7 +155,7 @@ const attempt = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
       Effect.catchTag("DeliveryFailed", (failure) =>
         elapsed.pipe(
           Effect.flatMap((durationMs) =>
-            Effect.logWarning("wake failed").pipe(
+            Effect.logInfo("wake not delivered").pipe(
               Effect.annotateLogs({ outcome: "error", durationMs, attempt: wake.attempts.count + 1 })
             )),
           Effect.andThen(DateTime.now),

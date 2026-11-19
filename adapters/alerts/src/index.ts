@@ -33,7 +33,7 @@ export const layer: Layer.Layer<AlertSink.AlertSink, never, Notifications> = Lay
       show: (alert) => {
         const notification = render(alert)
         return Effect.logDebug("alert body").pipe(
-          Effect.annotateLogs("payload", notification),
+          Effect.annotateLogs("payload", alert._tag === "Event" ? notification : { title: notification.title }),
           Effect.andThen(notifications.show(notification)),
           Effect.tap(() => Effect.logInfo("alert shown").pipe(Effect.annotateLogs("outcome", "ok"))),
           Effect.tapCause((cause) =>
