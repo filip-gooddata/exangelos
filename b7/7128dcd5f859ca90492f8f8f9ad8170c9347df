@@ -1,0 +1,21 @@
+adapters/daemon-client/src/DaemonClient.ts
+  s_a70b1f76d7da41::t_ff75771d2ed042 46,54-55
+adapters/service/src/ServiceManager.ts
+  s_a70b1f76d7da41::t_b82c3a0492663c 106,123,128
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b77128dcd5f859ca90492f8f8f9ad8170c9347df",
+  "prompts": {},
+  "sessions": {
+    "s_a70b1f76d7da41": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "205e061a-bf95-42d6-870a-96205ca5ac87",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
