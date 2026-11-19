@@ -1,0 +1,21 @@
+adapters/logging/src/Redact.ts
+  s_07d431cf0a0dd6::t_9f0e39153f3111 49
+adapters/logging/test/Redact.test.ts
+  s_07d431cf0a0dd6::t_f72f15b0e16780 41
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "191fd5c9c9e1dbfb0a02cf72cddfbfe1dc754793",
+  "prompts": {},
+  "sessions": {
+    "s_07d431cf0a0dd6": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f3ec-80d0-7600-8140-ecd83fcf5218",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
