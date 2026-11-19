@@ -52,8 +52,17 @@ export const layer = (options: {
         Effect.gen(function*() {
           const current = yield* Effect.mapError(settings.read, (unreadable) => unreadable.reason)
           const from = yield* source(official, current.officialConnectorFolder)
-          return yield* Effect.mapError(imports.place(from, official.name), (failed) => failed.reason)
-        }).pipe(Effect.mapError((reason) => new OfficialConnectorSource.OfficialFetchFailed({ connector: official.name, reason })))
+          yield* Effect.logInfo("official connector source chosen").pipe(
+            Effect.annotateLogs({ source: from._tag, target: "path" in from ? from.path : from.url })
+          )
+          const placed = yield* Effect.mapError(imports.place(from, official.name), (failed) => failed.reason)
+          yield* Effect.logInfo("official connector fetched")
+          return placed
+        }).pipe(
+          Effect.tapError((reason) => Effect.logWarning("official connector fetch failed").pipe(Effect.annotateLogs({ error: reason }))),
+          Effect.mapError((reason) => new OfficialConnectorSource.OfficialFetchFailed({ connector: official.name, reason })),
+          Effect.annotateLogs({ connector: official.name, version: official.version })
+        )
 
       return { known: options.known, fetch }
     })

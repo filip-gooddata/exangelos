@@ -36,14 +36,20 @@ export const fetchOfficial = (actor: Session.Actor, name: Ids.ConnectorName) =>
     yield* supervisor.store(connector, { connector: name, kind: "fetch", actor, at: yield* DateTime.now, detail: installed.digest })
     const alert = ConnectorRules.trustAlert(connector, checksum)
     if (Option.isSome(alert)) {
+      yield* Effect.logError("official connector digest mismatch").pipe(
+        Effect.annotateLogs({ expected: official.digest, actual: installed.digest, trust: connector.trust })
+      )
       yield* Effect.ignore((yield* AlertSink).show(alert.value))
       return yield* new Refusal.ConnectorUnavailable({
         connector: name,
         problem: "its checksum does not match the one this binary carries"
       })
     }
+    yield* Effect.logInfo("official connector digest matched").pipe(
+      Effect.annotateLogs({ version: installed.version, trust: connector.trust })
+    )
     yield* supervisor.restart(name)
-  })
+  }).pipe(Effect.annotateLogs({ connector: name }))
 
 /** The real ConnectorAccess over the supervisor. */
 export const layerConnectorAccess: Layer.Layer<

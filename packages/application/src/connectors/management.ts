@@ -77,6 +77,12 @@ export const importConnector = (actor: Session.Actor, source: Source) =>
       })
     }
     yield* supervisor.store(connector, yield* change(connector.name, "import", actor, `${source._tag} ${installed.digest}`))
+    yield* Effect.logInfo("connector imported").pipe(Effect.annotateLogs({
+      connector: connector.name,
+      source: source._tag,
+      digest: installed.digest,
+      replaced: Option.isSome(before)
+    }))
     const alert = ConnectorRules.trustAlert(connector, Option.none())
     if (Option.isSome(alert)) yield* Effect.ignore((yield* AlertSink).show(alert.value))
     yield* supervisor.restart(connector.name)
@@ -90,6 +96,7 @@ export const enableConnector = (actor: Session.Actor, name: Ids.ConnectorName, d
     const supervisor = yield* ConnectorSupervisor
     const connector = yield* found(name)
     if (connector.digest !== digest) {
+      yield* Effect.logWarning("connector digest mismatch").pipe(Effect.annotateLogs({ expected: digest, actual: connector.digest }))
       return yield* new DigestMismatch({ connector: name, expected: digest, actual: connector.digest })
     }
     if (connector.trust !== "inert") return connector
@@ -101,12 +108,16 @@ export const enableConnector = (actor: Session.Actor, name: Ids.ConnectorName, d
     )
     if (Option.isNone(enabled)) {
       const now = yield* found(name)
-      if (now.digest !== digest) return yield* new DigestMismatch({ connector: name, expected: digest, actual: now.digest })
+      if (now.digest !== digest) {
+        yield* Effect.logWarning("connector digest mismatch").pipe(Effect.annotateLogs({ expected: digest, actual: now.digest }))
+        return yield* new DigestMismatch({ connector: name, expected: digest, actual: now.digest })
+      }
       return now
     }
+    yield* Effect.logInfo("connector enabled").pipe(Effect.annotateLogs({ digest }))
     yield* supervisor.restart(name)
     return yield* stored(name)
-  })
+  }).pipe(Effect.annotateLogs({ connector: name }))
 
 export const disableConnector = (actor: Session.Actor, name: Ids.ConnectorName) =>
   Effect.gen(function*() {
@@ -226,6 +237,9 @@ export const devLink = (actor: Session.Actor, path: string) =>
       configuration: Option.match(existing, { onNone: () => ({ _tag: "Missing" }), onSome: (p) => p.configuration }),
       process: "stopped"
     }, yield* change(installed.name, "dev-link", actor, installed.directory))
+    yield* Effect.logInfo("connector dev-linked").pipe(
+      Effect.annotateLogs({ connector: installed.name, target: installed.directory })
+    )
     yield* supervisor.restart(installed.name)
     return yield* stored(installed.name)
   })

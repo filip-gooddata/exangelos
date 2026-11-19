@@ -1,4 +1,4 @@
-import { Config, Context, Effect, FileSystem, Layer, Option, Path } from "effect"
+import { Cause, Config, Context, Effect, FileSystem, Layer, Option, Path } from "effect"
 import type { ChildProcessSpawner } from "effect/process"
 import { ServiceManager } from "@exangelos/application"
 import { Paths } from "@exangelos/paths"
@@ -101,6 +101,12 @@ export const make = Effect.gen(function*() {
       }; unset them or run exangelos daemon in the foreground`
     ))
 
+  const logged = (action: string) => <A>(effect: Effect.Effect<A, ServiceManager.ServiceFailed>) =>
+    effect.pipe(
+      Effect.tapError((error) => Effect.logInfo("service action failed", Cause.fail(error))),
+      Effect.annotateLogs({ target: label, event: action, startMethod: method })
+    )
+
   return ServiceManager.ServiceManager.of({
     status: userService.status(label).pipe(
       Effect.map((status) => ({
@@ -108,10 +114,20 @@ export const make = Effect.gen(function*() {
         installed: status._tag !== "NotInstalled",
         running: status._tag === "Running"
       })),
-      Effect.mapError(fromUserService)
+      Effect.mapError(fromUserService),
+      Effect.tap(({ installed, running }) =>
+        Effect.logDebug("service status read").pipe(Effect.annotateLogs({ installed, running }))),
+      logged("status")
     ),
-    install: method === "homebrew" ? refuseOverrides : installOwnUnit,
-    start: userService.start(label).pipe(Effect.mapError(fromUserService))
+    install: (method === "homebrew" ? refuseOverrides : installOwnUnit).pipe(
+      Effect.tap(() => Effect.logInfo("service installed")),
+      logged("install")
+    ),
+    start: userService.start(label).pipe(
+      Effect.mapError(fromUserService),
+      Effect.tap(() => Effect.logInfo("service started")),
+      logged("start")
+    )
   })
 })
 
