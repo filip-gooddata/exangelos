@@ -130,4 +130,21 @@ describe("Read", () => {
     fs.renameSync(aside, Path.join(dir, "daemon.5.jsonl"))
     expect(tail.poll()).toEqual([])
   })
+
+  it("never forgets a consumed file, however many newer files appear while it is out of sight", () => {
+    const dir = temp()
+    const current = Path.join(dir, "daemon.jsonl")
+    const aside = Path.join(dir, "aside")
+    fs.writeFileSync(current, line("2026-11-19T10:00:00.000Z", "seen"))
+    const tail = new Read.Tail(dir, ["daemon"])
+    tail.backlog()
+    fs.renameSync(current, aside)
+    for (let i = 1; i <= 7; i++) {
+      fs.writeFileSync(current, line(`2026-11-19T10:00:0${i}.000Z`, `newer ${i}`))
+      expect(tail.poll().map((record) => record.msg)).toEqual([`newer ${i}`])
+      fs.renameSync(current, Path.join(dir, `newer-${i}`))
+    }
+    fs.renameSync(aside, Path.join(dir, "daemon.5.jsonl"))
+    expect(tail.poll()).toEqual([])
+  })
 })

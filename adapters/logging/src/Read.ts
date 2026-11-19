@@ -35,7 +35,6 @@ export const files = (dir: string, src: Record.Source): Array<string> => [
 interface Chunk {
   readonly lines: Array<string>
   readonly id: string
-  readonly born: number
   readonly offset: number
 }
 
@@ -53,13 +52,12 @@ const readLines = (path: string, from: (id: string, size: number) => number | un
     const id = identity(info)
     const offset = from(id, info.size)
     if (offset === undefined) return undefined
-    const born = info.birthtimeMs
-    if (info.size <= offset) return { lines: [], id, born, offset }
+    if (info.size <= offset) return { lines: [], id, offset }
     const buffer = Buffer.alloc(info.size - offset)
     const read = fs.readSync(fd, buffer, 0, buffer.length, offset)
     const end = buffer.subarray(0, read).lastIndexOf(0x0a)
-    if (end === -1) return { lines: [], id, born, offset }
-    return { lines: buffer.subarray(0, end).toString("utf8").split("\n"), id, born, offset: offset + end + 1 }
+    if (end === -1) return { lines: [], id, offset }
+    return { lines: buffer.subarray(0, end).toString("utf8").split("\n"), id, offset: offset + end + 1 }
   } finally {
     fs.closeSync(fd)
   }
@@ -68,19 +66,13 @@ const readLines = (path: string, from: (id: string, size: number) => number | un
 const parsed = (lines: ReadonlyArray<string>): Array<Record.LogRecord> =>
   lines.flatMap((line) => Option.toArray(Record.parse(line)))
 
-interface Cursor {
-  readonly src: Record.Source
-  readonly offset: number
-  readonly born: number
-}
-
 export class Tail {
-  private cursors = new Map<string, Cursor>()
+  private offsets = new Map<string, number>()
 
   constructor(readonly dir: string, readonly sources: ReadonlyArray<Record.Source>) {}
 
   backlog(): Array<Record.LogRecord> {
-    this.cursors = new Map()
+    this.offsets = new Map()
     return this.poll()
   }
 
@@ -91,19 +83,14 @@ export class Tail {
       for (const path of files(this.dir, src)) {
         const read = readLines(path, (id, size) => {
           if (seen.has(id)) return undefined
-          const offset = this.cursors.get(id)?.offset ?? 0
+          const offset = this.offsets.get(id) ?? 0
           return size < offset ? 0 : offset
         })
         if (read === undefined) continue
         records.push(...parsed(read.lines))
         seen.add(read.id)
-        this.cursors.set(read.id, { src, offset: read.offset, born: read.born })
+        this.offsets.set(read.id, read.offset)
       }
-    }
-    for (const [id, cursor] of this.cursors) {
-      if (seen.has(id) || cursor.born <= 0) continue
-      const newer = [...this.cursors.values()].filter((other) => other.src === cursor.src && other.born > cursor.born)
-      if (newer.length > keep) this.cursors.delete(id)
     }
     return merge(records)
   }
