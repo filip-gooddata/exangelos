@@ -1,6 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Option, Redacted, Result } from "effect"
-import { Hex } from "effect/encoding"
+import { Effect, Layer, Option, Redacted } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import { Keychain } from "../src/index.ts"
 import * as FakeSpawner from "./FakeSpawner.ts"
@@ -37,13 +36,13 @@ describe("macOS Keychain", () => {
   it.effect("reads a password and reports a missing one as none", () => {
     const { calls, provide } = keychain(
       Keychain.macOS,
-      (call) => call.args.includes("missing") ? { exitCode: 44, stderr: "The specified item could not be found" } : { stdout: `${secret}\n` }
+      (call) => call.args.includes("missing") ? { exitCode: 44, stderr: "The specified item could not be found" } : { stdout: "keychain: \"login\"\n", stderr: `password: "${secret}"\n` }
     )
     return Effect.gen(function*() {
       const keychain = yield* service
       expect(Option.map(yield* keychain.get(entry), Redacted.value)).toEqual(Option.some(secret))
       expect(yield* keychain.get({ ...entry, account: "missing" })).toEqual(Option.none())
-      expect(calls[0]!.args).toEqual(["find-generic-password", "-a", "token", "-s", "exangelos.github", "-w"])
+      expect(calls[0]!.args).toEqual(["find-generic-password", "-a", "token", "-s", "exangelos.github", "-g"])
     }).pipe(provide)
   })
 
@@ -70,17 +69,15 @@ describe("macOS Keychain", () => {
 
   it.effect("round-trips a multiline UTF-8 secret through what security stores", () => {
     const unicode = "na obědě\nřádek"
-    let stored = ""
+    let storedHex = ""
     const { calls, provide } = keychain(Keychain.macOS, (call) => {
-      if (call.args[0] !== "-i") return { stdout: `${stored}\n` }
-      const hex = /-X ([0-9a-f]+)\n$/.exec(call.stdin)![1]!
-      stored = Result.getOrThrow(Hex.decodeString(hex))
+      if (call.args[0] !== "-i") return { stderr: `password: 0x${storedHex.toUpperCase()}  "na ob\\304\\233d\\304\\233..."\n` }
+      storedHex = /-X ([0-9a-f]+)\n$/.exec(call.stdin)![1]!
       return {}
     })
     return Effect.gen(function*() {
       const keychain = yield* service
       yield* keychain.set(entry, Redacted.make(unicode))
-      expect(stored).toMatch(/^[\x20-\x7e]+$/)
       expect(Option.map(yield* keychain.get(entry), Redacted.value)).toEqual(Option.some(unicode))
       expect(noArgumentHolds(calls, unicode)).toBe(true)
     }).pipe(provide)
