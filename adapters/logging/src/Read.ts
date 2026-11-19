@@ -66,32 +66,39 @@ const readLines = (path: string, from: (id: string, size: number) => number | un
 const parsed = (lines: ReadonlyArray<string>): Array<Record.LogRecord> =>
   lines.flatMap((line) => Option.toArray(Record.parse(line)))
 
+const retained = 3
+
 export class Tail {
-  private offsets = new Map<string, number>()
+  private cursors = new Map<string, { readonly offset: number; readonly missed: number }>()
 
   constructor(readonly dir: string, readonly sources: ReadonlyArray<Record.Source>) {}
 
   backlog(): Array<Record.LogRecord> {
-    this.offsets = new Map()
+    this.cursors = new Map()
     return this.poll()
   }
 
   poll(): Array<Record.LogRecord> {
     const records: Array<Record.LogRecord> = []
-    const present = new Map<string, number>()
+    const seen = new Set<string>()
     for (const src of this.sources) {
       for (const path of files(this.dir, src)) {
         const read = readLines(path, (id, size) => {
-          if (present.has(id)) return undefined
-          const offset = this.offsets.get(id) ?? 0
+          if (seen.has(id)) return undefined
+          const offset = this.cursors.get(id)?.offset ?? 0
           return size < offset ? 0 : offset
         })
         if (read === undefined) continue
         records.push(...parsed(read.lines))
-        present.set(read.id, read.offset)
+        seen.add(read.id)
+        this.cursors.set(read.id, { offset: read.offset, missed: 0 })
       }
     }
-    this.offsets = present
+    for (const [id, cursor] of this.cursors) {
+      if (seen.has(id)) continue
+      if (cursor.missed + 1 >= retained) this.cursors.delete(id)
+      else this.cursors.set(id, { offset: cursor.offset, missed: cursor.missed + 1 })
+    }
     return merge(records)
   }
 }

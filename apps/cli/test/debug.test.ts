@@ -2,21 +2,25 @@ import { describe, expect, it } from "@effect/vitest"
 import { cleanValue, scrub } from "../src/commands/Debug.ts"
 
 describe("debug report redaction", () => {
-  it("hides values that text pairs with a sensitive name, quoted or not", () => {
-    expect(scrub("password=\"correct horse battery staple\" next")).toBe("password=\"[redacted]\" next")
-    expect(scrub("apiKey=abc123 retry")).toBe("apiKey=[redacted] retry")
-    expect(scrub("{\"apiToken\": \"a b\", \"n\": 1}")).toBe("{\"apiToken\": \"[redacted]\", \"n\": 1}")
-    expect(scrub("{\\\"secret\\\":\\\"x \\\\ y\\\"}")).toBe("{\\\"secret\\\":\\\"[redacted]\\\"}")
-    expect(scrub("Authorization: Bearer eyJ.abc-def")).not.toContain("eyJ")
-    expect(scrub("Cookie: sid=first; session=second\nnext line")).toBe("Cookie: [redacted]\nnext line")
+  it("drops every line that names a credential or carries a URL with credentials or a query", () => {
+    const text = [
+      "booting",
+      "password=\"correct horse battery staple\" next",
+      "Cookie: prefs=\"blue\"; sid=private",
+      "{\\\"secret\\\":\\\"x y\\\"}",
+      "fetch https://user:pw@git.example/repo",
+      "fetch https://cdn.example/c.zip?label=O'Neil&sig=private",
+      "ready"
+    ].join("\n")
+    expect(scrub(text)).toBe(
+      ["booting", ...Array.from({ length: 5 }, () => "[redacted line]"), "ready"].join("\n")
+    )
   })
 
-  it("hides credentials in URLs, such as a connector's git origin", () => {
-    const origin = cleanValue({ _tag: "Git", url: "https://user:example-password@git.example/repo.git", ref: "main" })
-    expect(origin).toEqual({ _tag: "Git", url: "https://[redacted]@git.example/repo.git", ref: "main" })
-    expect(cleanValue({ _tag: "Archive", url: "https://cdn.example/c.tar.gz?sig=abc123&exp=1#part" })).toEqual({
-      _tag: "Archive",
-      url: "https://cdn.example/c.tar.gz?[redacted]"
-    })
+  it("keeps only scheme, host and path of URLs, such as a connector's origin", () => {
+    expect(cleanValue({ _tag: "Git", url: "https://user:example-password@git.example/repo.git", ref: "main" }))
+      .toEqual({ _tag: "Git", url: "https://git.example/repo.git", ref: "main" })
+    expect(cleanValue({ _tag: "Archive", url: "https://cdn.example/c.zip?label=O'Neil&sig=private#part" }))
+      .toEqual({ _tag: "Archive", url: "https://cdn.example/c.zip" })
   })
 })

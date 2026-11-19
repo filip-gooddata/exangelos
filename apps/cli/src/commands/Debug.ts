@@ -16,28 +16,29 @@ import { CommandFailed, Json } from "./Output.ts"
 
 const daemonLogTail = 1024 * 1024
 
-const header = /\b((?:set-)?cookie|(?:proxy-)?authorization)(\s*:\s*)[^\n"\\]+/gi
-const userinfo = /\b([a-z][\w+.-]*:\/\/)[^\s/@"'\\]+@/gi
-const query = /\b([a-z][\w+.-]*:\/\/[^\s?#"'\\]*)[?#][^\s"'\\]*/gi
-const bearer = /\b(Bearer|Basic)\s+[\w.~+/=-]+/gi
-const assignment =
-  /\b([\w.-]*(?:token|key|secret|password|auth|cookie)[\w.-]*)(\\?["']?\s*[:=]\s*)(\\"(?:(?!\\")[^\n])*(?:\\")?|"(?:[^"\\\n]|\\.)*"?|'[^'\n]*'?|[^\s"',;}&\\]+)/gi
-
-const hidden = (value: string) => {
-  const quote = value.startsWith("\\\"") ? "\\\"" : value.startsWith("\"") || value.startsWith("'") ? value[0]! : ""
-  return `${quote}${Redact.redacted}${quote}`
-}
+const redactedLine = "[redacted line]"
+const sensitive = /token|key|secret|passw|auth|cookie|bearer|session|credential|signature|sig=/i
+const addressWithExtras = /[a-z][\w+.-]*:\/\/\S*[@?#]/i
+const address = /^[a-z][\w+.-]*:\/\/\S+$/i
 
 export const scrub = (text: string): string =>
-  text
-    .replace(header, (_, name: string, separator: string) => `${name}${separator}${Redact.redacted}`)
-    .replace(userinfo, (_, scheme: string) => `${scheme}${Redact.redacted}@`)
-    .replace(query, (_, address: string) => `${address}?${Redact.redacted}`)
-    .replace(bearer, (_, scheme: string) => `${scheme} ${Redact.redacted}`)
-    .replace(assignment, (_, key: string, separator: string, value: string) => `${key}${separator}${hidden(value)}`)
+  text.split("\n").map((line) => sensitive.test(line) || addressWithExtras.test(line) ? redactedLine : line).join("\n")
+
+export const plainAddress = (text: string): string => {
+  try {
+    const url = new URL(text)
+    url.username = ""
+    url.password = ""
+    url.search = ""
+    url.hash = ""
+    return url.toString()
+  } catch {
+    return Redact.redacted
+  }
+}
 
 const scrubValue = (value: unknown): unknown => {
-  if (typeof value === "string") return scrub(value)
+  if (typeof value === "string") return address.test(value) ? plainAddress(value) : scrub(value)
   if (Array.isArray(value)) return value.map(scrubValue)
   if (value === null || typeof value !== "object") return value
   return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, scrubValue(item)]))
