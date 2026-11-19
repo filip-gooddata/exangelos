@@ -9,14 +9,14 @@ const echoed = Catalogue.event("echoed", {
 
 const parameters = Catalogue.parameters({ main: "note", schema: Schema.Struct({ note: Schema.String }) })
 
-console.error("startup echo", process.env.XNG_E2E_TOKEN ?? "")
+console.error("startup echo", process.env.XNG_E2E_TOKEN ?? "", process.env.XNG_E2E_SHORT_TOKEN ?? "")
 
 const connector = Connector.make({
   events: [echoed],
   parameters,
   configuration: [Catalogue.secret("token", { label: "Token" })],
   handlers: Effect.succeed({
-    configure: (values) => Effect.sync(() => console.error("configure echo", values.token ?? "")),
+    configure: (values) => Effect.sync(() => console.error("configure echo", values.token ?? "", `joined${values.token ?? ""}x`)),
     describe: () => Effect.succeed({ subject: "note", label: "a note" }),
     watch: ({ parameters: { note } }) =>
       Stream.make(

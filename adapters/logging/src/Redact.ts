@@ -15,17 +15,12 @@ const word = /\w/
 const standsAlone = (text: string, at: number, length: number) =>
   !word.test(text.charAt(at - 1)) && !word.test(text.charAt(at + length))
 
-/**
- * Replaces every occurrence of each secret of at least four characters, and each shorter secret
- * where it stands as a whole word. Matches are found in the original text and merged first, so
- * overlapping secrets leave no fragment.
- */
-export const redactText = (text: string, secrets: ReadonlyArray<string>): string => {
+const hide = (text: string, secrets: ReadonlyArray<string>, anywhere: boolean): string => {
   let hidden: Array<boolean> | undefined
   for (const secret of secrets) {
     if (secret.length === 0) continue
     for (let at = text.indexOf(secret); at !== -1; at = text.indexOf(secret, at + 1)) {
-      if (secret.length < shortest && !standsAlone(text, at, secret.length)) continue
+      if (!anywhere && secret.length < shortest && !standsAlone(text, at, secret.length)) continue
       hidden ??= new Array<boolean>(text.length).fill(false)
       hidden.fill(true, at, at + secret.length)
     }
@@ -38,6 +33,16 @@ export const redactText = (text: string, secrets: ReadonlyArray<string>): string
   }
   return out
 }
+
+/**
+ * Replaces every occurrence of each secret of at least four characters, and each shorter secret
+ * where it stands as a whole word. Matches are found in the original text and merged first, so
+ * overlapping secrets leave no fragment.
+ */
+export const redactText = (text: string, secrets: ReadonlyArray<string>): string => hide(text, secrets, false)
+
+/** Replaces every occurrence of every secret, however short, for text from outside such as a connector's stderr. */
+export const redactAnywhere = (text: string, secrets: ReadonlyArray<string>): string => hide(text, secrets, true)
 
 /**
  * Walks objects and arrays: sensitive keys lose their value, and every string loses known secrets.
@@ -97,8 +102,8 @@ export const plainAddress = (text: string): string => {
   }
 }
 
-/** Failure text fit for a log: known secrets hidden, and every address inside reduced to its plain form. */
-export const sanitise = (text: string): string => redactText(text, Secrets.values()).replace(address, plainAddress)
+/** Failure text fit for a log: every known secret hidden, and every address inside reduced to its plain form. */
+export const sanitise = (text: string): string => redactAnywhere(text, Secrets.values()).replace(address, plainAddress)
 
 const deepestCause = 4
 
@@ -126,6 +131,18 @@ export const describeFailure = (error: unknown, depth = 0): string => {
   return cause === undefined || depth >= deepestCause ? head : `${head}\ncaused by ${describeFailure(cause, depth + 1)}`
 }
 
+/**
+ * The environment for a child process: everything but sensitive variables too short to hide in its
+ * output without hiding everything else, which can only be flags or credentials it cannot need.
+ */
+export const inheritableEnvironment = (env: Readonly<Record<string, string | undefined>>): Record<string, string> => {
+  const out: Record<string, string> = {}
+  for (const [name, value] of Object.entries(env)) {
+    if (value !== undefined && !(value.length < shortest && isSensitiveKey(name))) out[name] = value
+  }
+  return out
+}
+
 const known = new Set<string>()
 
 /** The process-wide set of secret values seen, so logs can hide them wherever they turn up. */
@@ -133,7 +150,7 @@ export const Secrets = {
   register: (values: Iterable<string>): void => {
     for (const value of values) if (value.length > 0) known.add(value)
   },
-  /** Values of variables whose names look sensitive; short ones are flags rather than credentials. */
+  /** Values of variables whose names look sensitive; connectors do not inherit the shorter ones. */
   registerEnvironment: (env: Readonly<Record<string, string | undefined>>): void => {
     for (const [name, value] of Object.entries(env)) {
       if (value !== undefined && value.length >= shortest && isSensitiveKey(name)) known.add(value)

@@ -35,6 +35,12 @@ describe("Redact", () => {
     expect(Secrets.values()).toEqual(["a1"])
   })
 
+  it("hides every secret anywhere in outside text, and keeps short sensitive variables from children", () => {
+    expect(Redact.redactAnywhere("echo xqZ7y and qZ7", ["qZ7"])).toBe("echo x[redacted]y and [redacted]")
+    expect(Redact.inheritableEnvironment({ API_KEY: "k9", GITHUB_TOKEN: "ghp-value", DEBUG: "1", HOME: undefined }))
+      .toEqual({ GITHUB_TOKEN: "ghp-value", DEBUG: "1" })
+  })
+
   it("keeps the daemon's own annotation keys when a secret matches one", () => {
     const record = Redact.redactRecord(
       { t: "t", level: "DEBUG", src: "daemon", pid: 1, msg: "event payload", ann: { payload: { payload: 1 }, connector: "echo", extra_payload: 2 } },

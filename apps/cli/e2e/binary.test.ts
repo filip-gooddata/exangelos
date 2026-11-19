@@ -763,6 +763,7 @@ describe("secrets at the connector stderr and debug report boundaries", () => {
 
   it("keeps an inherited token and a short stored credential out of every log and report, and payloads out by default", async () => {
     const envMarker = "e2e-env-value-7c41d0"
+    const shortEnvMarker = "Wq8"
     const shortMarker = "qZ7"
     const payloadMarker = "e2e-echoed-note-52ab"
     const sharedHome = home
@@ -787,21 +788,25 @@ describe("secrets at the connector stderr and debug report boundaries", () => {
         join(echo, "connector.json"),
         JSON.stringify({ name: "echo", version: "0.1.0", entry: { _tag: "Bundle", path: "dist/main.js" } })
       )
-      daemon = Bun.spawn([exangelos, "daemon"], { env: { ...env(), XNG_E2E_TOKEN: envMarker }, stdout: "ignore", stderr: "ignore" })
+      daemon = Bun.spawn([exangelos, "daemon"], {
+        env: { ...env(), XNG_E2E_TOKEN: envMarker, XNG_E2E_SHORT_TOKEN: shortEnvMarker },
+        stdout: "ignore",
+        stderr: "ignore"
+      })
       await listUntilReady()
       expect(run(exangelos, "connector", "dev-link", echo).status).toBe(0)
-      expect(await echoed("startup echo", 1)).toEqual(["connector stderr startup echo [redacted]"])
+      expect(await echoed("startup echo", 1)).toEqual(["connector stderr startup echo [redacted] "])
 
       await configure(shortMarker)
-      expect((await echoed("configure echo", 1)).at(-1)).toBe("connector stderr configure echo [redacted]")
+      expect((await echoed("configure echo", 1)).at(-1)).toBe("connector stderr configure echo [redacted] joined[redacted]x")
       expect(await stop(daemon)).toBe(true)
       daemon = startDaemon()
       await listUntilReady()
-      expect((await echoed("configure echo", 2)).at(-1)).toBe("connector stderr configure echo [redacted]")
+      expect((await echoed("configure echo", 2)).at(-1)).toBe("connector stderr configure echo [redacted] joined[redacted]x")
 
       json("settings", "set", "logLevel=debug")
       await configure("payload")
-      expect((await echoed("configure echo", 3)).at(-1)).toBe("connector stderr configure echo [redacted]")
+      expect((await echoed("configure echo", 3)).at(-1)).toBe("connector stderr configure echo [redacted] joined[redacted]x")
       const replies = await mcpReplies({
         jsonrpc: "2.0",
         id: 2,
@@ -828,10 +833,18 @@ describe("secrets at the connector stderr and debug report boundaries", () => {
       const report = JSON.parse(await readFile(reportFile!, "utf8"))
       expect(report.daemon.running).toBe(false)
       expect(report.daemon.connectors).toEqual([
-        expect.objectContaining({ name: "echo", version: "0.1.0", trust: "dev", process: "unavailable while the daemon is not running" })
+        expect.objectContaining({
+          name: "echo",
+          version: "0.1.0",
+          origin: expect.objectContaining({ _tag: "DevLink" }),
+          digest: expect.stringMatching(/.+/),
+          trust: "dev",
+          configuration: { _tag: "Set" },
+          process: "unavailable while the daemon is not running"
+        })
       ])
 
-      for (const marker of [envMarker, shortMarker]) {
+      for (const marker of [envMarker, shortEnvMarker, shortMarker]) {
         expect(await holding(join(home, "logs"), marker)).toEqual([])
         expect(await holding(online, marker)).toEqual([])
         expect(await holding(offline, marker)).toEqual([])

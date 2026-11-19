@@ -41,7 +41,7 @@ const buildArchive = (root: string, folder: string) =>
 const fetch = (
   root: string,
   name: string,
-  options: { folder?: string; served?: Map<string, Uint8Array>; releaseUrl?: string | undefined }
+  options: { folder?: string; served?: Map<string, Uint8Array>; releaseUrl?: string | undefined; redirect?: string }
 ) => {
   const settings = Layer.succeed(SettingsStore.SettingsStore, {
     read: Effect.succeed<Settings.Settings>(
@@ -56,7 +56,11 @@ const fetch = (
       const body = options.served?.get(url.href)
       return Effect.succeed(HttpClientResponse.fromWeb(
         request,
-        body === undefined ? new Response("missing", { status: 404 }) : new Response(body)
+        options.redirect !== undefined
+          ? new Response(null, { status: 302, headers: { location: options.redirect } })
+          : body === undefined
+          ? new Response("missing", { status: 404 })
+          : new Response(body)
       ))
     })
   )
@@ -172,5 +176,23 @@ describe("OfficialConnectorSource", () => {
       expect(failures).toHaveLength(addresses.length)
       expect(failures.filter((record) => !record.includes("Error"))).toEqual([])
       expect(failures.every((record) => record.includes('"event":"import"'))).toBe(true)
+    }).pipe(Effect.scoped))
+
+  it.live("logs a redirect to a malformed address without the address", () =>
+    Effect.gen(function*() {
+      const root = yield* workspace
+      const records: Array<string> = []
+      const capture = Logger.make(({ cause, message }) => {
+        records.push(JSON.stringify([message, Cause.pretty(cause)]))
+      })
+      const failed = yield* Effect.flip(fetch(root, "jira", { served: new Map(), redirect: "//[?token=sample" })).pipe(
+        Effect.provide(Logger.layer([capture]))
+      )
+      expect(failed.reason).not.toContain("sample")
+      const failures = records.filter((record) => record.includes("official connector fetch failed"))
+      expect(failures).toHaveLength(1)
+      expect(failures[0]).toContain("OfficialFetchFailed at import")
+      expect(failures[0]).toContain("the link redirects to an address that is not a URL")
+      expect(records.filter((record) => record.includes("sample"))).toEqual([])
     }).pipe(Effect.scoped))
 })

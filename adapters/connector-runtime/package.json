@@ -15,6 +15,7 @@
     "@exangelos/domain": "workspace:*",
     "@exangelos/contracts": "workspace:*",
     "@exangelos/rpc-stdio": "workspace:*",
+    "@exangelos/logging": "workspace:*",
     "effect": "catalog:"
   },
   "devDependencies": {
