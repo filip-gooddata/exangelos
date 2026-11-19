@@ -1,4 +1,4 @@
-import { Effect, Layer, Match } from "effect"
+import { Cause, Effect, Layer, Match, Result } from "effect"
 import { AlertSink } from "@exangelos/application"
 import { Notifications } from "@exangelos/notifications"
 import type { Notification } from "@exangelos/notifications"
@@ -30,10 +30,28 @@ export const layer: Layer.Layer<AlertSink.AlertSink, never, Notifications> = Lay
   Effect.gen(function*() {
     const notifications = yield* Notifications
     return AlertSink.AlertSink.of({
-      show: (alert) =>
-        notifications.show(render(alert)).pipe(
-          Effect.mapError((error) => new AlertSink.AlertFailed({ reason: error.reason }))
+      show: (alert) => {
+        const notification = render(alert)
+        return Effect.logDebug("alert body").pipe(
+          Effect.annotateLogs("payload", alert._tag === "Event" ? notification : { title: notification.title }),
+          Effect.andThen(notifications.show(notification)),
+          Effect.tap(() => Effect.logInfo("alert shown").pipe(Effect.annotateLogs("outcome", "ok"))),
+          Effect.tapCause((cause) =>
+            Effect.logWarning(
+              "alert failed",
+              Cause.map(cause, (error) => new AlertSink.AlertFailed({ reason: `${error._tag}: the notification was not shown` }))
+            ).pipe(Effect.annotateLogs({
+              outcome: "error",
+              error: Result.match(Cause.findError(cause), { onSuccess: (error) => error._tag, onFailure: () => "defect" })
+            }))),
+          Effect.mapError((error) => new AlertSink.AlertFailed({ reason: error.reason })),
+          Effect.annotateLogs({
+            kind: alert._tag,
+            connector: alert.connector,
+            ...(alert._tag === "Event" ? { subscription: alert.event.subscription, event: alert.event.id } : {})
+          })
         )
+      }
     })
   })
 )

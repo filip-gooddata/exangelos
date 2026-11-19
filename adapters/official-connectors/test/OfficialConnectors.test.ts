@@ -4,7 +4,7 @@ import * as Path from "node:path"
 import * as Url from "node:url"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Layer } from "effect"
+import { Cause, ConfigProvider, Effect, Layer, Logger, References } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import * as Tar from "tar"
 import { OfficialConnectorSource, SettingsStore } from "@exangelos/application"
@@ -144,5 +144,33 @@ describe("OfficialConnectorSource", () => {
 
       expect([local._tag, local.connector, local.reason]).toEqual(["OfficialFetchFailed", "jira", `jira-0.1.0.tar.gz is not in ${Path.join(root, "dist")}`])
       expect(release.reason).toMatch(/not found/)
+    }).pipe(Effect.scoped))
+
+  it.live("logs a release address without its credentials or query", () =>
+    Effect.gen(function*() {
+      const root = yield* workspace
+      const records: Array<string> = []
+      const capture = Logger.make(({ cause, fiber, message }) => {
+        records.push(JSON.stringify([message, fiber.getRef(References.CurrentLogAnnotations), Cause.pretty(cause)]))
+      })
+      const addresses = [
+        "HTTPS://user:pass@releases.test/v1?tok=sample",
+        "HTTPS:releases.test/v1?tok=sample",
+        "https://releases.test/v1?label=first sample-tail",
+        "https://[?label=sample",
+        "https://[?contact=a@b&label=sample",
+        "blob:https://user:pass@releases.test/v1"
+      ]
+      for (const address of addresses) {
+        yield* Effect.flip(fetch(root, "jira", { served: new Map(), releaseUrl: address })).pipe(
+          Effect.provide(Logger.layer([capture]))
+        )
+      }
+      expect(records.some((record) => record.includes("https://releases.test/v1"))).toBe(true)
+      expect(records.filter((record) => /sample|user|pass/.test(record))).toEqual([])
+      const failures = records.filter((record) => record.includes("official connector fetch failed"))
+      expect(failures).toHaveLength(addresses.length)
+      expect(failures.filter((record) => !record.includes("Error"))).toEqual([])
+      expect(failures.every((record) => record.includes('"event":"import"'))).toBe(true)
     }).pipe(Effect.scoped))
 })

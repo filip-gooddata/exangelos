@@ -15,8 +15,9 @@ import {
   Subscriptions
 } from "@exangelos/application"
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
-import { Effect, type Layer, Option } from "effect"
+import { Cause, Clock, Effect, Exit, type Layer, Option } from "effect"
 import type { Headers } from "effect/http"
+import { Rpc, type RpcGroup } from "effect/rpc"
 import { version } from "./Build.ts"
 import * as Errors from "./ContractErrors.ts"
 
@@ -29,7 +30,72 @@ const detected = ({ headers }: Caller) => Option.toArray(SessionHeaders.fromHead
 
 const lookup = { SubscriptionNotFound: Errors.subscriptionNotFound } as const
 
-export const layer = DaemonContract.DaemonContract.toLayer({
+const polled: ReadonlySet<string> = new Set([
+  "ListConnectors",
+  "List",
+  "Show",
+  "Events",
+  "ListConnectorAlerts",
+  "GetSettings",
+  "ServiceStatus"
+])
+
+const callerAnnotations = (caller: Caller): Record<string, string> => {
+  const who = actor(caller)
+  return who._tag === "Session"
+    ? { actor: "session", harness: who.session.harness, session: who.session.sessionId }
+    : { actor: "you" }
+}
+
+const errorTag = (error: unknown): string =>
+  typeof error === "object" && error !== null && "_tag" in error ? String(error._tag) : typeof error
+
+const errorOf = (cause: Cause.Cause<unknown>): string =>
+  Option.match(Cause.findErrorOption(cause), {
+    onNone: () => Cause.hasInterruptsOnly(cause) ? "interrupted" : "defect",
+    onSome: errorTag
+  })
+
+const report = (method: string, exit: Exit.Exit<unknown, unknown>): Effect.Effect<void> => {
+  if (Exit.isSuccess(exit)) {
+    const log = polled.has(method) ? Effect.logDebug : Effect.logInfo
+    return log("request handled").pipe(Effect.annotateLogs({ outcome: "ok" }))
+  }
+  const cause = exit.cause
+  const log = Cause.hasInterruptsOnly(cause)
+    ? Effect.logDebug
+    : Cause.hasDies(cause)
+    ? Effect.logError
+    : Effect.logWarning
+  return log("request failed", Cause.map(cause, errorTag)).pipe(Effect.annotateLogs({ outcome: "error", error: errorOf(cause) }))
+}
+
+export const logged = <A, E, R>(method: string, caller: Caller, handle: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+  Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
+    handle.pipe(
+      Effect.onExit((exit) =>
+        Effect.flatMap(Clock.currentTimeMillis, (endedAt) =>
+          report(method, exit).pipe(Effect.annotateLogs({ durationMs: endedAt - startedAt }))))
+    )).pipe(Effect.annotateLogs({ request: crypto.randomUUID(), method, ...callerAnnotations(caller) }))
+
+type Handlers = RpcGroup.HandlersFrom<RpcGroup.Rpcs<typeof DaemonContract.DaemonContract>>
+
+const instrumented = <H extends Handlers>(handlers: H): H =>
+  Object.fromEntries(
+    Object.entries(handlers).map(([method, handle]) => [
+      method,
+      (payload: unknown, caller: Caller) => {
+        const result = handle(payload as never, caller as never) as
+          | Effect.Effect<unknown, unknown, unknown>
+          | Rpc.Wrapper<Effect.Effect<unknown, unknown, unknown>>
+        return Rpc.isWrapper(result)
+          ? Rpc.wrap({ fork: result.fork, uninterruptible: result.uninterruptible })(logged(method, caller, result.value))
+          : logged(method, caller, result)
+      }
+    ])
+  ) as unknown as H
+
+export const layer = DaemonContract.DaemonContract.toLayer(instrumented({
   ListConnectors: () => listConnectors,
   Subscribe: (payload, caller) =>
     Subscriptions.subscribe(actor(caller), payload, detected(caller)).pipe(
@@ -143,13 +209,13 @@ export const layer = DaemonContract.DaemonContract.toLayer({
     serviceStatus.pipe(
       Effect.map((status) => status.method),
       Effect.catchTag("ServiceFailed", (e) =>
-        Effect.as(Effect.logWarning("Service status unavailable", e.reason), e.method)),
+        Effect.as(Effect.logWarning("service status unavailable", Cause.fail(e)), e.method)),
       Effect.map((startMethod) => ({ version, startMethod }))
     ),
   SetEventAlerts: (payload, caller) =>
     Subscriptions.setEventAlerts(actor(caller), payload).pipe(
       Effect.catchTags({ ...lookup, HumanRequired: Errors.ownerOnlySubscription })
     )
-})
+}))
 
 export type Requirements = typeof layer extends Layer.Layer<infer _A, infer _E, infer R> ? R : never

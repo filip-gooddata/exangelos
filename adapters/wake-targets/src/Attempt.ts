@@ -52,6 +52,26 @@ export const exitReason = (program: string, outcome: Extract<Outcome, { _tag: "E
 export const timedOutReason = (program: string, outcome: Extract<Outcome, { _tag: "TimedOut" }>): string =>
   `${program} did not finish within ${Duration.format(outcome.limit)}`
 
+export const quietReason = (program: string, outcome: Outcome): string => {
+  switch (outcome._tag) {
+    case "Exited":
+      return `${program} exited with ${outcome.exitCode}`
+    case "TimedOut":
+      return timedOutReason(program, outcome)
+    case "NotStarted":
+      return `${program} did not start`
+  }
+}
+
+const logOutcome = (outcome: Outcome, durationMs: number) =>
+  Effect.logDebug("wake command finished").pipe(
+    Effect.annotateLogs({
+      result: outcome._tag,
+      durationMs,
+      ...(outcome._tag === "Exited" ? { exitCode: outcome.exitCode } : {})
+    })
+  )
+
 /**
  * Runs the invocation once and gives up at the limit. The process is killed when it runs over. When
  * the scope closes, the spawner also ends what is left of the tool's process group, so a tool that
@@ -80,5 +100,8 @@ export const run = (
   }).pipe(
     Effect.timeoutOption(limit),
     Effect.map(Option.getOrElse((): Outcome => ({ _tag: "TimedOut", limit }))),
-    Effect.catch((error) => Effect.succeed<Outcome>({ _tag: "NotStarted", reason: error.message }))
+    Effect.catch((error) => Effect.succeed<Outcome>({ _tag: "NotStarted", reason: error.message })),
+    Effect.timed,
+    Effect.tap(([duration, outcome]) => logOutcome(outcome, Duration.toMillis(duration))),
+    Effect.map(([, outcome]) => outcome)
   )
