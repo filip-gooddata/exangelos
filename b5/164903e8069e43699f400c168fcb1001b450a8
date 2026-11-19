@@ -1,0 +1,45 @@
+adapters/connector-runtime/src/StdioConnectorRuntime.ts
+  s_a70b1f76d7da41::t_f627df6a7efd28 2,40-42,61,64-70,90,119
+adapters/daemon-client/src/DaemonClient.ts
+  s_a70b1f76d7da41::t_6bbd270783d4a3 6,46-48,53-56
+adapters/official-connectors/src/OfficialConnectorsLive.ts
+  s_a70b1f76d7da41::t_d2634a5bb0adf7 55-65
+adapters/service/src/ServiceManager.ts
+  s_a70b1f76d7da41::t_e13a4284a98fc5 1,104-109,117-124,126-130
+apps/daemon/src/Handlers.ts
+  s_a70b1f76d7da41::t_b153bc1b6073bc 18,20,33-90,204,211
+apps/daemon/test/Handlers.test.ts
+  s_21bfa4fbcfac44::t_bae6c397691076 1-53
+apps/mcp/src/AgentTools.ts
+  s_a70b1f76d7da41::t_4ca581078c6fd6 1,165-193,198,222
+packages/application/src/connectors/ConnectorSupervisor.ts
+  s_a70b1f76d7da41::t_38cb97a870aef7 345,366,393-396,399,406-410,412-415
+packages/application/src/connectors/layerConnectorAccess.ts
+  s_a70b1f76d7da41::t_4df15bd488bb71 39-41,48-50,52
+packages/application/src/connectors/management.ts
+  s_a70b1f76d7da41::t_2c85f529be1b59 80-85,99,111-114,117,120,240-242
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5164903e8069e43699f400c168fcb1001b450a8",
+  "prompts": {},
+  "sessions": {
+    "s_21bfa4fbcfac44": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "91c52c48-8070-4b7e-81d1-9f809dd27865",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_a70b1f76d7da41": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "205e061a-bf95-42d6-870a-96205ca5ac87",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
