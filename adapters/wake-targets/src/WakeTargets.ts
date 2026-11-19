@@ -26,7 +26,10 @@ const attempt = (
   Effect.gen(function*() {
     const verdict = interpret(yield* run(spawner, planned, limit))
     if (verdict._tag === "Failed") return yield* new WakeTarget.DeliveryFailed({ reason: verdict.reason })
-    if (verdict.note !== undefined) yield* Effect.logWarning(verdict.note)
+    if (verdict.note !== undefined) {
+      yield* Effect.logWarning("wake delivered with a note")
+      yield* Effect.logDebug("wake note").pipe(Effect.annotateLogs("note", verdict.note))
+    }
   })
 
 const named = (

@@ -1,4 +1,4 @@
-import { Array as Arr, DateTime, Duration, Effect, Option } from "effect"
+import { Array as Arr, Cause, Clock, DateTime, Duration, Effect, Option } from "effect"
 import { Delivery, Lifecycle, ConnectorRules } from "@exangelos/domain"
 import type { Event, Ids, Limits, Connector, Session, Subscription, Wake } from "@exangelos/domain"
 import { EventRepository } from "../../ports/EventRepository.ts"
@@ -9,6 +9,7 @@ import { WakeRepository } from "../../ports/WakeRepository.ts"
 import { DeliveryFailed, WakeTarget } from "../../ports/WakeTarget.ts"
 import { currentLimits } from "../Limits.ts"
 import type { SubscriptionLocks } from "../Locks.ts"
+import { logAnnotations } from "../Transitions.ts"
 import { withSubscription } from "./Intake.ts"
 import { RemovedConnectors } from "../RemovedConnectors.ts"
 
@@ -110,6 +111,7 @@ const claim = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
         if (decision._tag === "Wait") return Option.none<Claim>()
         if (decision._tag === "Drop") {
           yield* wakes.update({ ...wake, state: "dropped" })
+          yield* Effect.logDebug("wake dropped").pipe(Effect.annotateLogs(logAnnotations(subscription)))
           return Option.none<Claim>()
         }
         const sending: Wake.Wake = { ...wake, state: "sending" }
@@ -134,16 +136,28 @@ const attempt = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
     if (Option.isNone(claimed)) return
     const { content, session, wake } = claimed.value
     const sender = yield* WakeTarget
+    const started = yield* Clock.currentTimeMillis
+    const elapsed = Effect.map(Clock.currentTimeMillis, (now) => now - started)
     yield* sender.deliver(session, content).pipe(
       Effect.timeoutOrElse({
         duration: deliveryTimeout,
         orElse: () => Effect.fail(new DeliveryFailed({ reason: "timed out" }))
       }),
+      Effect.andThen(Effect.flatMap(elapsed, (durationMs) =>
+        Effect.logInfo("wake delivered").pipe(Effect.annotateLogs({ outcome: "ok", durationMs })))),
       Effect.andThen(settle({ ...wake, state: "delivered" })),
       Effect.catchTag("DeliveryFailed", (failure) =>
-        Effect.flatMap(DateTime.now, (failedAt) => settle(Delivery.retry(wake, failure.reason, failedAt, limits))))
+        elapsed.pipe(
+          Effect.flatMap((durationMs) =>
+            Effect.logWarning("wake failed", Cause.fail(failure)).pipe(
+              Effect.annotateLogs({ outcome: "error", durationMs, error: failure.reason, attempt: wake.attempts.count + 1 })
+            )),
+          Effect.andThen(DateTime.now),
+          Effect.flatMap((failedAt) => settle(Delivery.retry(wake, failure.reason, failedAt, limits)))
+        )),
+      Effect.annotateLogs({ session: session.sessionId, target: session.harness })
     )
-  })
+  }).pipe(Effect.annotateLogs({ subscription: listed.subscription, wake: listed.id, reason: listed.reason }))
 
 /**
  * Sends every undelivered wake whose time has come, drops one with nothing left to say, and puts a

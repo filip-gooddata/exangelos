@@ -17,6 +17,42 @@ export interface Outcome {
   readonly events?: ReadonlyArray<Event.Event>
 }
 
+/** The ids a subscription's log lines carry. */
+export const logAnnotations = (subscription: Subscription.Subscription): Record<string, string> => ({
+  subscription: subscription.id,
+  connector: subscription.connector,
+  ...(subscription.wakeTarget === undefined ? {} : { session: subscription.wakeTarget.sessionId })
+})
+
+const reasonOf = (state: Subscription.State): string | undefined => {
+  switch (state._tag) {
+    case "Paused":
+      return state.reason._tag
+    case "Ended":
+      return state.reason._tag
+    case "Cancelled":
+      return state.actor._tag
+    default:
+      return undefined
+  }
+}
+
+const logTransition = (before: Option.Option<Subscription.Subscription>, subscription: Subscription.Subscription) => {
+  const from = Option.match(before, { onNone: () => "none", onSome: (previous) => previous.state._tag })
+  const to = subscription.state._tag
+  if (from === to) return Effect.void
+  const reason = reasonOf(subscription.state)
+  const backlog = subscription.state._tag === "Paused" && subscription.state.reason._tag !== "Actor"
+  const message = from === "none"
+    ? "subscription created"
+    : to === "Active"
+    ? "subscription resumed"
+    : `subscription ${to.toLowerCase()}`
+  return (backlog ? Effect.logWarning(message) : Effect.logInfo(message)).pipe(
+    Effect.annotateLogs({ from, to, ...(reason === undefined ? {} : { reason }) })
+  )
+}
+
 export type CommitServices =
   | SubscriptionRepository
   | EventRepository
@@ -54,4 +90,5 @@ export const commit = (
     if (wasActive && !isActive) yield* access.unwatch(subscription.id)
     const signals = yield* SubscriptionSignals
     yield* signals.changed(subscription.id)
-  })
+    yield* logTransition(before, subscription)
+  }).pipe(Effect.annotateLogs(logAnnotations(outcome.subscription)))
