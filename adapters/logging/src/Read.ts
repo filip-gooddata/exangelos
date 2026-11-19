@@ -32,26 +32,15 @@ export const files = (dir: string, src: Record.Source): Array<string> => [
   Path.join(dir, fileName(src))
 ]
 
-interface Position {
-  readonly ino: number
-  readonly offset: number
-}
-
 interface Chunk {
   readonly lines: Array<string>
-  readonly ino: number
+  readonly id: string
   readonly offset: number
 }
 
-const stat = (path: string): fs.Stats | undefined => {
-  try {
-    return fs.statSync(path)
-  } catch {
-    return undefined
-  }
-}
+const identity = (info: fs.Stats) => `${info.dev}:${info.ino}:${info.birthtimeMs}`
 
-const readLines = (path: string, from: (info: fs.Stats) => number | undefined): Chunk | undefined => {
+const readLines = (path: string, from: (id: string, size: number) => number | undefined): Chunk | undefined => {
   let fd: number
   try {
     fd = fs.openSync(path, "r")
@@ -60,18 +49,15 @@ const readLines = (path: string, from: (info: fs.Stats) => number | undefined): 
   }
   try {
     const info = fs.fstatSync(fd)
-    const offset = from(info)
+    const id = identity(info)
+    const offset = from(id, info.size)
     if (offset === undefined) return undefined
-    if (info.size <= offset) return { lines: [], ino: info.ino, offset }
+    if (info.size <= offset) return { lines: [], id, offset }
     const buffer = Buffer.alloc(info.size - offset)
     const read = fs.readSync(fd, buffer, 0, buffer.length, offset)
     const end = buffer.subarray(0, read).lastIndexOf(0x0a)
-    if (end === -1) return { lines: [], ino: info.ino, offset }
-    return {
-      lines: buffer.subarray(0, end).toString("utf8").split("\n"),
-      ino: info.ino,
-      offset: offset + end + 1
-    }
+    if (end === -1) return { lines: [], id, offset }
+    return { lines: buffer.subarray(0, end).toString("utf8").split("\n"), id, offset: offset + end + 1 }
   } finally {
     fs.closeSync(fd)
   }
@@ -81,51 +67,31 @@ const parsed = (lines: ReadonlyArray<string>): Array<Record.LogRecord> =>
   lines.flatMap((line) => Option.toArray(Record.parse(line)))
 
 export class Tail {
-  private readonly positions = new Map<Record.Source, Position>()
+  private offsets = new Map<string, number>()
 
   constructor(readonly dir: string, readonly sources: ReadonlyArray<Record.Source>) {}
 
   backlog(): Array<Record.LogRecord> {
-    const records: Array<Record.LogRecord> = []
-    for (const src of this.sources) {
-      const paths = files(this.dir, src)
-      const current = paths.pop()!
-      for (const path of paths) records.push(...parsed(readLines(path, () => 0)?.lines ?? []))
-      const read = readLines(current, () => 0)
-      if (read === undefined) continue
-      records.push(...parsed(read.lines))
-      this.positions.set(src, { ino: read.ino, offset: read.offset })
-    }
-    return merge(records)
+    this.offsets = new Map()
+    return this.poll()
   }
 
   poll(): Array<Record.LogRecord> {
     const records: Array<Record.LogRecord> = []
+    const present = new Map<string, number>()
     for (const src of this.sources) {
-      const paths = files(this.dir, src)
-      const current = paths.pop()!
-      const known = this.positions.get(src)
-      let rotated = false
-      const read = readLines(current, (info) => {
-        if (known === undefined) return 0
-        if (info.ino !== known.ino) {
-          rotated = true
-          return 0
-        }
-        return info.size < known.offset ? 0 : known.offset
-      })
-      if (known !== undefined && (read === undefined || rotated)) {
-        const at = paths.findIndex((path) => stat(path)?.ino === known.ino)
-        if (at !== -1) {
-          records.push(...parsed(readLines(paths[at]!, (info) => (info.ino === known.ino ? known.offset : 0))?.lines ?? []))
-        }
-        for (const path of paths.slice(at + 1)) records.push(...parsed(readLines(path, () => 0)?.lines ?? []))
-        this.positions.delete(src)
+      for (const path of files(this.dir, src)) {
+        const read = readLines(path, (id, size) => {
+          if (present.has(id)) return undefined
+          const offset = this.offsets.get(id) ?? 0
+          return size < offset ? 0 : offset
+        })
+        if (read === undefined) continue
+        records.push(...parsed(read.lines))
+        present.set(read.id, read.offset)
       }
-      if (read === undefined) continue
-      records.push(...parsed(read.lines))
-      this.positions.set(src, { ino: read.ino, offset: read.offset })
     }
+    this.offsets = present
     return merge(records)
   }
 }

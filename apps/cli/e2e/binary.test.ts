@@ -469,7 +469,7 @@ describe("the exangelos binary", () => {
 })
 
 describe("local logs and the debug report", () => {
-  const seeded = ["seeded-token-value", "seeded-key-value", "seeded-bearer-value", "seeded-env-value", "payload-marker-123"]
+  const seeded = ["seeded-token-value", "seeded-key-value", "seeded-bearer-value", "seeded-env-value", "payload-marker-123", "seeded-cookie-value"]
   let logsHome: string
   const logsEnv = (extra: Record<string, string> = {}) => ({ ...env(), EXANGELOS_HOME: logsHome, ...extra })
   const inLogs = (...args: Array<string>) => {
@@ -494,7 +494,7 @@ describe("local logs and the debug report", () => {
       }) + "not a record\n" + record({ t: at(20), level: "WARN", msg: "wake failed apiKey=seeded-key-value", ann: { connector: "github-pr" } })
     )
     await writeFile(join(logs, "mcp.jsonl"), record({ t: at(10), level: "INFO", src: "mcp", msg: "mcp started" }))
-    await writeFile(join(logs, "daemon.log"), "booting\nAuthorization: Bearer seeded-bearer-value\n")
+    await writeFile(join(logs, "daemon.log"), "booting\nAuthorization: Bearer seeded-bearer-value\nCookie: sid=first; session=seeded-cookie-value\n")
     await writeFile(
       join(logsHome, "settings.json"),
       JSON.stringify({ logLevel: "debug", harnesses: { mine: { command: ["run"], env: { GITHUB_TOKEN: "seeded-env-value" } } } })

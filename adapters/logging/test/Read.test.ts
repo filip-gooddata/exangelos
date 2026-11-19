@@ -68,4 +68,17 @@ describe("Read", () => {
     fs.writeFileSync(current, line("2026-11-19T10:00:03.000Z", "third unseen"))
     expect(tail.poll().map((record) => record.msg)).toEqual(["first unseen", "second unseen", "third unseen"])
   })
+
+  it("reads a source that appears and rotates before its first poll, each record once", () => {
+    const dir = temp()
+    const tail = new Read.Tail(dir, ["mcp"])
+    expect(tail.backlog()).toEqual([])
+    const current = Path.join(dir, "mcp.jsonl")
+    fs.writeFileSync(current, line("2026-11-19T10:00:00.000Z", "before rotation", "mcp"))
+    fs.renameSync(current, Path.join(dir, "mcp.1.jsonl"))
+    fs.writeFileSync(current, line("2026-11-19T10:00:01.000Z", "after rotation", "mcp"))
+    expect(tail.poll().map((record) => record.msg)).toEqual(["before rotation", "after rotation"])
+    fs.renameSync(current, Path.join(dir, "mcp.2.jsonl"))
+    expect(tail.poll()).toEqual([])
+  })
 })

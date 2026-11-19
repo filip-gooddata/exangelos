@@ -16,7 +16,9 @@ import { CommandFailed, Json } from "./Output.ts"
 
 const daemonLogTail = 1024 * 1024
 
+const header = /\b((?:set-)?cookie|(?:proxy-)?authorization)(\s*:\s*)[^\n"\\]+/gi
 const userinfo = /\b([a-z][\w+.-]*:\/\/)[^\s/@"'\\]+@/gi
+const query = /\b([a-z][\w+.-]*:\/\/[^\s?#"'\\]*)[?#][^\s"'\\]*/gi
 const bearer = /\b(Bearer|Basic)\s+[\w.~+/=-]+/gi
 const assignment =
   /\b([\w.-]*(?:token|key|secret|password|auth|cookie)[\w.-]*)(\\?["']?\s*[:=]\s*)(\\"(?:(?!\\")[^\n])*(?:\\")?|"(?:[^"\\\n]|\\.)*"?|'[^'\n]*'?|[^\s"',;}&\\]+)/gi
@@ -28,7 +30,9 @@ const hidden = (value: string) => {
 
 export const scrub = (text: string): string =>
   text
+    .replace(header, (_, name: string, separator: string) => `${name}${separator}${Redact.redacted}`)
     .replace(userinfo, (_, scheme: string) => `${scheme}${Redact.redacted}@`)
+    .replace(query, (_, address: string) => `${address}?${Redact.redacted}`)
     .replace(bearer, (_, scheme: string) => `${scheme} ${Redact.redacted}`)
     .replace(assignment, (_, key: string, separator: string, value: string) => `${key}${separator}${hidden(value)}`)
 
