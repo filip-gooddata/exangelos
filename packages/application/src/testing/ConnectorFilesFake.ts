@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, PubSub, Ref, Stream } from "effect"
+import { Context, Deferred, Effect, Layer, PubSub, Ref, Stream } from "effect"
 import type { Ids } from "@exangelos/domain"
 import { OfficialFetchFailed, OfficialConnectorSource, type Official } from "../ports/OfficialConnectorSource.ts"
 import { ManifestInvalid, ConnectorDirectory, type Installed } from "../ports/ConnectorDirectory.ts"
@@ -25,6 +25,8 @@ export class ConnectorFilesFake extends Context.Service<ConnectorFilesFake, {
   readonly edit: (directory: string, digest: string) => Effect.Effect<void>
   /** How many times the official source was asked to replace an installed copy. */
   readonly replacements: Effect.Effect<number>
+  /** Holds every later replace of the official source until the returned effect runs. */
+  readonly holdReplace: Effect.Effect<Effect.Effect<void>>
 }>()("@exangelos/application/testing/ConnectorFilesFake") {}
 
 /**
@@ -38,6 +40,8 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
     const files = yield* Ref.make<Files>({ directories: new Map(), sources: new Map(), releases: new Map() })
     const changed = yield* PubSub.unbounded<string>()
     const replacements = yield* Ref.make(0)
+    const keptCopies = yield* Ref.make(new Map<string, Installed | undefined>())
+    const held = yield* Ref.make<Deferred.Deferred<void> | undefined>(undefined)
     const place = (connector: Installed) =>
       Effect.as(Ref.update(files, (f) => ({ ...f, directories: new Map(f.directories).set(connector.directory, connector) })), connector.directory)
 
@@ -87,28 +91,38 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
         replace: (official) =>
           Effect.gen(function*() {
             yield* Ref.update(replacements, (n) => n + 1)
+            const hold = yield* Ref.get(held)
+            if (hold !== undefined) yield* Deferred.await(hold)
             const f = yield* Ref.get(files)
             const release = f.releases.get(official.name)
             const failed = (reason: string) => new OfficialFetchFailed({ connector: official.name, reason })
             if (release === undefined) return yield* failed("offline")
             if (release.digest !== official.digest) return yield* failed(`the digest ${release.digest} is not ${official.digest}`)
             const placed = inRoot(release)
-            const previous = f.directories.get(placed.directory)
-            yield* place(placed)
-            return {
-              directory: placed.directory,
-              restore: Ref.update(files, (now) => {
-                const directories = new Map(now.directories)
-                if (previous === undefined) directories.delete(placed.directory)
-                else directories.set(placed.directory, previous)
-                return { ...now, directories }
-              }),
-              discard: Effect.void
-            }
-          })
+            yield* Ref.update(keptCopies, (m) => new Map(m).set(placed.directory, f.directories.get(placed.directory)))
+            return yield* place(placed)
+          }),
+        restore: (official) =>
+          Effect.gen(function*() {
+            const directory = `${connectorRoot}/${official.name}`
+            const copies = yield* Ref.get(keptCopies)
+            if (!copies.has(directory)) return
+            const previous = copies.get(directory)
+            yield* Ref.update(files, (now) => {
+              const directories = new Map(now.directories)
+              if (previous === undefined) directories.delete(directory)
+              else directories.set(directory, previous)
+              return { ...now, directories }
+            })
+            yield* Ref.update(keptCopies, (m) => { const next = new Map(m); next.delete(directory); return next })
+          }),
+        discard: (official) =>
+          Ref.update(keptCopies, (m) => { const next = new Map(m); next.delete(`${connectorRoot}/${official.name}`); return next })
       }),
       Layer.succeed(ConnectorFilesFake, {
         replacements: Ref.get(replacements),
+        holdReplace: Effect.flatMap(Deferred.make<void>(), (hold) =>
+          Effect.as(Ref.set(held, hold), Effect.asVoid(Deferred.succeed(hold, undefined)))),
         put: (connector) => Effect.asVoid(place(connector)),
         offer: (source, connector) =>
           Ref.update(files, (f) => ({ ...f, sources: new Map(f.sources).set(JSON.stringify(source), connector) })),

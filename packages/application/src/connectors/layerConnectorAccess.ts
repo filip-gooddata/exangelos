@@ -80,14 +80,12 @@ export const refreshOfficial = (official: Official) =>
         if (Option.isNone(found) || !outdated(found.value, official)) return
         const earlier = found.value
 
+        yield* source.discard(official)
         yield* supervisor.stop(name)
-        const replaced = yield* interruptible(source.replace(official)).pipe(
-          Effect.mapError((failed) => unavailable(failed.reason)),
-          Effect.onError(() => supervisor.restart(name))
-        )
 
         const adopt = Effect.gen(function*() {
-          const installed = yield* Effect.mapError(directory.read(replaced.directory), (e) => unavailable(e.reason))
+          const placed = yield* Effect.mapError(source.replace(official), (failed) => unavailable(failed.reason))
+          const installed = yield* Effect.mapError(directory.read(placed), (e) => unavailable(e.reason))
           yield* supervisor.update(name, (connector) => ({
             ...connector,
             version: installed.version,
@@ -95,7 +93,8 @@ export const refreshOfficial = (official: Official) =>
             origin: { _tag: "Official", version: official.version }
           }))
           yield* supervisor.restart(name)
-          if (earlier.trust === "inert") return
+          const current = yield* repository.find(name)
+          if (Option.exists(current, (connector) => connector.trust === "inert")) return
           // ready gives up after the supervisor's start timeout; only a running process counts as started.
           const refused = yield* Effect.flip(supervisor.ready(name)).pipe(Effect.option)
           const now = yield* repository.find(name)
@@ -108,7 +107,7 @@ export const refreshOfficial = (official: Official) =>
 
         const rollback = Effect.gen(function*() {
           yield* supervisor.stop(name)
-          yield* Effect.catch(replaced.restore, (failed) =>
+          yield* Effect.catch(source.restore(official), (failed) =>
             Effect.logError("official connector earlier copy not restored", Cause.fail(failed)))
           yield* supervisor.update(name, (connector) => ({
             ...connector,
@@ -120,7 +119,7 @@ export const refreshOfficial = (official: Official) =>
         })
 
         yield* interruptible(adopt).pipe(
-          Effect.onExit((exit) => Exit.isSuccess(exit) ? replaced.discard : rollback)
+          Effect.onExit((exit) => Exit.isSuccess(exit) ? source.discard(official) : rollback)
         )
         yield* Effect.logInfo("official connector refreshed").pipe(
           Effect.annotateLogs({ from: earlier.version, to: official.version, digest: official.digest })

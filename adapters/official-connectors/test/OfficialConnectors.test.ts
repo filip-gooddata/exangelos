@@ -162,15 +162,16 @@ describe("OfficialConnectorSource", () => {
       expect(refused.reason).toContain("is not the expected sha256-other")
       expect(yield* exists(sentinel)).toBe(true)
 
-      const replaced = yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o))
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o))
       expect(yield* exists(Path.join(installed, "connector.json"))).toBe(true)
       expect(yield* exists(sentinel)).toBe(false)
-      yield* replaced.restore
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
       expect(yield* exists(sentinel)).toBe(true)
 
-      const kept = yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o))
-      yield* kept.discard
+      yield* withSource(root, "template", { folder, digest }, (s, o) => Effect.andThen(s.replace(o), s.discard(o)))
       expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual(["template"])
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
+      expect(yield* exists(Path.join(installed, "connector.json"))).toBe(true)
     }).pipe(Effect.scoped))
 
   it.live("fails for a connector missing from the folder or the release", () =>

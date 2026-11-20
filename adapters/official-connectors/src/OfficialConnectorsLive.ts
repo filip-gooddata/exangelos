@@ -88,14 +88,13 @@ export const layer = (options: {
         fetchWith(official, (from) => imports.place(from, official.name))
 
       const replace = (official: OfficialConnectorSource.Official) =>
-        fetchWith(official, (from) => imports.replace(from, official.name, official.digest)).pipe(
-          Effect.map((replaced): OfficialConnectorSource.Replaced => ({
-            directory: replaced.directory,
-            restore: Effect.mapError(replaced.restore, (failed) => failedFor(official)(failed.reason)),
-            discard: replaced.discard
-          }))
-        )
+        fetchWith(official, (from) => imports.replace(from, official.name, official.digest))
 
-      return { known: options.known, fetch, replace }
+      const restore = (official: OfficialConnectorSource.Official) =>
+        Effect.mapError(imports.restore(official.name), (failed) => failedFor(official)(failed.reason))
+
+      const discard = (official: OfficialConnectorSource.Official) => imports.discard(official.name)
+
+      return { known: options.known, fetch, replace, restore, discard }
     })
   )

@@ -1,5 +1,5 @@
 export { layerFetchHttpClient } from "./Download.ts"
 export { inspectTree, limits } from "./Entries.ts"
 export { commands as gitCommands } from "./Git.ts"
-export { layer, NamedImport, type Replacement } from "./ConnectorImportLive.ts"
+export { layer, NamedImport } from "./ConnectorImportLive.ts"
 export { unpack } from "./Archive.ts"

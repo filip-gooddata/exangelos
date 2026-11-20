@@ -26,20 +26,19 @@ export class NamedImport extends Context.Service<NamedImport, {
   ) => Effect.Effect<string, ConnectorImportSource.ImportFailed>
   /**
    * Places the import like `place`, but only when its digest is `digest`, and keeps the earlier copy
-   * until `restore` puts it back or `discard` deletes it.
+   * beside it until `restore` puts it back or `discard` deletes it. An earlier copy kept from before is
+   * deleted first.
    */
   readonly replace: (
     source: ConnectorImportSource.Source,
     name: string,
     digest: string
-  ) => Effect.Effect<Replacement, ConnectorImportSource.ImportFailed>
+  ) => Effect.Effect<string, ConnectorImportSource.ImportFailed>
+  /** Puts the copy `replace` kept back in place; does nothing when none is kept. */
+  readonly restore: (name: string) => Effect.Effect<void, ConnectorImportSource.ImportFailed>
+  /** Deletes the copy `replace` kept, if any. */
+  readonly discard: (name: string) => Effect.Effect<void>
 }>()("@exangelos/connector-import/NamedImport") {}
-
-export interface Replacement {
-  readonly directory: string
-  readonly restore: Effect.Effect<void, ConnectorImportSource.ImportFailed>
-  readonly discard: Effect.Effect<void>
-}
 
 /**
  * Places connectors from archives, https links, local directories and git repositories into the
@@ -105,10 +104,11 @@ const make = Effect.gen(function*() {
         }
       }
 
-      const moveIntoPlace = (directory: string, name: string, staging: string) =>
+      const kept = (name: string) => Path.join(root, `.${name}.previous`)
+
+      const moveIntoPlace = (directory: string, name: string, previous: string) =>
         attempt(async () => {
           const target = Path.join(root, name)
-          const previous = Path.join(root, `.${name}.previous-${Path.basename(staging)}`)
           await protectLegacyState(name, target)
           const replaced = await Fs.rename(target, previous).then(() => true, () => false)
           try {
@@ -128,22 +128,29 @@ const make = Effect.gen(function*() {
       const removeTree = (path: string | undefined) =>
         path === undefined ? Effect.void : Effect.promise(() => Fs.rm(path, { recursive: true, force: true }))
 
-      const putBack = (target: string, previous: string | undefined) =>
+      const putBack = (name: string) =>
         attempt(async () => {
-          const failed = previous !== undefined ? `${previous}.failed` : Path.join(root, `.${Path.basename(target)}.failed`)
-          await Fs.rename(target, failed)
-          if (previous !== undefined) {
-            try {
-              await Fs.rename(previous, target)
-            } catch (error) {
-              await Fs.rename(failed, target)
-              throw error
-            }
+          const target = Path.join(root, name)
+          const previous = kept(name)
+          if (!(await Fs.stat(previous).then((stat) => stat.isDirectory(), () => false))) return
+          const failed = `${previous}.failed`
+          await Fs.rm(failed, { recursive: true, force: true })
+          const moved = await Fs.rename(target, failed).then(() => true, () => false)
+          try {
+            await Fs.rename(previous, target)
+          } catch (error) {
+            if (moved) await Fs.rename(failed, target)
+            throw error
           }
           await Fs.rm(failed, { recursive: true, force: true })
         })
 
-      const staged = (source: ConnectorImportSource.Source, expected: string | undefined, digest: string | undefined) =>
+      const staged = (
+        source: ConnectorImportSource.Source,
+        expected: string | undefined,
+        digest: string | undefined,
+        previous: (name: string, staging: string) => string
+      ) =>
         Effect.gen(function*() {
           const staging = yield* stage
           yield* bring(source, staging)
@@ -161,7 +168,9 @@ const make = Effect.gen(function*() {
           if (digest !== undefined && connector.digest !== digest) {
             return yield* new Refused({ reason: `the import's digest ${connector.digest} is not the expected ${digest}` })
           }
-          return yield* swap.withPermits(1)(moveIntoPlace(directory, connector.name, staging))
+          return yield* Effect.uninterruptible(
+            swap.withPermits(1)(moveIntoPlace(directory, connector.name, previous(connector.name, staging)))
+          )
         }).pipe(
           Effect.scoped,
           Effect.provideContext(context)
@@ -170,26 +179,27 @@ const make = Effect.gen(function*() {
       const failed = (refused: Refused) => new ConnectorImportSource.ImportFailed({ reason: refused.reason })
 
       const place = (source: ConnectorImportSource.Source, expected?: string) =>
-        staged(source, expected, undefined).pipe(
+        staged(source, expected, undefined, (name, staging) => Path.join(root, `.${name}.previous-${Path.basename(staging)}`)).pipe(
           Effect.tap(({ previous }) => removeTree(previous)),
           Effect.map(({ target }) => target),
           Effect.mapError(failed)
         )
 
+      const discard = (name: string) => removeTree(kept(name))
+
       const replace = (source: ConnectorImportSource.Source, expected: string, digest: string) =>
-        staged(source, expected, digest).pipe(
-          Effect.map(({ target, previous }): Replacement => ({
-            directory: target,
-            restore: swap.withPermits(1)(putBack(target, previous)).pipe(Effect.mapError(failed)),
-            discard: removeTree(previous)
-          })),
+        discard(expected).pipe(
+          Effect.andThen(staged(source, expected, digest, kept)),
+          Effect.map(({ target }) => target),
           Effect.mapError(failed)
         )
 
-      return { place, replace }
+      const restore = (name: string) => swap.withPermits(1)(putBack(name)).pipe(Effect.mapError(failed))
+
+      return { place, replace, restore, discard }
     })
 
-export const layer = Layer.effectContext(Effect.map(make, ({ place, replace }) =>
+export const layer = Layer.effectContext(Effect.map(make, ({ place, replace, restore, discard }) =>
   Context.make(ConnectorImportSource.ConnectorImportSource, { place: (source) => place(source) }).pipe(
-    Context.add(NamedImport, { place, replace })
+    Context.add(NamedImport, { place, replace, restore, discard })
   )))

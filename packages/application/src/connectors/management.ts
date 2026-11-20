@@ -95,7 +95,7 @@ export const importConnector = (actor: Session.Actor, source: Source) =>
 
 /** Enables the connector after you saw its digest; refused when its files changed since. */
 export const enableConnector = (actor: Session.Actor, name: Ids.ConnectorName, digest: string) =>
-  Effect.gen(function*() {
+  exclusively(Effect.gen(function*() {
     if (actor._tag !== "You") return yield* new HumanRequired({ connector: name })
     const supervisor = yield* ConnectorSupervisor
     const connector = yield* found(name)
@@ -125,17 +125,17 @@ export const enableConnector = (actor: Session.Actor, name: Ids.ConnectorName, d
     yield* Effect.logInfo("connector enabled").pipe(Effect.annotateLogs({ digest }))
     yield* supervisor.restart(name)
     return yield* stored(name)
-  }).pipe(Effect.annotateLogs({ connector: name }))
+  }).pipe(Effect.annotateLogs({ connector: name })))
 
 export const disableConnector = (actor: Session.Actor, name: Ids.ConnectorName) =>
-  Effect.gen(function*() {
+  exclusively(Effect.gen(function*() {
     const supervisor = yield* ConnectorSupervisor
     const connector = yield* found(name)
     if (connector.trust === "inert") return connector
     yield* supervisor.update(name, (p) => ({ ...p, trust: "inert" }), yield* change(name, "disable", actor))
     yield* supervisor.restart(name)
     return yield* stored(name)
-  })
+  }))
 
 const secretFields = (connector: Connector.Connector) =>
   (connector.catalogue?.configuration ?? []).filter((field) => field._tag === "Secret").map((field) => field.key)

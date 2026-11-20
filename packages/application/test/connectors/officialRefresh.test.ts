@@ -1,8 +1,8 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Option } from "effect"
+import { Effect, Exit, Fiber, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 import type { Connector } from "@exangelos/domain"
-import { ConnectorAccess, ConnectorDirectory, layerConnectors, SubscriptionRepository } from "@exangelos/application"
+import { ConnectorAccess, ConnectorDirectory, enableConnector, layerConnectors, SubscriptionRepository } from "@exangelos/application"
 import {
   layerAlertSink,
   layerConnectorFiles,
@@ -179,6 +179,29 @@ describe("an official connector the upgraded binary carries in another version",
 
         expect(yield* connectorOf("github-pr")).toMatchObject({ version: "1.0.0", digest: officialDigest, trust: "inert" })
         expect(yield* (yield* ConnectorRuntimeFake).launches(github)).toHaveLength(0)
+      }),
+      ports
+    ))
+
+  it.effect("holds an enable until a refresh in flight ends, then judges it against the new digest", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* seed(stored({ trust: "inert" }))
+        const files = yield* ConnectorFilesFake
+        yield* files.publish(installed("github-pr", officialDigest))
+        const release = yield* files.holdReplace
+
+        yield* daemonRun(Effect.gen(function*() {
+          yield* settle
+          const enabling = yield* Effect.forkChild(Effect.exit(enableConnector(you, github, "sha256-old")))
+          yield* settle
+          expect(yield* connectorOf("github-pr")).toMatchObject({ trust: "inert", digest: "sha256-old" })
+
+          yield* release
+          const enabled = yield* Fiber.join(enabling)
+          expect(Exit.isFailure(enabled)).toBe(true)
+          expect(yield* connectorOf("github-pr")).toMatchObject({ trust: "inert", digest: officialDigest })
+        }))
       }),
       ports
     ))
