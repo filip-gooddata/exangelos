@@ -69,6 +69,11 @@ export class ConnectorSupervisor extends Context.Service<ConnectorSupervisor, {
    * known to be open with the stored wake window.
    */
   readonly settingsChanged: Effect.Effect<void>
+  /**
+   * Runs `effect` while no other change to which connector files are installed under a name runs:
+   * import, removal, dev link and official fetch or refresh.
+   */
+  readonly exclusive: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
   /** Waits until the startup pass has checked, watched and started every stored connector. */
   readonly started: Effect.Effect<void>
 }>()("@exangelos/application/ConnectorSupervisor") {}
@@ -595,6 +600,7 @@ export const layerConnectorSupervisor: Layer.Layer<
       if (connector.trust !== "inert" && !(yield* FiberMap.has(runs, connector.name))) yield* restartRun(connector.name)
     }
   })
+  const installs = yield* Semaphore.make(1)
   const startedSignal = yield* Deferred.make<void>()
   yield* Effect.forkScoped(Effect.ensuring(startup, Deferred.succeed(startedSignal, undefined)))
 
@@ -624,6 +630,7 @@ export const layerConnectorSupervisor: Layer.Layer<
     unwatch: (subscription) => Effect.asVoid(Effect.forkDetach(FiberMap.remove(streams, subscription))),
     rewatch,
     settingsChanged: Effect.asVoid(Effect.forkIn(refreshes.withPermit(refresh), scope)),
+    exclusive: (effect) => installs.withPermits(1)(effect),
     started: Deferred.await(startedSignal)
   })
 }))

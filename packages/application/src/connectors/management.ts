@@ -52,8 +52,12 @@ const originOf = (source: Source): Connector.Origin => source
  * Places the connector in the connector directory and records it inert, with its origin and digest. A
  * connector of the same name is replaced and stopped; its configuration stays.
  */
+/** Runs a change to which connector files are installed under a name while no other such change runs. */
+const exclusively = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.flatMap(ConnectorSupervisor, (supervisor) => supervisor.exclusive(effect))
+
 export const importConnector = (actor: Session.Actor, source: Source) =>
-  Effect.gen(function*() {
+  exclusively(Effect.gen(function*() {
     const supervisor = yield* ConnectorSupervisor
     const directory = yield* ConnectorDirectory
     const placed = yield* (yield* ConnectorImportSource).place(source)
@@ -87,7 +91,7 @@ export const importConnector = (actor: Session.Actor, source: Source) =>
     if (Option.isSome(alert)) yield* Effect.ignore((yield* AlertSink).show(alert.value))
     yield* supervisor.restart(connector.name)
     return yield* stored(connector.name)
-  })
+  }))
 
 /** Enables the connector after you saw its digest; refused when its files changed since. */
 export const enableConnector = (actor: Session.Actor, name: Ids.ConnectorName, digest: string) =>
@@ -152,7 +156,7 @@ const forget = (connector: Connector.Connector, kind: "remove" | "dev-unlink", a
 
 /** Stops the connector and deletes its files, record, configuration and secrets. Its change log stays. */
 export const removeConnector = (actor: Session.Actor, name: Ids.ConnectorName) =>
-  Effect.flatMap(found(name), (connector) => forget(connector, "remove", actor))
+  exclusively(Effect.flatMap(found(name), (connector) => forget(connector, "remove", actor)))
 
 const validate = (name: Ids.ConnectorName, catalogue: Catalogue.Catalogue, values: Catalogue.ConfigurationValues) =>
   Effect.gen(function*() {
@@ -221,7 +225,7 @@ export const configureConnector = (actor: Session.Actor, name: Ids.ConnectorName
 
 /** Trusts a working directory as a dev connector while linked and starts it. CLI only. */
 export const devLink = (actor: Session.Actor, path: string) =>
-  Effect.gen(function*() {
+  exclusively(Effect.gen(function*() {
     const supervisor = yield* ConnectorSupervisor
     const installed = yield* Effect.mapError(
       (yield* ConnectorDirectory).read(path),
@@ -246,14 +250,14 @@ export const devLink = (actor: Session.Actor, path: string) =>
     )
     yield* supervisor.restart(installed.name)
     return yield* stored(installed.name)
-  })
+  }))
 
 export const devUnlink = (actor: Session.Actor, name: Ids.ConnectorName) =>
-  Effect.gen(function*() {
+  exclusively(Effect.gen(function*() {
     const connector = yield* found(name)
     if (connector.origin._tag !== "DevLink") return yield* new ConnectorNotFound({ connector: name })
     yield* forget(connector, "dev-unlink", actor)
-  })
+  }))
 
 export const getSettings = SettingsStore.use((store) => store.read)
 

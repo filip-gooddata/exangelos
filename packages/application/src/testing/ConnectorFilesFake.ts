@@ -23,6 +23,8 @@ export class ConnectorFilesFake extends Context.Service<ConnectorFilesFake, {
   readonly publish: (connector: Installed) => Effect.Effect<void>
   /** Changes the files in the directory: they get the digest, and `changes` emits for the directory. */
   readonly edit: (directory: string, digest: string) => Effect.Effect<void>
+  /** How many times the official source was asked to replace an installed copy. */
+  readonly replacements: Effect.Effect<number>
 }>()("@exangelos/application/testing/ConnectorFilesFake") {}
 
 /**
@@ -35,6 +37,7 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
   Layer.unwrap(Effect.gen(function*() {
     const files = yield* Ref.make<Files>({ directories: new Map(), sources: new Map(), releases: new Map() })
     const changed = yield* PubSub.unbounded<string>()
+    const replacements = yield* Ref.make(0)
     const place = (connector: Installed) =>
       Effect.as(Ref.update(files, (f) => ({ ...f, directories: new Map(f.directories).set(connector.directory, connector) })), connector.directory)
 
@@ -83,6 +86,7 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
           }),
         replace: (official) =>
           Effect.gen(function*() {
+            yield* Ref.update(replacements, (n) => n + 1)
             const f = yield* Ref.get(files)
             const release = f.releases.get(official.name)
             const failed = (reason: string) => new OfficialFetchFailed({ connector: official.name, reason })
@@ -104,6 +108,7 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
           })
       }),
       Layer.succeed(ConnectorFilesFake, {
+        replacements: Ref.get(replacements),
         put: (connector) => Effect.asVoid(place(connector)),
         offer: (source, connector) =>
           Ref.update(files, (f) => ({ ...f, sources: new Map(f.sources).set(JSON.stringify(source), connector) })),

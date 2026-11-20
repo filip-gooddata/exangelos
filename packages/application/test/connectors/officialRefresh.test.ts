@@ -103,6 +103,7 @@ describe("an official connector the upgraded binary carries in another version",
         yield* daemonRun(settle)
 
         expect(yield* connectorOf("github-pr")).toMatchObject({ version: "1.0.0", digest: officialDigest, trust: "enabled" })
+        expect(yield* (yield* ConnectorFilesFake).replacements).toBe(0)
       }),
       ports
     ))
@@ -131,6 +132,38 @@ describe("an official connector the upgraded binary carries in another version",
         yield* daemonRun(settle)
 
         expect(yield* connectorOf("github-pr")).toMatchObject({ version: "0.9.0", digest: "sha256-old", origin: { version: "0.9.0" } })
+        expect(yield* filesDigest).toBe("sha256-old")
+      }),
+      ports
+    ))
+
+  it.effect("puts the installed copy back when the new version is still not running at the start timeout", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* seed(stored(), { catalogue: catalogue(), start: { _tag: "Hang" } })
+        yield* (yield* ConnectorFilesFake).publish(installed("github-pr", officialDigest))
+
+        yield* daemonRun(Effect.gen(function*() {
+          yield* settle
+          yield* TestClock.adjust("31 seconds")
+          yield* settle
+        }))
+
+        expect(yield* connectorOf("github-pr")).toMatchObject({ version: "0.9.0", digest: "sha256-old" })
+        expect(yield* filesDigest).toBe("sha256-old")
+      }),
+      ports
+    ))
+
+  it.effect("puts the installed copy back when the daemon stops while the new version starts", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* seed(stored(), { catalogue: catalogue(), start: { _tag: "Hang" } })
+        yield* (yield* ConnectorFilesFake).publish(installed("github-pr", officialDigest))
+
+        yield* daemonRun(settle)
+
+        expect(yield* connectorOf("github-pr")).toMatchObject({ version: "0.9.0", digest: "sha256-old" })
         expect(yield* filesDigest).toBe("sha256-old")
       }),
       ports
