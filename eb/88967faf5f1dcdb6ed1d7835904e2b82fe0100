@@ -1,0 +1,19 @@
+connectors/slack/test/archive_validation.py
+  s_4e8beb54f5d708::t_ae2135731b08c8 274-277,279,337-338,388
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "eb88967faf5f1dcdb6ed1d7835904e2b82fe0100",
+  "prompts": {},
+  "sessions": {
+    "s_4e8beb54f5d708": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f94d-ce76-7763-b39a-1ccb8d0117d1",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
