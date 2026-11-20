@@ -382,7 +382,7 @@ describe("the exangelos binary", () => {
 
   it("wakes a subscriber through a harness you define, with the values in its arguments and the text on stdin", async () => {
     const log = join(root, "harness-wakes.log")
-    await fake("e2e-relay", `{ for arg in "$@"; do printf 'arg:%s\\n' "$arg"; done; cat; printf '\\n'; } >> ${JSON.stringify(log)}`)
+    await fake("e2e-relay", `{ for arg in "$@"; do printf 'arg:%s\\n' "$arg"; done; cat; printf '\\nend\\n'; } >> ${JSON.stringify(log)}`)
     const relay = join(root, "fake-bin", "e2e-relay")
     const settings = json("settings", "harness", "set", "e2e-cmd", "--", relay, "--session={session}", "{subscription}")
     expect(settings.harnesses).toEqual({ "e2e-cmd": { command: [relay, "--session={session}", "{subscription}"] } })
@@ -390,7 +390,7 @@ describe("the exangelos binary", () => {
     const woken = await mcpSubscribe({ ticks: 2 }, { target: { harness: "e2e-cmd", sessionId: "e2e-session" } })
     const wakes = await eventually(async () => {
       const text = await readFile(log, "utf8")
-      expect(text).toContain(`arg:${woken.id}`)
+      expect(text).toContain("\nend\n")
       return text
     })
     const lines = wakes.split("\n")
