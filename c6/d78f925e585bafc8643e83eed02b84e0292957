@@ -1,0 +1,53 @@
+adapters/wake-targets/package.json
+  s_13adf501d16810::t_f1876913bee135 22
+adapters/wake-targets/src/Executable.ts
+  s_d912f1c7e69027::t_9435df590fe960 1-114
+adapters/wake-targets/src/WakeTargets.ts
+  s_2b967fbed5bad3::t_e0ddb6d2e70ed6 11,17-18,29-43,45,51-52,66,69,84,95,99,103,105,119,123
+adapters/wake-targets/src/index.ts
+  s_2b967fbed5bad3::t_f31086fa1063ab 5
+adapters/wake-targets/test/executable.test.ts
+  s_2b967fbed5bad3::t_114ddbf4799d9e 1-52
+adapters/wake-targets/test/fixtures.ts
+  s_2b967fbed5bad3::t_c98dc6d0355f6b 7,54-56
+adapters/wake-targets/test/harnesses.test.ts
+  s_2b967fbed5bad3::t_c0b526b4061fa6 8,21,42,66
+adapters/wake-targets/tsconfig.json
+  s_2b967fbed5bad3::t_e54183b89e5439 3-5
+docs/spec.md
+  s_2b967fbed5bad3::t_42716894bb8249 358
+pnpm-lock.yaml
+  s_d912f1c7e69027::t_ea389e0b90dbb0 592-594
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dbfc516baebcba059adca779c8a8a1b09a1c3bb4",
+  "prompts": {},
+  "sessions": {
+    "s_13adf501d16810": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f89a-a2cb-71c0-9047-f16c16a0807e",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_2b967fbed5bad3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5ed4117f-80d1-4408-9618-4ad572d3e9df",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_d912f1c7e69027": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "31ec3bec-0152-46a9-80a9-c5316a2ec533",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
