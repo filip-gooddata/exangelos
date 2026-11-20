@@ -144,6 +144,25 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(newer['events'], [])
         self.assertEqual(self.count('versions'), 1)
 
+    def test_legacy_lineage_replays_its_original_edge_then_requires_new_baseline(self):
+        original = self.call(snapshot(1, []))
+        tip = self.call(snapshot(2, []), original['cursor'])
+        lineage, source = original['cursor'].split(':')[1:]
+        frozen = dict(tip, events=[{'type': 'message.new', 'occurredAt': 1000,
+                                    'dedupeKey': 'slack:' + token('legacy')}])
+        with sqlite3.connect(self.path) as db:
+            db.execute('DROP TABLE watch_starts')
+            db.execute('PRAGMA user_version=4')
+            db.execute('UPDATE edges SET result=? WHERE lineage=? AND source=?',
+                       (ledger.packed(frozen), lineage, source))
+        self.assertEqual(self.call(snapshot(3, []), original['cursor']), frozen)
+        with self.assertRaises(ledger.LegacyCursor):
+            self.call(snapshot(3, []), tip['cursor'])
+        fresh = self.call(snapshot(3, []))
+        self.assertNotEqual(fresh['cursor'], tip['cursor'])
+        self.assertEqual(self.call(snapshot(4, []), fresh['cursor'])['events'], [])
+        self.assertEqual(self.call(snapshot(4, []), original['cursor']), frozen)
+
     def test_missing_corrupt_and_foreign_ledger_never_reset(self):
         snap = snapshot(1, [])
         with self.assertRaises(ledger.ObservationGap):
