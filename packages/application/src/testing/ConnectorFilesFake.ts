@@ -80,6 +80,27 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
             return connector === undefined
               ? Effect.fail(new OfficialFetchFailed({ connector: official.name, reason: "offline" }))
               : place(inRoot(connector))
+          }),
+        replace: (official) =>
+          Effect.gen(function*() {
+            const f = yield* Ref.get(files)
+            const release = f.releases.get(official.name)
+            const failed = (reason: string) => new OfficialFetchFailed({ connector: official.name, reason })
+            if (release === undefined) return yield* failed("offline")
+            if (release.digest !== official.digest) return yield* failed(`the digest ${release.digest} is not ${official.digest}`)
+            const placed = inRoot(release)
+            const previous = f.directories.get(placed.directory)
+            yield* place(placed)
+            return {
+              directory: placed.directory,
+              restore: Ref.update(files, (now) => {
+                const directories = new Map(now.directories)
+                if (previous === undefined) directories.delete(placed.directory)
+                else directories.set(placed.directory, previous)
+                return { ...now, directories }
+              }),
+              discard: Effect.void
+            }
           })
       }),
       Layer.succeed(ConnectorFilesFake, {

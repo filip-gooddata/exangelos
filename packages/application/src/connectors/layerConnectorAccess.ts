@@ -1,7 +1,7 @@
-import { Cause, DateTime, Effect, Layer, Option } from "effect"
+import { Cause, Clock, DateTime, Duration, Effect, Layer, Option, Ref, Semaphore } from "effect"
 import { type Ids, type Connector, ConnectorRules, Refusal, type Session, Subscribe } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
-import { OfficialConnectorSource } from "../ports/OfficialConnectorSource.ts"
+import { OfficialConnectorSource, type Official } from "../ports/OfficialConnectorSource.ts"
 import { ConnectorDirectory } from "../ports/ConnectorDirectory.ts"
 import { ConnectorRepository } from "../ports/ConnectorRepository.ts"
 import { ConnectorAccess, ConnectorNotFound } from "../seam/ConnectorAccess.ts"
@@ -52,6 +52,86 @@ export const fetchOfficial = (actor: Session.Actor, name: Ids.ConnectorName) =>
     yield* supervisor.restart(name)
   }).pipe(Effect.annotateLogs({ connector: name }))
 
+/** How long a refreshed connector has to start before the refresh counts as failed. */
+export const refreshStartTimeout = Duration.seconds(60)
+
+/** An official record the binary now carries in another version, or with another digest. */
+const outdated = (connector: Connector.Connector, official: Official) =>
+  connector.origin._tag === "Official" &&
+  (connector.origin.version !== official.version || connector.digest !== official.digest)
+
+/**
+ * Replaces an installed official connector whose version or digest differs from the one this binary
+ * carries. The new copy goes in only once its digest matches; the record keeps its trust, configuration
+ * and subscriptions, so a disabled connector is refreshed and stays disabled. When the fetch, the check or
+ * the start fails, the earlier copy and record come back and the failure is returned for a later retry.
+ * Connectors imported or dev-linked are never touched.
+ */
+export const refreshOfficial = (official: Official) =>
+  Effect.gen(function*() {
+    const name = official.name
+    const supervisor = yield* ConnectorSupervisor
+    const found = yield* (yield* ConnectorRepository).find(name)
+    if (Option.isNone(found) || !outdated(found.value, official)) return
+    const earlier = found.value
+    const directory = yield* ConnectorDirectory
+    const source = yield* OfficialConnectorSource
+    const unavailable = (problem: string) => new Refusal.ConnectorUnavailable({ connector: name, problem })
+
+    yield* supervisor.stop(name)
+    const replaced = yield* source.replace(official).pipe(
+      Effect.mapError((failed) => unavailable(failed.reason)),
+      Effect.onError(() => supervisor.restart(name))
+    )
+    const adopt = Effect.gen(function*() {
+      const installed = yield* Effect.mapError(directory.read(replaced.directory), (e) => unavailable(e.reason))
+      yield* supervisor.update(name, (connector) => ({
+        ...connector,
+        version: installed.version,
+        digest: installed.digest,
+        origin: { _tag: "Official", version: official.version }
+      }))
+      yield* supervisor.restart(name)
+      if (earlier.trust === "inert") return
+      yield* Effect.ignore(supervisor.ready(name)).pipe(
+        Effect.timeoutOrElse({ duration: refreshStartTimeout, orElse: () => Effect.fail(unavailable("it did not start in time")) })
+      )
+      const now = yield* (yield* ConnectorRepository).find(name)
+      if (Option.exists(now, (connector) => connector.process === "failing")) {
+        return yield* unavailable(Option.getOrElse(Option.flatMap(now, ConnectorRules.problem), () => "it keeps failing"))
+      }
+    })
+    yield* adopt.pipe(
+      Effect.tapError(() =>
+        Effect.gen(function*() {
+          yield* supervisor.stop(name)
+          yield* Effect.catch(replaced.restore, (failed) =>
+            Effect.logError("official connector earlier copy not restored", Cause.fail(failed)))
+          yield* supervisor.update(name, (connector) => ({
+            ...connector,
+            version: earlier.version,
+            digest: earlier.digest,
+            origin: earlier.origin
+          }))
+          yield* supervisor.restart(name)
+        })
+      )
+    )
+    yield* replaced.discard
+    yield* Effect.logInfo("official connector refreshed").pipe(
+      Effect.annotateLogs({ from: earlier.version, to: official.version, digest: official.digest })
+    )
+  }).pipe(
+    Effect.tapError((failed) =>
+      Effect.logWarning("official connector refresh failed; the installed copy stays", Cause.fail(failed)).pipe(
+        Effect.annotateLogs({ to: official.version })
+      )),
+    Effect.annotateLogs({ connector: official.name })
+  )
+
+/** How long after a failed refresh the same version is tried again on use. Daemon start always tries. */
+export const refreshRetryAfter = Duration.minutes(10)
+
 /** The real ConnectorAccess over the supervisor. */
 export const layerConnectorAccess: Layer.Layer<
   ConnectorAccess,
@@ -61,11 +141,36 @@ export const layerConnectorAccess: Layer.Layer<
   const supervisor = yield* ConnectorSupervisor
   const repository = yield* ConnectorRepository
   const context = yield* Effect.context<OfficialConnectorSource | ConnectorDirectory | AlertSink | ConnectorSupervisor | ConnectorRepository>()
+  const known = (yield* OfficialConnectorSource).known
+  const refreshing = yield* Semaphore.make(1)
+  const failedAt = yield* Ref.make(new Map<string, number>())
+
+  /** Refreshes one official connector, at most once per retry window after a failure unless `always`. */
+  const refresh = (official: Official, always: boolean) =>
+    refreshing.withPermits(1)(Effect.gen(function*() {
+      const key = `${official.name}@${official.version}@${official.digest}`
+      const now = yield* Clock.currentTimeMillis
+      const last = (yield* Ref.get(failedAt)).get(key)
+      if (!always && last !== undefined && now - last < Duration.toMillis(refreshRetryAfter)) return
+      yield* refreshOfficial(official).pipe(
+        Effect.tap(() => Ref.update(failedAt, (m) => { const next = new Map(m); next.delete(key); return next })),
+        Effect.catch(() => Ref.update(failedAt, (m) => new Map(m).set(key, now))),
+        Effect.provide(context)
+      )
+    }))
+
+  yield* Effect.forkScoped(
+    Effect.andThen(supervisor.started, Effect.forEach(known, (official) => refresh(official, true), { discard: true }))
+  )
+
   return ConnectorAccess.of({
     describe: (actor, name, request) =>
       Effect.gen(function*() {
         if (Option.isNone(yield* repository.find(name))) {
           yield* Effect.provide(fetchOfficial(actor, name), context)
+        } else {
+          const official = known.find((candidate) => candidate.name === name)
+          if (official !== undefined) yield* refresh(official, false)
         }
         const process = yield* supervisor.ready(name)
         const parameters = yield* Effect.fromResult(

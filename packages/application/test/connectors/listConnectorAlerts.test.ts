@@ -9,7 +9,8 @@ const official = Layer.succeed(OfficialConnectorSource.OfficialConnectorSource)(
     { name: connector("disabled").name, version: "1.0.0", digest: "sha256-test" },
     { name: connector("tampered").name, version: "1.0.0", digest: "sha256-release" }
   ],
-  fetch: () => Effect.die("not fetched in this test")
+  fetch: () => Effect.die("not fetched in this test"),
+  replace: () => Effect.die("not replaced in this test")
 })
 
 describe("listConnectorAlerts", () => {

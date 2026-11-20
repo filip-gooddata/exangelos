@@ -69,6 +69,8 @@ export class ConnectorSupervisor extends Context.Service<ConnectorSupervisor, {
    * known to be open with the stored wake window.
    */
   readonly settingsChanged: Effect.Effect<void>
+  /** Waits until the startup pass has checked, watched and started every stored connector. */
+  readonly started: Effect.Effect<void>
 }>()("@exangelos/application/ConnectorSupervisor") {}
 
 type Outcome =
@@ -593,7 +595,8 @@ export const layerConnectorSupervisor: Layer.Layer<
       if (connector.trust !== "inert" && !(yield* FiberMap.has(runs, connector.name))) yield* restartRun(connector.name)
     }
   })
-  yield* Effect.forkScoped(startup)
+  const startedSignal = yield* Deferred.make<void>()
+  yield* Effect.forkScoped(Effect.ensuring(startup, Deferred.succeed(startedSignal, undefined)))
 
   const rewatch = (subscription: Ids.SubscriptionId) =>
     Effect.andThen(FiberMap.remove(streams, subscription), openStream(subscription))
@@ -620,6 +623,7 @@ export const layerConnectorSupervisor: Layer.Layer<
     // The intake may unwatch from inside the stream's own ingest, so the removal runs on its own fiber.
     unwatch: (subscription) => Effect.asVoid(Effect.forkDetach(FiberMap.remove(streams, subscription))),
     rewatch,
-    settingsChanged: Effect.asVoid(Effect.forkIn(refreshes.withPermit(refresh), scope))
+    settingsChanged: Effect.asVoid(Effect.forkIn(refreshes.withPermit(refresh), scope)),
+    started: Deferred.await(startedSignal)
   })
 }))

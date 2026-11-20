@@ -63,23 +63,39 @@ export const layer = (options: {
             Effect.annotateLogs({ event: stage })
           ))
 
-      const fetch = (official: OfficialConnectorSource.Official) =>
+      const failedFor = (official: OfficialConnectorSource.Official) => (reason: string) =>
+        new OfficialConnectorSource.OfficialFetchFailed({ connector: official.name, reason })
+
+      const fetchWith = <A>(
+        official: OfficialConnectorSource.Official,
+        bring: (from: ConnectorImportSource.Source) => Effect.Effect<A, ConnectorImportSource.ImportFailed>
+      ) =>
         Effect.gen(function*() {
           const current = yield* Effect.mapError(settings.read, (unreadable) => unreadable.reason).pipe(failedAt("settings"))
           const from = yield* source(official, current.officialConnectorFolder).pipe(failedAt("source"))
           yield* Effect.logInfo("official connector source chosen").pipe(
             Effect.annotateLogs({ source: from._tag, target: "path" in from ? from.path : safeUrl(from.url) })
           )
-          const placed = yield* Effect.mapError(imports.place(from, official.name), (failed) => failed.reason).pipe(
-            failedAt("import")
-          )
+          const placed = yield* Effect.mapError(bring(from), (failed) => failed.reason).pipe(failedAt("import"))
           yield* Effect.logInfo("official connector fetched")
           return placed
         }).pipe(
-          Effect.mapError((reason) => new OfficialConnectorSource.OfficialFetchFailed({ connector: official.name, reason })),
+          Effect.mapError(failedFor(official)),
           Effect.annotateLogs({ connector: official.name, version: official.version })
         )
 
-      return { known: options.known, fetch }
+      const fetch = (official: OfficialConnectorSource.Official) =>
+        fetchWith(official, (from) => imports.place(from, official.name))
+
+      const replace = (official: OfficialConnectorSource.Official) =>
+        fetchWith(official, (from) => imports.replace(from, official.name, official.digest)).pipe(
+          Effect.map((replaced): OfficialConnectorSource.Replaced => ({
+            directory: replaced.directory,
+            restore: Effect.mapError(replaced.restore, (failed) => failedFor(official)(failed.reason)),
+            discard: replaced.discard
+          }))
+        )
+
+      return { known: options.known, fetch, replace }
     })
   )

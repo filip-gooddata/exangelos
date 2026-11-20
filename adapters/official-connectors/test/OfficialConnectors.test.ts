@@ -38,11 +38,18 @@ const buildArchive = (root: string, folder: string) =>
     return file
   })
 
-const fetch = (
+type Options = { folder?: string; served?: Map<string, Uint8Array>; releaseUrl?: string | undefined; redirect?: string; digest?: string }
+
+const fetch = (root: string, name: string, options: Options) =>
+  withSource(root, name, options, (source, carried) => source.fetch(carried))
+
+const withSource = <A, E>(
   root: string,
   name: string,
-  options: { folder?: string; served?: Map<string, Uint8Array>; releaseUrl?: string | undefined; redirect?: string }
+  options: Options,
+  use: (source: OfficialConnectorSource.OfficialConnectorSource["Service"], carried: OfficialConnectorSource.Official) => Effect.Effect<A, E>
 ) => {
+  const carried = { ...official(name), ...(options.digest === undefined ? {} : { digest: options.digest }) }
   const settings = Layer.succeed(SettingsStore.SettingsStore, {
     read: Effect.succeed<Settings.Settings>(
       options.folder === undefined ? Settings.initial : { ...Settings.initial, officialConnectorFolder: options.folder }
@@ -70,9 +77,8 @@ const fetch = (
     Layer.provide(Layer.mergeAll(BunServices.layer, http, paths))
   )
   return Effect.gen(function*() {
-    const source = yield* OfficialConnectorSource.OfficialConnectorSource
-    return yield* source.fetch(official(name))
-  }).pipe(Effect.provide(OfficialConnectors.layer({ known: [official(name)], releaseUrl: "releaseUrl" in options ? options.releaseUrl : releaseUrl }).pipe(
+    return yield* use(yield* OfficialConnectorSource.OfficialConnectorSource, carried)
+  }).pipe(Effect.provide(OfficialConnectors.layer({ known: [carried], releaseUrl: "releaseUrl" in options ? options.releaseUrl : releaseUrl }).pipe(
     Layer.provide(Layer.mergeAll(settings, imports))
   )))
 }
@@ -136,6 +142,35 @@ describe("OfficialConnectorSource", () => {
 
       expect(failed.reason).toBe("the import holds template, not jira")
       expect(yield* Effect.promise(() => Fs.readFile(sentinel, "utf8"))).toBe("installed")
+    }).pipe(Effect.scoped))
+
+  it.live("replaces an installed copy only when the digest matches, and can put the earlier copy back", () =>
+    Effect.gen(function*() {
+      const root = yield* workspace
+      const folder = Path.join(root, "dist")
+      yield* buildArchive(root, folder)
+      const digest = yield* ConnectorDirectoryLive.digestDirectory(Path.join(root, "build", "template"))
+      const installed = Path.join(root, "connectors", "template")
+      const sentinel = Path.join(installed, "keep.txt")
+      yield* Effect.promise(async () => {
+        await Fs.mkdir(installed, { recursive: true })
+        await Fs.writeFile(sentinel, "installed")
+      })
+      const exists = (path: string) => Effect.promise(() => Fs.access(path).then(() => true, () => false))
+
+      const refused = yield* Effect.flip(withSource(root, "template", { folder, digest: "sha256-other" }, (s, o) => s.replace(o)))
+      expect(refused.reason).toContain("is not the expected sha256-other")
+      expect(yield* exists(sentinel)).toBe(true)
+
+      const replaced = yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o))
+      expect(yield* exists(Path.join(installed, "connector.json"))).toBe(true)
+      expect(yield* exists(sentinel)).toBe(false)
+      yield* replaced.restore
+      expect(yield* exists(sentinel)).toBe(true)
+
+      const kept = yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o))
+      yield* kept.discard
+      expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual(["template"])
     }).pipe(Effect.scoped))
 
   it.live("fails for a connector missing from the folder or the release", () =>
