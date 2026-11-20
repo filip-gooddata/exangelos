@@ -1,0 +1,35 @@
+adapters/connector-import/src/ConnectorImportLive.ts
+  s_dfbacf5657a8c4::t_dd54e0226bf3d5 131-161,163-165,167,169-171,173-192,195,199-201,212,214,244-246,263,267-268,271
+adapters/official-connectors/test/OfficialConnectors.test.ts
+  s_3cd10c68deade9::t_1fd94138cc7fec 25,185-190
+packages/application/src/connectors/layerConnectorAccess.ts
+  s_dfbacf5657a8c4::t_0852a787dcc6ad 85,113-117,123,150,185-186,212-217
+packages/application/src/ports/OfficialConnectorSource.ts
+  s_dfbacf5657a8c4::t_582a6bba661563 12-16,44
+packages/application/test/connectors/officialRefresh.test.ts
+  s_dfbacf5657a8c4::t_5abb32e6bc1236 12-13,315-351
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dce6fb536f034ee9545ef49c0375234b64b05175",
+  "prompts": {},
+  "sessions": {
+    "s_3cd10c68deade9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f866-76f4-70c3-be17-13d441a4f160",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_dfbacf5657a8c4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2855d2bb-6fa1-40a8-b29e-0b9d540c65db",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
