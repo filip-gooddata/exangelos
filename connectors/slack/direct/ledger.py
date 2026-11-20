@@ -215,7 +215,7 @@ def main():
         text = sys.stdin.buffer.read(5_000_001)
         require(len(text) <= 5_000_000)
         result = reconcile(json.loads(text))
-        sys.stdout.buffer.write(json.dumps(result, separators=(',', ':'), ensure_ascii=False).encode('utf-8') + b'\n')
+        sys.stdout.buffer.write(json.dumps(result, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8') + b'\n')
     except LegacyCursor:
         return 27
     except Exception:

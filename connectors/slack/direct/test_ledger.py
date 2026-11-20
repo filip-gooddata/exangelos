@@ -1,3 +1,4 @@
+from contextlib import closing
 import copy
 import hashlib
 import json
@@ -42,7 +43,7 @@ class LedgerTests(unittest.TestCase):
         return ledger.reconcile(request, self.path)
 
     def count(self, table):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             return db.execute(f'SELECT count(*) FROM {table}').fetchone()[0]
 
     def test_ledger_path_rejects_package_and_symlink_alias_without_creating_files(self):
@@ -162,7 +163,7 @@ class LedgerTests(unittest.TestCase):
         lineage, source = original['cursor'].split(':')[1:]
         frozen = dict(tip, events=[{'type': 'message.new', 'occurredAt': 1000,
                                     'dedupeKey': 'slack:' + token('legacy')}])
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('DROP TABLE watch_starts')
             db.execute('PRAGMA user_version=4')
             db.execute('UPDATE edges SET result=? WHERE lineage=? AND source=?',
@@ -199,14 +200,14 @@ class LedgerTests(unittest.TestCase):
 
     def test_transaction_rolls_back_metadata_and_edge(self):
         base = self.call(snapshot(1, [message(1)]))
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("CREATE TRIGGER fail_edge BEFORE INSERT ON edges BEGIN SELECT RAISE(ABORT,'synthetic'); END")
         with self.assertRaises(sqlite3.IntegrityError):
             self.call(snapshot(2, [message(1, 'edit'), message(2)]), base['cursor'])
         self.assertEqual(self.count('commits'), 1)
         self.assertEqual(self.count('versions'), 1)
         self.assertEqual(self.count('edges'), 0)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('DROP TRIGGER fail_edge')
         result = self.call(snapshot(2, [message(1, 'edit'), message(2)]), base['cursor'])
         self.assertEqual(len(result['events']), 2)
