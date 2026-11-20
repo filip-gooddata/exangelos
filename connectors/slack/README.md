@@ -119,6 +119,19 @@ opaque version-4 handle, not the message inventory. Existing version-3 cursors a
 unsupported and fail explicitly; starting without a cursor establishes a new silent
 baseline, even when another subscription already watches the same scope.
 
+Slack 0.3.0 stores the local clock time just before the first snapshot read for
+each new Watch lineage. A previously unseen message or reply qualifies as an
+arrival when its Slack timestamp is at or after that start. Older rows entering
+the cache are remembered silently. A later poll can deliver several qualifying
+messages, including a message that only became visible after a newer one. This
+comparison assumes the local machine clock agrees with Slack. The first snapshot
+itself remains silent, and messages that never reach the cache cannot be reported.
+
+A cursor created before 0.3.0 can replay its already committed batches with
+their original payloads. Its ledger has no recorded Watch start. At the end of
+that history, create a new subscription for the same selection to establish a
+fresh baseline. Retained host events keep their original payloads.
+
 The 500-message limit applies to each source snapshot, never to lifetime history.
 Disappearing messages remain remembered; returning unchanged messages are silent.
 Each subscription has an independent lineage. A transaction commits the next batch
