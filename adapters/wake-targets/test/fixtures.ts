@@ -26,12 +26,14 @@ export interface Spawned {
 export const recordingSpawner = (answer: { readonly exitCode: number; readonly stdout?: string }) =>
   Effect.gen(function*() {
     const spawned = yield* Ref.make<ReadonlyArray<Spawned>>([])
+    const environments = yield* Ref.make<ReadonlyArray<Readonly<Record<string, unknown>> | undefined>>([])
     const spawn = (command: ChildProcess.Command) =>
       Effect.gen(function*() {
         if (command._tag !== "StandardCommand") return yield* Effect.die("piped commands are not expected")
         const input = command.options.stdin
         const stdin = Stream.isStream(input) ? yield* Stream.mkString(Stream.decodeText(input)) : ""
         yield* Ref.update(spawned, (all) => [...all, { program: command.command, args: command.args.map(String), stdin }])
+        yield* Ref.update(environments, (all) => [...all, command.options.env])
         return ChildProcessSpawner.makeHandle({
           pid: ChildProcessSpawner.ProcessId(1),
           exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(answer.exitCode)),
@@ -48,7 +50,9 @@ export const recordingSpawner = (answer: { readonly exitCode: number; readonly s
       })
     return {
       layer: Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.make(spawn)),
-      spawned: Ref.get(spawned)
+      spawned: Ref.get(spawned),
+      /** The environment each command was given on top of the daemon's, in order. */
+      environments: Ref.get(environments)
     }
   })
 

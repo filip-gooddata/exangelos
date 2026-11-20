@@ -1,6 +1,6 @@
 import { accessSync, constants, readdirSync, statSync } from "node:fs"
 import { homedir } from "node:os"
-import { delimiter, dirname, isAbsolute, join } from "node:path"
+import { delimiter, dirname, isAbsolute, join, resolve as absolute } from "node:path"
 import type { Invocation, Outcome } from "./Attempt.ts"
 
 /**
@@ -18,8 +18,9 @@ export interface Lookup {
   readonly listDirectory: (directory: string) => ReadonlyArray<string>
 }
 
+/** A program found by name: the absolute file and whether the daemon's own PATH had it. */
 export type Resolved =
-  | { readonly _tag: "Found"; readonly file: string }
+  | { readonly _tag: "Found"; readonly file: string; readonly onServicePath: boolean }
   | { readonly _tag: "NotFound"; readonly searched: ReadonlyArray<string> }
 
 const versionParts = (name: string): ReadonlyArray<number> => name.replace(/^v/, "").split(".").map((part) => Number.parseInt(part, 10) || 0)
@@ -63,7 +64,11 @@ const systemDirectories = (platform: string): ReadonlyArray<string> => [
   "/bin"
 ]
 
-const servicePath = (lookup: Lookup): ReadonlyArray<string> => (lookup.path ?? "").split(delimiter).filter((entry) => isAbsolute(entry))
+/** The daemon's PATH entries as the spawner searches them: an empty or relative one is relative to the working directory. */
+const serviceEntries = (lookup: Lookup): ReadonlyArray<string> =>
+  lookup.path === undefined || lookup.path === "" ? [] : lookup.path.split(delimiter).map((entry) => entry === "" ? "." : entry)
+
+const servicePath = (lookup: Lookup): ReadonlyArray<string> => serviceEntries(lookup).filter((entry) => isAbsolute(entry))
 
 /** The directories searched after the daemon's PATH. A home that isn't absolute adds none of its own. */
 const fallbackPath = (lookup: Lookup): ReadonlyArray<string> => [
@@ -71,15 +76,25 @@ const fallbackPath = (lookup: Lookup): ReadonlyArray<string> => [
   ...systemDirectories(lookup.platform)
 ]
 
-/** The directories a lookup searches, in order, without repeats. */
-export const searchPath = (lookup: Lookup): ReadonlyArray<string> => [...new Set([...servicePath(lookup), ...fallbackPath(lookup)])]
+const normalized = (directory: string): string => absolute(directory)
 
-/** A program with a slash in it is a path and is taken as given. */
+/** The fallback directories the daemon's PATH doesn't already cover. */
+const extraPath = (lookup: Lookup): ReadonlyArray<string> => {
+  const covered = new Set(serviceEntries(lookup).map(normalized))
+  return [...new Set(fallbackPath(lookup))].filter((directory) => !covered.has(normalized(directory)))
+}
+
+/** The directories a lookup searches, in order. */
+export const searchPath = (lookup: Lookup): ReadonlyArray<string> => [...serviceEntries(lookup), ...extraPath(lookup)]
+
+/** A program with a slash in it is a path and is not looked up. */
 export const resolve = (program: string, lookup: Lookup): Resolved => {
-  if (program.includes("/")) return { _tag: "Found", file: program }
-  const searched = searchPath(lookup)
-  const file = searched.map((directory) => join(directory, program)).find(lookup.isExecutable)
-  return file === undefined ? { _tag: "NotFound", searched } : { _tag: "Found", file }
+  const find = (directories: ReadonlyArray<string>) =>
+    directories.map((directory) => absolute(directory, program)).find(lookup.isExecutable)
+  const onPath = find(serviceEntries(lookup))
+  if (onPath !== undefined) return { _tag: "Found", file: onPath, onServicePath: true }
+  const elsewhere = find(extraPath(lookup))
+  return elsewhere === undefined ? { _tag: "NotFound", searched: searchPath(lookup) } : { _tag: "Found", file: elsewhere, onServicePath: false }
 }
 
 const shortened = (directory: string, home: string | undefined): string =>
@@ -92,13 +107,13 @@ export const notFoundReason = (program: string, searched: ReadonlyArray<string>,
 const joined = (directories: ReadonlyArray<string>): string => [...new Set(directories)].join(delimiter)
 
 /**
- * The invocation as it runs: a program found by name runs by its full path, so the spawner can't
- * pick another file. Found on the daemon's PATH, it keeps that PATH. Found in a fallback directory,
- * that directory goes first on the tool's PATH, so a script that starts with `#!/usr/bin/env node`
- * finds the node installed beside it, then the daemon's PATH and the other fallbacks. A program
- * given as an absolute path keeps the daemon's PATH first and gets its own directory and the
- * fallbacks after it; a relative one runs as given. A program found nowhere is an outcome naming
- * every directory searched.
+ * The invocation as it runs: a program found by name runs by its absolute path, so the spawner
+ * can't pick another file. Found on the daemon's PATH, it keeps that PATH. Found in a fallback
+ * directory, that directory goes first on the tool's PATH, so a script that starts with
+ * `#!/usr/bin/env node` finds the node installed beside it, then the absolute entries of the
+ * daemon's PATH and the other fallbacks. A program given as an absolute path keeps the daemon's
+ * PATH first and gets its own directory and the fallbacks after it; a relative one runs as given.
+ * A program found nowhere is an outcome naming every directory searched.
  */
 export const locate = (invocation: Invocation, lookup: Lookup): Invocation | Extract<Outcome, { _tag: "NotStarted" }> => {
   const program = invocation.program
@@ -109,9 +124,8 @@ export const locate = (invocation: Invocation, lookup: Lookup): Invocation | Ext
   }
   const resolved = resolve(program, lookup)
   if (resolved._tag === "NotFound") return { _tag: "NotStarted", reason: notFoundReason(program, resolved.searched, lookup.home) }
-  const directory = dirname(resolved.file)
-  if (servicePath(lookup).includes(directory)) return { ...invocation, program: resolved.file }
-  const path = joined([directory, ...servicePath(lookup), ...fallbackPath(lookup)])
+  if (resolved.onServicePath) return { ...invocation, program: resolved.file }
+  const path = joined([dirname(resolved.file), ...servicePath(lookup), ...fallbackPath(lookup)])
   return { ...invocation, program: resolved.file, env: { ...invocation.env, PATH: path } }
 }
 
