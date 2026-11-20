@@ -16,7 +16,7 @@ Missing reactions do not prevent acquisition and must never imply removals.
 The existing diagnostic's stricter completeness behavior is preserved.
 
 Scope binds the key, workspace, owner, sorted unique conversation selection and
-optional thread root and local database directory epoch (device, inode, birth time when available).
+optional thread root and the identities of both the configured root and database directories (device, inode, and birth time when available).
 Snapshot is a stable keyed marker of sorted projected state, independent of
 acquisition time and generation. Generation is the maximum persisted LevelDB
 sequence of the selected Redux record and its blob metadata. Multiple matching

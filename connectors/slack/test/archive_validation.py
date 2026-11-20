@@ -210,7 +210,7 @@ def exercise(installed, home):
     database(app, state)
     secret = 'ab' * 32
     key = bytes.fromhex(token(bytes.fromhex(secret), 'subscription-key-v1', str(app), '1', CHANNEL))
-    epoch = cache_inventory(app)[1]
+    epoch = cache_inventory(app)[1]["database"]
     scope = token(key, 'selected-scope-v1', *SELECTION[:2], [CHANNEL], epoch)
     legacy = 'scope-' + scope
     request = dict(root=str(app), key=key.hex(), expectedScope=scope,

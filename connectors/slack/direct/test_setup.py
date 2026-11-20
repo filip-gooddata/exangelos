@@ -249,6 +249,24 @@ class SetupTests(unittest.TestCase):
             for subject in (REPLY, 'scope-' + original['expectedScope']):
                 self.assertEqual(self.resolve(subject, cacheRoot=alias), original)
 
+    def test_case_variant_uses_filesystem_identity(self):
+        original = self.resolve(REPLY)
+        handle = 'scope-' + original['expectedScope']
+        variant = self.root.with_name('CACHE')
+        if not variant.exists():
+            variant.mkdir()
+        if not variant.samefile(self.root):
+            database(variant, self.state)
+            self.reject(24, handle, cacheRoot=str(variant))
+            self.assertNotEqual(self.resolve(REPLY, cacheRoot=str(variant))['expectedScope'], original['expectedScope'])
+            return
+        for subject in (handle, REPLY):
+            resolved = self.resolve(subject, cacheRoot=str(variant))
+            self.assertEqual(resolved['expectedScope'], original['expectedScope'])
+            self.assertEqual(resolved['key'], original['key'])
+            self.assertEqual(resolved['selection'], original['selection'])
+        self.assertEqual(self.resolve(handle), original)
+
     def test_hidden_reply_in_another_thread_does_not_block_replay(self):
         pin = self.resolve(REPLY)
         handle = 'scope-' + pin['expectedScope']

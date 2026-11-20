@@ -227,7 +227,7 @@ def discover(roots, secret, target, scope):
             raise SetupRejected(27)
         if scope != 'conversation':
             selection['thread'] = parent
-    key = observation.token(secret, 'subscription-key-v2', str(root), workspace, owner, channel, selection.get('thread'))
+    key = observation.token(secret, 'subscription-key-v2', epoch['root'], workspace, owner, channel, selection.get('thread'))
     request = dict(selection=selection, key=key, root=str(root),
                    expectedScope=source.scope_token(bytes.fromhex(key), selection, epoch))
     validate(request)
@@ -281,12 +281,23 @@ def setup(values):
         saved = json.loads(raw, object_pairs_hook=source.unique_object)
         if saved.get('version') != 2:
             raise SetupRejected(24)
-        request = saved['request']
-        label = saved['label']
-        root = Path(request['root'])
-        if (root not in (safe_path(path) for path in roots.values()) or source.inventory(root)[1] != saved['epoch']
-                or request['expectedScope'] != handle[1]):
+        epoch = saved.get('epoch')
+        if not isinstance(epoch, dict) or saved['request']['expectedScope'] != handle[1]:
             raise SetupRejected(24)
+        for configured_root in roots.values():
+            root = safe_path(configured_root)
+            try:
+                identity = source.directory_identity(root)
+            except FileNotFoundError:
+                continue
+            if identity == epoch.get('root'):
+                break
+        else:
+            raise SetupRejected(24)
+        if source.inventory(root)[1] != epoch:
+            raise SetupRejected(24)
+        request = dict(saved['request'], root=str(root))
+        label = saved['label']
         validate(request)
     else:
         with locked(directory):

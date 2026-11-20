@@ -81,6 +81,13 @@ def acquire(request):
             'snapshot': observation.token(key, 'selected-snapshot-v1', scope, messages)}
 
 
+def directory_identity(directory):
+    info = directory.lstat()
+    if not stat.S_ISDIR(info.st_mode):
+        raise ValueError('directory')
+    return [info.st_dev, info.st_ino, getattr(info, 'st_birthtime', None)]
+
+
 def inventory(root):
     entries = {}
     total_bytes = 0
@@ -88,10 +95,7 @@ def inventory(root):
     for parent in (root, *root.parents):
         if parent.is_symlink():
             raise ValueError('symlink')
-    info = folder.lstat()
-    if not stat.S_ISDIR(info.st_mode):
-        raise ValueError('directory')
-    epoch = [info.st_dev, info.st_ino, getattr(info, 'st_birthtime', None)]
+    epoch = {'root': directory_identity(root), 'database': directory_identity(folder)}
     for base in (folder, root / 'https_app.slack.com_0.indexeddb.blob'):
         pending = [base]
         while pending:
