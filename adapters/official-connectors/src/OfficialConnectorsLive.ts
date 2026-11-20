@@ -95,6 +95,8 @@ export const layer = (options: {
 
       const discard = (official: OfficialConnectorSource.Official) => imports.discard(official.name)
 
-      return { known: options.known, fetch, replace, restore, discard }
+      const kept = (official: OfficialConnectorSource.Official) => imports.kept(official.name)
+
+      return { known: options.known, fetch, replace, restore, discard, kept }
     })
   )

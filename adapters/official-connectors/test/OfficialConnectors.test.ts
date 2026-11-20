@@ -181,6 +181,32 @@ describe("OfficialConnectorSource", () => {
       expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual([])
     }).pipe(Effect.scoped))
 
+  it.live("keeps an install whose swap the legacy-state guard refuses, and its restore leaves it alone", () =>
+    Effect.gen(function*() {
+      const root = yield* workspace
+      const build = Path.join(root, "build", "template")
+      const folder = Path.join(root, "dist")
+      yield* Effect.promise(async () => {
+        await buildTemplate(build)
+        const manifest = JSON.parse(await Fs.readFile(Path.join(build, "connector.json"), "utf8"))
+        await Fs.writeFile(Path.join(build, "connector.json"), JSON.stringify({ ...manifest, name: "slack" }))
+        await Fs.mkdir(folder, { recursive: true })
+        await Tar.c({ gzip: true, file: Path.join(folder, "slack-0.1.0.tar.gz"), cwd: build, portable: true }, ["."])
+      })
+      const digest = yield* ConnectorDirectoryLive.digestDirectory(build)
+      const state = Path.join(root, "connectors", "slack", "setup.json")
+      yield* Effect.promise(async () => {
+        await Fs.mkdir(Path.dirname(state), { recursive: true })
+        await Fs.writeFile(state, "private")
+      })
+
+      const refused = yield* Effect.flip(withSource(root, "slack", { folder, digest }, (s, o) => s.replace(o)))
+      expect(refused.reason).toContain("Slack private state")
+      expect(yield* withSource(root, "slack", { folder, digest }, (s, o) => s.kept(o))).toBe(false)
+      yield* withSource(root, "slack", { folder, digest }, (s, o) => s.restore(o))
+      expect(yield* Effect.promise(() => Fs.readFile(state, "utf8"))).toBe("private")
+    }).pipe(Effect.scoped))
+
   it.live("fails for a connector missing from the folder or the release", () =>
     Effect.gen(function*() {
       const root = yield* workspace

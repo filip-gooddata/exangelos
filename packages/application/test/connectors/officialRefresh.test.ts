@@ -226,6 +226,35 @@ describe("an official connector the upgraded binary carries in another version",
       ports
     ))
 
+  it.effect("puts back a copy a failed rollback kept on the next daemon start, then tries again", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* seed(stored(), { catalogue: catalogue(), start: { _tag: "Hang" } })
+        const files = yield* ConnectorFilesFake
+        yield* files.publish(installed("github-pr", officialDigest))
+        yield* files.failRestores(1)
+
+        yield* daemonRun(Effect.gen(function*() {
+          yield* settle
+          yield* TestClock.adjust("31 seconds")
+          yield* settle
+        }))
+        expect(yield* connectorOf("github-pr")).toMatchObject({ digest: officialDigest })
+        expect(yield* filesDigest).toBe(officialDigest)
+
+        yield* daemonRun(Effect.gen(function*() {
+          yield* settle
+          yield* TestClock.adjust("31 seconds")
+          yield* settle
+        }))
+
+        expect(yield* connectorOf("github-pr")).toMatchObject({ version: "0.9.0", digest: "sha256-old", origin: { version: "0.9.0" } })
+        expect(yield* filesDigest).toBe("sha256-old")
+        expect(yield* files.replacements).toBe(2)
+      }),
+      ports
+    ))
+
   it.effect("refreshes a disabled connector without enabling or starting it", () =>
     Effect.provide(
       Effect.gen(function*() {

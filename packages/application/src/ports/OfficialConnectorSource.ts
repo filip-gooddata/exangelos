@@ -36,4 +36,6 @@ export class OfficialConnectorSource extends Context.Service<OfficialConnectorSo
   readonly restore: (official: Official) => Effect.Effect<void, OfficialFetchFailed>
   /** Deletes the copy `replace` kept, if any. */
   readonly discard: (official: Official) => Effect.Effect<void>
+  /** Whether a copy `replace` kept is still waiting for `restore` or `discard`. */
+  readonly kept: (official: Official) => Effect.Effect<boolean>
 }>()("@exangelos/application/OfficialConnectorSource") {}

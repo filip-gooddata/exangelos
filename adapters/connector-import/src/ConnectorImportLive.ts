@@ -38,6 +38,8 @@ export class NamedImport extends Context.Service<NamedImport, {
   readonly restore: (name: string) => Effect.Effect<void, ConnectorImportSource.ImportFailed>
   /** Deletes the copy `replace` kept, if any. */
   readonly discard: (name: string) => Effect.Effect<void>
+  /** Whether `replace` kept a copy, or a note, that neither `restore` nor `discard` has handled. */
+  readonly kept: (name: string) => Effect.Effect<boolean>
 }>()("@exangelos/connector-import/NamedImport") {}
 
 /**
@@ -105,6 +107,8 @@ const make = Effect.gen(function*() {
       }
 
       const kept = (name: string) => Path.join(root, `.${name}.previous`)
+      const isPresent = (path: string) => Fs.stat(path).then(() => true, () => false)
+      const isKept = (name: string) => Effect.promise(async () => (await isPresent(kept(name))) || (await isPresent(`${kept(name)}.absent`)))
 
       const moveIntoPlace = (directory: string, name: string, previous: string) =>
         attempt(async () => {
@@ -125,22 +129,25 @@ const make = Effect.gen(function*() {
           return { target, previous: replaced ? previous : undefined }
         })
 
-      /** Like moveIntoPlace, but notes at `previous` that there was no earlier copy, so it can be restored. */
+      /**
+       * Like moveIntoPlace, but when no copy is installed it notes at `previous` that there was none, so
+       * restore can remove the new copy. Runs under the swap permit, so the check and the move are one step.
+       */
       const moveKeeping = (directory: string, name: string, previous: string) =>
-        attempt(async () => {
-          await Fs.writeFile(`${previous}.absent`, "", { flag: "wx" }).catch(() => undefined)
-          return previous
-        }).pipe(
-          Effect.andThen(moveIntoPlace(directory, name, previous)),
-          Effect.tap(({ previous: moved }) =>
-            moved === undefined ? Effect.void : Effect.promise(() => Fs.rm(`${previous}.absent`, { force: true }))
+        Effect.gen(function*() {
+          const absent = `${previous}.absent`
+          const noted = yield* attempt(async () => {
+            if (await isPresent(Path.join(root, name))) return false
+            await Fs.writeFile(absent, "", { flag: "wx" })
+            return true
+          })
+          return yield* moveIntoPlace(directory, name, previous).pipe(
+            Effect.tapError(() => noted ? Effect.promise(() => Fs.rm(absent, { force: true })) : Effect.void)
           )
-        )
+        })
 
       const removeTree = (path: string | undefined) =>
         path === undefined ? Effect.void : Effect.promise(() => Fs.rm(path, { recursive: true, force: true }))
-
-      const isPresent = (path: string) => Fs.stat(path).then(() => true, () => false)
 
       const putBack = (name: string) =>
         attempt(async () => {
@@ -222,10 +229,10 @@ const make = Effect.gen(function*() {
 
       const restore = (name: string) => swap.withPermits(1)(putBack(name)).pipe(Effect.mapError(failed))
 
-      return { place, replace, restore, discard }
+      return { place, replace, restore, discard, kept: isKept }
     })
 
-export const layer = Layer.effectContext(Effect.map(make, ({ place, replace, restore, discard }) =>
+export const layer = Layer.effectContext(Effect.map(make, ({ place, replace, restore, discard, kept }) =>
   Context.make(ConnectorImportSource.ConnectorImportSource, { place: (source) => place(source) }).pipe(
-    Context.add(NamedImport, { place, replace, restore, discard })
+    Context.add(NamedImport, { place, replace, restore, discard, kept })
   )))

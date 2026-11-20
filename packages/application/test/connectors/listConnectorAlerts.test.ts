@@ -12,7 +12,8 @@ const official = Layer.succeed(OfficialConnectorSource.OfficialConnectorSource)(
   fetch: () => Effect.die("not fetched in this test"),
   replace: () => Effect.die("not replaced in this test"),
   restore: () => Effect.die("not restored in this test"),
-  discard: () => Effect.die("not discarded in this test")
+  discard: () => Effect.die("not discarded in this test"),
+  kept: () => Effect.die("not asked in this test")
 })
 
 describe("listConnectorAlerts", () => {
