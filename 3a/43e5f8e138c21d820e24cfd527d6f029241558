@@ -1,0 +1,57 @@
+adapters/connector-import/src/ConnectorImportLive.ts
+  s_e258fca62caf96::t_53eecdfe616c83 41-42,109-110,131-134,136-144,146,231,234,236
+adapters/official-connectors/src/OfficialConnectorsLive.ts
+  s_e2d66fa58f28ca::t_9fa2316a14e2b8 98-100
+adapters/official-connectors/test/OfficialConnectors.test.ts
+  s_dfbacf5657a8c4::t_d25b9ff290df05 184-209
+packages/application/src/connectors/layerConnectorAccess.ts
+  s_dfbacf5657a8c4::t_430b158edbdd64 77-100,103,110,144
+packages/application/src/ports/OfficialConnectorSource.ts
+  s_e2d66fa58f28ca::t_c3e0fc93ea1e9f 39-40
+packages/application/src/testing/ConnectorFilesFake.ts
+  s_e2d66fa58f28ca::t_5ab259d23d9657 30-31,46,119-121,131,137
+packages/application/test/connectors/listConnectorAlerts.test.ts
+  s_e2d66fa58f28ca::t_443cb50e12eb4f 15-16
+packages/application/test/connectors/officialRefresh.test.ts
+  s_6e988806a95bc1::t_c970741e167d15 229-257
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6200e5983307ef7f9c1cc836f97a6d532082eb42",
+  "prompts": {},
+  "sessions": {
+    "s_6e988806a95bc1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "07f228f7-b75f-4902-bc99-0ea40c7fd5ac",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_dfbacf5657a8c4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2855d2bb-6fa1-40a8-b29e-0b9d540c65db",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_e258fca62caf96": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f85a-bff9-7d12-8afc-22f28dec984f",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_e2d66fa58f28ca": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1f858-23e8-73f1-b6cd-286901c4e82e",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}

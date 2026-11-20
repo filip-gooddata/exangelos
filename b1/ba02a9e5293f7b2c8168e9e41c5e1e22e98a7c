@@ -1,0 +1,37 @@
+adapters/connector-import/src/ConnectorImportLive.ts
+  s_dfbacf5657a8c4::t_78bcaebe95ccfc 29-30,36-40,106-108,130,132-142,147-152,170-172,181,187-188,190-192,196-198,201,203
+adapters/connector-import/src/index.ts
+  s_dfbacf5657a8c4::t_3354fa8b58daa9 4
+adapters/official-connectors/src/OfficialConnectorsLive.ts
+  s_dfbacf5657a8c4::t_b402ac47089467 91-96,98
+adapters/official-connectors/test/OfficialConnectors.test.ts
+  s_dfbacf5657a8c4::t_60cb59d0a1948a 165,168,171,173-174
+packages/application/src/connectors/layerConnectorAccess.ts
+  s_dfbacf5657a8c4::t_9fafe60a0c71a4 83,87-88,96-97,110,122
+packages/application/src/connectors/management.ts
+  s_dfbacf5657a8c4::t_1434ee9c00867e 98,128,131,138
+packages/application/src/ports/OfficialConnectorSource.ts
+  s_dfbacf5657a8c4::t_57b54b6ce027a6 31-32,34-38
+packages/application/src/testing/ConnectorFilesFake.ts
+  s_dfbacf5657a8c4::t_0d7e7391b9ae2e 1,28-29,43-44,94-95,102-120,124-125
+packages/application/test/connectors/listConnectorAlerts.test.ts
+  s_dfbacf5657a8c4::t_6d4b013320dd9b 13-15
+packages/application/test/connectors/officialRefresh.test.ts
+  s_dfbacf5657a8c4::t_a1688daf43c7cb 2,5,186-208
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa5443b559940e064b0ee2162f7165a511933900",
+  "prompts": {},
+  "sessions": {
+    "s_dfbacf5657a8c4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2855d2bb-6fa1-40a8-b29e-0b9d540c65db",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}

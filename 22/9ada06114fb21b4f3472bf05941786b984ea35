@@ -1,0 +1,31 @@
+adapters/connector-import/src/ConnectorImportLive.ts
+  s_dfbacf5657a8c4::t_1508f606e3dad7 43-44,152-155,157-169,181-182,185-188,275
+adapters/official-connectors/src/OfficialConnectorsLive.ts
+  s_dfbacf5657a8c4::t_03054dd0f562b2 96-97
+adapters/official-connectors/test/OfficialConnectors.test.ts
+  s_dfbacf5657a8c4::t_92027a421b29b4 180-186,192
+packages/application/src/connectors/layerConnectorAccess.ts
+  s_dfbacf5657a8c4::t_0b2db0cdf1a910 1,87,157-160,216-219
+packages/application/src/ports/OfficialConnectorSource.ts
+  s_dfbacf5657a8c4::t_8296e20210704d 44-45
+packages/application/src/testing/ConnectorFilesFake.ts
+  s_dfbacf5657a8c4::t_c98387745aad97 32-33,50,138-145,150
+packages/application/test/connectors/officialRefresh.test.ts
+  s_dfbacf5657a8c4::t_40d7e4d1dc6bb9 352-374
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2613f37a6442d2252c406c807666b6f631b37c08",
+  "prompts": {},
+  "sessions": {
+    "s_dfbacf5657a8c4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2855d2bb-6fa1-40a8-b29e-0b9d540c65db",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
