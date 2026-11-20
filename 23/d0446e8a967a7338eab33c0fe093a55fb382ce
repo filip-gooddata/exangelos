@@ -1,5 +1,5 @@
 adapters/connector-import/src/ConnectorImportLive.ts
-  s_dfbacf5657a8c4::t_098a22e6fe987f 28-30,37,127-138,142-143,149-160,162,169-170,190-192,202,208-209,212-217
+  s_dfbacf5657a8c4::t_098a22e6fe987f 28-30,37,127-138,128-139,142-143,143-144,149-160,150-161,162,163,169-170,170-171,190-192,191-193,202,203,208-209,209-210,212-217,213-218
 adapters/official-connectors/test/OfficialConnectors.test.ts
   s_dfbacf5657a8c4::t_f5473880caa9de 175-181
 packages/application/src/connectors/ConnectorSupervisor.ts

@@ -1,5 +1,5 @@
 adapters/connector-import/src/ConnectorImportLive.ts
-  s_1fedf834cb5d86::t_b862e39ecde31d 3,28-30,35-36,38-41,43,45-46,114-121,146,149-152,154-159,192,213,224,231-234,236,238,242,249
+  s_1fedf834cb5d86::t_b862e39ecde31d 3,28-30,35-36,38-41,43,45-46,114-121,115-122,146,147,149-152,150-153,154-159,155-160,192,193,213,214,224,225,231-234,232-235,236,237,238,239,242,243,249,250
 adapters/official-connectors/src/OfficialConnectorsLive.ts
   s_5ca1502f8f384f::t_d23db183bbe759 4,90-91,98-110
 adapters/official-connectors/test/OfficialConnectors.test.ts
