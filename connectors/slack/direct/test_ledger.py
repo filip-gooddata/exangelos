@@ -146,6 +146,16 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(newer['events'], [])
         self.assertEqual(self.count('versions'), 1)
 
+    def test_inclusive_start_preserves_microseconds_and_tracks_suppressed_rows(self):
+        initial = ledger.reconcile({'observedAt': 1700000000002, 'startedAt': 1700000000001,
+                                    'snapshot': snapshot(1, [])}, self.path)
+        # These fixtures fall one microsecond before, exactly at, and one after the floor.
+        changed = self.call(snapshot(2, [message(998), message(999), message(1000)]), initial['cursor'])
+        self.assertEqual(sorted(event['payload']['messageTs'] for event in changed['events']),
+                         ['1700000000.001000', '1700000000.001001'])
+        edited = self.call(snapshot(3, [message(998, 'edit', ['wave'])]), changed['cursor'])
+        self.assertEqual(sorted(event['type'] for event in edited['events']), ['message.edited', 'reaction.added'])
+
     def test_legacy_lineage_replays_its_original_edge_then_requires_new_baseline(self):
         original = self.call(snapshot(1, []))
         tip = self.call(snapshot(2, []), original['cursor'])
