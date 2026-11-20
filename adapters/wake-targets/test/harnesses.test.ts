@@ -5,7 +5,7 @@ import { layerSettingsStore } from "@exangelos/application/testing"
 import { WakeText } from "@exangelos/contracts"
 import type { Session } from "@exangelos/domain"
 import { Codex, layer, T3 } from "../src/index.ts"
-import { content, exited, recordingSpawner } from "./fixtures.ts"
+import { content, exited, fakeBin, recordingSpawner } from "./fixtures.ts"
 
 const timedOut = { _tag: "TimedOut", limit: Duration.seconds(30) } as const
 const text = WakeText.render(content)
@@ -18,7 +18,7 @@ const deliverTo = (session: Session.Session, exitCode = 0) =>
         const target = yield* WakeTarget.WakeTarget
         yield* target.deliver(session, content)
       }).pipe(
-        Effect.provide(layer().pipe(Layer.provide([runner.layer, layerSettingsStore()])))
+        Effect.provide(layer({ lookup: () => fakeBin }).pipe(Layer.provide([runner.layer, layerSettingsStore()])))
       )
     )
     return { exit, spawned: yield* runner.spawned }
@@ -39,7 +39,7 @@ describe("T3 Code", () => {
     Effect.gen(function*() {
       const { exit, spawned } = yield* deliverTo({ harness: "t3", sessionId: "-x:1" })
       expect(Exit.isSuccess(exit)).toBe(true)
-      expect(spawned).toEqual([{ program: "t3", args: ["thread", "send", "--", "-x:1", "-"], stdin: text }])
+      expect(spawned).toEqual([{ program: "/fake/bin/t3", args: ["thread", "send", "--", "-x:1", "-"], stdin: text }])
     }))
 })
 
@@ -63,7 +63,7 @@ describe("Codex", () => {
       const { exit, spawned } = yield* deliverTo({ harness: "codex", sessionId: "-x:1" })
       expect(Exit.isSuccess(exit)).toBe(true)
       expect(spawned).toEqual([{
-        program: "codex",
+        program: "/fake/bin/codex",
         args: ["queue", "--thread=-x:1", `--message=${text}`, "--resume"],
         stdin: ""
       }])

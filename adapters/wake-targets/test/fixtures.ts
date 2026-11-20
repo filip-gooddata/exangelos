@@ -4,6 +4,7 @@ import type { ChildProcess } from "effect/process"
 import { Ids } from "@exangelos/domain"
 import type { Wake } from "@exangelos/domain"
 import type { Outcome } from "../src/Attempt.ts"
+import type { Lookup } from "../src/Executable.ts"
 
 export const content: Wake.WakeContent = {
   subscription: Ids.SubscriptionId.make("sub_7f3k"),
@@ -50,3 +51,6 @@ export const recordingSpawner = (answer: { readonly exitCode: number; readonly s
       spawned: Ref.get(spawned)
     }
   })
+
+/** A lookup where every program sits in /fake/bin, the only directory on the PATH. */
+export const fakeBin: Lookup = { path: "/fake/bin", home: undefined, isExecutable: () => true, listDirectory: () => [] }

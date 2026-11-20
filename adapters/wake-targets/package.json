@@ -19,6 +19,7 @@
   "devDependencies": {
     "@effect/platform-bun": "catalog:",
     "@effect/vitest": "catalog:",
+    "@types/bun": "catalog:",
     "vitest": "catalog:"
   }
 }
