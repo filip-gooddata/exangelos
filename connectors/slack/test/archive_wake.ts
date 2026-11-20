@@ -7,10 +7,10 @@ import { layerSettingsStore } from "../../../packages/application/src/testing/Se
 import { layer } from "../../../adapters/wake-targets/src/WakeTargets.ts"
 import { fakeBin, recordingSpawner } from "../../../adapters/wake-targets/test/fixtures.ts"
 
-const input = Schema.decodeUnknownSync(Schema.Struct({ subject: Schema.String, event: Schema.toCodecJson(Event.ReportedEvent) }))(
+const input = Schema.decodeUnknownSync(Schema.Struct({ subject: Schema.String, once: Schema.Boolean, event: Schema.toCodecJson(Event.ReportedEvent) }))(
   JSON.parse(readFileSync(0, "utf8"))
 )
-const sub = subscription({ connector: Ids.ConnectorName.make("slack"), subject: input.subject })
+const sub = subscription({ connector: Ids.ConnectorName.make("slack"), subject: input.subject, ...(input.once && { maxEvents: 1 }) })
 const admitted = Intake.admit({ subscription: sub, reported: input.event, cursor: Option.none(), duplicate: false,
   id: Ids.EventId.make("evt_1"), now: input.event.occurredAt })
 const content = Delivery.content(admitted.subscription, Option.getOrThrow(admitted.wake), [Option.getOrThrow(admitted.event)])

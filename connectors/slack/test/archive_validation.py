@@ -153,11 +153,15 @@ def failed_watch(wire, selection, cursor=None):
           answer['exit']['_tag'] == 'Failure' and 'SourceFailed' in json.dumps(answer), 'watch refused')
 
 
-def check_wake(event, handle, home, label, preview=None):
+def check_wake(event, handle, home, label, preview=None, *, once=False):
     ts = event['payload']['messageTs']
     seconds, fraction = ts.split('.')
     instant = datetime.fromtimestamp(int(seconds), timezone.utc)
-    summary = f'{label} (message time {instant:%Y-%m-%d %H:%M:%S}.{fraction} UTC)'
+    timing = f'message time {instant:%Y-%m-%d %H:%M:%S}.{fraction} UTC'
+    if event['type'] in ('message.edited', 'reaction.added', 'reaction.removed'):
+        observed = datetime.fromisoformat(event['occurredAt'].replace('Z', '+00:00'))
+        timing += f', observed {observed:%Y-%m-%d %H:%M:%S}.{observed.microsecond // 1000:03d} UTC'
+    summary = f'{label} ({timing})'
     if preview is not None:
         summary += ' | Untrusted message excerpt: ' + json.dumps(preview)
     check(event['summary'] == summary, f"{event['type']} summary: {event['summary']!r}")
@@ -166,9 +170,11 @@ def check_wake(event, handle, home, label, preview=None):
     subject = 'slack:' + handle[6:]
     capture = subprocess.run([BUN, str(Path(__file__).with_name('archive_wake.ts'))], cwd=REPO,
                              env={'HOME': str(home), 'PATH': os.environ['PATH']}, timeout=20,
-                             input=json.dumps(dict(event=event, subject=subject)), capture_output=True, text=True)
+                             input=json.dumps(dict(event=event, subject=subject, once=once)), capture_output=True, text=True)
     check(capture.returncode == 0, capture.stderr)
-    expected = (f'1 event on sub_7f3k (slack, {subject})\n  #1 {event["type"]}   {summary}\n'
+    heading = (f'sub_7f3k has ended (slack, {subject})\nIt reached its number of events.' if once
+               else f'1 event on sub_7f3k (slack, {subject})')
+    expected = (f'{heading}\n  #1 {event["type"]}   {summary}\n'
                 'Read  exangelos events sub_7f3k\nAck   exangelos ack sub_7f3k --through 1')
     check(json.loads(capture.stdout) == [dict(program='/fake/bin/t3', args=['thread', 'send', '--', 'fixture', '-'],
                                                stdin=expected)], 'rendered T3 command and stdin')
@@ -340,23 +346,26 @@ def exercise(installed, home):
     add(new_reply, TIME)
     messages[new]['text'] = 'new excerpt'
     messages[new_reply]['text'] = 'reply excerpt'
-    messages[TIME]['text'] = 'edited excerpt'
+    messages[TIME].update(text='edited excerpt', user='U0000003')
     state['reactions'][messages[TIME]['_rxn_key']] = [{'name': 'heart', 'count': 1, 'users': ['U0000002']}]
     database(app, state, sequence=55)
     enabled = resume(conversation, 'enabled')
     expected = {
         'message.new': ('New message by "Fixture Avery"', new, 'new excerpt'),
         'thread.reply': ('Thread reply by "Fixture Avery"', new_reply, 'reply excerpt'),
-        'message.edited': ('Message edited by unknown author', TIME, 'edited excerpt'),
-        'reaction.added': ('Reaction added to message by unknown author', TIME, None),
-        'reaction.removed': ('Reaction removed from message by unknown author', TIME, None),
+        'message.edited': ('Message edited (message author: "U0000003")', TIME, 'edited excerpt'),
+        'reaction.added': ('Reaction added (message author: "U0000003")', TIME, None),
+        'reaction.removed': ('Reaction removed (message author: "U0000003")', TIME, None),
     }
     check(sorted(item['event']['type'] for item in enabled) == sorted(expected), 'all enabled delivery kinds')
     for item in enabled:
         event = item['event']
         action, ts, preview = expected[event['type']]
         check(event['payload']['messageTs'] == ts, 'preview attached to the changed message')
-        check_wake(event, conversation, home, action + ' in "Slack #fixture"', preview)
+        label = action + ' in "Slack #fixture"'
+        check_wake(event, conversation, home, label, preview)
+        if event['type'] == 'message.new':
+            check_wake(event, conversation, home, label, preview, once=True)
     with Wire(installed, home) as wire:
         wire.configure(dict(config, messagePreviews='enabled'))
         scoped = wire.chunk(wire.watch(replies, batches[replies][-1]['cursor']))
@@ -369,7 +378,7 @@ def exercise(installed, home):
     database(app, state, sequence=60)
     disabled = resume(conversation, 'disabled')
     check(len(disabled) == 1 and disabled[0]['event']['type'] == 'message.edited', 'one future edit after opt-out')
-    check_wake(disabled[0]['event'], conversation, home, 'Message edited by "Fixture Avery" in "Slack #fixture"')
+    check_wake(disabled[0]['event'], conversation, home, 'Message edited (message author: "Fixture Avery") in "Slack #fixture"')
     with Wire(installed, home) as wire:
         wire.configure(config)
         dm_handle = describe(wire, dm)
@@ -451,7 +460,7 @@ def exercise(installed, home):
     final_state = inventory(private)
     check(all(entry in final_state for entry in original), 'legacy user state preserved')
     return dict(dmHistorySuppressed=19, dmArrivals=3, distinctSubjects=len(distinct), conversationEvents=len(batches[conversation]),
-                repliesEvents=len(batches[replies]), exactReplays=2, renderedWakeChecks=7, legacyV1Replays=1, legacyPayloadReplays=1, preservedLegacyFiles=len(original))
+                repliesEvents=len(batches[replies]), exactReplays=2, renderedWakeChecks=8, legacyV1Replays=1, legacyPayloadReplays=1, preservedLegacyFiles=len(original))
 
 
 def main():

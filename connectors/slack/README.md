@@ -70,11 +70,15 @@ thread. Multiple scopes can run concurrently.
 
 Starting with Slack 0.4.0, new events identify the change, the conversation,
 the original message's author when available, and its Slack timestamp in UTC.
-For reactions, the named author wrote the message that received the reaction.
+Edit and reaction summaries label the original message author and also give
+the UTC time at which the connector observed the change.
 The connector uses account-scoped names when available, falling back to a
 cached ID or “unknown author”. A timestamp outside the calendar range appears
 as the original Slack timestamp. Previously committed batches keep their
-original summaries and payloads on replay.
+original summaries and payloads on replay. Exangelos 0.1.9 shows only the
+end notice when an event reaches a subscription cap (including `--once`).
+The event remains available through `exangelos events`. Showing the pending
+event line in that end notice requires the updated host wake renderer.
 
 Message previews are off by default, including for existing cache grants.
 On an already configured install, enable previews with:

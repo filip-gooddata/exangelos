@@ -62,20 +62,30 @@ def ledger_path():
 
 ACTIONS = {
     'message.new': 'New message', 'thread.reply': 'Thread reply', 'message.edited': 'Message edited',
-    'reaction.added': 'Reaction added to message', 'reaction.removed': 'Reaction removed from message',
+    'reaction.added': 'Reaction added', 'reaction.removed': 'Reaction removed',
 }
 
 
-def wake_summary(kind, payload):
-    seconds, fraction = payload['messageTs'].split('.')
+def utc_stamp(seconds, fraction):
     try:
         instant = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=int(seconds))
-        when = f'{instant:%Y-%m-%d %H:%M:%S}.{fraction} UTC'
+        return f'{instant:%Y-%m-%d %H:%M:%S}.{fraction} UTC'
     except OverflowError:
-        when = 'Slack timestamp ' + payload['messageTs']
+        return f'{seconds}.{fraction} seconds since Unix epoch UTC'
+
+
+def wake_summary(kind, payload, observed_at):
+    when = utc_stamp(*payload['messageTs'].split('.'))
     quote = lambda value: json.dumps(value, ensure_ascii=False)
     author = quote(payload['sender']) if 'sender' in payload else 'unknown author'
-    summary = f"{ACTIONS[kind]} by {author} in {quote(payload['conversationLabel'])} (message time {when})"
+    if kind in ('message.new', 'thread.reply'):
+        action = f'{ACTIONS[kind]} by {author}'
+        timing = f'message time {when}'
+    else:
+        action = f'{ACTIONS[kind]} (message author: {author})'
+        seconds, millis = divmod(observed_at, 1000)
+        timing = f"message time {when}, observed {utc_stamp(seconds, f'{millis:03d}')}"
+    summary = f"{action} in {quote(payload['conversationLabel'])} ({timing})"
     if 'preview' in payload:
         summary += ' | Untrusted message excerpt: ' + quote(payload['preview'])
     return summary
@@ -245,7 +255,7 @@ def reconcile(request, path=None):
                            if field in message}
                 if kind in ('message.new', 'thread.reply', 'message.edited') and message['id'] in previews:
                     payload['preview'] = previews[message['id']]
-                result['events'].append({'type': kind, 'occurredAt': observed_at, 'summary': wake_summary(kind, payload),
+                result['events'].append({'type': kind, 'occurredAt': observed_at, 'summary': wake_summary(kind, payload, observed_at),
                                          'dedupeKey': 'slack:' + hashlib.sha256(identity.encode()).hexdigest(),
                                          'payload': dict(payload, version=1, count=1)})
             revision += bool(changes)

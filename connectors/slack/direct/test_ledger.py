@@ -84,7 +84,7 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(edit['payload']['preview'], 'edited excerpt')
         self.assertIn('Untrusted message excerpt: "edited excerpt"', edit['summary'])
         self.assertNotIn('edited excerpt', ledger.packed(reaction))
-        self.assertIn('Reaction added to message by "U0000001"', reaction['summary'])
+        self.assertIn('Reaction added (message author: "U0000001")', reaction['summary'])
         with closing(sqlite3.connect(self.path)) as db:
             self.assertFalse(any('preview' in metadata for metadata, in db.execute('SELECT metadata FROM versions')))
         self.assertNotIn(b'baseline only', self.path.read_bytes())
