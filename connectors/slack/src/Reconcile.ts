@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url"
 import { Clock, Effect, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
-import { Snapshot } from "./Source.ts"
+import { MessageContext, Snapshot } from "./Source.ts"
 
 export class ObservationGap extends Schema.TaggedError<ObservationGap>()("ObservationGap", {
   reason: Schema.String
@@ -9,8 +9,9 @@ export class ObservationGap extends Schema.TaggedError<ObservationGap>()("Observ
 
 const EventType = Schema.Literals(["message.new", "thread.reply", "message.edited", "reaction.added", "reaction.removed"])
 export type EventType = typeof EventType.Type
+export const EventPayload = Schema.Struct({ version: Schema.Literal(1), count: Schema.Literal(1), ...MessageContext.fields })
 const Result = Schema.Struct({
-  events: Schema.Array(Schema.Struct({ type: EventType, occurredAt: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8640000000000000 })), dedupeKey: Schema.String.check(Schema.isMaxLength(512)) }))
+  events: Schema.Array(Schema.Struct({ type: EventType, payload: Schema.optionalKey(EventPayload), occurredAt: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8640000000000000 })), dedupeKey: Schema.String.check(Schema.isMaxLength(512)) }))
     .check(Schema.isMaxLength(100500)),
   cursor: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
 })
@@ -41,7 +42,8 @@ export const reconcile = (cursor: string | undefined, input: unknown, startedAt?
     child.stdout.pipe(Stream.runFoldEffect(() => "", (text, chunk) => Effect.try({
       try: () => {
         bytes += chunk.length
-        if (bytes > 64000000) throw gap()
+        // Up to 100,500 events, each with bounded, JSON-escaped delivery context.
+        if (bytes > 256000000) throw gap()
         return text + decoder.decode(chunk, { stream: true })
       }, catch: gap
     }))), child.exitCode

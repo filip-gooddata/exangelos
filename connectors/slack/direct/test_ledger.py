@@ -18,8 +18,10 @@ def token(value):
 
 
 def message(identity, body='original', reactions=(), complete=True, reply=False):
+    ts = f'1700000000.{identity + 1:06d}'
     return dict(id=token(identity), body=token(body), reactions=sorted(token(r) for r in reactions),
-                reactionsComplete=complete, reply=reply)
+                reactionsComplete=complete, reply=reply, messageTs=ts, conversationLabel='#fixture',
+                permalink=f'https://fixture.slack.com/archives/C0000001/p{ts.replace(".", "")}', sender='U0000001')
 
 
 def snapshot(generation, messages, scope='scope'):
@@ -217,7 +219,11 @@ class LedgerTests(unittest.TestCase):
         invalid = [dict(snap, messages=[message(i) for i in range(501)]),
                    dict(snap, messages=[message(1), message(1)]), dict(snap, complete=False),
                    dict(snap, generation='01'), dict(snap, generation='1' * 21)]
-        for field, value in [('id', 'raw-id'), ('body', 'private body'), ('reply', 1),
+        for field in ('messageTs', 'conversationLabel', 'permalink'):
+            bad = copy.deepcopy(snap)
+            del bad['messages'][0][field]
+            invalid.append(bad)
+        for field, value in [('messageTs', 1700000000.0), ('sender', 'bad\nname'), ('id', 'raw-id'), ('body', 'private body'), ('reply', 1),
                              ('reactions', [token('r')] * 2), ('reactionsComplete', None)]:
             bad = copy.deepcopy(snap)
             bad['messages'][0][field] = value

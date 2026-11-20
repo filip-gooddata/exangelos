@@ -13,7 +13,11 @@ const setup = () => Effect.succeed({
   key: token(90), expectedScope: token(1), label: "#fixture"
 })
 const parameters = { selection: `scope-${token(1)}` }
-const message = { id: token(2), body: token(3), reply: false, reactions: [token(4)], reactionsComplete: true }
+const message = {
+  id: token(2), body: token(3), reply: false, reactions: [token(4)], reactionsComplete: true,
+  messageTs: "1700000000.000001", conversationLabel: "#fixture",
+  permalink: "https://fixture.slack.com/archives/C0000001/p1700000000000001", sender: "U0000001"
+}
 const baseline: typeof Snapshot.Type = { scope: token(1), complete: true, messages: [message], generation: "1", snapshot: token(10) }
 
 it.effect("real Python ledger SDK describes a positional selection and resumes a silent baseline with the cursor only after the batch", () => Effect.gen(function*() {
@@ -31,7 +35,10 @@ it.effect("real Python ledger SDK describes a positional selection and resumes a
   expect(batch.map((item) => item._tag === "Event" && item.event.type)).toEqual(["message.edited", "reaction.removed"])
   expect(batch[0]).not.toHaveProperty("cursor")
   expect(batch[1]).toHaveProperty("cursor")
-  expect(batch.every((item) => item._tag === "Event" && JSON.stringify(item.event.payload) === '{"count":1}')).toBe(true)
+  const expectedPayload = { version: 1, count: 1, messageTs: message.messageTs,
+    conversationLabel: message.conversationLabel, permalink: message.permalink, sender: message.sender }
+  expect(batch.filter((item) => item._tag === "Event").map((item) => item.event.payload))
+    .toEqual([expectedPayload, expectedPayload])
   expect(JSON.stringify(batch)).not.toContain("fixture-")
 }).pipe(Effect.provide(ledgerProcess), Effect.scoped), ledgerTestTimeout)
 

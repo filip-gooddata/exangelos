@@ -9,7 +9,8 @@ database without opening it for writing.
 Success exits 0 with one JSON object and no stderr. Its fields are `scope`
 (64 hex), `complete: true`, `messages`, `generation` (decimal string), and
 `snapshot` (64 hex). Messages have keyed `id`, keyed `body`, boolean `reply`,
-keyed individual `reactions`, and boolean `reactionsComplete`. Only messages
+keyed individual `reactions`, boolean `reactionsComplete`, and the top-level
+delivery fields `messageTs`, `conversationLabel`, `permalink`, and optional `sender`. Only messages
 in explicitly selected persisted conversation containers are included. Completeness
 means those containers decoded completely; it does not mean complete Slack history.
 Missing reactions do not prevent acquisition and must never imply removals.

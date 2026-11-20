@@ -75,7 +75,19 @@ def snapshot_metadata(snapshot):
         require(isinstance(reactions, list) and len(reactions) <= 100 and all(token(r) for r in reactions))
         require(len(set(reactions)) == len(reactions) and message['id'] not in seen)
         seen.add(message['id'])
-        normalized.append({key: message[key] for key in ('id', 'body', 'reply', 'reactionsComplete')} | {'reactions': sorted(reactions)})
+        timestamp = message.get('messageTs')
+        require(isinstance(timestamp, str) and re.fullmatch(r'[0-9]{1,20}\.[0-9]{1,10}', timestamp))
+        for field, limit in [('conversationLabel', 128), ('permalink', 512), ('sender', 80)]:
+            if field == 'sender' and field not in message:
+                continue
+            value = message.get(field)
+            require(isinstance(value, str) and 0 < len(value) <= limit and value.isprintable())
+        fields = ('id', 'body', 'reply', 'reactionsComplete', 'messageTs', 'conversationLabel', 'permalink')
+        entry = {field: message[field] for field in fields}
+        if 'sender' in message:
+            entry['sender'] = message['sender']
+        entry['reactions'] = sorted(reactions)
+        normalized.append(entry)
     normalized.sort(key=lambda m: m['id'])
     return normalized, hashlib.sha256(packed(normalized).encode()).hexdigest()
 
@@ -180,7 +192,11 @@ def reconcile(request, path=None):
                         changes.extend(('reaction.removed', r) for r in old['reactions'] if r not in message['reactions'])
             for kind, transition in changes:
                 identity = packed([lineage, snapshot['scope'], message['id'], revision, kind, transition])
-                result['events'].append({'type': kind, 'occurredAt': observed_at, 'dedupeKey': 'slack:' + hashlib.sha256(identity.encode()).hexdigest()})
+                payload = {field: message[field] for field in ('messageTs', 'conversationLabel', 'permalink', 'sender')
+                           if field in message}
+                result['events'].append({'type': kind, 'occurredAt': observed_at,
+                                         'dedupeKey': 'slack:' + hashlib.sha256(identity.encode()).hexdigest(),
+                                         'payload': dict(payload, version=1, count=1)})
             revision += bool(changes)
             require(revision < 9007199254740990)
             if old != message:

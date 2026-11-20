@@ -1,11 +1,11 @@
 import { Clock, DateTime, Duration, Effect, Option, Ref, Schema, Stream } from "effect"
 import { Catalogue, Connector } from "@exangelos/connector-sdk"
-import { ObservationGap, reconcile, type EventType } from "./Reconcile.ts"
+import { EventPayload, ObservationGap, reconcile, type EventType } from "./Reconcile.ts"
 import { localSource, type Source } from "./Source.ts"
 
 const declare = (type: EventType) => Catalogue.event(type, {
   description: "A change between delayed persisted Slack snapshots; intermediate changes may be missed",
-  payload: Schema.Struct({ count: Schema.Literal(1) })
+  payload: Schema.Union([EventPayload, Schema.Struct({ count: Schema.Literal(1) })])
 })
 const events = {
   "message.new": declare("message.new"), "thread.reply": declare("thread.reply"),
@@ -27,7 +27,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
     scope: Schema.optionalKey(Schema.String.annotate({ message: "Use scope=conversation or scope=replies" }))
   }) }),
   configuration: [
-    Catalogue.choice("subscriptionAccess", { label: "Allow reading persisted Slack cache data and sharing the selected conversation or thread label with the host, even after logout or access changes (sign-in unverified)", choices: ["persisted-cache", "disabled"], required: false }),
+    Catalogue.choice("subscriptionAccess", { label: "Allow reading persisted Slack cache data and sharing conversation labels, message timestamps, links and available senders with the host, even after logout or access changes (sign-in unverified)", choices: ["persisted-cache", "disabled"], required: false }),
     Catalogue.text("cacheRoot", { label: "Optional absolute IndexedDB folder for a custom Slack installation", required: false }),
     Catalogue.text("subscriptionCacheRoot", { label: "Optional subscription cache folder override (takes precedence over cacheRoot)", required: false }),
     Catalogue.text("pollIntervalMs", { label: "Poll interval in milliseconds (staleness is unbounded)", required: false })
@@ -90,7 +90,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
           if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason: authorize })
           const items = result.events.map((event, index) => events[event.type].item({
             occurredAt: DateTime.makeUnsafe(event.occurredAt), summary: "Selected Slack conversation changed in a persisted snapshot",
-            payload: { count: 1 }, dedupeKey: event.dedupeKey,
+            payload: event.payload ?? { count: 1 }, dedupeKey: event.dedupeKey,
             ...(index === result.events.length - 1 ? { cursor: result.cursor } : {})
           }))
           if (items.length === 0 && state.cursor !== result.cursor) items.push(Connector.cursor(result.cursor))
