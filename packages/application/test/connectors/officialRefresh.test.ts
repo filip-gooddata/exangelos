@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Fiber, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 import type { Connector } from "@exangelos/domain"
-import { ConnectorAccess, ConnectorDirectory, enableConnector, layerConnectors, SubscriptionRepository } from "@exangelos/application"
+import { ConnectorAccess, ConnectorDirectory, disableConnector, enableConnector, layerConnectors, SubscriptionRepository } from "@exangelos/application"
 import {
   layerAlertSink,
   layerConnectorFiles,
@@ -169,6 +169,63 @@ describe("an official connector the upgraded binary carries in another version",
       ports
     ))
 
+  it.effect("puts the installed copy back when the daemon stops right after the swap", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* seed(stored())
+        const files = yield* ConnectorFilesFake
+        yield* files.publish(installed("github-pr", officialDigest))
+        yield* Effect.asVoid(files.holdReplace("after"))
+
+        yield* daemonRun(settle)
+
+        expect(yield* connectorOf("github-pr")).toMatchObject({ version: "0.9.0", digest: "sha256-old" })
+        expect(yield* filesDigest).toBe("sha256-old")
+      }),
+      ports
+    ))
+
+  it.effect("leaves no files behind when a copy that was missing is replaced and the new version does not start", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* (yield* ConnectorRuntimeFake).define(github, { catalogue: catalogue(), start: { _tag: "Hang" } })
+        yield* storeConnector(stored())
+        yield* (yield* ConnectorFilesFake).publish(installed("github-pr", officialDigest))
+
+        yield* daemonRun(Effect.gen(function*() {
+          yield* settle
+          yield* TestClock.adjust("31 seconds")
+          yield* settle
+        }))
+
+        expect(yield* connectorOf("github-pr")).toMatchObject({ version: "0.9.0", digest: "sha256-old" })
+        expect(yield* Effect.exit(filesDigest)).toMatchObject({ _tag: "Failure" })
+      }),
+      ports
+    ))
+
+  it.effect("lets another connector be disabled while a refresh waits on its download", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* seed(stored())
+        yield* (yield* ConnectorRuntimeFake).define(name("acme"), { catalogue: catalogue() })
+        yield* (yield* ConnectorFilesFake).put(installed("acme"))
+        yield* storeConnector({ ...stored(), name: name("acme"), origin: { _tag: "Directory", path: "/src/acme" }, digest: "sha256-a" })
+        const files = yield* ConnectorFilesFake
+        yield* files.publish(installed("github-pr", officialDigest))
+        const release = yield* files.holdReplace("before")
+
+        yield* daemonRun(Effect.gen(function*() {
+          yield* settle
+          yield* disableConnector(you, name("acme"))
+          expect(yield* connectorOf("acme")).toMatchObject({ trust: "inert" })
+          yield* release
+          yield* settle
+        }))
+      }),
+      ports
+    ))
+
   it.effect("refreshes a disabled connector without enabling or starting it", () =>
     Effect.provide(
       Effect.gen(function*() {
@@ -189,7 +246,7 @@ describe("an official connector the upgraded binary carries in another version",
         yield* seed(stored({ trust: "inert" }))
         const files = yield* ConnectorFilesFake
         yield* files.publish(installed("github-pr", officialDigest))
-        const release = yield* files.holdReplace
+        const release = yield* files.holdReplace("before")
 
         yield* daemonRun(Effect.gen(function*() {
           yield* settle

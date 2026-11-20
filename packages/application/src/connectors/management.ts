@@ -52,9 +52,13 @@ const originOf = (source: Source): Connector.Origin => source
  * Places the connector in the connector directory and records it inert, with its origin and digest. A
  * connector of the same name is replaced and stopped; its configuration stays.
  */
-/** Runs a change to which connector files are installed under a name while no other such change runs. */
+/** Runs an import or dev link, whose name is known only once placed, while no other connector change runs. */
 const exclusively = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.flatMap(ConnectorSupervisor, (supervisor) => supervisor.exclusive(effect))
+
+/** Runs a change to one connector's files or trust while no other change to that name, or import, runs. */
+const exclusivelyFor = (name: Ids.ConnectorName) => <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.flatMap(ConnectorSupervisor, (supervisor) => supervisor.exclusiveFor(name, effect))
 
 export const importConnector = (actor: Session.Actor, source: Source) =>
   exclusively(Effect.gen(function*() {
@@ -95,7 +99,7 @@ export const importConnector = (actor: Session.Actor, source: Source) =>
 
 /** Enables the connector after you saw its digest; refused when its files changed since. */
 export const enableConnector = (actor: Session.Actor, name: Ids.ConnectorName, digest: string) =>
-  exclusively(Effect.gen(function*() {
+  exclusivelyFor(name)(Effect.gen(function*() {
     if (actor._tag !== "You") return yield* new HumanRequired({ connector: name })
     const supervisor = yield* ConnectorSupervisor
     const connector = yield* found(name)
@@ -128,7 +132,7 @@ export const enableConnector = (actor: Session.Actor, name: Ids.ConnectorName, d
   }).pipe(Effect.annotateLogs({ connector: name })))
 
 export const disableConnector = (actor: Session.Actor, name: Ids.ConnectorName) =>
-  exclusively(Effect.gen(function*() {
+  exclusivelyFor(name)(Effect.gen(function*() {
     const supervisor = yield* ConnectorSupervisor
     const connector = yield* found(name)
     if (connector.trust === "inert") return connector
@@ -156,7 +160,7 @@ const forget = (connector: Connector.Connector, kind: "remove" | "dev-unlink", a
 
 /** Stops the connector and deletes its files, record, configuration and secrets. Its change log stays. */
 export const removeConnector = (actor: Session.Actor, name: Ids.ConnectorName) =>
-  exclusively(Effect.flatMap(found(name), (connector) => forget(connector, "remove", actor)))
+  exclusivelyFor(name)(Effect.flatMap(found(name), (connector) => forget(connector, "remove", actor)))
 
 const validate = (name: Ids.ConnectorName, catalogue: Catalogue.Catalogue, values: Catalogue.ConfigurationValues) =>
   Effect.gen(function*() {
@@ -253,7 +257,7 @@ export const devLink = (actor: Session.Actor, path: string) =>
   }))
 
 export const devUnlink = (actor: Session.Actor, name: Ids.ConnectorName) =>
-  exclusively(Effect.gen(function*() {
+  exclusivelyFor(name)(Effect.gen(function*() {
     const connector = yield* found(name)
     if (connector.origin._tag !== "DevLink") return yield* new ConnectorNotFound({ connector: name })
     yield* forget(connector, "dev-unlink", actor)

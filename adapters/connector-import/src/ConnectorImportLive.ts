@@ -25,16 +25,16 @@ export class NamedImport extends Context.Service<NamedImport, {
     name: string
   ) => Effect.Effect<string, ConnectorImportSource.ImportFailed>
   /**
-   * Places the import like `place`, but only when its digest is `digest`, and keeps the earlier copy
-   * beside it until `restore` puts it back or `discard` deletes it. An earlier copy kept from before is
-   * deleted first.
+   * Places the import like `place`, but only when its digest is `digest`, and keeps the earlier copy, or
+   * a note that there was none, beside it until `restore` puts it back or `discard` deletes it. It refuses
+   * while an earlier copy is still kept.
    */
   readonly replace: (
     source: ConnectorImportSource.Source,
     name: string,
     digest: string
   ) => Effect.Effect<string, ConnectorImportSource.ImportFailed>
-  /** Puts the copy `replace` kept back in place; does nothing when none is kept. */
+  /** Puts back what `replace` kept, removing the import when there was no earlier copy; does nothing when nothing is kept. */
   readonly restore: (name: string) => Effect.Effect<void, ConnectorImportSource.ImportFailed>
   /** Deletes the copy `replace` kept, if any. */
   readonly discard: (name: string) => Effect.Effect<void>
@@ -125,31 +125,50 @@ const make = Effect.gen(function*() {
           return { target, previous: replaced ? previous : undefined }
         })
 
+      /** Like moveIntoPlace, but notes at `previous` that there was no earlier copy, so it can be restored. */
+      const moveKeeping = (directory: string, name: string, previous: string) =>
+        attempt(async () => {
+          await Fs.writeFile(`${previous}.absent`, "", { flag: "wx" }).catch(() => undefined)
+          return previous
+        }).pipe(
+          Effect.andThen(moveIntoPlace(directory, name, previous)),
+          Effect.tap(({ previous: moved }) =>
+            moved === undefined ? Effect.void : Effect.promise(() => Fs.rm(`${previous}.absent`, { force: true }))
+          )
+        )
+
       const removeTree = (path: string | undefined) =>
         path === undefined ? Effect.void : Effect.promise(() => Fs.rm(path, { recursive: true, force: true }))
+
+      const isPresent = (path: string) => Fs.stat(path).then(() => true, () => false)
 
       const putBack = (name: string) =>
         attempt(async () => {
           const target = Path.join(root, name)
           const previous = kept(name)
-          if (!(await Fs.stat(previous).then((stat) => stat.isDirectory(), () => false))) return
           const failed = `${previous}.failed`
-          await Fs.rm(failed, { recursive: true, force: true })
-          const moved = await Fs.rename(target, failed).then(() => true, () => false)
-          try {
-            await Fs.rename(previous, target)
-          } catch (error) {
-            if (moved) await Fs.rename(failed, target)
-            throw error
+          if (await isPresent(previous)) {
+            await Fs.rm(failed, { recursive: true, force: true })
+            const moved = await Fs.rename(target, failed).then(() => true, () => false)
+            try {
+              await Fs.rename(previous, target)
+            } catch (error) {
+              if (moved) await Fs.rename(failed, target)
+              throw error
+            }
+            await Fs.rm(failed, { recursive: true, force: true })
+          } else if (await isPresent(`${previous}.absent`)) {
+            await Fs.rm(target, { recursive: true, force: true })
           }
-          await Fs.rm(failed, { recursive: true, force: true })
+          await Fs.rm(`${previous}.absent`, { force: true })
         })
 
       const staged = (
         source: ConnectorImportSource.Source,
         expected: string | undefined,
         digest: string | undefined,
-        previous: (name: string, staging: string) => string
+        previous: (name: string, staging: string) => string,
+        keep: boolean
       ) =>
         Effect.gen(function*() {
           const staging = yield* stage
@@ -169,7 +188,9 @@ const make = Effect.gen(function*() {
             return yield* new Refused({ reason: `the import's digest ${connector.digest} is not the expected ${digest}` })
           }
           return yield* Effect.uninterruptible(
-            swap.withPermits(1)(moveIntoPlace(directory, connector.name, previous(connector.name, staging)))
+            swap.withPermits(1)(
+              (keep ? moveKeeping : moveIntoPlace)(directory, connector.name, previous(connector.name, staging))
+            )
           )
         }).pipe(
           Effect.scoped,
@@ -179,17 +200,22 @@ const make = Effect.gen(function*() {
       const failed = (refused: Refused) => new ConnectorImportSource.ImportFailed({ reason: refused.reason })
 
       const place = (source: ConnectorImportSource.Source, expected?: string) =>
-        staged(source, expected, undefined, (name, staging) => Path.join(root, `.${name}.previous-${Path.basename(staging)}`)).pipe(
+        staged(source, expected, undefined, (name, staging) => Path.join(root, `.${name}.previous-${Path.basename(staging)}`), false).pipe(
           Effect.tap(({ previous }) => removeTree(previous)),
           Effect.map(({ target }) => target),
           Effect.mapError(failed)
         )
 
-      const discard = (name: string) => removeTree(kept(name))
+      const discard = (name: string) =>
+        Effect.andThen(removeTree(kept(name)), removeTree(`${kept(name)}.absent`))
 
       const replace = (source: ConnectorImportSource.Source, expected: string, digest: string) =>
-        discard(expected).pipe(
-          Effect.andThen(staged(source, expected, digest, kept)),
+        attempt(async () => {
+          if ((await isPresent(kept(expected))) || (await isPresent(`${kept(expected)}.absent`))) {
+            throw new Refused({ reason: `an earlier copy of ${expected} is still kept at ${kept(expected)}` })
+          }
+        }).pipe(
+          Effect.andThen(staged(source, expected, digest, kept, true)),
           Effect.map(({ target }) => target),
           Effect.mapError(failed)
         )

@@ -172,6 +172,13 @@ describe("OfficialConnectorSource", () => {
       expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual(["template"])
       yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
       expect(yield* exists(Path.join(installed, "connector.json"))).toBe(true)
+
+      yield* Effect.promise(() => Fs.rm(installed, { recursive: true, force: true }))
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o))
+      const blocked = yield* Effect.flip(withSource(root, "template", { folder, digest }, (s, o) => s.replace(o)))
+      expect(blocked.reason).toContain("is still kept")
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
+      expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual([])
     }).pipe(Effect.scoped))
 
   it.live("fails for a connector missing from the folder or the release", () =>
