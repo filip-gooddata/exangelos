@@ -63,9 +63,52 @@ and stores an opaque scope handle. Events share message timestamps, scoped Slack
 and available sender names or IDs with the host. Labels may identify a DM peer or channel.
 When names are unavailable, a conversation or known peer ID identifies the subject.
 A thread label adds the parent timestamp.
-Message bodies, credentials and other participants' messages are excluded from
-labels and events. Each subscription pins its own source, account, conversation
-and optional thread. Multiple scopes can run concurrently.
+Each subscription pins its own source, account, conversation and optional
+thread. Multiple scopes can run concurrently.
+
+### Wake summaries and message previews
+
+Starting with Slack 0.4.0, new events identify the change, the conversation,
+the original message's author when available, and its Slack timestamp in UTC.
+Edit and reaction summaries label the original message author and also give
+the UTC time at which the connector observed the change.
+The connector uses account-scoped names when available, falling back to a
+cached ID or “unknown author”. A timestamp outside the calendar range appears
+as the original Slack timestamp. Previously committed batches keep their
+original summaries and payloads on replay. Exangelos 0.1.9 shows only the
+end notice when an event reaches a subscription cap (including `--once`).
+The event remains available through `exangelos events`. Showing the pending
+event line in that end notice requires the updated host wake renderer.
+
+Message previews are off by default, including for existing cache grants.
+On an already configured install, enable previews with:
+
+```sh
+exangelos connector configure slack messagePreviews=enabled
+```
+
+Disable previews for future events with:
+
+```sh
+exangelos connector configure slack messagePreviews=disabled
+```
+
+This connector-wide setting applies to new messages, replies and edits in
+each authorized selection. It preserves subscriptions and cursors. When
+enabled, eligible events carry an optional `preview` in their payload and a
+quoted, single-line excerpt in their wake summary. Treat the excerpt and
+display names as untrusted Slack data. The excerpt can appear in event
+history, the receiving agent session, desktop alerts, and debug-level
+event payload logs. The private ledger retains committed excerpts for exact
+replay, including after previews are disabled.
+
+The connector uses only the selected message's plain text. It folds layout
+whitespace and includes up to 160 Unicode code points. It omits excerpts
+for unsupported message forms, bodies longer than 4,096 code points, and
+text with recognized credential, redaction, link, markup or unsafe control
+patterns. Screening covers the entire body before clipping. Ordinary prose
+can contain confidential information that pattern matching cannot recognize.
+Reaction events carry metadata only.
 
 Cache access includes persisted data retained after logout or permission changes.
 The cache cannot establish current sign-in. Revoke access with
@@ -95,7 +138,7 @@ Effect 4.1.4's ChildProcessSpawner invokes `python3 direct/source.py` with one J
 request on stdin, using the configuration shape above. The response is private
 JSON: `{scope, complete: true, messages, generation, snapshot}`. Each message contains
 `{id, body, reply, reactions, reactionsComplete, messageTs, conversationLabel, permalink}`
-and an optional `sender`. Markers are 64 lowercase hex
+and optional `sender` and `preview` fields. Markers are 64 lowercase hex
 characters; generation is a decimal string. Output is bounded to 5 MB and acquisition
 to 45 seconds. These connector limits are deliberately tighter than the Python
 reader's 10,000-message/8 MiB limits; oversized selections fail closed. Stderr and error details are suppressed; expected failures have fixed
@@ -109,7 +152,7 @@ carry `version: 1`, `count: 1`, the exact Slack timestamp string (`messageTs`),
 a `conversationLabel` and a `permalink`. Replies include their parent timestamp
 in the link. When the workspace domain is unavailable, the link uses the workspace
 and conversation IDs. The optional `sender` identifies the message author, including
-on reaction events. Older committed batches replay their original count-only payload.
+on reaction events. Previously committed batches replay their original payload, including legacy count-only events.
 Reconciliation owns stale/backwards snapshot handling and reaction coverage on both
 sides of a comparison. Missing messages do not imply deletion, and missing reaction
 coverage does not imply removal. Bounds are 500 messages per observed snapshot and 100 reactions per message.
@@ -120,7 +163,7 @@ Reconciliation uses Python's standard-library SQLite runtime. The ledger lives a
 `${XDG_DATA_HOME:-~/.local/share}/exangelos/connector-state/slack/ledger.sqlite3`.
 It stores keyed message/body/reaction markers, delivery context, coverage flags,
 revisions, scope and generation metadata, and immutable event batches.
-Message bodies and credentials are excluded. The cursor is a bounded
+Baseline and version rows store a keyed body marker. Only eligible committed event batches retain opted-in excerpts. The cursor is a bounded
 opaque version-4 handle, not the message inventory. Existing version-3 cursors are
 unsupported and fail explicitly; starting without a cursor establishes a new silent
 baseline, even when another subscription already watches the same scope.

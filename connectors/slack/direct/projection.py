@@ -20,13 +20,13 @@ class Reader(skip_v8.Reader):
           'root':('messages','threads','bootData','selfTeamIds','channels','reactions','teams','users'),
           'bootData':('team_id','user_id','team_domain'),
           'accountTeam':('id','domain'),
-          'accountUser':('id','team_id','name','profile'),
-          'profile':('display_name','real_name'),
+          'accountUser':('id','team','team_id','context_team_id','name','profile'),
+          'profile':('display_name','real_name','team','team_id','context_team_id'),
           'selfTeamIds':('teamId','defaultWorkspaceId'),
-          'message':('type','subtype','ts','thread_ts','channel','channel_id','team','text','edited','reactions','user','bot_id','username','_rxn_key','_hidden_stub','no_display'),
+          'message':('type','subtype','ts','thread_ts','channel','channel_id','team','team_id','context_team_id','text','edited','reactions','user','bot_id','username','_rxn_key','_hidden_stub','no_display','hidden','redacted','is_redacted','deleted','is_deleted','tombstone'),
           'edited':('ts',),
           'reaction':('name','users','count'),
-          'channel':('id','name','user','context_team_id','is_channel','is_group','is_im','is_mpim','is_private'),
+          'channel':('id','name','user','team','team_id','context_team_id','is_channel','is_group','is_im','is_mpim','is_private'),
           'container':('messages','replies','data'),
         }.get(role,())
         for k in allowed:
@@ -53,7 +53,7 @@ class Reader(skip_v8.Reader):
         if role=='channel':return 'bool' if key.startswith('is_') else 'string'
         if role=='container':return 'container' if key in ('messages','replies','data') else 'message'
         if role=='message' and key=='thread_ts':return 'thread'
-        if role=='message' and key in ('_hidden_stub','no_display'):return 'bool'
+        if role=='message' and key in ('_hidden_stub','no_display','hidden','redacted','is_redacted','deleted','is_deleted','tombstone'):return 'bool'
         if role=='message':return key if key in ('edited','reactions') else 'string'
         if role=='reactions':return 'reaction'
         if role=='reaction':return 'users' if key=='users' else 'number' if key=='count' else 'string'

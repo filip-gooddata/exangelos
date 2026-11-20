@@ -24,6 +24,7 @@ export const MessageContext = Schema.Struct({
   messageTs: Schema.String.check(Schema.isPattern(/^[0-9]{1,20}\.[0-9]{1,10}$/)),
   conversationLabel: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
   permalink: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)),
+  preview: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(320))),
   sender: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160)))
 })
 export const Snapshot = Schema.Struct({
@@ -56,7 +57,7 @@ export class SourceUnavailable extends Schema.TaggedError<SourceUnavailable>()("
 const unavailable = () => new SourceUnavailable({ reason: snapshotReason })
 export interface Source<R = never> {
   readonly setup: (values: Readonly<Record<string, string>>) => Effect.Effect<typeof Resolved.Type, SourceUnavailable, R>
-  readonly read: (request: typeof Request.Type) => Effect.Effect<typeof Snapshot.Type, SourceUnavailable, R>
+  readonly read: (request: typeof Request.Type & { readonly includePreview?: true }) => Effect.Effect<typeof Snapshot.Type, SourceUnavailable, R>
 }
 const decodeResolved = (text: string) => Effect.gen(function*() {
   if (text.length > 65536) return yield* unavailable()

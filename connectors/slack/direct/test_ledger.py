@@ -64,6 +64,31 @@ class LedgerTests(unittest.TestCase):
                 self.assertEqual(list(package.iterdir()), [package / 'direct'])
                 self.assertFalse(external.exists())
 
+    def test_upgrade_same_generation_with_a_suppressed_legacy_label(self):
+        old = snapshot(1, [dict(message(1), sender='synthetic unsafe name')])
+        cursor = self.call(old)['cursor']
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('UPDATE commits SET digest=substr(digest, 3)')
+        safe = snapshot(1, [message(1)])
+        self.assertEqual(self.call(safe, cursor), {'events': [], 'cursor': cursor})
+        for invalid in (snapshot(1, [message(1, body='different')]), snapshot(1, [])):
+            with self.assertRaises(ledger.ObservationGap):
+                self.call(invalid, cursor)
+        self.assertEqual(self.call(snapshot(2, [message(1)]), cursor)['events'], [])
+
+    def test_only_eligible_edges_persist_previews(self):
+        baseline = snapshot(1, [dict(message(1), preview='baseline only')])
+        cursor = self.call(baseline)['cursor']
+        updated = snapshot(2, [dict(message(1, 'edited', ['r']), preview='edited excerpt')])
+        edit, reaction = self.call(updated, cursor)['events']
+        self.assertEqual(edit['payload']['preview'], 'edited excerpt')
+        self.assertIn('Untrusted message excerpt: "edited excerpt"', edit['summary'])
+        self.assertNotIn('edited excerpt', ledger.packed(reaction))
+        self.assertIn('Reaction added (message author: "U0000001")', reaction['summary'])
+        with closing(sqlite3.connect(self.path)) as db:
+            self.assertFalse(any('preview' in metadata for metadata, in db.execute('SELECT metadata FROM versions')))
+        self.assertNotIn(b'baseline only', self.path.read_bytes())
+
     def test_turnover_has_no_lifetime_ceiling_and_retains_exact_history(self):
         initial = [message(i) for i in range(500)]
         result = self.call(snapshot(1, initial))

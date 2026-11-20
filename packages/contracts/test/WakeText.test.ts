@@ -30,6 +30,21 @@ describe("WakeText", () => {
     )
   })
 
+  it("includes the pending event when the subscription reaches its cap", () => {
+    const content: Wake.WakeContent = {
+      ...base,
+      why: { _tag: "Ended", reason: { _tag: "MaxEvents" } },
+      pending: [{ number: 1, type: "checks.failed", summary: "build failed" }]
+    }
+    expect(WakeText.render(content)).toBe([
+      "sub_7f3k has ended (github-pr, acme/app#123)",
+      "It reached its number of events.",
+      "  #1 checks.failed   build failed",
+      "Read  exangelos events sub_7f3k",
+      "Ack   exangelos ack sub_7f3k --through 1"
+    ].join("\n"))
+  })
+
   it("tells a session its subscription paused at the backlog age", () => {
     const content: Wake.WakeContent = {
       ...base,

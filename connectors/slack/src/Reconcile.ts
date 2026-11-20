@@ -13,7 +13,7 @@ const EventType = Schema.Literals(["message.new", "thread.reply", "message.edite
 export type EventType = typeof EventType.Type
 export const EventPayload = Schema.Struct({ version: Schema.Literal(1), count: Schema.Literal(1), ...MessageContext.fields })
 const Result = Schema.Struct({
-  events: Schema.Array(Schema.Struct({ type: EventType, payload: Schema.optionalKey(EventPayload), occurredAt: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8640000000000000 })), dedupeKey: Schema.String.check(Schema.isMaxLength(512)) }))
+  events: Schema.Array(Schema.Struct({ type: EventType, summary: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))), payload: Schema.optionalKey(EventPayload), occurredAt: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8640000000000000 })), dedupeKey: Schema.String.check(Schema.isMaxLength(512)) }))
     .check(Schema.isMaxLength(100500)),
   cursor: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
 })

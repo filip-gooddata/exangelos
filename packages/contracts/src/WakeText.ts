@@ -43,13 +43,14 @@ export const render = (content: Wake.WakeContent): string => {
     ? []
     : [["Ack", `${command} ack ${id} --through ${through}`]]
   const resume: readonly [string, string] = ["Resume", `${command} resume ${id}`]
+  const eventLines = () => table(pending.map((line) => [`#${line.number} ${line.type}`, line.summary] as const), "  ", 3)
   const why = content.why
   const lines: Array<string> = []
   let commands: ReadonlyArray<readonly [string, string]>
   switch (why._tag) {
     case "Events":
       lines.push(`${pending.length} ${pending.length === 1 ? "event" : "events"} on ${id} ${where}`)
-      lines.push(...table(pending.map((line) => [`#${line.number} ${line.type}`, line.summary] as const), "  ", 3))
+      lines.push(...eventLines())
       commands = [read, ...ack]
       break
     case "Paused":
@@ -62,6 +63,7 @@ export const render = (content: Wake.WakeContent): string => {
       break
     case "Ended":
       lines.push(`${id} has ended ${where}`, endText(why.reason))
+      if (why.reason._tag === "MaxEvents") lines.push(...eventLines())
       commands = through === undefined ? [] : [read, ...ack]
       break
     case "Cancelled":

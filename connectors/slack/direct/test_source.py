@@ -1,4 +1,5 @@
 import json
+import observation
 import struct
 import subprocess
 import sys
@@ -6,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from test_direct import fixture, encode, uint, SELECTION, CHANNEL, TIME
+from test_direct import fixture, projected, encode, uint, SELECTION, CHANNEL, TIME
 
 
 def framed(data):
@@ -65,8 +66,45 @@ class SourceTests(unittest.TestCase):
             self.assertEqual(snap['generation'], '13')
             self.assertEqual(first.stdout, self.invoke(request(root)).stdout)
             self.assertEqual(first.stderr, '')
-            for raw in (SELECTION[1], 'fixture body', str(root), 'ab' * 32):
+            self.assertNotIn('preview', message)
+            for enable in (True, False):
+                enabled = self.invoke(dict(request(root), includePreview=enable))
+                self.assertEqual(enabled.returncode, 0)
+                result = json.loads(enabled.stdout)
+                if enable:
+                    self.assertEqual(result['messages'][0].pop('preview'), 'fixture body')
+                self.assertEqual(result, snap)
+            for invalid in (None, 1, 'true', {}):
+                failed = self.invoke(dict(request(root), includePreview=invalid))
+                self.assertEqual((failed.returncode, failed.stdout, failed.stderr),
+                                 (1, '', 'Slack persisted source unavailable.\n'))
+            self.assertNotIn('fixture body', json.dumps(snap))
+            key = bytes.fromhex(request(root)['key'])
+            legacy = observation.snapshot(projected(state), SELECTION, key, require_reactions=False)
+            self.assertEqual(snap['snapshot'], observation.token(key, 'selected-snapshot-v1', snap['scope'], legacy['messages']))
+            for raw in (SELECTION[1], str(root), 'ab' * 32):
                 self.assertNotIn(raw, first.stdout)
+
+    def test_preview_uses_only_selected_conversation_and_thread(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            state = fixture()
+            for channel, number, body, parent in [(CHANNEL, 2, 'selected reply', TIME),
+                                                   (CHANNEL, 3, 'unrelated reply', '1700000000.000004'),
+                                                   ('C0000002', 5, 'another conversation', TIME)]:
+                timestamp = f'1700000000.{number:06}'
+                state['messages'].setdefault(channel, {})[timestamp] = {
+                    'type': 'message', 'ts': timestamp, 'thread_ts': parent, 'text': body,
+                    '_rxn_key': f'message-{timestamp}-{channel}'}
+            database(root, state)
+            query = request(root)
+            query.update(includePreview=True)
+            query['selection']['thread'] = TIME
+            result = self.invoke(query)
+            self.assertEqual((result.returncode, result.stderr), (0, ''))
+            self.assertEqual([row['preview'] for row in json.loads(result.stdout)['messages']], ['selected reply'])
+            for excluded in ('fixture body', 'another conversation', 'unrelated reply'):
+                self.assertNotIn(excluded, result.stdout)
 
     def test_root_thread_markers_distinguish_absence_from_opaque_values(self):
         with tempfile.TemporaryDirectory() as temp:

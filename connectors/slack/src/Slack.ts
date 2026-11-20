@@ -18,6 +18,7 @@ const retired = "This Slack selection is retired. Configure subscriptionAccess=p
 const pin = /^scope-[a-f0-9]{64}$/
 interface Configuration {
   readonly cacheRoot?: string
+  readonly includePreview: boolean
   readonly interval: Duration.Duration
 }
 export const make = <R>(source: Source<R>) => Connector.make({
@@ -28,6 +29,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
   }) }),
   configuration: [
     Catalogue.choice("subscriptionAccess", { label: "Allow reading persisted Slack cache data and sharing conversation labels, message timestamps, links and available senders with the host, even after logout or access changes (sign-in unverified)", choices: ["persisted-cache", "disabled"], required: false }),
+    Catalogue.choice("messagePreviews", { label: "Share short excerpts from selected messages in new message, reply and edit events, including wakes, stored event history, desktop alerts and debug payload logs", choices: ["disabled", "enabled"], required: false }),
     Catalogue.text("cacheRoot", { label: "Optional absolute IndexedDB folder for a custom Slack installation", required: false }),
     Catalogue.text("subscriptionCacheRoot", { label: "Optional subscription cache folder override (takes precedence over cacheRoot)", required: false }),
     Catalogue.text("pollIntervalMs", { label: "Poll interval in milliseconds (staleness is unbounded)", required: false })
@@ -62,8 +64,11 @@ export const make = <R>(source: Source<R>) => Connector.make({
         if (!/^[0-9]+$/.test(text) || !Number.isSafeInteger(interval) || interval < 1000 || interval > 3600000) {
           return yield* new Connector.ConfigurationRejected({ reason: "pollIntervalMs must be an integer from 1000 to 3600000" })
         }
+        if (values.messagePreviews !== undefined && !["disabled", "enabled"].includes(values.messagePreviews)) {
+          return yield* new Connector.ConfigurationRejected({ reason: "messagePreviews must be enabled or disabled" })
+        }
         const cacheRoot = values.subscriptionCacheRoot || values.cacheRoot
-        yield* Ref.set(configured, { interval: Duration.millis(interval), ...(cacheRoot && { cacheRoot }) })
+        yield* Ref.set(configured, { includePreview: values.messagePreviews === "enabled", interval: Duration.millis(interval), ...(cacheRoot && { cacheRoot }) })
       }),
       describe: ({ selection, scope }) => Effect.gen(function*() {
         const configuration = yield* Ref.get(configured)
@@ -82,14 +87,14 @@ export const make = <R>(source: Source<R>) => Connector.make({
           if (!state.first) yield* Effect.sleep(configuration.interval)
           if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason })
           const startedAt = state.cursor === undefined ? yield* Clock.currentTimeMillis : undefined
-          const snapshot = yield* source.read(request)
+          const snapshot = yield* source.read(configuration.includePreview ? { ...request, includePreview: true } : request)
           if (snapshot.scope !== request.expectedScope || (yield* Ref.get(configured)) !== configuration) {
             return yield* new Connector.SourceFailed({ reason })
           }
           const result = yield* reconcile(state.cursor, snapshot, startedAt)
           if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason: authorize })
           const items = result.events.map((event, index) => events[event.type].item({
-            occurredAt: DateTime.makeUnsafe(event.occurredAt), summary: "Selected Slack conversation changed in a persisted snapshot",
+            occurredAt: DateTime.makeUnsafe(event.occurredAt), summary: event.summary ?? "Selected Slack conversation changed in a persisted snapshot",
             payload: event.payload ?? { count: 1 }, dedupeKey: event.dedupeKey,
             ...(index === result.events.length - 1 ? { cursor: result.cursor } : {})
           }))
