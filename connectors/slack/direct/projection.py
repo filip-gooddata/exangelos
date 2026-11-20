@@ -23,7 +23,7 @@ class Reader(skip_v8.Reader):
           'accountUser':('id','team_id','name','profile'),
           'profile':('display_name','real_name'),
           'selfTeamIds':('teamId','defaultWorkspaceId'),
-          'message':('type','subtype','ts','thread_ts','channel','channel_id','team','text','edited','reactions','user','_rxn_key','_hidden_stub','no_display'),
+          'message':('type','subtype','ts','thread_ts','channel','channel_id','team','text','edited','reactions','user','bot_id','username','_rxn_key','_hidden_stub','no_display'),
           'edited':('ts',),
           'reaction':('name','users','count'),
           'channel':('id','name','user','context_team_id','is_channel','is_group','is_im','is_mpim','is_private'),

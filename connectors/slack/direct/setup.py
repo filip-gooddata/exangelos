@@ -13,7 +13,6 @@ import stat
 import sys
 import tempfile
 import time
-import unicodedata
 
 import observation
 import source
@@ -124,47 +123,11 @@ def locked(directory):
         yield
 
 
-def workspace_domain(state, workspace):
-    team = (state.get('teams') or {}).get(workspace) or {}
-    if team.get('id', workspace) != workspace:
-        return None
-    domains = [row[field] for row, field in ((team, 'domain'), (state.get('bootData') or {}, 'team_domain'))
-               if field in row]
-    if domains and isinstance(domains[0], str) and all(domain == domains[0] for domain in domains):
-        return domains[0]
-    return None
-
-
-def safe_name(value):
-    return (isinstance(value, str) and value == value.strip() and 0 < len(value) <= 80
-            and all(char.isprintable() and unicodedata.category(char)[0] != 'C' for char in value))
-
-
-def conversation_label(state, workspace, channel):
-    metadata = (state.get('channels') or {}).get(channel) or {}
-    require(metadata.get('id', channel) == channel and metadata.get('context_team_id', workspace) == workspace)
-    if metadata.get('is_mpim') or str(metadata.get('name', '')).startswith('mpdm-'):
-        return 'Slack group DM ' + channel
-    if channel.startswith('D'):
-        peer = metadata.get('user')
-        if isinstance(peer, str) and re.fullmatch(r'[UW][A-Z0-9]{6,30}', peer):
-            user = (state.get('users') or {}).get(peer) or {}
-            if user.get('id', peer) == peer and user.get('team_id', workspace) == workspace:
-                profile = user.get('profile') or {}
-                for name in (profile.get('display_name'), profile.get('real_name'), user.get('name')):
-                    if safe_name(name):
-                        return 'Slack DM with ' + name
-            return 'Slack DM with ' + peer
-    elif safe_name(metadata.get('name')):
-        return 'Slack #' + metadata['name']
-    return 'Slack conversation ' + channel
-
-
 def candidates(state, target):
     workspace, owner = observation.scope(state)
     if target.workspace and target.workspace != workspace:
         return
-    domain = workspace_domain(state, workspace) if target.domain else None
+    domain = observation.workspace_domain(state, workspace) if target.domain else None
     if domain is not None and target.domain != domain:
         return
     verified = not target.domain or domain is not None
@@ -174,7 +137,7 @@ def candidates(state, target):
         if channel not in messages and channel not in channels:
             continue
         if target.timestamp is None:
-            yield workspace, owner, channel, None, verified, conversation_label(state, workspace, channel)
+            yield workspace, owner, channel, None, verified, observation.conversation_label(state, workspace, channel)
             continue
         rows = messages.get(channel, {})
         require(isinstance(rows, dict))
@@ -189,7 +152,7 @@ def candidates(state, target):
         require(parent is None or isinstance(parent, str) and re.fullmatch(TS, parent))
         parent = parent or target.timestamp
         if target.parent is None or parent == target.parent:
-            yield workspace, owner, channel, parent, verified, conversation_label(state, workspace, channel)
+            yield workspace, owner, channel, parent, verified, observation.conversation_label(state, workspace, channel)
 
 
 def discover(roots, secret, target, scope):

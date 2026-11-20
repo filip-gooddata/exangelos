@@ -20,10 +20,17 @@ const Resolved = Schema.Struct({
   expectedScope: Token,
   label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))
 })
+export const MessageContext = Schema.Struct({
+  messageTs: Schema.String.check(Schema.isPattern(/^[0-9]{1,20}\.[0-9]{1,10}$/)),
+  conversationLabel: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
+  permalink: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)),
+  sender: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160)))
+})
 export const Snapshot = Schema.Struct({
   scope: Token,
   complete: Schema.Literal(true),
   messages: Schema.Array(Schema.Struct({
+    ...MessageContext.fields,
     id: Token, body: Token, reply: Schema.Boolean,
     reactions: Schema.Array(Token).check(Schema.isMaxLength(100)),
     reactionsComplete: Schema.Boolean
@@ -73,7 +80,7 @@ const runPython = (script: "source" | "setup", request: unknown) => Effect.gen(f
       child.stdout.pipe(Stream.runFoldEffect(() => "", (text, chunk) => Effect.try({
         try: () => {
           bytes += chunk.length
-          if (bytes > 4000000) throw unavailable()
+          if (bytes > 5_000_000) throw unavailable()
           return text + decoder.decode(chunk, { stream: true })
         }, catch: unavailable
       }))), child.exitCode

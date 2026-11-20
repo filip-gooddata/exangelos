@@ -59,7 +59,8 @@ to receive events across the conversation:
 
 The shell, process arguments and requesting host can see the supplied ID or link.
 The host receives a display label based on available same-account cache metadata,
-and stores an opaque scope handle. Labels may identify a DM peer or channel.
+and stores an opaque scope handle. Events share message timestamps, scoped Slack links,
+and available sender names or IDs with the host. Labels may identify a DM peer or channel.
 When names are unavailable, a conversation or known peer ID identifies the subject.
 A thread label adds the parent timestamp.
 Message bodies, credentials and other participants' messages are excluded from
@@ -91,10 +92,11 @@ private state directory to `connector-state/slack` if that destination is absent
 ## Source and reconciliation
 
 Effect 4.1.4's ChildProcessSpawner invokes `python3 direct/source.py` with one JSON
-request on stdin, using the configuration shape above. The response is private keyed
+request on stdin, using the configuration shape above. The response is private
 JSON: `{scope, complete: true, messages, generation, snapshot}`. Each message contains
-`{id, body, reply, reactions, reactionsComplete}`. Markers are 64 lowercase hex
-characters; generation is a decimal string. Output is bounded to 4 MB and acquisition
+`{id, body, reply, reactions, reactionsComplete, messageTs, conversationLabel, permalink}`
+and an optional `sender`. Markers are 64 lowercase hex
+characters; generation is a decimal string. Output is bounded to 5 MB and acquisition
 to 45 seconds. These connector limits are deliberately tighter than the Python
 reader's 10,000-message/8 MiB limits; oversized selections fail closed. Stderr and error details are suppressed; expected failures have fixed
 sanitized reasons. No external requests, authentication extraction or app mutation.
@@ -103,7 +105,11 @@ the compiled JS build alone does not bundle Python files.
 
 The first Watch snapshot establishes a silent baseline. Only the last event in a
 batch carries its cursor; an empty changed batch emits a cursor item. Event payloads
-contain only `count: 1`, with generic summaries and no message bodies or links.
+carry `version: 1`, `count: 1`, the exact Slack timestamp string (`messageTs`),
+a `conversationLabel` and a `permalink`. Replies include their parent timestamp
+in the link. When the workspace domain is unavailable, the link uses the workspace
+and conversation IDs. The optional `sender` identifies the message author, including
+on reaction events. Older committed batches replay their original count-only payload.
 Reconciliation owns stale/backwards snapshot handling and reaction coverage on both
 sides of a comparison. Missing messages do not imply deletion, and missing reaction
 coverage does not imply removal. Bounds are 500 messages per observed snapshot and 100 reactions per message.
@@ -112,12 +118,31 @@ Restart requires the same key, selection, saved cursor and local ledger.
 Reconciliation uses Python's standard-library SQLite runtime. The ledger lives at
 `$EXANGELOS_HOME/connector-state/slack/ledger.sqlite3`, or otherwise at
 `${XDG_DATA_HOME:-~/.local/share}/exangelos/connector-state/slack/ledger.sqlite3`.
-It persists only keyed message/body/reaction markers, coverage flags, revisions,
-scope and generation metadata, and immutable event batches. No message bodies,
-credentials or content-bearing event payloads are stored. The cursor is a bounded
+It stores keyed message/body/reaction markers, delivery context, coverage flags,
+revisions, scope and generation metadata, and immutable event batches.
+Message bodies and credentials are excluded. The cursor is a bounded
 opaque version-4 handle, not the message inventory. Existing version-3 cursors are
 unsupported and fail explicitly; starting without a cursor establishes a new silent
 baseline, even when another subscription already watches the same scope.
+
+Slack 0.3.0 stores the local clock time just before the first snapshot read for
+each new Watch lineage. A previously unseen message or reply qualifies as an
+arrival when its Slack timestamp is at or after that start. Older rows entering
+the cache are remembered silently. A later poll can deliver several qualifying
+messages, including a message that only became visible after a newer one. This
+comparison assumes the local machine clock agrees with Slack. The first snapshot
+itself remains silent, and messages that never reach the cache cannot be reported.
+
+A cursor created before 0.3.0 can replay its already committed batches with
+their original payloads. Its ledger has no recorded Watch start. At the end of that history the connector ends the old Watch with a reason
+visible in `exangelos show`. If the old subscription is paused with an unread
+backlog, leave it paused and inspect it with `exangelos --json events OLD_ID`.
+After upgrading, subscribe again with the same selection, scope, event types,
+intent and delivery settings. If the CLI reports a similar open subscription,
+repeat that command with `--similar-ok OLD_ID` (or the IDs it reports). The
+replacement establishes a fresh baseline. This procedure keeps the old backlog
+available without acknowledging it. Resume alone cannot clear a backlog at
+the host limit or supply the missing Watch start.
 
 The 500-message limit applies to each source snapshot, never to lifetime history.
 Disappearing messages remain remembered; returning unchanged messages are silent.

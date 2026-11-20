@@ -3,6 +3,7 @@ import hashlib
 import hmac
 import json
 import re
+import unicodedata
 
 
 TIMESTAMP = r'[0-9]{1,20}\.[0-9]{1,10}'
@@ -27,8 +28,75 @@ def scope(state):
     return workspace, owner
 
 
+def workspace_domain(state, workspace):
+    team = (state.get('teams') or {}).get(workspace) or {}
+    if team.get('id', workspace) != workspace:
+        return None
+    domains = [row[field] for row, field in ((team, 'domain'), (state.get('bootData') or {}, 'team_domain'))
+               if field in row]
+    if domains and isinstance(domains[0], str) and all(domain == domains[0] for domain in domains):
+        return domains[0]
+    return None
+
+
+def safe_name(value):
+    return (isinstance(value, str) and value == value.strip() and 0 < len(value) <= 80
+            and all(char.isprintable() and unicodedata.category(char)[0] != 'C' for char in value))
+
+
+def user_label(state, workspace, identity):
+    if not isinstance(identity, str) or not re.fullmatch(r'[UW][A-Z0-9]{6,30}', identity):
+        return None
+    user = (state.get('users') or {}).get(identity) or {}
+    if user.get('id', identity) == identity and user.get('team_id', workspace) == workspace:
+        profile = user.get('profile') or {}
+        for name in (profile.get('display_name'), profile.get('real_name'), user.get('name')):
+            if safe_name(name):
+                return name
+    return identity
+
+
+def message_sender(state, workspace, message):
+    user = user_label(state, workspace, message.get('user'))
+    if user:
+        return user
+    bot = message.get('bot_id')
+    if isinstance(bot, str) and re.fullmatch(r'B[A-Z0-9]{6,30}', bot):
+        name = message.get('username')
+        return name if safe_name(name) else bot
+    return None
+
+
+def conversation_label(state, workspace, channel):
+    metadata = (state.get('channels') or {}).get(channel) or {}
+    if metadata.get('id', channel) != channel or metadata.get('context_team_id', workspace) != workspace:
+        raise ValueError('scope')
+    if metadata.get('is_mpim') or str(metadata.get('name', '')).startswith('mpdm-'):
+        return 'Slack group DM ' + channel
+    if channel.startswith('D'):
+        peer = metadata.get('user')
+        name = user_label(state, workspace, peer)
+        if name:
+            return 'Slack DM with ' + name
+    elif safe_name(metadata.get('name')):
+        return 'Slack #' + metadata['name']
+    return 'Slack conversation ' + channel
+
+
+def message_permalink(domain, workspace, channel, timestamp, thread):
+    if len(timestamp.partition('.')[2]) == 6 and isinstance(domain, str) and re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', domain):
+        link = f'https://{domain}.slack.com/archives/{channel}/p{timestamp.replace(".", "")}'
+        if thread and thread != timestamp:
+            link += f'?thread_ts={thread}&cid={channel}'
+        return link
+    link = f'https://app.slack.com/client/{workspace}/{channel}?message_ts={timestamp}'
+    if thread and thread != timestamp:
+        link += f'&thread_ts={thread}'
+    return link
+
+
 def snapshot(state, selection, key, *, require_reactions=True, thread_root=None):
-    """Return keyed fields only. Caller supplies one private conversation selection."""
+    """Normalize message markers and delivery context for one private conversation selection."""
     if len(key) < 32 or not isinstance(selection, tuple) or len(selection) != 3:
         raise ValueError('selection')
     workspace, owner = scope(state)
@@ -38,6 +106,8 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None)
     messages = (state.get('messages') or {}).get(channel)
     if not isinstance(messages, dict):
         raise ValueError('selection')
+    label = conversation_label(state, workspace, channel)
+    domain = workspace_domain(state, workspace)
     result = []
     complete = True
     reactions = state.get('reactions')
@@ -88,7 +158,11 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None)
                 actors.extend(token(key, 'reaction', row['name'], user) for user in users)
         if len(set(actors)) != len(actors):
             rx_complete = False
+        sender = message_sender(state, workspace, message)
         result.append({
+            'messageTs': timestamp, 'conversationLabel': label,
+            'permalink': message_permalink(domain, workspace, channel, timestamp, thread),
+            **({'sender': sender} if sender else {}),
             'id': token(key, 'message', *selection, timestamp),
             'body': token(key, 'body', message['text'], message.get('edited')),
             'reply': isinstance(message.get('thread_ts'), str) and message['thread_ts'] != timestamp,

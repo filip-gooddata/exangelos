@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from test_direct import fixture, encode, uint, SELECTION
+from test_direct import fixture, encode, uint, SELECTION, CHANNEL, TIME
 
 
 def framed(data):
@@ -57,10 +57,15 @@ class SourceTests(unittest.TestCase):
             snap = json.loads(first.stdout)
             self.assertTrue(snap['complete'])
             self.assertFalse(snap['messages'][0]['reactionsComplete'])
+            message = snap['messages'][0]
+            self.assertEqual(message['messageTs'], TIME)
+            self.assertEqual(message['conversationLabel'], f'Slack conversation {CHANNEL}')
+            self.assertEqual(message['permalink'], f'https://app.slack.com/client/{SELECTION[0]}/{CHANNEL}?message_ts={TIME}')
+            self.assertNotIn('sender', message)
             self.assertEqual(snap['generation'], '13')
             self.assertEqual(first.stdout, self.invoke(request(root)).stdout)
             self.assertEqual(first.stderr, '')
-            for raw in (*SELECTION, 'fixture body', str(root), 'ab' * 32):
+            for raw in (SELECTION[1], 'fixture body', str(root), 'ab' * 32):
                 self.assertNotIn(raw, first.stdout)
 
     def test_root_thread_markers_distinguish_absence_from_opaque_values(self):

@@ -61,6 +61,27 @@ def projected(value):
 
 
 class DirectTests(unittest.TestCase):
+    def test_message_context_uses_scoped_dm_and_sender_metadata(self):
+        dm, peer = 'D0000001', 'U0000002'
+        data = fixture()
+        data['channels'] = {dm: {'user': peer}}
+        data['users'] = {peer: {'id': peer, 'team_id': SELECTION[0], 'profile': {'display_name': 'Fixture Peer'}}}
+        rows = data['messages'].pop(CHANNEL)
+        rows[TIME].update(user=peer, _rxn_key=f'message-{TIME}-{dm}')
+        data['messages'][dm] = rows
+
+        def read():
+            return observation.snapshot(projected(data), (*SELECTION[:2], dm), KEY, require_reactions=False)['messages'][0]
+
+        context = read()
+        self.assertEqual(context['conversationLabel'], 'Slack DM with Fixture Peer')
+        self.assertEqual(context['sender'], 'Fixture Peer')
+        data['users'][peer]['team_id'] = 'T9999999'
+        self.assertEqual(read()['sender'], peer)
+        del rows[TIME]['user']
+        rows[TIME].update(bot_id='B0000001', username='Fixture Bot')
+        self.assertEqual(read()['sender'], 'Fixture Bot')
+
     def test_projection_and_scope_join_without_private_fields(self):
         state = projected(fixture())
         self.assertNotIn('token', state['bootData'])
@@ -69,7 +90,7 @@ class DirectTests(unittest.TestCase):
         self.assertTrue(snap['complete'])
         self.assertEqual(len(snap['messages'][0]['reactions']), 1)
         encoded = json.dumps(snap)
-        for raw in (*SELECTION, TIME, 'fixture body', 'wave', 'U0000002'):
+        for raw in (SELECTION[1], 'fixture body', 'wave', 'U0000002'):
             self.assertNotIn(raw, encoded)
         with self.assertRaisesRegex(ValueError, '^scope$'):
             observation.snapshot(state, ('OTHER', *SELECTION[1:]), KEY)

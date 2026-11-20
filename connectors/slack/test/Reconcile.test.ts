@@ -6,7 +6,10 @@ import { reconcile } from "../src/Reconcile.ts"
 
 const token = (n: number) => n.toString(16).padStart(64, "0")
 const message = (n: number, reply = false) => ({
-  id: token(n), body: token(100), reply, reactions: [token(200)], reactionsComplete: true
+  id: token(n), body: token(100), reply, reactions: [token(200)], reactionsComplete: true,
+  messageTs: `1700000000.${n.toString().padStart(6, "0")}`, conversationLabel: "#fixture",
+  permalink: `https://fixture.slack.com/archives/C0000001/p${1700000000}${n.toString().padStart(6, "0")}`,
+  sender: "U0000001"
 })
 const snapshot = (messages = [message(1)], generation = "2") => ({
   scope: token(0), complete: true, messages, generation,

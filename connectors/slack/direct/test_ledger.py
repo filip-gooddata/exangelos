@@ -1,3 +1,4 @@
+from contextlib import closing
 import copy
 import hashlib
 import json
@@ -18,8 +19,10 @@ def token(value):
 
 
 def message(identity, body='original', reactions=(), complete=True, reply=False):
+    ts = f'1700000000.{identity + 1:06d}'
     return dict(id=token(identity), body=token(body), reactions=sorted(token(r) for r in reactions),
-                reactionsComplete=complete, reply=reply)
+                reactionsComplete=complete, reply=reply, messageTs=ts, conversationLabel='#fixture',
+                permalink=f'https://fixture.slack.com/archives/C0000001/p{ts.replace(".", "")}', sender='U0000001')
 
 
 def snapshot(generation, messages, scope='scope'):
@@ -40,7 +43,7 @@ class LedgerTests(unittest.TestCase):
         return ledger.reconcile(request, self.path)
 
     def count(self, table):
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             return db.execute(f'SELECT count(*) FROM {table}').fetchone()[0]
 
     def test_ledger_path_rejects_package_and_symlink_alias_without_creating_files(self):
@@ -144,6 +147,35 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(newer['events'], [])
         self.assertEqual(self.count('versions'), 1)
 
+    def test_inclusive_start_preserves_microseconds_and_tracks_suppressed_rows(self):
+        initial = ledger.reconcile({'observedAt': 1700000000002, 'startedAt': 1700000000001,
+                                    'snapshot': snapshot(1, [])}, self.path)
+        # These fixtures fall one microsecond before, exactly at, and one after the floor.
+        changed = self.call(snapshot(2, [message(998), message(999), message(1000)]), initial['cursor'])
+        self.assertEqual(sorted(event['payload']['messageTs'] for event in changed['events']),
+                         ['1700000000.001000', '1700000000.001001'])
+        edited = self.call(snapshot(3, [message(998, 'edit', ['wave'])]), changed['cursor'])
+        self.assertEqual(sorted(event['type'] for event in edited['events']), ['message.edited', 'reaction.added'])
+
+    def test_legacy_lineage_replays_its_original_edge_then_requires_new_baseline(self):
+        original = self.call(snapshot(1, []))
+        tip = self.call(snapshot(2, []), original['cursor'])
+        lineage, source = original['cursor'].split(':')[1:]
+        frozen = dict(tip, events=[{'type': 'message.new', 'occurredAt': 1000,
+                                    'dedupeKey': 'slack:' + token('legacy')}])
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('DROP TABLE watch_starts')
+            db.execute('PRAGMA user_version=4')
+            db.execute('UPDATE edges SET result=? WHERE lineage=? AND source=?',
+                       (ledger.packed(frozen), lineage, source))
+        self.assertEqual(self.call(snapshot(3, []), original['cursor']), frozen)
+        with self.assertRaises(ledger.LegacyCursor):
+            self.call(snapshot(3, []), tip['cursor'])
+        fresh = self.call(snapshot(3, []))
+        self.assertNotEqual(fresh['cursor'], tip['cursor'])
+        self.assertEqual(self.call(snapshot(4, []), fresh['cursor'])['events'], [])
+        self.assertEqual(self.call(snapshot(4, []), original['cursor']), frozen)
+
     def test_missing_corrupt_and_foreign_ledger_never_reset(self):
         snap = snapshot(1, [])
         with self.assertRaises(ledger.ObservationGap):
@@ -168,14 +200,14 @@ class LedgerTests(unittest.TestCase):
 
     def test_transaction_rolls_back_metadata_and_edge(self):
         base = self.call(snapshot(1, [message(1)]))
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute("CREATE TRIGGER fail_edge BEFORE INSERT ON edges BEGIN SELECT RAISE(ABORT,'synthetic'); END")
         with self.assertRaises(sqlite3.IntegrityError):
             self.call(snapshot(2, [message(1, 'edit'), message(2)]), base['cursor'])
         self.assertEqual(self.count('commits'), 1)
         self.assertEqual(self.count('versions'), 1)
         self.assertEqual(self.count('edges'), 0)
-        with sqlite3.connect(self.path) as db:
+        with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('DROP TRIGGER fail_edge')
         result = self.call(snapshot(2, [message(1, 'edit'), message(2)]), base['cursor'])
         self.assertEqual(len(result['events']), 2)
@@ -198,7 +230,11 @@ class LedgerTests(unittest.TestCase):
         invalid = [dict(snap, messages=[message(i) for i in range(501)]),
                    dict(snap, messages=[message(1), message(1)]), dict(snap, complete=False),
                    dict(snap, generation='01'), dict(snap, generation='1' * 21)]
-        for field, value in [('id', 'raw-id'), ('body', 'private body'), ('reply', 1),
+        for field in ('messageTs', 'conversationLabel', 'permalink'):
+            bad = copy.deepcopy(snap)
+            del bad['messages'][0][field]
+            invalid.append(bad)
+        for field, value in [('messageTs', 1700000000.0), ('sender', 'bad\nname'), ('id', 'raw-id'), ('body', 'private body'), ('reply', 1),
                              ('reactions', [token('r')] * 2), ('reactionsComplete', None)]:
             bad = copy.deepcopy(snap)
             bad['messages'][0][field] = value

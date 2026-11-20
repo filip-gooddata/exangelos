@@ -11,6 +11,7 @@ import re
 import selectors
 import shutil
 import signal
+import sqlite3
 import subprocess
 import sys
 import tarfile
@@ -195,11 +196,13 @@ def exercise(installed, home):
 
     state = fixture()
     state['bootData']['team_domain'] = 'fixture'
+    state['channels'] = {CHANNEL: {'id': CHANNEL, 'name': 'fixture'}}
+    state['users'] = {'U0000002': {'profile': {'display_name': 'Fixture Author'}}}
     messages = state['messages'][CHANNEL]
     other = '1700000001.000001'
 
     def add(ts, parent=None):
-        message = {'ts': ts, 'type': 'message', 'text': 'synthetic message', '_rxn_key': f'message-{ts}-{CHANNEL}'}
+        message = {'ts': ts, 'user': 'U0000002', 'type': 'message', 'text': 'synthetic message', '_rxn_key': f'message-{ts}-{CHANNEL}'}
         if parent is not None:
             message['thread_ts'] = parent
         messages[ts] = message
@@ -243,7 +246,12 @@ def exercise(installed, home):
             check(len(batch) == 1 and batch[0]['_tag'] == 'Cursor', 'silent baseline')
             cursors[handle] = batch[0]['cursor']
 
-    add('1700000002.000001', other)
+    def current_timestamp():
+        seconds, nanos = divmod(time.time_ns(), 10**9)
+        return f'{seconds}.{nanos // 1000:06d}'
+
+    outside_ts = current_timestamp()
+    add(outside_ts, other)
     database(app, state, sequence=30)
 
     def resume(handle):
@@ -254,7 +262,7 @@ def exercise(installed, home):
     outside = resume(replies)
     check(len(outside) == 1 and outside[0]['_tag'] == 'Cursor', 'unrelated reply filtered')
     cursors[replies] = outside[0]['cursor']
-    reply = '1700000003.000001'
+    reply = current_timestamp()
     add(reply, TIME)
     messages[TIME]['text'] += ' synthetic edit'
     database(app, state, sequence=50)
@@ -262,8 +270,17 @@ def exercise(installed, home):
     for handle, expected in ((conversation, ['thread.reply', 'thread.reply', 'message.edited']),
                              (replies, ['thread.reply'])):
         batch = resume(handle)
-        check(all(item['_tag'] == 'Event' and item['event']['payload'] == {'count': 1} for item in batch),
-              'bounded event payload')
+        expected_context = {}
+        for ts, parent in ((TIME, None), (reply, TIME), (outside_ts, other)):
+            link = f'https://fixture.slack.com/archives/{CHANNEL}/p{ts.replace(".", "")}'
+            context = dict(version=1, count=1, messageTs=ts, conversationLabel='Slack #fixture', permalink=link)
+            if parent:
+                context.update(sender='Fixture Author', permalink=f'{link}?thread_ts={parent}&cid={CHANNEL}')
+            expected_context[ts] = context
+        delivered = [item['event']['payload'] for item in batch]
+        wanted = [TIME, reply, outside_ts] if handle == conversation else [reply]
+        check(sorted(delivered, key=lambda ctx: ctx['messageTs']) == [expected_context[ts] for ts in sorted(wanted)],
+              'complete message context for each delivery')
         check(sorted(item['event']['type'] for item in batch) == sorted(expected), 'scoped deliveries')
         check(len({item['event']['dedupeKey'] for item in batch}) == len(batch), 'distinct event keys')
         check(resume(handle) == batch, 'exact replay after restart')
@@ -281,10 +298,78 @@ def exercise(installed, home):
         check(describe(wire, top, 'replies') == replies, 'stable handle after consent restored')
         wire.watch(replies, batches[replies][-1]['cursor'])
         wire.receive(1.2, quiet=True)
+    with Wire(installed, home) as wire:
+        wire.configure(config)
+        dm_handle = describe(wire, dm)
+        initial = wire.chunk(wire.watch(dm_handle))
+        check(len(initial) == 1 and initial[0]['_tag'] == 'Cursor', 'empty DM baseline')
+        cursors[dm_handle] = initial[0]['cursor']
+
+    def add_dm(ts):
+        state['messages'][dm][ts] = dict(ts=ts, type='message', text='synthetic DM',
+                                         user='U0000002', _rxn_key=f'message-{ts}-{dm}')
+
+    for i in range(19):
+        add_dm(f'1600000000.{i:06d}')
+    # All three were sent after Watch began. One enters the cache after a newer row.
+    now = time.time_ns() // 1000
+    fresh = [f'{t // 1000000}.{t % 1000000:06d}' for t in range(now - 2, now + 1)]
+    add_dm(fresh[2])
+    database(app, state, sequence=70)
+    first_dm = resume(dm_handle)
+    check(len(first_dm) == 1 and first_dm[0]['event']['type'] == 'message.new' and
+          first_dm[0]['event']['payload']['messageTs'] == fresh[2], 'only genuinely new DM delivered')
+    check(resume(dm_handle) == first_dm, 'identical DM replay')
+    cursors[dm_handle] = first_dm[-1]['cursor']
+    for ts in fresh[:2]:
+        add_dm(ts)
+    database(app, state, sequence=90)
+    burst = resume(dm_handle)
+    check(len(burst) == 2 and {i['event']['payload']['messageTs'] for i in burst} == set(fresh[:2])
+          and all(i['event']['type'] == 'message.new' for i in burst)
+          and len({i['event']['dedupeKey'] for i in burst}) == 2, 'distinct delayed DM arrivals')
+    # A pre-context ledger edge has no payload field. Use the installed connector
+    # to resume that exact synthetic edge and verify the original public shape.
+    _, lineage, source = cursors[replies].split(':')
+    with sqlite3.connect(private / 'ledger.sqlite3') as db:
+        edge = json.loads(db.execute('SELECT result FROM edges WHERE lineage=? AND source=?',
+                                     (lineage, source)).fetchone()[0])
+        db.execute('DELETE FROM watch_starts WHERE lineage=?', (lineage,))
+        for event in edge['events']:
+            del event['payload']
+        db.execute('UPDATE edges SET result=? WHERE lineage=? AND source=?', (json.dumps(edge), lineage, source))
+    legacy_batch = resume(replies)
+    for item in batches[replies]:
+        item['event']['payload'] = {'count': 1}
+    check(legacy_batch == batches[replies], 'legacy edge preserves the exact count-only delivery')
+    cursors[replies] = legacy_batch[-1]['cursor']
+    end = resume(replies)
+    check(len(end) == 1 and end[0]['_tag'] == 'End' and 'Create a new subscription' in end[0]['reason'],
+          'legacy cursor tip ends with actionable reason')
+
+    # Exercise the worker byte limits with the largest supported DM selection.
+    cursors[dm_handle] = burst[-1]['cursor']
+    peer = 'U0000002'
+    name = '🌊' * 80
+    state['channels'][dm] = {'id': dm, 'is_im': True, 'user': peer}
+    state['users'][peer]['profile']['display_name'] = name
+    state['messages'][dm].clear()
+    users = [f'U{i:07d}' for i in range(100)]
+    for i in range(500):
+        ts = f'1500000000.{i:06d}' if i < 499 else fresh[0]
+        add_dm(ts)
+        state['reactions'][f'message-{ts}-{dm}'] = [{'name': 'wave', 'users': users, 'count': 100}]
+    state['messages'][dm][fresh[0]]['text'] = 'edited synthetic DM'
+    database(app, state, sequence=110)
+    boundary = resume(dm_handle)
+    check(len(boundary) == 1 and boundary[0]['event']['type'] == 'message.edited'
+          and boundary[0]['event']['payload']['sender'] == name
+          and boundary[0]['event']['payload']['conversationLabel'] == 'Slack DM with ' + name,
+          'full reaction snapshot preserves Unicode sender and conversation')
     final_state = inventory(private)
     check(all(entry in final_state for entry in original), 'legacy user state preserved')
-    return dict(distinctSubjects=len(distinct), conversationEvents=len(batches[conversation]),
-                repliesEvents=len(batches[replies]), exactReplays=2, preservedLegacyFiles=len(original))
+    return dict(dmHistorySuppressed=19, dmArrivals=3, distinctSubjects=len(distinct), conversationEvents=len(batches[conversation]),
+                repliesEvents=len(batches[replies]), exactReplays=2, legacyPayloadReplays=1, preservedLegacyFiles=len(original))
 
 
 def main():
