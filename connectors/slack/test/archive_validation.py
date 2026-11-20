@@ -281,9 +281,39 @@ def exercise(installed, home):
         check(describe(wire, top, 'replies') == replies, 'stable handle after consent restored')
         wire.watch(replies, batches[replies][-1]['cursor'])
         wire.receive(1.2, quiet=True)
+    with Wire(installed, home) as wire:
+        wire.configure(config)
+        dm_handle = describe(wire, dm)
+        initial = wire.chunk(wire.watch(dm_handle))
+        check(len(initial) == 1 and initial[0]['_tag'] == 'Cursor', 'empty DM baseline')
+        cursors[dm_handle] = initial[0]['cursor']
+
+    def add_dm(ts):
+        state['messages'][dm][ts] = dict(ts=ts, type='message', text='synthetic DM',
+                                         user='U0000002', _rxn_key=f'message-{ts}-{dm}')
+
+    for i in range(19):
+        add_dm(f'1600000000.{i:06d}')
+    # All three were sent after Watch began. One enters the cache after a newer row.
+    now = time.time_ns() // 1000
+    fresh = [f'{t // 1000000}.{t % 1000000:06d}' for t in range(now - 2, now + 1)]
+    add_dm(fresh[2])
+    database(app, state, sequence=70)
+    first_dm = resume(dm_handle)
+    check(len(first_dm) == 1 and first_dm[0]['event']['type'] == 'message.new' and
+          first_dm[0]['event']['payload']['messageTs'] == fresh[2], 'only genuinely new DM delivered')
+    check(resume(dm_handle) == first_dm, 'identical DM replay')
+    cursors[dm_handle] = first_dm[-1]['cursor']
+    for ts in fresh[:2]:
+        add_dm(ts)
+    database(app, state, sequence=90)
+    burst = resume(dm_handle)
+    check(len(burst) == 2 and {i['event']['payload']['messageTs'] for i in burst} == set(fresh[:2])
+          and all(i['event']['type'] == 'message.new' for i in burst)
+          and len({i['event']['dedupeKey'] for i in burst}) == 2, 'distinct delayed DM arrivals')
     final_state = inventory(private)
     check(all(entry in final_state for entry in original), 'legacy user state preserved')
-    return dict(distinctSubjects=len(distinct), conversationEvents=len(batches[conversation]),
+    return dict(dmHistorySuppressed=19, dmArrivals=3, distinctSubjects=len(distinct), conversationEvents=len(batches[conversation]),
                 repliesEvents=len(batches[replies]), exactReplays=2, preservedLegacyFiles=len(original))
 
 
