@@ -1,0 +1,19 @@
+adapters/connector-import/src/ConnectorImportLive.ts
+  s_55a86ebfa4494b::t_7b8c08b55d439a 166-168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "77a19d09b5dbe8261efbb09f580fc9e56f61b91f",
+  "prompts": {},
+  "sessions": {
+    "s_55a86ebfa4494b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ca0f59ce-32e4-4e8a-ad49-8d6d6c4402de",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
