@@ -4,7 +4,7 @@ import * as Path from "node:path"
 import * as Url from "node:url"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { describe, expect, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Layer, Logger, References } from "effect"
+import { Cause, ConfigProvider, Effect, Layer, Logger, Option, References } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import * as Tar from "tar"
 import { OfficialConnectorSource, SettingsStore } from "@exangelos/application"
@@ -21,6 +21,8 @@ const official = (name: string): OfficialConnectorSource.Official => ({
   version: "0.1.0",
   digest: "unchecked"
 })
+
+const earlier = { version: "0.0.9", digest: "sha256-earlier" }
 
 const workspace = Effect.acquireRelease(
   Effect.promise(() => Fs.mkdtemp(Path.join(Os.tmpdir(), "official-connectors-"))),
@@ -158,26 +160,30 @@ describe("OfficialConnectorSource", () => {
       })
       const exists = (path: string) => Effect.promise(() => Fs.access(path).then(() => true, () => false))
 
-      const refused = yield* Effect.flip(withSource(root, "template", { folder, digest: "sha256-other" }, (s, o) => s.replace(o)))
+      const refused = yield* Effect.flip(withSource(root, "template", { folder, digest: "sha256-other" }, (s, o) => s.replace(o, earlier)))
       expect(refused.reason).toContain("is not the expected sha256-other")
       expect(yield* exists(sentinel)).toBe(true)
 
-      yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o))
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o, earlier))
       expect(yield* exists(Path.join(installed, "connector.json"))).toBe(true)
       expect(yield* exists(sentinel)).toBe(false)
       yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
       expect(yield* exists(sentinel)).toBe(true)
+      expect(yield* withSource(root, "template", { folder, digest }, (s, o) => s.kept(o))).toEqual(Option.some(earlier))
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.discard(o))
 
-      yield* withSource(root, "template", { folder, digest }, (s, o) => Effect.andThen(s.replace(o), s.discard(o)))
+      yield* withSource(root, "template", { folder, digest }, (s, o) => Effect.andThen(s.replace(o, earlier), s.discard(o)))
       expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual(["template"])
       yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
       expect(yield* exists(Path.join(installed, "connector.json"))).toBe(true)
 
       yield* Effect.promise(() => Fs.rm(installed, { recursive: true, force: true }))
-      yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o))
-      const blocked = yield* Effect.flip(withSource(root, "template", { folder, digest }, (s, o) => s.replace(o)))
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o, earlier))
+      const blocked = yield* Effect.flip(withSource(root, "template", { folder, digest }, (s, o) => s.replace(o, earlier)))
       expect(blocked.reason).toContain("is still kept")
       yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
+      expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual([".template.previous.note"])
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.discard(o))
       expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual([])
     }).pipe(Effect.scoped))
 
@@ -200,9 +206,9 @@ describe("OfficialConnectorSource", () => {
         await Fs.writeFile(state, "private")
       })
 
-      const refused = yield* Effect.flip(withSource(root, "slack", { folder, digest }, (s, o) => s.replace(o)))
+      const refused = yield* Effect.flip(withSource(root, "slack", { folder, digest }, (s, o) => s.replace(o, earlier)))
       expect(refused.reason).toContain("Slack private state")
-      expect(yield* withSource(root, "slack", { folder, digest }, (s, o) => s.kept(o))).toBe(false)
+      expect(yield* withSource(root, "slack", { folder, digest }, (s, o) => s.kept(o))).toEqual(Option.none())
       yield* withSource(root, "slack", { folder, digest }, (s, o) => s.restore(o))
       expect(yield* Effect.promise(() => Fs.readFile(state, "utf8"))).toBe("private")
     }).pipe(Effect.scoped))

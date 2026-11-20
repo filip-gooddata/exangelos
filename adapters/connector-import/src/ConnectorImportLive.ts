@@ -1,6 +1,6 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { Context, Effect, Layer, Semaphore } from "effect"
+import { Context, Effect, Layer, Option, Semaphore } from "effect"
 import { ConnectorDirectory, ConnectorImportSource } from "@exangelos/application"
 import { Paths } from "@exangelos/paths"
 import { HttpClient } from "effect/http"
@@ -25,21 +25,25 @@ export class NamedImport extends Context.Service<NamedImport, {
     name: string
   ) => Effect.Effect<string, ConnectorImportSource.ImportFailed>
   /**
-   * Places the import like `place`, but only when its digest is `digest`, and keeps the earlier copy, or
-   * a note that there was none, beside it until `restore` puts it back or `discard` deletes it. It refuses
-   * while an earlier copy is still kept.
+   * Places the import like `place`, but only when its digest is `digest`. Beside it, it keeps the
+   * earlier copy (or a mark that there was none) and `note`, until `discard`. It refuses while anything
+   * is still kept.
    */
   readonly replace: (
     source: ConnectorImportSource.Source,
     name: string,
-    digest: string
+    digest: string,
+    note: string
   ) => Effect.Effect<string, ConnectorImportSource.ImportFailed>
-  /** Puts back what `replace` kept, removing the import when there was no earlier copy; does nothing when nothing is kept. */
+  /**
+   * Puts back the earlier copy `replace` kept, or removes the import when there was none. The note
+   * stays until `discard`, so the caller can finish with it after a crash. Repeating it does nothing.
+   */
   readonly restore: (name: string) => Effect.Effect<void, ConnectorImportSource.ImportFailed>
-  /** Deletes the copy `replace` kept, if any. */
+  /** Deletes everything `replace` kept, note included. */
   readonly discard: (name: string) => Effect.Effect<void>
-  /** Whether `replace` kept a copy, or a note, that neither `restore` nor `discard` has handled. */
-  readonly kept: (name: string) => Effect.Effect<boolean>
+  /** The note of a `replace` not yet discarded. */
+  readonly kept: (name: string) => Effect.Effect<Option.Option<string>, ConnectorImportSource.ImportFailed>
 }>()("@exangelos/connector-import/NamedImport") {}
 
 /**
@@ -108,7 +112,14 @@ const make = Effect.gen(function*() {
 
       const kept = (name: string) => Path.join(root, `.${name}.previous`)
       const isPresent = (path: string) => Fs.stat(path).then(() => true, () => false)
-      const isKept = (name: string) => Effect.promise(async () => (await isPresent(kept(name))) || (await isPresent(`${kept(name)}.absent`)))
+      const noteOf = (name: string) => `${kept(name)}.note`
+      const anyKept = async (name: string) =>
+        (await isPresent(kept(name))) || (await isPresent(`${kept(name)}.absent`)) || (await isPresent(noteOf(name)))
+      const keptNote = (name: string) =>
+        attempt(() => Fs.readFile(noteOf(name), "utf8").then(Option.some, (error: NodeJS.ErrnoException) => {
+          if (error.code === "ENOENT") return Option.none<string>()
+          throw error
+        })).pipe(Effect.mapError((refused) => new ConnectorImportSource.ImportFailed({ reason: refused.reason })))
 
       const moveIntoPlace = (directory: string, name: string, previous: string) =>
         attempt(async () => {
@@ -133,16 +144,20 @@ const make = Effect.gen(function*() {
        * Like moveIntoPlace, but when no copy is installed it notes at `previous` that there was none, so
        * restore can remove the new copy. Runs under the swap permit, so the check and the move are one step.
        */
-      const moveKeeping = (directory: string, name: string, previous: string) =>
+      const moveKeeping = (note: string) => (directory: string, name: string, previous: string) =>
         Effect.gen(function*() {
           const absent = `${previous}.absent`
-          const noted = yield* attempt(async () => {
-            if (await isPresent(Path.join(root, name))) return false
-            await Fs.writeFile(absent, "", { flag: "wx" })
-            return true
-          })
+          yield* attempt(async () => {
+            await Fs.writeFile(noteOf(name), note, { flag: "wx" })
+            if (!(await isPresent(Path.join(root, name)))) await Fs.writeFile(absent, "", { flag: "wx" })
+          }).pipe(Effect.tapError(() => Effect.promise(() => Fs.rm(noteOf(name), { force: true }))))
           return yield* moveIntoPlace(directory, name, previous).pipe(
-            Effect.tapError(() => noted ? Effect.promise(() => Fs.rm(absent, { force: true })) : Effect.void)
+            Effect.tapError(() =>
+              Effect.promise(async () => {
+                await Fs.rm(absent, { force: true })
+                await Fs.rm(noteOf(name), { force: true })
+              })
+            )
           )
         })
 
@@ -175,7 +190,7 @@ const make = Effect.gen(function*() {
         expected: string | undefined,
         digest: string | undefined,
         previous: (name: string, staging: string) => string,
-        keep: boolean
+        note: string | undefined
       ) =>
         Effect.gen(function*() {
           const staging = yield* stage
@@ -196,7 +211,7 @@ const make = Effect.gen(function*() {
           }
           return yield* Effect.uninterruptible(
             swap.withPermits(1)(
-              (keep ? moveKeeping : moveIntoPlace)(directory, connector.name, previous(connector.name, staging))
+              (note !== undefined ? moveKeeping(note) : moveIntoPlace)(directory, connector.name, previous(connector.name, staging))
             )
           )
         }).pipe(
@@ -207,29 +222,32 @@ const make = Effect.gen(function*() {
       const failed = (refused: Refused) => new ConnectorImportSource.ImportFailed({ reason: refused.reason })
 
       const place = (source: ConnectorImportSource.Source, expected?: string) =>
-        staged(source, expected, undefined, (name, staging) => Path.join(root, `.${name}.previous-${Path.basename(staging)}`), false).pipe(
+        staged(source, expected, undefined, (name, staging) => Path.join(root, `.${name}.previous-${Path.basename(staging)}`), undefined).pipe(
           Effect.tap(({ previous }) => removeTree(previous)),
           Effect.map(({ target }) => target),
           Effect.mapError(failed)
         )
 
       const discard = (name: string) =>
-        Effect.andThen(removeTree(kept(name)), removeTree(`${kept(name)}.absent`))
+        Effect.andThen(
+          Effect.andThen(removeTree(kept(name)), removeTree(`${kept(name)}.absent`)),
+          removeTree(noteOf(name))
+        )
 
-      const replace = (source: ConnectorImportSource.Source, expected: string, digest: string) =>
+      const replace = (source: ConnectorImportSource.Source, expected: string, digest: string, note: string) =>
         attempt(async () => {
-          if ((await isPresent(kept(expected))) || (await isPresent(`${kept(expected)}.absent`))) {
+          if (await anyKept(expected)) {
             throw new Refused({ reason: `an earlier copy of ${expected} is still kept at ${kept(expected)}` })
           }
         }).pipe(
-          Effect.andThen(staged(source, expected, digest, kept, true)),
+          Effect.andThen(staged(source, expected, digest, kept, note)),
           Effect.map(({ target }) => target),
           Effect.mapError(failed)
         )
 
       const restore = (name: string) => swap.withPermits(1)(putBack(name)).pipe(Effect.mapError(failed))
 
-      return { place, replace, restore, discard, kept: isKept }
+      return { place, replace, restore, discard, kept: keptNote }
     })
 
 export const layer = Layer.effectContext(Effect.map(make, ({ place, replace, restore, discard, kept }) =>

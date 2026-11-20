@@ -1,7 +1,7 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import * as Url from "node:url"
-import { Cause, Effect, Layer } from "effect"
+import { Cause, Effect, Layer, Option, Schema } from "effect"
 import { OfficialConnectorSource, ConnectorImportSource, SettingsStore } from "@exangelos/application"
 import { NamedImport } from "@exangelos/connector-import"
 import { Redact } from "@exangelos/logging"
@@ -87,15 +87,27 @@ export const layer = (options: {
       const fetch = (official: OfficialConnectorSource.Official) =>
         fetchWith(official, (from) => imports.place(from, official.name))
 
-      const replace = (official: OfficialConnectorSource.Official) =>
-        fetchWith(official, (from) => imports.replace(from, official.name, official.digest))
+      const replace = (official: OfficialConnectorSource.Official, earlier: OfficialConnectorSource.Earlier) =>
+        fetchWith(official, (from) => imports.replace(from, official.name, official.digest, JSON.stringify(earlier)))
 
       const restore = (official: OfficialConnectorSource.Official) =>
         Effect.mapError(imports.restore(official.name), (failed) => failedFor(official)(failed.reason))
 
       const discard = (official: OfficialConnectorSource.Official) => imports.discard(official.name)
 
-      const kept = (official: OfficialConnectorSource.Official) => imports.kept(official.name)
+      const decodeEarlier = Schema.decodeUnknownOption(Schema.fromJsonString(OfficialConnectorSource.Earlier))
+      const kept = (official: OfficialConnectorSource.Official) =>
+        imports.kept(official.name).pipe(
+          Effect.mapError((failed) => failedFor(official)(failed.reason)),
+          Effect.flatMap(Option.match({
+            onNone: () => Effect.succeedNone,
+            onSome: (note) =>
+              Option.match(decodeEarlier(note), {
+                onNone: () => Effect.fail(failedFor(official)("the note kept with the earlier copy is unreadable")),
+                onSome: Effect.succeedSome
+              })
+          }))
+        )
 
       return { known: options.known, fetch, replace, restore, discard, kept }
     })

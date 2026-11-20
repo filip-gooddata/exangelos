@@ -1,7 +1,7 @@
 import { Cause, Clock, DateTime, Duration, Effect, Exit, Layer, Option, Ref } from "effect"
 import { type Ids, type Connector, ConnectorRules, Refusal, type Session, Subscribe } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
-import { OfficialConnectorSource, type Official } from "../ports/OfficialConnectorSource.ts"
+import { type Earlier, OfficialConnectorSource, type Official } from "../ports/OfficialConnectorSource.ts"
 import { ConnectorDirectory } from "../ports/ConnectorDirectory.ts"
 import { ConnectorRepository } from "../ports/ConnectorRepository.ts"
 import { ConnectorAccess, ConnectorNotFound } from "../seam/ConnectorAccess.ts"
@@ -62,8 +62,10 @@ const outdated = (connector: Connector.Connector, official: Official) =>
  * carries. The new copy goes in only once its digest matches; the record keeps its trust, configuration
  * and subscriptions, so a disabled connector is refreshed and stays disabled. When the fetch, the check or
  * the start fails, or the refresh is interrupted, the earlier copy and record come back and the failure is
- * returned for a later retry; the record changes back only once the files have. It runs exclusively of
- * other changes to that connector and of imports, and never touches a connector imported or dev-linked.
+ * returned for a later retry. The earlier version and digest are kept with the earlier copy until the
+ * record says them again, so a rollback that could not finish is finished by the next refresh. It runs
+ * exclusively of other changes to that connector and of imports, and never touches a connector imported
+ * or dev-linked.
  */
 export const refreshOfficial = (official: Official) =>
   Effect.gen(function*() {
@@ -73,33 +75,37 @@ export const refreshOfficial = (official: Official) =>
     const directory = yield* ConnectorDirectory
     const source = yield* OfficialConnectorSource
     const unavailable = (problem: string) => new Refusal.ConnectorUnavailable({ connector: name, problem })
+    const isOfficial = (connector: Connector.Connector) => connector.origin._tag === "Official"
 
-    /**
-     * Puts back a copy an earlier rollback could not, and takes the record's version and digest from
-     * the files put back, so the freshness check and the next rollback start from what is installed.
-     */
+    /** Gives the record back the earlier version and digest, then lets the kept copy go. */
+    const settleBack = (earlier: Earlier) =>
+      Effect.andThen(
+        supervisor.update(name, (connector) =>
+          isOfficial(connector)
+            ? { ...connector, version: earlier.version, digest: earlier.digest, origin: { _tag: "Official", version: earlier.version } }
+            : undefined),
+        source.discard(official)
+      )
+
+    /** Finishes a rollback an earlier refresh could not: files first, then the record, then the kept copy. */
     const recover = Effect.gen(function*() {
-      if (!(yield* source.kept(official))) return
+      const pending = yield* Effect.mapError(source.kept(official), (failed) => unavailable(failed.reason))
+      if (Option.isNone(pending)) return
       yield* supervisor.stop(name)
       yield* source.restore(official).pipe(
         Effect.mapError((failed) => unavailable(`an earlier copy could not be put back: ${failed.reason}`)),
         Effect.onError(() => supervisor.restart(name))
       )
-      const installed = (yield* Effect.orElseSucceed(directory.list, () => [])).find((i) => i.name === name)
-      if (installed !== undefined) {
-        yield* supervisor.update(name, (connector) =>
-          connector.origin._tag === "Official"
-            ? { ...connector, version: installed.version, digest: installed.digest, origin: { _tag: "Official", version: installed.version } }
-            : undefined)
-      }
+      yield* settleBack(pending.value)
       yield* Effect.logInfo("official connector earlier copy put back").pipe(
-        Effect.annotateLogs({ version: installed?.version ?? "none" })
+        Effect.annotateLogs({ version: pending.value.version })
       )
       yield* supervisor.restart(name)
     })
 
     yield* supervisor.exclusiveFor(name, Effect.uninterruptibleMask((interruptible) =>
       Effect.gen(function*() {
+        if (!Option.exists(yield* repository.find(name), isOfficial)) return
         yield* recover
         const found = yield* repository.find(name)
         if (Option.isNone(found) || !outdated(found.value, official)) return
@@ -107,9 +113,11 @@ export const refreshOfficial = (official: Official) =>
 
         yield* supervisor.stop(name)
 
-        // Never reached with a kept copy: recover put it back, or failed and ended the refresh.
         const adopt = Effect.gen(function*() {
-          const placed = yield* Effect.mapError(source.replace(official), (failed) => unavailable(failed.reason))
+          const placed = yield* Effect.mapError(
+            source.replace(official, { version: earlier.version, digest: earlier.digest }),
+            (failed) => unavailable(failed.reason)
+          )
           const installed = yield* Effect.mapError(directory.read(placed), (e) => unavailable(e.reason))
           yield* supervisor.update(name, (connector) => ({
             ...connector,
@@ -130,18 +138,13 @@ export const refreshOfficial = (official: Official) =>
           }
         })
 
+        // The record goes back only once the files have; a failure leaves the kept copy for `recover`.
         const rollback = Effect.gen(function*() {
           yield* supervisor.stop(name)
-          // The record goes back only with the files, so it always describes what is installed.
           yield* source.restore(official).pipe(
-            Effect.andThen(supervisor.update(name, (connector) => ({
-              ...connector,
-              version: earlier.version,
-              digest: earlier.digest,
-              origin: earlier.origin
-            }))),
+            Effect.andThen(settleBack({ version: earlier.version, digest: earlier.digest })),
             Effect.catch((failed) =>
-              Effect.logError("official connector earlier copy not restored; it is put back on the next refresh", Cause.fail(failed)))
+              Effect.logError("official connector earlier copy not restored; the next refresh puts it back", Cause.fail(failed)))
           )
           yield* supervisor.restart(name)
         })

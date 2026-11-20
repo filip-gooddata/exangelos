@@ -2,7 +2,15 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Fiber, Layer, Option } from "effect"
 import { TestClock } from "effect/testing"
 import type { Connector } from "@exangelos/domain"
-import { ConnectorAccess, ConnectorDirectory, disableConnector, enableConnector, layerConnectors, SubscriptionRepository } from "@exangelos/application"
+import {
+  ConnectorAccess,
+  ConnectorDirectory,
+  disableConnector,
+  enableConnector,
+  importConnector,
+  layerConnectors,
+  SubscriptionRepository
+} from "@exangelos/application"
 import {
   layerAlertSink,
   layerConnectorFiles,
@@ -250,6 +258,53 @@ describe("an official connector the upgraded binary carries in another version",
 
         expect(yield* connectorOf("github-pr")).toMatchObject({ version: "0.9.0", digest: "sha256-old", origin: { version: "0.9.0" } })
         expect(yield* filesDigest).toBe("sha256-old")
+        expect(yield* files.replacements).toBe(2)
+      }),
+      ports
+    ))
+
+  it.effect("leaves a connector imported after a failed rollback alone", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* seed(stored(), { catalogue: catalogue(), start: { _tag: "Hang" } })
+        const files = yield* ConnectorFilesFake
+        yield* files.publish(installed("github-pr", officialDigest))
+        yield* files.failRestores(1)
+        const source = { _tag: "Directory", path: "/src/github-pr" } as const
+        yield* files.offer(source, installed("github-pr", "sha256-imported"))
+
+        yield* daemonRun(Effect.gen(function*() {
+          yield* settle
+          yield* TestClock.adjust("31 seconds")
+          yield* settle
+          yield* importConnector(you, source)
+        }))
+        yield* daemonRun(settle)
+
+        expect(yield* connectorOf("github-pr")).toMatchObject({ digest: "sha256-imported", origin: { _tag: "Directory" } })
+        expect(yield* filesDigest).toBe("sha256-imported")
+      }),
+      ports
+    ))
+
+  it.effect("finishes a failed rollback over a copy that was missing, then tries the release again", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* (yield* ConnectorRuntimeFake).define(github, { catalogue: catalogue(), start: { _tag: "Hang" } })
+        yield* storeConnector(stored())
+        const files = yield* ConnectorFilesFake
+        yield* files.publish(installed("github-pr", officialDigest))
+        yield* files.failRestores(1)
+
+        yield* daemonRun(Effect.gen(function*() {
+          yield* settle
+          yield* TestClock.adjust("31 seconds")
+          yield* settle
+        }))
+        yield* daemonRun(settle)
+
+        expect(yield* connectorOf("github-pr")).toMatchObject({ version: "0.9.0", digest: "sha256-old", origin: { version: "0.9.0" } })
+        expect(yield* Effect.exit(filesDigest)).toMatchObject({ _tag: "Failure" })
         expect(yield* files.replacements).toBe(2)
       }),
       ports

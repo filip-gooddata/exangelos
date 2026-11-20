@@ -1,6 +1,6 @@
-import { Context, Deferred, Effect, Layer, PubSub, Ref, Stream } from "effect"
+import { Context, Deferred, Effect, Layer, Option, PubSub, Ref, Stream } from "effect"
 import type { Ids } from "@exangelos/domain"
-import { OfficialFetchFailed, OfficialConnectorSource, type Official } from "../ports/OfficialConnectorSource.ts"
+import { type Earlier, OfficialFetchFailed, OfficialConnectorSource, type Official } from "../ports/OfficialConnectorSource.ts"
 import { ManifestInvalid, ConnectorDirectory, type Installed } from "../ports/ConnectorDirectory.ts"
 import { ImportFailed, ConnectorImportSource, type Source } from "../ports/ConnectorImportSource.ts"
 
@@ -43,6 +43,7 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
     const changed = yield* PubSub.unbounded<string>()
     const replacements = yield* Ref.make(0)
     const keptCopies = yield* Ref.make(new Map<string, Installed | undefined>())
+    const notes = yield* Ref.make(new Map<string, Earlier>())
     const restoreFailures = yield* Ref.make(0)
     const held = yield* Ref.make<{ readonly at: "before" | "after"; readonly hold: Deferred.Deferred<void> } | undefined>(undefined)
     const wait = (at: "before" | "after") =>
@@ -93,7 +94,7 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
               ? Effect.fail(new OfficialFetchFailed({ connector: official.name, reason: "offline" }))
               : place(inRoot(connector))
           }),
-        replace: (official) =>
+        replace: (official, earlier) =>
           Effect.gen(function*() {
             yield* Ref.update(replacements, (n) => n + 1)
             yield* wait("before")
@@ -103,11 +104,12 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
             if (release === undefined) return yield* failed("offline")
             if (release.digest !== official.digest) return yield* failed(`the digest ${release.digest} is not ${official.digest}`)
             const placed = inRoot(release)
-            if ((yield* Ref.get(keptCopies)).has(placed.directory)) return yield* failed("an earlier copy is still kept")
-            yield* Effect.uninterruptible(Effect.andThen(
+            if ((yield* Ref.get(notes)).has(placed.directory)) return yield* failed("an earlier copy is still kept")
+            yield* Effect.uninterruptible(Effect.all([
+              Ref.update(notes, (m) => new Map(m).set(placed.directory, earlier)),
               Ref.update(keptCopies, (m) => new Map(m).set(placed.directory, f.directories.get(placed.directory))),
               place(placed)
-            ))
+            ]))
             yield* wait("after")
             return placed.directory
           }),
@@ -128,9 +130,12 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
             })
             yield* Ref.update(keptCopies, (m) => { const next = new Map(m); next.delete(directory); return next })
           }),
-        kept: (official) => Effect.map(Ref.get(keptCopies), (m) => m.has(`${connectorRoot}/${official.name}`)),
+        kept: (official) => Effect.map(Ref.get(notes), (m) => Option.fromNullishOr(m.get(`${connectorRoot}/${official.name}`))),
         discard: (official) =>
-          Ref.update(keptCopies, (m) => { const next = new Map(m); next.delete(`${connectorRoot}/${official.name}`); return next })
+          Effect.andThen(
+            Ref.update(keptCopies, (m) => { const next = new Map(m); next.delete(`${connectorRoot}/${official.name}`); return next }),
+            Ref.update(notes, (m) => { const next = new Map(m); next.delete(`${connectorRoot}/${official.name}`); return next })
+          )
       }),
       Layer.succeed(ConnectorFilesFake, {
         replacements: Ref.get(replacements),
