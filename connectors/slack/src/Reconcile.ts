@@ -4,7 +4,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { Snapshot } from "./Source.ts"
 
 export class ObservationGap extends Schema.TaggedError<ObservationGap>()("ObservationGap", {
-  reason: Schema.Literal("Slack observation or cursor is incomplete, unsupported, or inconsistent")
+  reason: Schema.String
 }) {}
 
 const EventType = Schema.Literals(["message.new", "thread.reply", "message.edited", "reaction.added", "reaction.removed"])
@@ -23,7 +23,7 @@ export const validateObservation = (input: unknown) => Effect.gen(function*() {
   return snapshot
 })
 
-export const reconcile = (cursor: string | undefined, input: unknown) => Effect.gen(function*() {
+export const reconcile = (cursor: string | undefined, input: unknown, startedAt?: number) => Effect.gen(function*() {
   const snapshot = yield* validateObservation(input)
   if (cursor !== undefined && cursor.length > 512) return yield* gap()
   const observedAt = yield* Clock.currentTimeMillis
@@ -32,7 +32,7 @@ export const reconcile = (cursor: string | undefined, input: unknown) => Effect.
     fileURLToPath(new URL("../direct/ledger.py", import.meta.url))
   ], {
     env: { PYTHONDONTWRITEBYTECODE: "1" }, extendEnv: true,
-    stdin: { stream: Stream.make(new TextEncoder().encode(JSON.stringify({ cursor, snapshot, observedAt }) + "\n")), endOnDone: true },
+    stdin: { stream: Stream.make(new TextEncoder().encode(JSON.stringify({ cursor, snapshot, observedAt, startedAt }) + "\n")), endOnDone: true },
     stderr: "ignore", forceKillAfter: "1 second"
   }))
   let bytes = 0
@@ -46,7 +46,8 @@ export const reconcile = (cursor: string | undefined, input: unknown) => Effect.
       }, catch: gap
     }))), child.exitCode
   ], { concurrency: "unbounded" })
+  if (code === 2) return yield* new ObservationGap({ reason: "This Slack cursor predates message freshness tracking. Create a new subscription to establish a baseline." })
   if (code !== 0) return yield* gap()
   const result = yield* Effect.try({ try: () => JSON.parse(text + decoder.decode()) as unknown, catch: gap })
   return yield* Schema.decodeUnknownEffect(Result)(result)
-}).pipe(Effect.scoped, Effect.timeout("45 seconds"), Effect.mapError(gap))
+}).pipe(Effect.scoped, Effect.timeout("45 seconds"), Effect.mapError((error) => error instanceof ObservationGap ? error : gap()))

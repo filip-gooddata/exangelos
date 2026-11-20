@@ -1,4 +1,4 @@
-import { DateTime, Duration, Effect, Option, Ref, Schema, Stream } from "effect"
+import { Clock, DateTime, Duration, Effect, Option, Ref, Schema, Stream } from "effect"
 import { Catalogue, Connector } from "@exangelos/connector-sdk"
 import { reconcile, type EventType } from "./Reconcile.ts"
 import { localSource, type Source } from "./Source.ts"
@@ -81,11 +81,12 @@ export const make = <R>(source: Source<R>) => Connector.make({
         return Stream.paginate({ cursor, first: true }, (state) => Effect.gen(function*() {
           if (!state.first) yield* Effect.sleep(configuration.interval)
           if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason })
+          const startedAt = state.cursor === undefined ? yield* Clock.currentTimeMillis : undefined
           const snapshot = yield* source.read(request)
           if (snapshot.scope !== request.expectedScope || (yield* Ref.get(configured)) !== configuration) {
             return yield* new Connector.SourceFailed({ reason })
           }
-          const result = yield* reconcile(state.cursor, snapshot)
+          const result = yield* reconcile(state.cursor, snapshot, startedAt)
           if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason: authorize })
           const items = result.events.map((event, index) => events[event.type].item({
             occurredAt: DateTime.makeUnsafe(event.occurredAt), summary: "Selected Slack conversation changed in a persisted snapshot",
@@ -94,7 +95,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
           }))
           if (items.length === 0 && state.cursor !== result.cursor) items.push(Connector.cursor(result.cursor))
           return [items, Option.some({ cursor: result.cursor as string | undefined, first: false })] as const
-        }).pipe(Effect.mapError(() => new Connector.SourceFailed({ reason }))))
+        }).pipe(Effect.mapError((error) => new Connector.SourceFailed({ reason: error.reason }))))
       }))
     }
   })

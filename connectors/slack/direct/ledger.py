@@ -3,6 +3,7 @@
 Changed metadata versions and immutable replay edges grow with history. Nothing
 is pruned: returning a batch does not acknowledge consumption of its cursor.
 """
+from decimal import Decimal
 import hashlib
 import json
 import os
@@ -25,6 +26,13 @@ SCHEMA = (
     'CREATE INDEX latest ON versions(lineage,message,sequence DESC)',
     'CREATE TABLE edges (lineage TEXT, source TEXT, result TEXT NOT NULL, PRIMARY KEY(lineage,source))',
 )
+
+
+FLOORS = "CREATE TABLE watch_starts (lineage TEXT PRIMARY KEY, millis INTEGER NOT NULL)"
+
+
+class LegacyCursor(Exception):
+    pass
 
 
 class ObservationGap(Exception):
@@ -93,14 +101,19 @@ def open_ledger(path, resume):
         if created:
             for statement in SCHEMA:
                 db.execute(statement)
-            db.execute('PRAGMA user_version=4')
+            db.execute(FLOORS)
+            db.execute('PRAGMA user_version=5')
         else:
-            require(db.execute('PRAGMA user_version').fetchone()[0] == 4)
+            version = db.execute('PRAGMA user_version').fetchone()[0]
+            require(version in (4, 5))
             require(db.execute('PRAGMA quick_check').fetchall() == [('ok',)])
             for table, columns in (('commits', 'lineage,id,scope,generation,snapshot,digest'),
                                    ('versions', 'sequence,lineage,message,commit_id,metadata,revision'),
                                    ('edges', 'lineage,source,result')):
                 db.execute(f'SELECT {columns} FROM {table} LIMIT 0')
+            if version == 4:
+                db.execute(FLOORS)
+                db.execute('PRAGMA user_version=5')
         return db
     except BaseException:
         db.close()
@@ -130,8 +143,16 @@ def reconcile(request, path=None):
                 result = json.loads(edge[0])
                 db.commit()
                 return result
+            row = db.execute('SELECT millis FROM watch_starts WHERE lineage=?', (lineage,)).fetchone()
+            if row is None:
+                raise LegacyCursor()
+            start_ms = row[0]
         else:
             lineage, source = uuid.uuid4().hex, None
+            start_ms = request.get('startedAt', observed_at)
+            require(type(start_ms) is int and 0 <= start_ms <= observed_at)
+            db.execute('INSERT INTO watch_starts VALUES (?,?)', (lineage, start_ms))
+        start = Decimal(start_ms).scaleb(-3)
         messages, digest = baseline if baseline is not None else snapshot_metadata(snapshot)
         if previous:
             require(int(snapshot['generation']) >= int(previous[1]))
@@ -148,7 +169,8 @@ def reconcile(request, path=None):
             changes = []
             if previous:
                 if old is None:
-                    changes.append(('thread.reply' if message['reply'] else 'message.new', 'created'))
+                    if Decimal(message['messageTs']) >= start:
+                        changes.append(('thread.reply' if message['reply'] else 'message.new', 'created'))
                 else:
                     require(old['reply'] == message['reply'])
                     if old['body'] != message['body']:
@@ -178,6 +200,8 @@ def main():
         require(len(text) <= 4_000_000)
         result = reconcile(json.loads(text))
         sys.stdout.write(packed(result) + '\n')
+    except LegacyCursor:
+        return 2
     except Exception:
         sys.stderr.write(ERROR + '\n')
         return 1
