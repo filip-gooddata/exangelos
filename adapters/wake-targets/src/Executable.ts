@@ -1,6 +1,6 @@
 import { accessSync, constants, readdirSync, statSync } from "node:fs"
 import { homedir } from "node:os"
-import { delimiter, dirname, isAbsolute, join, resolve as absolute } from "node:path"
+import { delimiter, dirname, isAbsolute, join } from "node:path"
 import type { Invocation, Outcome } from "./Attempt.ts"
 
 /**
@@ -64,38 +64,45 @@ const systemDirectories = (platform: string): ReadonlyArray<string> => [
   "/bin"
 ]
 
-/** The daemon's PATH entries as the spawner searches them: an empty or relative one is relative to the working directory. */
+/**
+ * The daemon's PATH entries as the spawner searches them. It skips empty entries and searches a
+ * relative one from the working directory.
+ */
 const serviceEntries = (lookup: Lookup): ReadonlyArray<string> =>
-  lookup.path === undefined || lookup.path === "" ? [] : lookup.path.split(delimiter).map((entry) => entry === "" ? "." : entry)
+  (lookup.path ?? "").split(delimiter).filter((entry) => entry !== "")
 
 const servicePath = (lookup: Lookup): ReadonlyArray<string> => serviceEntries(lookup).filter((entry) => isAbsolute(entry))
 
 /** The directories searched after the daemon's PATH. A home that isn't absolute adds none of its own. */
 const fallbackPath = (lookup: Lookup): ReadonlyArray<string> => [
-  ...(lookup.home !== undefined && isAbsolute(lookup.home) ? userDirectories(lookup.home, lookup) : []),
-  ...systemDirectories(lookup.platform)
+  ...new Set([
+    ...(lookup.home !== undefined && isAbsolute(lookup.home) ? userDirectories(lookup.home, lookup) : []),
+    ...systemDirectories(lookup.platform)
+  ])
 ]
 
-const normalized = (directory: string): string => absolute(directory)
+/**
+ * The file a directory holds under the program's name, joined as text so a `..` after a symlink
+ * still goes through the symlink, as it does for the spawner.
+ */
+const inDirectory = (directory: string, program: string): string =>
+  `${isAbsolute(directory) ? directory : `${process.cwd()}/${directory}`}`.replace(/\/+$/, "") + `/${program}`
 
-/** The fallback directories the daemon's PATH doesn't already cover. */
-const extraPath = (lookup: Lookup): ReadonlyArray<string> => {
-  const covered = new Set(serviceEntries(lookup).map(normalized))
-  return [...new Set(fallbackPath(lookup))].filter((directory) => !covered.has(normalized(directory)))
+const resolveIn = (program: string, lookup: Lookup, fallbacks: ReadonlyArray<string>): Resolved => {
+  const entries = serviceEntries(lookup)
+  const find = (directories: ReadonlyArray<string>) =>
+    directories.map((directory) => inDirectory(directory, program)).find(lookup.isExecutable)
+  const onPath = find(entries)
+  if (onPath !== undefined) return { _tag: "Found", file: onPath, onServicePath: true }
+  const extra = fallbacks.filter((directory) => !entries.includes(directory))
+  const elsewhere = find(extra)
+  return elsewhere === undefined
+    ? { _tag: "NotFound", searched: [...entries, ...extra] }
+    : { _tag: "Found", file: elsewhere, onServicePath: false }
 }
-
-/** The directories a lookup searches, in order. */
-export const searchPath = (lookup: Lookup): ReadonlyArray<string> => [...serviceEntries(lookup), ...extraPath(lookup)]
 
 /** A program with a slash in it is a path and is not looked up. */
-export const resolve = (program: string, lookup: Lookup): Resolved => {
-  const find = (directories: ReadonlyArray<string>) =>
-    directories.map((directory) => absolute(directory, program)).find(lookup.isExecutable)
-  const onPath = find(serviceEntries(lookup))
-  if (onPath !== undefined) return { _tag: "Found", file: onPath, onServicePath: true }
-  const elsewhere = find(extraPath(lookup))
-  return elsewhere === undefined ? { _tag: "NotFound", searched: searchPath(lookup) } : { _tag: "Found", file: elsewhere, onServicePath: false }
-}
+export const resolve = (program: string, lookup: Lookup): Resolved => resolveIn(program, lookup, fallbackPath(lookup))
 
 const shortened = (directory: string, home: string | undefined): string =>
   home !== undefined && isAbsolute(home) && (directory === home || directory.startsWith(`${home}/`)) ? `~${directory.slice(home.length)}` : directory
@@ -117,15 +124,16 @@ const joined = (directories: ReadonlyArray<string>): string => [...new Set(direc
  */
 export const locate = (invocation: Invocation, lookup: Lookup): Invocation | Extract<Outcome, { _tag: "NotStarted" }> => {
   const program = invocation.program
+  if (program.includes("/") && !isAbsolute(program)) return invocation
+  const fallbacks = fallbackPath(lookup)
   if (program.includes("/")) {
-    if (!isAbsolute(program)) return invocation
-    const path = joined([...servicePath(lookup), dirname(program), ...fallbackPath(lookup)])
+    const path = joined([...servicePath(lookup), dirname(program), ...fallbacks])
     return { ...invocation, env: { ...invocation.env, PATH: path } }
   }
-  const resolved = resolve(program, lookup)
+  const resolved = resolveIn(program, lookup, fallbacks)
   if (resolved._tag === "NotFound") return { _tag: "NotStarted", reason: notFoundReason(program, resolved.searched, lookup.home) }
   if (resolved.onServicePath) return { ...invocation, program: resolved.file }
-  const path = joined([dirname(resolved.file), ...servicePath(lookup), ...fallbackPath(lookup)])
+  const path = joined([dirname(resolved.file), ...servicePath(lookup), ...fallbacks])
   return { ...invocation, program: resolved.file, env: { ...invocation.env, PATH: path } }
 }
 
