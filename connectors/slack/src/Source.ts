@@ -80,7 +80,7 @@ const runPython = (script: "source" | "setup", request: unknown) => Effect.gen(f
       child.stdout.pipe(Stream.runFoldEffect(() => "", (text, chunk) => Effect.try({
         try: () => {
           bytes += chunk.length
-          if (bytes > 4000000) throw unavailable()
+          if (bytes > 5_000_000) throw unavailable()
           return text + decoder.decode(chunk, { stream: true })
         }, catch: unavailable
       }))), child.exitCode

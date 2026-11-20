@@ -7,6 +7,8 @@ export class ObservationGap extends Schema.TaggedError<ObservationGap>()("Observ
   reason: Schema.String
 }) {}
 
+export class LegacyCursor extends Schema.TaggedError<LegacyCursor>()("LegacyCursor", {}) {}
+
 const EventType = Schema.Literals(["message.new", "thread.reply", "message.edited", "reaction.added", "reaction.removed"])
 export type EventType = typeof EventType.Type
 export const EventPayload = Schema.Struct({ version: Schema.Literal(1), count: Schema.Literal(1), ...MessageContext.fields })
@@ -48,8 +50,8 @@ export const reconcile = (cursor: string | undefined, input: unknown, startedAt?
       }, catch: gap
     }))), child.exitCode
   ], { concurrency: "unbounded" })
-  if (code === 2) return yield* new ObservationGap({ reason: "This Slack cursor predates message freshness tracking. Create a new subscription to establish a baseline." })
+  if (code === 27) return yield* new LegacyCursor()
   if (code !== 0) return yield* gap()
   const result = yield* Effect.try({ try: () => JSON.parse(text + decoder.decode()) as unknown, catch: gap })
   return yield* Schema.decodeUnknownEffect(Result)(result)
-}).pipe(Effect.scoped, Effect.timeout("45 seconds"), Effect.mapError((error) => error instanceof ObservationGap ? error : gap()))
+}).pipe(Effect.scoped, Effect.timeout("45 seconds"), Effect.mapError((error) => error instanceof LegacyCursor ? error : gap()))

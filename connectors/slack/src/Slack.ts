@@ -1,6 +1,6 @@
 import { Clock, DateTime, Duration, Effect, Option, Ref, Schema, Stream } from "effect"
 import { Catalogue, Connector } from "@exangelos/connector-sdk"
-import { EventPayload, ObservationGap, reconcile, type EventType } from "./Reconcile.ts"
+import { EventPayload, reconcile, type EventType } from "./Reconcile.ts"
 import { localSource, type Source } from "./Source.ts"
 
 const declare = (type: EventType) => Catalogue.event(type, {
@@ -95,7 +95,12 @@ export const make = <R>(source: Source<R>) => Connector.make({
           }))
           if (items.length === 0 && state.cursor !== result.cursor) items.push(Connector.cursor(result.cursor))
           return [items, Option.some({ cursor: result.cursor as string | undefined, first: false })] as const
-        }).pipe(Effect.mapError((error) => new Connector.SourceFailed({ reason: error instanceof ObservationGap ? error.reason : reason }))))
+        }).pipe(
+          Effect.catchTag("LegacyCursor", () => Effect.succeed([[Connector.end(
+            "This Slack cursor predates message freshness tracking. Create a new subscription for the same selection to establish a baseline."
+          )], Option.none()] as const)),
+          Effect.mapError(() => new Connector.SourceFailed({ reason }))
+        ))
       }))
     }
   })

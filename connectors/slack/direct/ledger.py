@@ -212,12 +212,12 @@ def reconcile(request, path=None):
 def main():
     os.umask(0o077)
     try:
-        text = sys.stdin.buffer.read(4_000_001)
-        require(len(text) <= 4_000_000)
+        text = sys.stdin.buffer.read(5_000_001)
+        require(len(text) <= 5_000_000)
         result = reconcile(json.loads(text))
-        sys.stdout.write(packed(result) + '\n')
+        sys.stdout.buffer.write(json.dumps(result, separators=(',', ':'), ensure_ascii=False).encode('utf-8') + b'\n')
     except LegacyCursor:
-        return 2
+        return 27
     except Exception:
         sys.stderr.write(ERROR + '\n')
         return 1

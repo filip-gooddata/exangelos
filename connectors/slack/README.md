@@ -96,7 +96,7 @@ request on stdin, using the configuration shape above. The response is private
 JSON: `{scope, complete: true, messages, generation, snapshot}`. Each message contains
 `{id, body, reply, reactions, reactionsComplete, messageTs, conversationLabel, permalink}`
 and an optional `sender`. Markers are 64 lowercase hex
-characters; generation is a decimal string. Output is bounded to 4 MB and acquisition
+characters; generation is a decimal string. Output is bounded to 5 MB and acquisition
 to 45 seconds. These connector limits are deliberately tighter than the Python
 reader's 10,000-message/8 MiB limits; oversized selections fail closed. Stderr and error details are suppressed; expected failures have fixed
 sanitized reasons. No external requests, authentication extraction or app mutation.
@@ -134,9 +134,15 @@ comparison assumes the local machine clock agrees with Slack. The first snapshot
 itself remains silent, and messages that never reach the cache cannot be reported.
 
 A cursor created before 0.3.0 can replay its already committed batches with
-their original payloads. Its ledger has no recorded Watch start. At the end of
-that history, create a new subscription for the same selection to establish a
-fresh baseline. Retained host events keep their original payloads.
+their original payloads. Its ledger has no recorded Watch start. At the end of that history the connector ends the old Watch with a reason
+visible in `exangelos show`. If the old subscription is paused with an unread
+backlog, leave it paused and inspect it with `exangelos --json events OLD_ID`.
+After upgrading, subscribe again with the same selection, scope, event types,
+intent and delivery settings. If the CLI reports a similar open subscription,
+repeat that command with `--similar-ok OLD_ID` (or the IDs it reports). The
+replacement establishes a fresh baseline. This procedure keeps the old backlog
+available without acknowledging it. Resume alone cannot clear a backlog at
+the host limit or supply the missing Watch start.
 
 The 500-message limit applies to each source snapshot, never to lifetime history.
 Disappearing messages remain remembered; returning unchanged messages are silent.

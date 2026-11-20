@@ -334,6 +334,7 @@ def exercise(installed, home):
     with sqlite3.connect(private / 'ledger.sqlite3') as db:
         edge = json.loads(db.execute('SELECT result FROM edges WHERE lineage=? AND source=?',
                                      (lineage, source)).fetchone()[0])
+        db.execute('DELETE FROM watch_starts WHERE lineage=?', (lineage,))
         for event in edge['events']:
             del event['payload']
         db.execute('UPDATE edges SET result=? WHERE lineage=? AND source=?', (json.dumps(edge), lineage, source))
@@ -341,6 +342,30 @@ def exercise(installed, home):
     for item in batches[replies]:
         item['event']['payload'] = {'count': 1}
     check(legacy_batch == batches[replies], 'legacy edge preserves the exact count-only delivery')
+    cursors[replies] = legacy_batch[-1]['cursor']
+    end = resume(replies)
+    check(len(end) == 1 and end[0]['_tag'] == 'End' and 'Create a new subscription' in end[0]['reason'],
+          'legacy cursor tip ends with actionable reason')
+
+    # Exercise the worker byte limits with the largest supported DM selection.
+    cursors[dm_handle] = burst[-1]['cursor']
+    peer = 'U0000002'
+    name = '🌊' * 80
+    state['channels'][dm] = {'id': dm, 'is_im': True, 'user': peer}
+    state['users'][peer]['profile']['display_name'] = name
+    state['messages'][dm].clear()
+    users = [f'U{i:07d}' for i in range(100)]
+    for i in range(500):
+        ts = f'1500000000.{i:06d}' if i < 499 else fresh[0]
+        add_dm(ts)
+        state['reactions'][f'message-{ts}-{dm}'] = [{'name': 'wave', 'users': users, 'count': 100}]
+    state['messages'][dm][fresh[0]]['text'] = 'edited synthetic DM'
+    database(app, state, sequence=110)
+    boundary = resume(dm_handle)
+    check(len(boundary) == 1 and boundary[0]['event']['type'] == 'message.edited'
+          and boundary[0]['event']['payload']['sender'] == name
+          and boundary[0]['event']['payload']['conversationLabel'] == 'Slack DM with ' + name,
+          'full reaction snapshot preserves Unicode sender and conversation')
     final_state = inventory(private)
     check(all(entry in final_state for entry in original), 'legacy user state preserved')
     return dict(dmHistorySuppressed=19, dmArrivals=3, distinctSubjects=len(distinct), conversationEvents=len(batches[conversation]),

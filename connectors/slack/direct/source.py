@@ -160,13 +160,13 @@ def main():
             if len(raw) > MAX_INPUT:
                 raise ValueError('limit')
             result = acquire(json.loads(raw, object_pairs_hook=unique_object))
-            output = json.dumps(result, sort_keys=True, separators=(',', ':'))
+            output = json.dumps(result, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
             if len(output) > 8 * 1024 * 1024:
                 raise ValueError('limit')
     except BaseException:
         sys.stderr.write('Slack persisted source unavailable.\n')
         return 1
-    sys.stdout.write(output + '\n')
+    sys.stdout.buffer.write(output + b'\n')
     return 0
 
 
