@@ -164,7 +164,9 @@ const make = Effect.gen(function*() {
           Effect.promise(async () => {
             const entries = await Fs.readdir(root).catch(() => [] as Array<string>)
             for (const entry of entries) {
-              if (entry.startsWith(retiredPrefix(name))) await Fs.rm(Path.join(root, entry), { recursive: true, force: true })
+              if (entry.startsWith(retiredPrefix(name))) {
+                await Fs.rm(Path.join(root, entry), { recursive: true, force: true }).catch(() => undefined)
+              }
             }
           })
         )
