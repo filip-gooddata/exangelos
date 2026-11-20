@@ -93,7 +93,8 @@ export const layer = (options: {
       const restore = (official: OfficialConnectorSource.Official) =>
         Effect.mapError(imports.restore(official.name), (failed) => failedFor(official)(failed.reason))
 
-      const discard = (official: OfficialConnectorSource.Official) => imports.discard(official.name)
+      const discard = (official: OfficialConnectorSource.Official) =>
+        Effect.mapError(imports.discard(official.name), (failed) => failedFor(official)(failed.reason))
 
       const decodeEarlier = Schema.decodeUnknownOption(Schema.fromJsonString(OfficialConnectorSource.Earlier))
       const kept = (official: OfficialConnectorSource.Official) =>

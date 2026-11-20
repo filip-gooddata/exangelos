@@ -40,8 +40,8 @@ export class NamedImport extends Context.Service<NamedImport, {
    * stays until `discard`, so the caller can finish with it after a crash. Repeating it does nothing.
    */
   readonly restore: (name: string) => Effect.Effect<void, ConnectorImportSource.ImportFailed>
-  /** Deletes everything `replace` kept, note included. */
-  readonly discard: (name: string) => Effect.Effect<void>
+  /** Retires everything `replace` kept, note included, failing if it stays pending. */
+  readonly discard: (name: string) => Effect.Effect<void, ConnectorImportSource.ImportFailed>
   /** The note of a `replace` not yet discarded. */
   readonly kept: (name: string) => Effect.Effect<Option.Option<string>, ConnectorImportSource.ImportFailed>
 }>()("@exangelos/connector-import/NamedImport") {}
@@ -150,15 +150,24 @@ const make = Effect.gen(function*() {
           })
         ).pipe(Effect.mapError((refused) => new ConnectorImportSource.ImportFailed({ reason: refused.reason })))
 
-      /** Retires the rollback state with one rename, then deletes it and any retired by an interrupted run. */
+      /**
+       * Retires the rollback state with one rename, failing unless it is retired or was never there, then
+       * deletes it with anything an interrupted run left retired or half written.
+       */
       const retire = (name: string) =>
-        Effect.promise(async () => {
-          await Fs.rename(pending(name), Path.join(root, `${retiredPrefix(name)}${Date.now()}`)).catch(() => undefined)
-          const entries = await Fs.readdir(root).catch(() => [] as Array<string>)
-          for (const entry of entries) {
-            if (entry.startsWith(retiredPrefix(name))) await Fs.rm(Path.join(root, entry), { recursive: true, force: true })
-          }
-        })
+        Effect.andThen(
+          attempt(() =>
+            Fs.rename(pending(name), Path.join(root, `${retiredPrefix(name)}${Date.now()}`)).catch((error: NodeJS.ErrnoException) => {
+              if (error.code !== "ENOENT") throw error
+            })
+          ),
+          Effect.promise(async () => {
+            const entries = await Fs.readdir(root).catch(() => [] as Array<string>)
+            for (const entry of entries) {
+              if (entry.startsWith(retiredPrefix(name))) await Fs.rm(Path.join(root, entry), { recursive: true, force: true })
+            }
+          })
+        )
 
       /**
        * Moves the staged copy in, keeping the earlier one, or the mark that there was none, with the note.
@@ -170,11 +179,14 @@ const make = Effect.gen(function*() {
           const target = Path.join(root, name)
           const state = pending(name)
           const previous = Path.join(state, "previous")
+          // The state is written whole under a retired name and renamed into place, so it is never torn.
+          const draft = Path.join(root, `${retiredPrefix(name)}draft-${Date.now()}`)
           yield* attempt(async () => {
             await protectLegacyState(name, target)
-            await Fs.mkdir(state)
-            await Fs.writeFile(Path.join(state, "note"), note)
-          }).pipe(Effect.tapError(() => Effect.promise(() => Fs.rm(state, { recursive: true, force: true }))))
+            await Fs.mkdir(draft)
+            await Fs.writeFile(Path.join(draft, "note"), note)
+            await Fs.rename(draft, state)
+          }).pipe(Effect.tapError(() => Effect.promise(() => Fs.rm(draft, { recursive: true, force: true }))))
           return yield* attempt(async () => {
             const replaced = await Fs.rename(target, previous).then(() => true, () => false)
             if (!replaced) await Fs.writeFile(Path.join(state, "absent"), "")
@@ -261,7 +273,7 @@ const make = Effect.gen(function*() {
           Effect.mapError(failed)
         )
 
-      const discard = (name: string) => swap.withPermits(1)(retire(name))
+      const discard = (name: string) => swap.withPermits(1)(retire(name)).pipe(Effect.mapError(failed))
 
       const replace = (source: ConnectorImportSource.Source, expected: string, digest: string, note: string) =>
         attempt(async () => {

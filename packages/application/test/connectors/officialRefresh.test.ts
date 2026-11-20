@@ -349,6 +349,29 @@ describe("an official connector the upgraded binary carries in another version",
       ports
     ))
 
+  it.effect("puts the earlier copy back and tries again when a refresh cannot let it go", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* seed(stored())
+        const files = yield* ConnectorFilesFake
+        yield* files.publish(installed("github-pr", officialDigest))
+        yield* files.failDiscards(1)
+
+        yield* daemonRun(settle)
+        expect(yield* (yield* OfficialConnectorSource.OfficialConnectorSource).kept(known[0]!)).toMatchObject(
+          Option.some({ version: "0.9.0", digest: "sha256-old" })
+        )
+
+        yield* daemonRun(settle)
+
+        expect(yield* connectorOf("github-pr")).toMatchObject({ version: "1.0.0", digest: officialDigest, trust: "enabled" })
+        expect(yield* filesDigest).toBe(officialDigest)
+        expect(yield* files.replacements).toBe(2)
+        expect(yield* (yield* OfficialConnectorSource.OfficialConnectorSource).kept(known[0]!)).toEqual(Option.none())
+      }),
+      ports
+    ))
+
   it.effect("refreshes a disabled connector without enabling or starting it", () =>
     Effect.provide(
       Effect.gen(function*() {

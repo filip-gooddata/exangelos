@@ -177,12 +177,19 @@ describe("OfficialConnectorSource", () => {
       yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
       expect(yield* exists(Path.join(installed, "connector.json"))).toBe(true)
 
+      // State an interrupted replace left half written under a retired name is never pending.
+      yield* Effect.promise(async () => {
+        await Fs.mkdir(Path.join(root, "connectors", ".template.retired-draft-1"))
+        await Fs.writeFile(Path.join(root, "connectors", ".template.retired-draft-1", "note"), "")
+      })
+      expect(yield* withSource(root, "template", { folder, digest }, (s, o) => s.kept(o))).toEqual(Option.none())
+
       yield* Effect.promise(() => Fs.rm(installed, { recursive: true, force: true }))
       yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o, earlier))
       const blocked = yield* Effect.flip(withSource(root, "template", { folder, digest }, (s, o) => s.replace(o, earlier)))
       expect(blocked.reason).toContain("is still kept")
       yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
-      expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual([".template.refresh"])
+      expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual([".template.refresh", ".template.retired-draft-1"])
       expect(yield* withSource(root, "template", { folder, digest }, (s, o) => s.kept(o))).toEqual(Option.some(earlier))
 
       // A discard interrupted after its retiring rename leaves a retired copy, which is not pending.

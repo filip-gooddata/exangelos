@@ -1,4 +1,4 @@
-import { Cause, Clock, DateTime, Duration, Effect, Exit, Layer, Option, Ref } from "effect"
+import { Cause, Clock, DateTime, Duration, Effect, Layer, Option, Ref } from "effect"
 import { type Ids, type Connector, ConnectorRules, Refusal, type Session, Subscribe } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
 import { type Earlier, OfficialConnectorSource, type Official } from "../ports/OfficialConnectorSource.ts"
@@ -84,7 +84,7 @@ export const refreshOfficial = (official: Official) =>
           isOfficial(connector)
             ? { ...connector, version: earlier.version, digest: earlier.digest, origin: { _tag: "Official", version: earlier.release } }
             : undefined),
-        source.discard(official)
+        Effect.mapError(source.discard(official), (failed) => unavailable(failed.reason))
       )
 
     /** Finishes a rollback an earlier refresh could not: files first, then the record, then the kept copy. */
@@ -154,9 +154,10 @@ export const refreshOfficial = (official: Official) =>
           yield* supervisor.restart(name)
         })
 
-        yield* interruptible(adopt).pipe(
-          Effect.onExit((exit) => Exit.isSuccess(exit) ? source.discard(official) : rollback)
-        )
+        yield* interruptible(adopt).pipe(Effect.onError(() => rollback))
+        // Until the state is retired, the next refresh would take it for a rollback to finish.
+        yield* Effect.mapError(source.discard(official), (failed) =>
+          unavailable(`the new copy runs, but the earlier one could not be let go, so the next refresh puts it back: ${failed.reason}`))
         yield* Effect.logInfo("official connector refreshed").pipe(
           Effect.annotateLogs({ from: earlier.version, to: official.version, digest: official.digest })
         )
@@ -212,7 +213,10 @@ export const layerConnectorAccess: Layer.Layer<
             if (Option.isNone(yield* repository.find(name))) {
               // Rollback state left by an official copy removed since belongs to no record now.
               const official = known.find((candidate) => candidate.name === name)
-              if (official !== undefined) yield* officialSource.discard(official)
+              if (official !== undefined) {
+                yield* Effect.mapError(officialSource.discard(official), (failed) =>
+                  new Refusal.ConnectorUnavailable({ connector: name, problem: failed.reason }))
+              }
               yield* Effect.provide(fetchOfficial(actor, name), context)
             }
           }))

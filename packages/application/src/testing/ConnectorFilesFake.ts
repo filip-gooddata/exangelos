@@ -29,6 +29,8 @@ export class ConnectorFilesFake extends Context.Service<ConnectorFilesFake, {
   readonly holdReplace: (at: "before" | "after") => Effect.Effect<Effect.Effect<void>>
   /** The next `count` restores of the official source fail. */
   readonly failRestores: (count: number) => Effect.Effect<void>
+  /** The next `count` discards of the official source fail, leaving what was kept in place. */
+  readonly failDiscards: (count: number) => Effect.Effect<void>
 }>()("@exangelos/application/testing/ConnectorFilesFake") {}
 
 /**
@@ -45,6 +47,7 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
     const keptCopies = yield* Ref.make(new Map<string, Installed | undefined>())
     const notes = yield* Ref.make(new Map<string, Earlier>())
     const restoreFailures = yield* Ref.make(0)
+    const discardFailures = yield* Ref.make(0)
     const held = yield* Ref.make<{ readonly at: "before" | "after"; readonly hold: Deferred.Deferred<void> } | undefined>(undefined)
     const wait = (at: "before" | "after") =>
       Effect.flatMap(Ref.get(held), (h) => h !== undefined && h.at === at ? Deferred.await(h.hold) : Effect.void)
@@ -132,14 +135,19 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
           }),
         kept: (official) => Effect.map(Ref.get(notes), (m) => Option.fromNullishOr(m.get(`${connectorRoot}/${official.name}`))),
         discard: (official) =>
-          Effect.andThen(
-            Ref.update(keptCopies, (m) => { const next = new Map(m); next.delete(`${connectorRoot}/${official.name}`); return next }),
-            Ref.update(notes, (m) => { const next = new Map(m); next.delete(`${connectorRoot}/${official.name}`); return next })
-          )
+          Effect.gen(function*() {
+            if ((yield* Ref.getAndUpdate(discardFailures, (n) => Math.max(0, n - 1))) > 0) {
+              return yield* new OfficialFetchFailed({ connector: official.name, reason: "rename failed" })
+            }
+            const directory = `${connectorRoot}/${official.name}`
+            yield* Ref.update(keptCopies, (m) => { const next = new Map(m); next.delete(directory); return next })
+            yield* Ref.update(notes, (m) => { const next = new Map(m); next.delete(directory); return next })
+          })
       }),
       Layer.succeed(ConnectorFilesFake, {
         replacements: Ref.get(replacements),
         failRestores: (count) => Ref.set(restoreFailures, count),
+        failDiscards: (count) => Ref.set(discardFailures, count),
         holdReplace: (at) =>
           Effect.flatMap(Deferred.make<void>(), (hold) =>
             Effect.as(Ref.set(held, { at, hold }), Effect.asVoid(Deferred.succeed(hold, undefined)))),

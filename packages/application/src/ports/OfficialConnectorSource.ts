@@ -41,8 +41,8 @@ export class OfficialConnectorSource extends Context.Service<OfficialConnectorSo
   readonly replace: (official: Official, earlier: Earlier) => Effect.Effect<string, OfficialFetchFailed>
   /** Puts back the copy `replace` kept, or removes the new one when none was installed; repeating it does nothing. */
   readonly restore: (official: Official) => Effect.Effect<void, OfficialFetchFailed>
-  /** Retires what `replace` kept, copy and `earlier` together, then deletes it. */
-  readonly discard: (official: Official) => Effect.Effect<void>
+  /** Retires what `replace` kept, copy and `earlier` together, then deletes it; fails if it stays pending. */
+  readonly discard: (official: Official) => Effect.Effect<void, OfficialFetchFailed>
   /** The `earlier` of a replace not yet discarded. */
   readonly kept: (official: Official) => Effect.Effect<Option.Option<Earlier>, OfficialFetchFailed>
 }>()("@exangelos/application/OfficialConnectorSource") {}
