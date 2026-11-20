@@ -271,9 +271,12 @@ def exercise(installed, home):
             check(len(batch) == 1 and batch[0]['_tag'] == 'Cursor', 'silent baseline')
             cursors[handle] = batch[0]['cursor']
 
+    def timestamp(micros):
+        seconds, fraction = divmod(micros, 10**6)
+        return f'{seconds}.{fraction:06d}'
+
     def current_timestamp():
-        seconds, nanos = divmod(time.time_ns(), 10**9)
-        return f'{seconds}.{nanos // 1000:06d}'
+        return timestamp(time.time_ns() // 1000)
 
     outside_ts = current_timestamp()
     add(outside_ts, other)
@@ -331,9 +334,9 @@ def exercise(installed, home):
         wire.watch(conversation, cursors[conversation])
         wire.receive(1.2, quiet=True)
 
-    new = current_timestamp()
+    now = time.time_ns() // 1000
+    new, new_reply = timestamp(now - 1), timestamp(now)
     add(new)
-    new_reply = current_timestamp()
     add(new_reply, TIME)
     messages[new]['text'] = 'new excerpt'
     messages[new_reply]['text'] = 'reply excerpt'
@@ -382,7 +385,7 @@ def exercise(installed, home):
         add_dm(f'1600000000.{i:06d}')
     # All three were sent after Watch began. One enters the cache after a newer row.
     now = time.time_ns() // 1000
-    fresh = [f'{t // 1000000}.{t % 1000000:06d}' for t in range(now - 2, now + 1)]
+    fresh = [timestamp(t) for t in range(now - 2, now + 1)]
     add_dm(fresh[2])
     database(app, state, sequence=70)
     first_dm = resume(dm_handle)
