@@ -11,6 +11,7 @@ const servicePath = "/opt/homebrew/bin:/opt/homebrew/sbin:/usr/bin:/bin:/usr/sbi
 const lookup = (files: ReadonlyArray<string>, directories: Record<string, ReadonlyArray<string>> = {}): Executable.Lookup => ({
   path: servicePath,
   home: "/Users/owner",
+  platform: "darwin",
   isExecutable: (file) => files.includes(file),
   listDirectory: (directory) => directories[directory] ?? []
 })
@@ -18,11 +19,13 @@ const lookup = (files: ReadonlyArray<string>, directories: Record<string, Readon
 describe("finding a harness CLI", () => {
   it("finds one in a user directory the service PATH lacks, and puts that directory first on its PATH", () => {
     const located = Executable.locate({ program: "t3", args: ["thread"] }, lookup(["/Users/owner/.local/bin/t3"]))
-    expect(located).toEqual({
-      program: "/Users/owner/.local/bin/t3",
-      args: ["thread"],
-      env: { PATH: `/Users/owner/.local/bin:${servicePath}` }
-    })
+    expect(located).toMatchObject({ program: "/Users/owner/.local/bin/t3", args: ["thread"] })
+    const path = "env" in located ? located.env?.["PATH"] : undefined
+    expect(path?.startsWith(`/Users/owner/.local/bin:${servicePath}:/Users/owner/bin:`)).toBe(true)
+  })
+
+  it("keeps the service PATH as it is for a program found on it", () => {
+    expect(Executable.locate({ program: "t3", args: [] }, lookup(["/usr/bin/t3"]))).toEqual({ program: "/usr/bin/t3", args: [] })
   })
 
   it("prefers the daemon's PATH, then the newest nvm node", () => {
@@ -32,9 +35,13 @@ describe("finding a harness CLI", () => {
       .toEqual({ _tag: "Found", file: "/Users/owner/.nvm/versions/node/v22.3.0/bin/codex" })
   })
 
-  it("takes a program with a slash as given", () => {
-    const invocation = { program: "/opt/relay", args: [] }
-    expect(Executable.locate(invocation, lookup([]))).toBe(invocation)
+  it("runs a program given as a path as it is, with the service PATH first for an absolute one", () => {
+    const relative = { program: "./relay", args: [] }
+    expect(Executable.locate(relative, lookup([]))).toBe(relative)
+    const located = Executable.locate({ program: "/opt/relay/bin/relay", args: [] }, lookup([]))
+    expect(located).toMatchObject({ program: "/opt/relay/bin/relay" })
+    const path = "env" in located ? located.env?.["PATH"] : undefined
+    expect(path?.startsWith(`${servicePath}:/opt/relay/bin:/Users/owner/.local/bin:`)).toBe(true)
   })
 
   it.effect("fails the wake naming the program and every directory searched when it is nowhere", () =>
@@ -47,6 +54,8 @@ describe("finding a harness CLI", () => {
       )
       expect(yield* runner.spawned).toEqual([])
       expect(reason).toContain("t3 could not start: no executable named t3 in /opt/homebrew/bin, /opt/homebrew/sbin, /usr/bin")
-      expect(reason).toContain("/Users/owner/.local/bin, /Users/owner/bin, /Users/owner/.bun/bin")
+      expect(reason).toContain("/sbin, ~/.local/bin, ~/bin, ~/.bun/bin")
+      expect(reason).not.toContain("linuxbrew")
+      expect(reason).toMatch(/; link it into one of them, such as ~\/\.local\/bin$/)
     }))
 })
