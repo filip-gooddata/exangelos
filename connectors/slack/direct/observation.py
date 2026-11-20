@@ -39,17 +39,49 @@ def workspace_domain(state, workspace):
     return None
 
 
+# Match credential vocabulary used by the host's debug-report scrubber. Also
+# suppress common standalone credentials, opaque strings, links and markup.
+SENSITIVE = re.compile(
+    r'token|key|secret|passw|auth|cookie|bearer|\bbasic\b|session|credential|signature|sig=|'
+    r'redact|\[(?:removed|deleted|hidden)\]|[•●█]{2,}|passcode|passwd|private[ _-]*key|otp\b|webhook|xox[a-z]-|xapp-|gh[pousr]_|github_pat_|sk-|AKIA|ASIA|eyJ|'
+    r'[a-z0-9_+/=-]{32,}|[0-9]{6,}|[<>`=]|://|www\.|[?&]\w+=|'
+    r'@(?:channel|here|everyone)\b|&(?:lt|gt);|\b[\w-]+\.(?:[a-z]{2,})[/#?]|(?:\*{3,}|█)', re.IGNORECASE | re.ASCII)
+
+
+def safe_text(value):
+    return value.isprintable() and not SENSITIVE.search(unicodedata.normalize('NFKC', value))
+
+
+def message_preview(message):
+    if (message.get('type') != 'message' or ('subtype' in message and message['subtype'] != 'bot_message')
+            or any(message.get(field, False) is not False for field in ('redacted', 'is_redacted', 'deleted', 'is_deleted', 'tombstone'))):
+        return None
+    value = message['text']
+    if len(value) > 4096:
+        return None
+    # Inspect the whole value before clipping so a sensitive suffix suppresses
+    # the entire preview. Fold only ordinary message layout whitespace.
+    value = re.sub(r'[ \t\r\n]+', ' ', value).strip(' ')
+    return value[:160] if value and safe_text(value) else None
+
+
+def same_team(row, workspace):
+    return all(row.get(field, workspace) == workspace for field in ('team', 'team_id', 'context_team_id'))
+
+
 def safe_name(value):
     return (isinstance(value, str) and value == value.strip() and 0 < len(value) <= 80
-            and all(char.isprintable() and unicodedata.category(char)[0] != 'C' for char in value))
+            and safe_text(value))
 
 
 def user_label(state, workspace, identity):
     if not isinstance(identity, str) or not re.fullmatch(r'[UW][A-Z0-9]{6,30}', identity):
         return None
     user = (state.get('users') or {}).get(identity) or {}
-    if user.get('id', identity) == identity and user.get('team_id', workspace) == workspace:
+    if user.get('id', identity) == identity and same_team(user, workspace):
         profile = user.get('profile') or {}
+        if not same_team(profile, workspace):
+            return identity
         for name in (profile.get('display_name'), profile.get('real_name'), user.get('name')):
             if safe_name(name):
                 return name
@@ -69,7 +101,7 @@ def message_sender(state, workspace, message):
 
 def conversation_label(state, workspace, channel):
     metadata = (state.get('channels') or {}).get(channel) or {}
-    if metadata.get('id', channel) != channel or metadata.get('context_team_id', workspace) != workspace:
+    if metadata.get('id', channel) != channel or not same_team(metadata, workspace):
         raise ValueError('scope')
     if metadata.get('is_mpim') or str(metadata.get('name', '')).startswith('mpdm-'):
         return 'Slack group DM ' + channel
@@ -84,7 +116,7 @@ def conversation_label(state, workspace, channel):
 
 
 def message_permalink(domain, workspace, channel, timestamp, thread):
-    if len(timestamp.partition('.')[2]) == 6 and isinstance(domain, str) and re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', domain):
+    if len(timestamp.partition('.')[2]) == 6 and safe_name(domain) and re.fullmatch(r'[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?', domain):
         link = f'https://{domain}.slack.com/archives/{channel}/p{timestamp.replace(".", "")}'
         if thread and thread != timestamp:
             link += f'?thread_ts={thread}&cid={channel}'
@@ -95,7 +127,7 @@ def message_permalink(domain, workspace, channel, timestamp, thread):
     return link
 
 
-def snapshot(state, selection, key, *, require_reactions=True, thread_root=None):
+def snapshot(state, selection, key, *, require_reactions=True, thread_root=None, include_preview=False):
     """Normalize message markers and delivery context for one private conversation selection."""
     if len(key) < 32 or not isinstance(selection, tuple) or len(selection) != 3:
         raise ValueError('selection')
@@ -122,11 +154,11 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None)
             complete = False
             continue
         thread = message.get('thread_ts')
-        hidden = message.get('_hidden_stub') or message.get('no_display')
+        hidden = any(message.get(field, False) is not False for field in ('_hidden_stub', 'no_display', 'hidden'))
         if not require_reactions:
             if thread is not None and (not isinstance(thread, str) or not re.fullmatch(TIMESTAMP, thread)):
                 raise ValueError('incomplete')
-            if 'team' in message and message['team'] != workspace:
+            if not same_team(message, workspace):
                 raise ValueError('scope')
         if thread_root is not None:
             if hidden and thread is None and timestamp != thread_root:
@@ -159,10 +191,12 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None)
         if len(set(actors)) != len(actors):
             rx_complete = False
         sender = message_sender(state, workspace, message)
+        preview = message_preview(message) if include_preview and same_team(message, workspace) else None
         result.append({
             'messageTs': timestamp, 'conversationLabel': label,
             'permalink': message_permalink(domain, workspace, channel, timestamp, thread),
             **({'sender': sender} if sender else {}),
+            **({'preview': preview} if preview else {}),
             'id': token(key, 'message', *selection, timestamp),
             'body': token(key, 'body', message['text'], message.get('edited')),
             'reply': isinstance(message.get('thread_ts'), str) and message['thread_ts'] != timestamp,

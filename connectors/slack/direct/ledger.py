@@ -3,6 +3,7 @@
 Changed metadata versions and immutable replay edges grow with history. Nothing
 is pruned: returning a batch does not acknowledge consumption of its cursor.
 """
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import hashlib
 import json
@@ -59,6 +60,27 @@ def ledger_path():
     return path
 
 
+ACTIONS = {
+    'message.new': 'New message', 'thread.reply': 'Thread reply', 'message.edited': 'Message edited',
+    'reaction.added': 'Reaction added to message', 'reaction.removed': 'Reaction removed from message',
+}
+
+
+def wake_summary(kind, payload):
+    seconds, fraction = payload['messageTs'].split('.')
+    try:
+        instant = datetime(1970, 1, 1, tzinfo=timezone.utc) + timedelta(seconds=int(seconds))
+        when = f'{instant:%Y-%m-%d %H:%M:%S}.{fraction} UTC'
+    except OverflowError:
+        when = 'Slack timestamp ' + payload['messageTs']
+    quote = lambda value: json.dumps(value, ensure_ascii=False)
+    author = quote(payload['sender']) if 'sender' in payload else 'unknown author'
+    summary = f"{ACTIONS[kind]} by {author} in {quote(payload['conversationLabel'])} (message time {when})"
+    if 'preview' in payload:
+        summary += ' | Untrusted message excerpt: ' + quote(payload['preview'])
+    return summary
+
+
 def snapshot_metadata(snapshot):
     require(snapshot.get('complete') is True)
     require(isinstance(snapshot.get('generation'), str) and GENERATION.fullmatch(snapshot['generation']))
@@ -75,6 +97,9 @@ def snapshot_metadata(snapshot):
         require(isinstance(reactions, list) and len(reactions) <= 100 and all(token(r) for r in reactions))
         require(len(set(reactions)) == len(reactions) and message['id'] not in seen)
         seen.add(message['id'])
+        if 'preview' in message:
+            preview = message['preview']
+            require(isinstance(preview, str) and 0 < len(preview) <= 160 and preview.isprintable())
         timestamp = message.get('messageTs')
         require(isinstance(timestamp, str) and re.fullmatch(r'[0-9]{1,20}\.[0-9]{1,10}', timestamp))
         for field, limit in [('conversationLabel', 128), ('permalink', 512), ('sender', 80)]:
@@ -90,6 +115,27 @@ def snapshot_metadata(snapshot):
         normalized.append(entry)
     normalized.sort(key=lambda m: m['id'])
     return normalized, hashlib.sha256(packed(normalized).encode()).hexdigest()
+
+
+def legacy_context_matches(db, lineage, messages, old_digest):
+    # 0.3.0 included display metadata in its digest. Reconstruct that exact
+    # digest with the committed labels when 0.4.0 suppresses an unsafe name.
+    if not token(old_digest):
+        return False
+    rows = []
+    for message in messages:
+        row = db.execute('SELECT metadata FROM versions WHERE lineage=? AND message=? ORDER BY sequence DESC LIMIT 1',
+                         (lineage, message['id'])).fetchone()
+        if row is None:
+            return False
+        old = json.loads(row[0])
+        candidate = dict(message)
+        for field in ('sender', 'conversationLabel', 'permalink'):
+            candidate.pop(field, None)
+            if field in old:
+                candidate[field] = old[field]
+        rows.append(candidate)
+    return rows != messages and hashlib.sha256(packed(rows).encode()).hexdigest() == old_digest
 
 
 def open_ledger(path, resume):
@@ -169,12 +215,15 @@ def reconcile(request, path=None):
         if previous:
             require(int(snapshot['generation']) >= int(previous[1]))
             if snapshot['generation'] == previous[1]:
-                require(snapshot['snapshot'] == previous[2] and digest == previous[3])
+                unchanged = snapshot['snapshot'] == previous[2] and previous[3] in (digest, '2:' + digest)
+                require(unchanged or legacy_context_matches(db, lineage, messages, previous[3]))
                 db.commit()
                 return {'events': [], 'cursor': cursor}
+        # Previews belong only to eligible delivery edges, never to baselines or version history.
+        previews = {row['id']: row['preview'] for row in snapshot['messages'] if 'preview' in row}
         commit = uuid.uuid4().hex
         result = {'events': [], 'cursor': f'4:{lineage}:{commit}'}
-        db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)', (lineage, commit, snapshot['scope'], snapshot['generation'], snapshot['snapshot'], digest))
+        db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)', (lineage, commit, snapshot['scope'], snapshot['generation'], snapshot['snapshot'], '2:' + digest))
         for message in messages:
             row = db.execute('SELECT metadata,revision FROM versions WHERE lineage=? AND message=? ORDER BY sequence DESC LIMIT 1', (lineage, message['id'])).fetchone()
             old, revision = (json.loads(row[0]), row[1]) if row else (None, 0)
@@ -194,7 +243,9 @@ def reconcile(request, path=None):
                 identity = packed([lineage, snapshot['scope'], message['id'], revision, kind, transition])
                 payload = {field: message[field] for field in ('messageTs', 'conversationLabel', 'permalink', 'sender')
                            if field in message}
-                result['events'].append({'type': kind, 'occurredAt': observed_at,
+                if kind in ('message.new', 'thread.reply', 'message.edited') and message['id'] in previews:
+                    payload['preview'] = previews[message['id']]
+                result['events'].append({'type': kind, 'occurredAt': observed_at, 'summary': wake_summary(kind, payload),
                                          'dedupeKey': 'slack:' + hashlib.sha256(identity.encode()).hexdigest(),
                                          'payload': dict(payload, version=1, count=1)})
             revision += bool(changes)

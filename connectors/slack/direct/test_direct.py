@@ -82,6 +82,65 @@ class DirectTests(unittest.TestCase):
         rows[TIME].update(bot_id='B0000001', username='Fixture Bot')
         self.assertEqual(read()['sender'], 'Fixture Bot')
 
+    def test_delivery_preview_policy_after_projection(self):
+        data = fixture()
+        message = data['messages'][CHANNEL][TIME]
+
+        def selected():
+            return observation.snapshot(projected(data), SELECTION, KEY, require_reactions=False,
+                                        include_preview=True)['messages'][0]
+
+        message['text'] = '  Status\tupdate\r\n' + '🌻' * 180
+        self.assertEqual(selected()['preview'], 'Status update ' + '🌻' * 146)
+        for text in ('', ' \t', 'ordinary ' * 513, '🌻' * 170 + 'xoxb-fixture', 'password: sample',
+                     'Bearer sample', 'redacted', '[removed]', '••••', 'user\x00name', 'hidden\u202etext', '<@U0000002>',
+                     'https://example.invalid/?q=private', 'ghp_example', 's' * 32, '１２３４５６'):
+            with self.subTest(text=text[:16]):
+                message['text'] = text
+                self.assertNotIn('preview', selected())
+        message['text'] = 'ordinary message'
+        for field, value in [('is_redacted', True), ('deleted', True), ('redacted', 'unknown'), ('subtype', 'message_deleted')]:
+            message[field] = value
+            self.assertNotIn('preview', selected())
+            del message[field]
+        for field, value in [('hidden', True), ('no_display', None), ('_hidden_stub', 1)]:
+            message[field] = value
+            self.assertEqual(observation.snapshot(projected(data), SELECTION, KEY, include_preview=True)['messages'], [])
+            del message[field]
+        message.update(team=SELECTION[0], team_id='T9999999')
+        with self.assertRaisesRegex(ValueError, '^scope$'):
+            selected()
+
+    def test_projected_user_and_channel_labels_fail_closed(self):
+        data = fixture()
+        author = 'U0000002'
+        message = data['messages'][CHANNEL][TIME]
+        message['user'] = author
+        data['users'] = {author: {'name': 'Fixture Person', 'team_id': SELECTION[0]}}
+        channel = {'name': 'fixture-channel', 'context_team_id': SELECTION[0]}
+        data['channels'] = {CHANNEL: channel}
+
+        def selected():
+            return observation.snapshot(projected(data), SELECTION, KEY)['messages'][0]
+
+        self.assertEqual(selected()['sender'], 'Fixture Person')
+        self.assertEqual(selected()['conversationLabel'], 'Slack #fixture-channel')
+        user = data['users'][author]
+        for field, value in [('team', 'T9999999'), ('id', 'U9999999'), ('profile', {'team': 'T9999999'})]:
+            user[field] = value
+            self.assertEqual(selected()['sender'], author)
+            del user[field]
+        user['name'] = channel['name'] = 'xoxb-fixture'
+        self.assertEqual(selected()['sender'], author)
+        self.assertEqual(selected()['conversationLabel'], 'Slack conversation ' + CHANNEL)
+        del data['users'][author]
+        self.assertEqual(selected()['sender'], author)
+        for field, value in [('team_id', 'T9999999'), ('id', 'C9999999')]:
+            channel[field] = value
+            with self.assertRaisesRegex(ValueError, '^scope$'):
+                selected()
+            del channel[field]
+
     def test_projection_and_scope_join_without_private_fields(self):
         state = projected(fixture())
         self.assertNotIn('token', state['bootData'])

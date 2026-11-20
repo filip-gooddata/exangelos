@@ -22,7 +22,10 @@ def scope_token(key, selection, epoch):
 
 
 def acquire(request):
-    if not isinstance(request, dict) or set(request) - {'selection', 'key', 'root', 'expectedScope'}:
+    if not isinstance(request, dict) or set(request) - {'selection', 'key', 'root', 'expectedScope', 'includePreview'}:
+        raise ValueError('request')
+    include_preview = request.get('includePreview', False)
+    if type(include_preview) is not bool:
         raise ValueError('request')
     selection = request.get('selection')
     if not isinstance(selection, dict) or set(selection) not in ({'workspace', 'owner', 'conversations'}, {'workspace', 'owner', 'conversations', 'thread'}):
@@ -70,15 +73,17 @@ def acquire(request):
         raise ValueError('generation')
     messages = []
     for conversation in sorted(conversations):
-        selected = observation.snapshot(state, (workspace, owner, conversation), key, require_reactions=False, thread_root=thread)
+        selected = observation.snapshot(state, (workspace, owner, conversation), key, require_reactions=False, thread_root=thread,
+                                        include_preview=include_preview)
         if not selected['complete']:
             raise ValueError('incomplete')
         messages.extend(selected['messages'])
         if len(messages) > MAX_MESSAGES:
             raise ValueError('limit')
     messages.sort(key=lambda message: message['id'])
+    marker_rows = [{k: v for k, v in message.items() if k != 'preview'} for message in messages]
     return {'scope': scope, 'complete': True, 'messages': messages, 'generation': str(generation),
-            'snapshot': observation.token(key, 'selected-snapshot-v1', scope, messages)}
+            'snapshot': observation.token(key, 'selected-snapshot-v1', scope, marker_rows)}
 
 
 def directory_identity(directory):

@@ -3,6 +3,8 @@
 Usage: python3 connectors/slack/test/archive_validation.py /absolute/new-evidence-dir
 Build the current worktree with the official packer. All runtime inputs and homes are synthetic.
 """
+from copy import deepcopy
+from datetime import datetime, timezone
 import hashlib
 import json
 import os
@@ -151,6 +153,29 @@ def failed_watch(wire, selection, cursor=None):
           answer['exit']['_tag'] == 'Failure' and 'SourceFailed' in json.dumps(answer), 'watch refused')
 
 
+def check_wake(event, handle, home, label, preview=None):
+    ts = event['payload']['messageTs']
+    seconds, fraction = ts.split('.')
+    instant = datetime.fromtimestamp(int(seconds), timezone.utc)
+    summary = f'{label} (message time {instant:%Y-%m-%d %H:%M:%S}.{fraction} UTC)'
+    if preview is not None:
+        summary += ' | Untrusted message excerpt: ' + json.dumps(preview)
+    check(event['summary'] == summary, f"{event['type']} summary: {event['summary']!r}")
+    check(('preview' in event['payload']) == (preview is not None) and event['payload'].get('preview') == preview,
+          'preview presence and contents')
+    subject = 'slack:' + handle[6:]
+    capture = subprocess.run([BUN, str(Path(__file__).with_name('archive_wake.ts'))], cwd=REPO,
+                             env={'HOME': str(home), 'PATH': os.environ['PATH']}, timeout=20,
+                             input=json.dumps(dict(event=event, subject=subject)), capture_output=True, text=True)
+    check(capture.returncode == 0, capture.stderr)
+    expected = (f'1 event on sub_7f3k (slack, {subject})\n  #1 {event["type"]}   {summary}\n'
+                'Read  exangelos events sub_7f3k\nAck   exangelos ack sub_7f3k --through 1')
+    check(json.loads(capture.stdout) == [dict(program='/fake/bin/t3', args=['thread', 'send', '--', 'fixture', '-'],
+                                               stdin=expected)], 'rendered T3 command and stdin')
+    with (home.parent / 'rendered-wakes.jsonl').open('a') as log:
+        log.write(capture.stdout.strip() + '\n')
+
+
 def exercise(installed, home):
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(REPO / 'connectors/slack/direct'))
@@ -197,7 +222,7 @@ def exercise(installed, home):
     state = fixture()
     state['bootData']['team_domain'] = 'fixture'
     state['channels'] = {CHANNEL: {'id': CHANNEL, 'name': 'fixture'}}
-    state['users'] = {'U0000002': {'profile': {'display_name': 'Fixture Author'}}}
+    state['users'] = {'U0000002': {'profile': {'display_name': 'Fixture Avery'}}}
     messages = state['messages'][CHANNEL]
     other = '1700000001.000001'
 
@@ -254,9 +279,9 @@ def exercise(installed, home):
     add(outside_ts, other)
     database(app, state, sequence=30)
 
-    def resume(handle):
+    def resume(handle, previews=None):
         with Wire(installed, home) as wire:
-            wire.configure(config)
+            wire.configure(config if previews is None else dict(config, messagePreviews=previews))
             return wire.chunk(wire.watch(handle, cursors[handle]))
 
     outside = resume(replies)
@@ -275,7 +300,7 @@ def exercise(installed, home):
             link = f'https://fixture.slack.com/archives/{CHANNEL}/p{ts.replace(".", "")}'
             context = dict(version=1, count=1, messageTs=ts, conversationLabel='Slack #fixture', permalink=link)
             if parent:
-                context.update(sender='Fixture Author', permalink=f'{link}?thread_ts={parent}&cid={CHANNEL}')
+                context.update(sender='Fixture Avery', permalink=f'{link}?thread_ts={parent}&cid={CHANNEL}')
             expected_context[ts] = context
         delivered = [item['event']['payload'] for item in batch]
         wanted = [TIME, reply, outside_ts] if handle == conversation else [reply]
@@ -298,6 +323,50 @@ def exercise(installed, home):
         check(describe(wire, top, 'replies') == replies, 'stable handle after consent restored')
         wire.watch(replies, batches[replies][-1]['cursor'])
         wire.receive(1.2, quiet=True)
+    check_wake(batches[replies][0]['event'], replies, home, 'Thread reply by "Fixture Avery" in "Slack #fixture"')
+    cursors[conversation] = batches[conversation][-1]['cursor']
+    with Wire(installed, home) as wire:
+        wire.configure(dict(config, messagePreviews='enabled'))
+        check(describe(wire, CHANNEL) == conversation, 'preview opt-in preserves subject')
+        wire.watch(conversation, cursors[conversation])
+        wire.receive(1.2, quiet=True)
+
+    new = current_timestamp()
+    add(new)
+    new_reply = current_timestamp()
+    add(new_reply, TIME)
+    messages[new]['text'] = 'new excerpt'
+    messages[new_reply]['text'] = 'reply excerpt'
+    messages[TIME]['text'] = 'edited excerpt'
+    state['reactions'][messages[TIME]['_rxn_key']] = [{'name': 'heart', 'count': 1, 'users': ['U0000002']}]
+    database(app, state, sequence=55)
+    enabled = resume(conversation, 'enabled')
+    expected = {
+        'message.new': ('New message by "Fixture Avery"', new, 'new excerpt'),
+        'thread.reply': ('Thread reply by "Fixture Avery"', new_reply, 'reply excerpt'),
+        'message.edited': ('Message edited by unknown author', TIME, 'edited excerpt'),
+        'reaction.added': ('Reaction added to message by unknown author', TIME, None),
+        'reaction.removed': ('Reaction removed from message by unknown author', TIME, None),
+    }
+    check(sorted(item['event']['type'] for item in enabled) == sorted(expected), 'all enabled delivery kinds')
+    for item in enabled:
+        event = item['event']
+        action, ts, preview = expected[event['type']]
+        check(event['payload']['messageTs'] == ts, 'preview attached to the changed message')
+        check_wake(event, conversation, home, action + ' in "Slack #fixture"', preview)
+    with Wire(installed, home) as wire:
+        wire.configure(dict(config, messagePreviews='enabled'))
+        scoped = wire.chunk(wire.watch(replies, batches[replies][-1]['cursor']))
+        check(len(scoped) == 1 and scoped[0]['event']['type'] == 'thread.reply'
+              and scoped[0]['event']['payload']['messageTs'] == new_reply
+              and scoped[0]['event']['payload']['preview'] == 'reply excerpt', 'only selected reply excerpt delivered')
+    check(resume(conversation, 'disabled') == enabled, 'disabled configuration preserves the committed edge')
+    cursors[conversation] = enabled[-1]['cursor']
+    messages[new]['text'] = 'disabled private text'
+    database(app, state, sequence=60)
+    disabled = resume(conversation, 'disabled')
+    check(len(disabled) == 1 and disabled[0]['event']['type'] == 'message.edited', 'one future edit after opt-out')
+    check_wake(disabled[0]['event'], conversation, home, 'Message edited by "Fixture Avery" in "Slack #fixture"')
     with Wire(installed, home) as wire:
         wire.configure(config)
         dm_handle = describe(wire, dm)
@@ -334,15 +403,25 @@ def exercise(installed, home):
     with sqlite3.connect(private / 'ledger.sqlite3') as db:
         edge = json.loads(db.execute('SELECT result FROM edges WHERE lineage=? AND source=?',
                                      (lineage, source)).fetchone()[0])
+        for event in edge['events']:
+            del event['summary']
+        db.execute('UPDATE edges SET result=? WHERE lineage=? AND source=?', (json.dumps(edge), lineage, source))
+    prior = deepcopy(batches[replies])
+    for item in prior:
+        item['event']['summary'] = 'Selected Slack conversation changed in a persisted snapshot'
+    check(resume(replies, 'enabled') == prior, 'exact pre-summary v1 replay with previews enabled')
+    with sqlite3.connect(private / 'ledger.sqlite3') as db:
         db.execute('DELETE FROM watch_starts WHERE lineage=?', (lineage,))
         for event in edge['events']:
             del event['payload']
         db.execute('UPDATE edges SET result=? WHERE lineage=? AND source=?', (json.dumps(edge), lineage, source))
-    legacy_batch = resume(replies)
-    for item in batches[replies]:
+    legacy_batch = resume(replies, 'enabled')
+    for item in prior:
         item['event']['payload'] = {'count': 1}
-    check(legacy_batch == batches[replies], 'legacy edge preserves the exact count-only delivery')
+    check(legacy_batch == prior, 'exact pre-context count-only replay with previews enabled')
     cursors[replies] = legacy_batch[-1]['cursor']
+    check(resume(replies) == scoped, 'committed successor replays before the legacy tip ends')
+    cursors[replies] = scoped[-1]['cursor']
     end = resume(replies)
     check(len(end) == 1 and end[0]['_tag'] == 'End' and 'Create a new subscription' in end[0]['reason'],
           'legacy cursor tip ends with actionable reason')
@@ -369,7 +448,7 @@ def exercise(installed, home):
     final_state = inventory(private)
     check(all(entry in final_state for entry in original), 'legacy user state preserved')
     return dict(dmHistorySuppressed=19, dmArrivals=3, distinctSubjects=len(distinct), conversationEvents=len(batches[conversation]),
-                repliesEvents=len(batches[replies]), exactReplays=2, legacyPayloadReplays=1, preservedLegacyFiles=len(original))
+                repliesEvents=len(batches[replies]), exactReplays=2, renderedWakeChecks=7, legacyV1Replays=1, legacyPayloadReplays=1, preservedLegacyFiles=len(original))
 
 
 def main():
