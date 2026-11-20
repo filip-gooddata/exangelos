@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite"
-import { chmod, copyFile, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rename, rm, symlink, writeFile } from "node:fs/promises"
+import { chmod, copyFile, lstat, mkdir, mkdtemp, readdir, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 
@@ -699,18 +699,34 @@ describe("official connectors from a release address", () => {
       "database(Path(sys.argv[1]), state)"
     ].join("\n"), cache], { cwd: join(repo, "connectors/slack/direct"), env: env() })
     expect(fixture.exitCode, fixture.stderr.toString()).toBe(0)
-    const subscribe = (id: string) => run(exangelos, "--json", "subscribe", "slack", id, "--intent", "Observe cached messages", "--pull-only")
+    const subscribe = (id: string, ...options: Array<string>) => run(exangelos, "--json", "subscribe", "slack", id, ...options, "--intent", "Observe cached messages", "--pull-only")
     expect(subscribe("C0000001").status).toBe(1)
     json("connector", "configure", "slack", `cacheRoot=${cache}`, "subscriptionAccess=persisted-cache")
     expect(subscribe("D9999999").status).toBe(1)
     const subscriptions = ["C0000001", "D0000002"].map((id) => {
       const result = subscribe(id)
       expect(result.status, result.stdout + result.stderr).toBe(0)
-      expect(result.stdout).not.toContain(id)
       return JSON.parse(result.stdout)
     })
     expect(subscriptions[0].subject).not.toBe(subscriptions[1].subject)
     for (const subscription of subscriptions) json("cancel", subscription.id)
+    const reference = "C0000001:1700000000.000001"
+    const ambiguous = subscribe(reference)
+    expect(ambiguous.status).toBe(1)
+    expect(ambiguous.stderr + ambiguous.stdout).toContain("scope=replies")
+    const whole = subscribe(reference, "scope=conversation")
+    expect(whole.status, whole.stderr).toBe(0)
+    expect(JSON.parse(whole.stdout).subject).toBe(subscriptions[0].subject)
+    const response = await mcpReplies({
+      jsonrpc: "2.0", id: 2, method: "tools/call",
+      params: { name: "subscribe", arguments: { connector: "slack", intent: "Watch replies", pullOnly: true,
+        parameters: { selection: reference, scope: "replies" } } }
+    })
+    const replies = response[1].result.structuredContent
+    expect(replies.id).toEqual(expect.any(String))
+    expect(replies.subject).not.toBe(subscriptions[0].subject)
+    json("cancel", replies.id)
+    json("cancel", JSON.parse(whole.stdout).id)
     json("connector", "configure", "slack", "subscriptionAccess=disabled")
     expect(connectorNamed("slack").configuration._tag).toBe("Set")
     expect(subscribe("C0000001").status).toBe(1)
@@ -722,54 +738,25 @@ describe("official connectors from a release address", () => {
     json("connector", "remove", "slack")
   }, 60_000)
 
-  it("configures official Slack from a cached snippet and reconnects after clearing the selector", async () => {
-    const cache = join(root, "slack-cache")
-    await mkdir(cache)
-    const fixture = Bun.spawnSync(["python3", "-B", "-c",
-      "from pathlib import Path; import sys; from test_source import database; database(Path(sys.argv[1]))", cache
-    ], { cwd: join(repo, "connectors/slack/direct"), env: env() })
-    expect(fixture.exitCode, fixture.stderr.toString()).toBe(0)
-    const snippet = join(root, "slack-snippet")
-    await writeFile(snippet, "fixture body", { mode: 0o600 })
-    run(exangelos, "subscribe", "slack", "selected", "--intent", "Install Slack", "--pull-only")
-    expect(connectorNamed("slack")).toMatchObject({ trust: "enabled", origin: { _tag: "Official" } })
-    const configure = (...fields: Array<string>) => json("connector", "configure", "slack", ...fields)
-    configure(`cacheRoot=${cache}`, "--secret-command", "sourceMode=echo persisted-cache",
-      "--secret-file", `conversationSnippet=${snippet}`)
-    const pin = join(home, "connector-state/slack/setup.json")
-    const pinned = await readFile(pin, "utf8")
-    configure("subscriptionAccess=persisted-cache")
-    expect(await readFile(pin, "utf8")).toBe(pinned)
-    configure("--secret-command", "sourceMode=echo pinned-cache")
-    expect(await readFile(pin, "utf8")).toBe(pinned)
-    const subscription = json("subscribe", "slack", "selected", "--intent", "Watch cached conversation", "--pull-only")
-    expect(subscription).toMatchObject({ connector: "slack", subject: "slack:selected" })
-    await eventually(() => lstat(join(home, "connector-state/slack/ledger.sqlite3")))
-    json("cancel", subscription.id)
-    const archiveName = `slack-${connectorNamed("slack").version}.tar.gz`
-    json("connector", "remove", "slack")
-    const currentState = join(home, "connector-state/slack")
+  it("refuses importing the official Slack archive over legacy private state", async () => {
     const legacyState = join(home, "connectors/slack")
-    await rename(currentState, legacyState)
-    const ledger = await readFile(join(legacyState, "ledger.sqlite3"))
-    const refused = run(exangelos, "connector", "import", join(root, "release", archiveName))
-    expect(refused.status).toBe(1)
-    expect(refused.stderr).toContain("Slack private state occupies the install directory")
-    expect(await readFile(join(legacyState, "setup.json"), "utf8")).toBe(pinned)
-    expect(await readFile(join(legacyState, "ledger.sqlite3"))).toEqual(ledger)
-    await rename(legacyState, currentState)
-    run(exangelos, "subscribe", "slack", "selected", "--intent", "Reinstall Slack", "--pull-only")
-    configure(`cacheRoot=${cache}`, "--secret-command", "sourceMode=echo pinned-cache")
-    expect(await readFile(pin, "utf8")).toBe(pinned)
-    const conversation = join(root, "slack-conversation")
-    await writeFile(conversation, "https://fixture.slack.com/archives/C0000001/p123?thread_ts=123.456&cid=C0000001")
-    configure("--secret-command", "sourceMode=echo persisted-cache", "--secret-command", "selectionRevision=echo 2",
-      "--secret-file", `conversationId=${conversation}`)
-    const reset = JSON.parse(await readFile(pin, "utf8"))
-    expect(reset.request.selection).toEqual(JSON.parse(pinned).request.selection)
-    expect(reset.request.key).not.toBe(JSON.parse(pinned).request.key)
-    json("connector", "remove", "slack")
-  }, 60_000)
+    await mkdir(legacyState, { recursive: true })
+    const pin = join(legacyState, "setup.json")
+    const ledger = join(legacyState, "ledger.sqlite3")
+    await writeFile(pin, "synthetic legacy pin", { mode: 0o600 })
+    await writeFile(ledger, "synthetic legacy ledger", { mode: 0o600 })
+    try {
+      const archives = await readdir(join(root, "release"))
+      const archive = archives.find((name) => /^slack-.*\.tar\.gz$/.test(name))!
+      const refused = run(exangelos, "connector", "import", join(root, "release", archive))
+      expect(refused.status).toBe(1)
+      expect(refused.stderr).toContain("Slack private state occupies the install directory")
+      expect(await readFile(pin, "utf8")).toBe("synthetic legacy pin")
+      expect(await readFile(ledger, "utf8")).toBe("synthetic legacy ledger")
+    } finally {
+      await rm(legacyState, { recursive: true })
+    }
+  })
 
   it("wakes once for a file event beside a template subscription, and switches event alerts", async () => {
     const drops = join(root, "drops")

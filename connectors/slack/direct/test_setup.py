@@ -1,238 +1,332 @@
 import json
 import os
-import shutil
 from pathlib import Path
+import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
 
+import ledger
 import setup
 import source
-import test_source
-from test_direct import fixture, SELECTION
+from test_direct import CHANNEL, TIME, SELECTION, fixture
+from test_source import database
+
+
+REPLY = '12345678901234567890.000010'
+OTHER = '1700000001.000005'
+
+
+def add_message(state, timestamp, thread=None, channel=CHANNEL):
+    row = dict(ts=timestamp, text='synthetic body', _rxn_key=f'message-{timestamp}-{channel}')
+    if thread:
+        row['thread_ts'] = thread
+    state['messages'].setdefault(channel, {})[timestamp] = row
 
 
 class SetupTests(unittest.TestCase):
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.temp.cleanup)
-        self.home = Path(self.temp.name).resolve() / 'different-user-home'
-        self.home.mkdir()
-        self.environment = mock.patch.dict(os.environ, {
-            'HOME': str(self.home), 'EXANGELOS_HOME': str(self.home / 'state'),
-            'XDG_DATA_HOME': str(self.home / 'xdg'), 'XDG_CONFIG_HOME': str(self.home / 'config'),
-            'XDG_CACHE_HOME': str(self.home / 'cache'), 'APPDATA': str(self.home / 'roaming'),
-            'LOCALAPPDATA': str(self.home / 'local'),
-        })
-        self.environment.start()
-        self.addCleanup(self.environment.stop)
-        self.platform = mock.patch.object(setup.sys, 'platform', 'darwin')
-        self.platform.start()
-        self.addCleanup(self.platform.stop)
-        self.values = {'sourceMode': 'persisted-cache', 'conversationSnippet': 'fixture body'}
+        temp = tempfile.TemporaryDirectory()
+        self.addCleanup(temp.cleanup)
+        self.home = Path(temp.name).resolve()
+        self.root = self.home / 'cache'
+        self.root.mkdir()
+        env = mock.patch.dict(os.environ, HOME=str(self.home), EXANGELOS_HOME=str(self.home / 'state'))
+        env.start()
+        self.addCleanup(env.stop)
+        self.state = fixture()
+        self.state['bootData']['team_domain'] = 'fixture'
+        add_message(self.state, REPLY, TIME)
+        add_message(self.state, OTHER)
+        database(self.root, self.state)
+        self.values = dict(subscriptionAccess='persisted-cache', cacheRoot=str(self.root))
 
-    def database(self, root, identity=SELECTION):
-        root.mkdir(parents=True, exist_ok=True)
-        state = fixture()
-        state['bootData']['user_id'] = identity[1]
-        state['selfTeamIds'] = {'teamId': identity[0], 'defaultWorkspaceId': identity[0]}
-        state['messages'] = {identity[2]: next(iter(state['messages'].values()))}
-        state['reactions'] = {}
-        for message in state['messages'][identity[2]].values():
-            message['_rxn_key'] = f"message-{message['ts']}-{identity[2]}"
-        with mock.patch.object(test_source, 'SELECTION', identity):
-            test_source.database(root, state)
+    def resolve(self, subject, **kwargs):
+        return setup.setup(dict(self.values, subject=subject, **kwargs))
 
-    def test_two_users_layouts_accounts_and_renamed_home(self):
-        results = []
-        for location, identity in [('standard', SELECTION), ('sandbox', ('T0000022', 'U0000033', 'C0000044'))]:
-            home = self.home / location
-            home.mkdir()
-            with mock.patch.dict(os.environ, HOME=str(home), EXANGELOS_HOME=str(home / 'private-state')):
-                self.database(setup.locations('')[location], identity)
-                request = setup.setup(self.values)
-                self.assertEqual(request['selection'], dict(workspace=identity[0], owner=identity[1], conversations=[identity[2]]))
-                self.assertTrue(request['root'].startswith(str(home)))
-                self.assertEqual(request, setup.setup(self.values))
-                snapshot = source.acquire(request)
-                self.assertEqual(len(snapshot['messages']), 1)
-                self.assertTrue(snapshot['complete'])
-                results.append((request['key'], snapshot['scope']))
-                path = home / 'private-state/connector-state/slack/setup.json'
-                self.assertEqual(path.stat().st_mode & 0o777, 0o600)
-                self.assertNotIn('fixture body', path.read_text())
-                renamed = self.home / (location + '-renamed')
-                home.rename(renamed)
-            with mock.patch.dict(os.environ, HOME=str(renamed), EXANGELOS_HOME=str(renamed / 'private-state')):
-                moved = setup.setup(self.values)
-                self.assertEqual(moved['selection'], request['selection'])
-                self.assertEqual(moved['key'], request['key'])
-                self.assertEqual(source.acquire(moved)['scope'], snapshot['scope'])
-        self.assertNotEqual(results[0][0], results[1][0])
-        self.assertNotEqual(results[0][1], results[1][1])
+    def reject(self, code, subject, **kwargs):
+        with self.assertRaises(setup.SetupRejected) as error:
+            self.resolve(subject, **kwargs)
+        self.assertEqual(error.exception.args, (code,))
 
-    def test_direct_id_links_and_selector_free_resume(self):
-        root = setup.locations('')['standard']
-        self.database(root)
-        team, _, conversation = SELECTION
-        values = {'sourceMode': 'persisted-cache'}
-        for selector in (conversation, f'https://fixture.slack.com/archives/{conversation}/p123',
-                         f'https://fixture.slack.com/archives/{conversation}/p123?thread_ts=123.456&cid={conversation}'):
-            request = setup.setup(dict(values, conversationId=selector))
-            self.assertEqual(request, setup.setup(values))
-        with self.assertRaisesRegex(setup.SetupRejected, '24'):
-            setup.setup(dict(values, selectionRevision='2'))
-        linked = setup.setup(dict(values, selectionRevision='2',
-                                  conversationId=f'https://app.slack.com/client/{team}/{conversation}'))
-        self.assertEqual(request['selection'], linked['selection'])
-        self.assertNotEqual(request['key'], linked['key'])
+    def test_conversation_and_message_aliases_pin_canonical_scopes(self):
+        full = self.resolve(CHANNEL)
+        thread = self.resolve(REPLY)
+        self.assertEqual(full['label'], f'Slack conversation {CHANNEL}')
+        self.assertEqual(thread['selection']['thread'], TIME)
+        self.assertNotEqual(full['expectedScope'], thread['expectedScope'])
+        self.assertEqual(self.resolve(TIME, scope='conversation'), full)
+        self.assertEqual(self.resolve(REPLY, scope='conversation'), full)
+        self.reject(27, TIME)
+        archive = f'https://fixture.slack.com/archives/{CHANNEL}'
+        self.assertEqual(self.resolve(archive), full)
+        self.assertEqual(self.resolve(f'https://app.slack.com/client/{SELECTION[0]}/{CHANNEL}'), full)
+        self.assertEqual(self.resolve(f'{CHANNEL}:{REPLY}'), thread)
+        self.assertEqual(self.resolve(f'{archive}/p{REPLY.replace(".", "")}?cid={CHANNEL}&thread_ts={TIME}'), thread)
+        self.assertEqual(self.resolve(TIME, scope='replies'), thread)
+        self.assertEqual(self.resolve('scope-' + thread['expectedScope']), thread)
+        self.assertEqual(self.resolve('scope-' + full['expectedScope']), full)
 
-    def test_selector_failures_do_not_create_pin(self):
-        root = setup.locations('')['standard']
-        self.database(root)
-        for selector, code in [('https://other.invalid/archives/' + SELECTION[2], 20),
-                               (f'https://app.slack.com/client/T0000022/{SELECTION[2]}', 22),
-                               (f'https://fixture.slack.com/archives/{SELECTION[2]}/p123?cid=D0000099&thread_ts=123.456', 20),
-                               ('D0000099', 22)]:
-            with self.assertRaisesRegex(setup.SetupRejected, str(code)):
-                setup.setup({'sourceMode': 'persisted-cache', 'conversationId': selector})
-        with self.assertRaisesRegex(setup.SetupRejected, '20'):
-            setup.setup(dict(self.values, conversationId=SELECTION[2]))
-        self.database(setup.locations('')['sandbox'])
-        with self.assertRaisesRegex(setup.SetupRejected, '23'):
-            setup.setup({'sourceMode': 'persisted-cache', 'conversationId': SELECTION[2]})
-        self.assertFalse((self.home / 'state/connector-state/slack/setup.json').exists())
+    def test_archive_domain_and_opaque_parent(self):
+        url = f'https://fixture.slack.com/archives/{CHANNEL}/p' + TIME.replace('.', '')
+        del self.state['bootData']['team_domain']
+        database(self.root, self.state)
+        self.reject(22, url)
+        self.state['teams'] = {SELECTION[0]: dict(id=SELECTION[0], domain='fixture')}
+        database(self.root, self.state)
+        self.reject(22, url.replace('fixture.', 'other.'))
+        self.reject(27, url)
+        self.state['bootData']['team_domain'] = 'conflict'
+        database(self.root, self.state)
+        self.reject(22, url)
+        for field in ('thread_ts', 'ts'):
+            with self.subTest(field=field):
+                row = self.state['messages'][CHANNEL][TIME]
+                row[field] = b'^\x00'
+                database(self.root, self.state)
+                with self.assertRaises(ValueError) as error:
+                    self.resolve(TIME)
+                self.assertNotIsInstance(error.exception, setup.SetupRejected)
+                row[field] = TIME
 
-    def test_reconnect_to_existing_external_state_directory(self):
-        self.database(setup.locations('')['standard'])
-        request = setup.setup(self.values)
-        base = self.home / 'state'
-        legacy = base / 'connectors/slack'
-        legacy.parent.mkdir()
-        (base / 'connector-state/slack').rename(legacy)
-        self.assertEqual(setup.setup({'sourceMode': 'pinned-cache'}), request)
-        self.assertFalse((base / 'connector-state/slack').exists())
+    def test_labels_only_from_selected_account_metadata(self):
+        dm, peer = 'D9999999', 'U1234567'
+        add_message(self.state, OTHER, channel=dm)
+        self.state['channels'] = {CHANNEL: dict(name='fixture-name'), dm: dict(id=dm, user=peer)}
+        self.state['users'] = {peer: dict(id=peer, profile=dict(display_name='Fixture Peer'))}
+        row = self.state['messages'][dm][OTHER]
+        row['user'] = 'U7654321'
+        self.state['users'][row['user']] = dict(name='Unrelated Author')
+        database(self.root, self.state)
+        self.assertEqual(self.resolve(CHANNEL)['label'], 'Slack #fixture-name')
+        self.assertEqual(self.resolve(dm)['label'], 'Slack DM with Fixture Peer')
+        self.state['users'][peer]['profile']['display_name'] = 'unsafe\nname'
+        database(self.root, self.state)
+        self.assertEqual(self.resolve(dm)['label'], 'Slack DM with ' + peer)
+        del self.state['channels'][dm]['user']
+        database(self.root, self.state)
+        self.assertEqual(self.resolve(dm)['label'], 'Slack conversation ' + dm)
+        group = 'G7777777'
+        add_message(self.state, OTHER, channel=group)
+        self.state['channels'][group] = dict(is_mpim=True, name='mpdm-private-roster')
+        database(self.root, self.state)
+        self.assertEqual(self.resolve(group)['label'], 'Slack group DM ' + group)
 
-    def test_positional_conversation_pins_are_scoped_and_never_replace_selected(self):
-        roots = setup.locations('')
-        self.database(roots['standard'])
-        selected = setup.setup(self.values)
-        values = dict(subscriptionAccess='persisted-cache', subscription=SELECTION[2])
-        first = setup.subscription(values)
-        handle = 'scope-' + first['expectedScope']
-        self.database(roots['sandbox'], ('T0000022', 'U0000033', SELECTION[2]))
-        with self.assertRaisesRegex(setup.SetupRejected, '23'):
-            setup.subscription(values)
-        self.assertEqual(setup.subscription(dict(values, subscription=handle)), first)
-        self.assertEqual(setup.setup(self.values), selected)
-        other = setup.subscription(dict(values, cacheRoot=str(roots['sandbox'])))
-        self.assertNotEqual(first['expectedScope'], other['expectedScope'])
-        with self.assertRaises(ValueError):
-            setup.subscription(dict(values, cacheRoot=str(roots['sandbox']), subscription=handle))
-        with self.assertRaises(ValueError):
-            setup.subscription(dict(values, selectionRevision='2', subscription=handle))
-        with self.assertRaisesRegex(setup.SetupRejected, '22'):
-            setup.subscription(dict(values, subscription='D9999999'))
+    def test_opaque_identity_with_other_evidence_fails_closed(self):
+        self.state['bootData']['team_id'] = b'^\x00'
+        database(self.root, self.state)
+        with self.assertRaises(ValueError) as error:
+            self.resolve(TIME)
+        self.assertNotIsInstance(error.exception, setup.SetupRejected)
 
-    def test_ambiguity_between_roots_accounts_and_custom_fallback(self):
-        roots = setup.locations('')
-        self.database(roots['standard'])
-        self.database(roots['sandbox'], ('T0000022', 'U0000033', SELECTION[2]))
-        with self.assertRaises(ValueError):
-            setup.setup(self.values)
-        self.assertFalse((self.home / 'state/connector-state/slack/setup.json').exists())
-        request = setup.setup(dict(self.values, cacheRoot=str(roots['sandbox'])))
-        self.assertEqual(request['selection']['owner'], 'U0000033')
-        self.assertEqual(request['root'], str(roots['sandbox']))
+    def test_held_setup_lock_returns_retryable_exit(self):
+        directory = setup.private_directory()
+        with setup.locked(directory):
+            process = subprocess.run([sys.executable, str(Path(setup.__file__))], capture_output=True,
+                                     input=json.dumps(dict(self.values, subject=CHANNEL)), text=True, timeout=10)
+            self.assertEqual((process.returncode, process.stdout, process.stderr), (25, '', ''))
+            self.assertFalse((directory / 'subscriptions-key.json').exists())
+        self.assertEqual(self.resolve(CHANNEL)['selection']['conversations'], [CHANNEL])
 
-    def test_multiple_accounts_in_one_source_are_not_selected_by_order(self):
-        root = setup.locations('')['standard']
-        self.database(root)
-        first = fixture()
-        second = fixture()
-        second['bootData']['user_id'] = 'U0000033'
-        def scan(root, observe):
-            observe(first, 10)
-            observe(second, 20)
-            return dict(external_rejections=0, files_changed=0, current_unchanged=True)
-        with mock.patch.object(source.scan, 'run', side_effect=scan):
+    def test_concurrent_processes_share_the_same_scoped_pin(self):
+        command = [sys.executable, str(Path(setup.__file__))]
+        payload = json.dumps(dict(self.values, subject=REPLY))
+        workers = [subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                                    stderr=subprocess.PIPE, text=True) for _ in range(4)]
+        for worker in workers:
+            worker.stdin.write(payload)
+            worker.stdin.close()
+            worker.stdin = None
+        responses = []
+        for worker in workers:
+            stdout, stderr = worker.communicate(timeout=30)
+            self.assertEqual(worker.returncode, 0, stderr)
+            responses.append(json.loads(stdout))
+        self.assertTrue(all(response == responses[0] for response in responses))
+        self.assertEqual(responses[0], self.resolve('scope-' + responses[0]['expectedScope']))
+
+    def test_direct_and_group_ids(self):
+        for prefix in ('D', 'G'):
+            channel = prefix + CHANNEL[1:]
+            add_message(self.state, TIME, channel=channel)
+            database(self.root, self.state)
+            request = self.resolve(channel)
+            self.assertEqual(request['selection']['conversations'], [channel])
+
+    def test_invalid_unknown_and_ambiguous_subjects(self):
+        archive = f'https://fixture.slack.com/archives/{CHANNEL}'
+        for invalid in ('selected', TIME + ' ', 'http' + archive[5:], archive + '#fragment',
+                        archive + '/p123', archive + '/p1234567?thread_ts=' + TIME + '&cid=D0000002',
+                        archive + '/p1234567?cid=' + CHANNEL + '&cid=' + CHANNEL,
+                        'https://x.slack.com.evil/archives/' + CHANNEL):
+            self.reject(20, invalid)
+        self.reject(20, CHANNEL, scope='replies')
+        self.reject(20, TIME, scope=None)
+        self.reject(22, archive + '/p' + REPLY.replace('.', '') + '?thread_ts=' + OTHER)
+        self.reject(22, f'https://app.slack.com/client/T9999999/{CHANNEL}')
+        self.reject(22, '1700000000.00001')
+        add_message(self.state, TIME, channel='G9999999')
+        database(self.root, self.state)
+        self.reject(23, TIME)
+        self.assertEqual(self.resolve(f'{CHANNEL}:{TIME}', scope='replies')['selection']['thread'], TIME)
+
+    def test_filtered_observations_and_ledger_cursor_binding(self):
+        def snapshot(subject):
+            request = self.resolve(subject)
+            request.pop('label')
+            return source.acquire(request)
+
+        first = snapshot(REPLY)
+        self.assertEqual([row['reply'] for row in first['messages']], [True])
+        path = self.home / 'ledger.sqlite3'
+        def reconcile(snap, **kwargs):
+            return ledger.reconcile(dict(snapshot=snap, observedAt=1700000000000, **kwargs), path)
+        cursor = reconcile(first)['cursor']
+        for timestamp in (TIME, OTHER):
+            self.state['messages'][CHANNEL][timestamp]['text'] += ' changed'
+        add_message(self.state, '1700000002.000000', OTHER)
+        database(self.root, self.state, sequence=30)
+        second = snapshot(REPLY)
+        self.assertEqual(first['snapshot'], second['snapshot'])
+        transition = reconcile(second, cursor=cursor)
+        self.assertEqual(transition['events'], [])
+        cursor = transition['cursor']
+        add_message(self.state, '1700000002.000001', TIME)
+        database(self.root, self.state, sequence=40)
+        events = reconcile(snapshot(REPLY), cursor=cursor)['events']
+        self.assertEqual([event['type'] for event in events], ['thread.reply'])
+        for other_scope in (CHANNEL, '1700000002.000000'):
+            with self.assertRaises(ledger.ObservationGap):
+                reconcile(snapshot(other_scope), cursor=cursor)
+
+    def test_ambiguity_across_accounts_and_pinned_resume(self):
+        with mock.patch.object(setup.sys, 'platform', 'darwin'):
+            roots = setup.locations('')
+            for root in roots.values():
+                root.mkdir(parents=True)
+            database(roots['standard'], self.state)
+            self.values.pop('cacheRoot')
+            roots['sandbox'].rmdir()
+            first = self.resolve(REPLY)
+            roots['sandbox'].mkdir()
+            other = fixture()
+            other['bootData']['user_id'] = 'U9999999'
+            add_message(other, REPLY, TIME)
+            with mock.patch('test_source.SELECTION', (SELECTION[0], 'U9999999', CHANNEL)):
+                database(roots['sandbox'], other)
+            url = f'https://fixture.slack.com/archives/{CHANNEL}/p' + REPLY.replace('.', '')
+            self.reject(23, url)
+            self.reject(23, REPLY)
+            self.reject(23, CHANNEL)
+            self.assertEqual(self.resolve('scope-' + first['expectedScope']), first)
+
+    def test_two_accounts_in_one_indexeddb(self):
+        workspace, owner = 'T0000002', 'U0000002'
+        other = fixture()
+        other['bootData'].update(user_id=owner, team_domain='second')
+        other['selfTeamIds']['teamId'] = workspace
+        other['selfTeamIds']['defaultWorkspaceId'] = workspace
+        unique = '1234567890.000003'
+        add_message(other, unique, TIME)
+        database(self.root, self.state, additional_accounts=[((workspace, owner), other)])
+        self.reject(23, CHANNEL)
+        self.reject(23, TIME, scope='conversation')
+        first = self.resolve(REPLY)
+        second = self.resolve(unique)
+        self.assertEqual(first['selection']['owner'], SELECTION[1])
+        self.assertEqual(second['selection']['owner'], owner)
+        self.assertEqual(second['selection']['workspace'], workspace)
+        self.assertNotEqual(first['expectedScope'], second['expectedScope'])
+        self.assertEqual(self.resolve('scope-' + second['expectedScope']), second)
+        url = f'https://second.slack.com/archives/{CHANNEL}/p' + TIME.replace('.', '')
+        self.assertEqual(self.resolve(url, scope='replies'), second)
+
+    def test_equivalent_root_spelling_reopens_same_pin(self):
+        original = self.resolve(REPLY)
+        for suffix in ('/', '/.', '/../cache'):
+            alias = str(self.root) + suffix
+            for subject in (REPLY, 'scope-' + original['expectedScope']):
+                self.assertEqual(self.resolve(subject, cacheRoot=alias), original)
+
+    def test_case_variant_uses_filesystem_identity(self):
+        original = self.resolve(REPLY)
+        handle = 'scope-' + original['expectedScope']
+        variant = self.root.with_name('CACHE')
+        if not variant.exists():
+            variant.mkdir()
+        if not variant.samefile(self.root):
+            database(variant, self.state)
+            self.reject(24, handle, cacheRoot=str(variant))
+            self.assertNotEqual(self.resolve(REPLY, cacheRoot=str(variant))['expectedScope'], original['expectedScope'])
+            return
+        for subject in (handle, REPLY):
+            resolved = self.resolve(subject, cacheRoot=str(variant))
+            self.assertEqual(resolved['expectedScope'], original['expectedScope'])
+            self.assertEqual(resolved['key'], original['key'])
+            self.assertEqual(resolved['selection'], original['selection'])
+        self.assertEqual(self.resolve(handle), original)
+
+    def test_hidden_reply_in_another_thread_does_not_block_replay(self):
+        pin = self.resolve(REPLY)
+        handle = 'scope-' + pin['expectedScope']
+        def observe():
+            request = self.resolve(handle)
+            request.pop('label')
+            return source.acquire(request)
+        def reconcile(snap, **kwargs):
+            return ledger.reconcile(dict(snapshot=snap, observedAt=1700000000000, **kwargs), self.home / 'ledger')
+        cursor = reconcile(observe())['cursor']
+        add_message(self.state, '1700000002.000001', TIME)
+        database(self.root, self.state, sequence=20)
+        before = observe()
+        batch = reconcile(before, cursor=cursor)
+        self.assertEqual([event['type'] for event in batch['events']], ['thread.reply'])
+        hidden = '1700000003.000001'
+        self.state['messages'][CHANNEL][hidden] = dict(ts=hidden, thread_ts=OTHER, _hidden_stub=True)
+        database(self.root, self.state, sequence=30)
+        self.assertEqual(before['snapshot'], observe()['snapshot'])
+        self.assertEqual(reconcile(observe(), cursor=cursor), batch)
+        for parent in (TIME, None):
+            self.state['messages'][CHANNEL][hidden]['thread_ts'] = parent
+            database(self.root, self.state, sequence=40)
             with self.assertRaises(ValueError):
-                setup.setup(self.values)
-        self.assertFalse((self.home / 'state/connector-state/slack/setup.json').exists())
+                observe()
 
-    def test_missing_consent_does_not_read_app_or_write_state(self):
-        with mock.patch.object(source, 'inventory', side_effect=AssertionError('app read')):
-            for values in ({}, {'conversationSnippet': 'fixture body'}, {'sourceMode': 'other', 'conversationSnippet': 'fixture body'}):
-                with self.assertRaises(ValueError):
+    def test_old_pins_replacement_and_revocation_fail_closed(self):
+        current = self.resolve(REPLY)
+        handle = 'scope-' + current['expectedScope']
+        directory = setup.private_directory()
+        old = 'scope-' + 'f' * 64
+        setup.save_json(directory / (old + '.json'), dict(revision='1', request=current))
+        setup.save_json(directory / 'setup.json', dict(version=1, request=current))
+        with mock.patch.object(source, 'inventory', side_effect=AssertionError('cache read')):
+            self.reject(24, old)
+            self.reject(20, 'selected')
+            self.reject(26, handle, subscriptionAccess='disabled')
+            self.reject(26, REPLY, subscriptionAccess='disabled')
+        self.root.rename(self.home / 'original')
+        self.root.mkdir()
+        database(self.root, self.state)
+        self.reject(24, handle)
+        self.assertNotEqual(current['expectedScope'], self.resolve(REPLY)['expectedScope'])
+
+    def test_process_wire_limits_and_private_pin(self):
+        result = subprocess.run([sys.executable, str(Path(setup.__file__))], capture_output=True,
+                                input=json.dumps(dict(self.values, subject=REPLY)), text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        request = json.loads(result.stdout)
+        self.assertLess(len(request['label']), 128)
+        self.assertNotIn('synthetic body', result.stdout)
+        path = setup.private_directory() / ('scope-' + request['expectedScope'] + '.json')
+        self.assertEqual(path.stat().st_mode & 0o777, 0o600)
+        self.assertNotIn('synthetic body', path.read_text())
+        self.reject(24, 'scope-' + request['expectedScope'], cacheRoot=str(self.home))
+
+    def test_no_consent_precedes_filesystem_access_and_old_bootstrap(self):
+        with mock.patch.object(setup, 'locations', side_effect=AssertionError('access')):
+            for values in ({}, dict(sourceMode='persisted-cache', conversationSnippet='text'),
+                           dict(subscriptionAccess='disabled', subject=CHANNEL)):
+                with self.assertRaisesRegex(setup.SetupRejected, '26'):
                     setup.setup(values)
         self.assertFalse((self.home / 'state').exists())
-
-    def test_pinned_account_never_reselected_and_explicit_reset(self):
-        root = setup.locations('')['standard']
-        self.database(root)
-        request = setup.setup(self.values)
-        saved = (self.home / 'state/connector-state/slack/setup.json').read_bytes()
-        self.database(root, ('T0000022', 'U0000033', SELECTION[2]))
-        with self.assertRaises(ValueError):
-            setup.setup(self.values)
-        self.assertEqual(saved, (self.home / 'state/connector-state/slack/setup.json').read_bytes())
-        new = setup.setup(dict(self.values, selectionRevision='2'))
-        self.assertEqual(new['selection']['owner'], 'U0000033')
-        self.assertNotEqual(new['key'], request['key'])
-        with self.assertRaises(ValueError):
-            setup.setup(dict(self.values, selectionRevision='2', conversationSnippet='fixture'))
-
-    def test_absent_unsupported_unreadable_and_symlink_roots(self):
-        with self.assertRaises(ValueError):
-            setup.setup(self.values)
-        root = setup.locations('')['standard']
-        self.database(root)
-        other = setup.locations('')['sandbox']
-        other.mkdir(parents=True)
-        with self.assertRaises(FileNotFoundError):
-            setup.setup(self.values)
-        other.rmdir()
-        other.symlink_to(root)
-        with self.assertRaises(ValueError):
-            setup.setup(self.values)
-        other.unlink()
-        with mock.patch.object(setup.sys, 'platform', 'linux'):
-            with self.assertRaises(ValueError):
-                setup.setup(self.values)
-            result = setup.setup(dict(self.values, cacheRoot=str(root)))
-            self.assertEqual(result['selection']['owner'], SELECTION[1])
-
-    def test_replacement_between_setup_and_acquisition_requires_reset(self):
-        root = setup.locations('')['standard']
-        self.database(root)
-        request = setup.setup(self.values)
-        self.assertEqual(source.acquire(request)['scope'], request['expectedScope'])
-        folder = root / 'https_app.slack.com_0.indexeddb.leveldb'
-        moved = root / 'original-database'
-        folder.rename(moved)
-        shutil.copytree(moved, folder)
-        with self.assertRaises(ValueError):
-            source.acquire(request)
-        legacy = {key: value for key, value in request.items() if key != 'expectedScope'}
-        self.assertNotEqual(source.acquire(legacy)['scope'], request['expectedScope'])
-        with self.assertRaises(ValueError):
-            setup.setup(self.values)
-        replacement = setup.setup(dict(self.values, selectionRevision='2'))
-        self.assertEqual(source.acquire(replacement)['scope'], replacement['expectedScope'])
-        self.assertNotEqual(replacement['expectedScope'], request['expectedScope'])
-
-    def test_private_state_and_installation_guard(self):
-        root = setup.locations('')['standard']
-        self.database(root)
-        setup.setup(self.values)
-        path = self.home / 'state/connector-state/slack/setup.json'
-        path.chmod(0o644)
-        with self.assertRaises(ValueError):
-            setup.setup(self.values)
-        with mock.patch.dict(os.environ, EXANGELOS_HOME=str(Path(setup.__file__).resolve().parent.parent)):
-            with self.assertRaises(ValueError):
-                setup.setup(self.values)
-
-
-if __name__ == '__main__':
-    unittest.main()

@@ -17,26 +17,35 @@ class Reader(skip_v8.Reader):
         if tag not in field_v8._ENCODINGS:raise ValueError('key_tag')
         span=self.string_span(tag)
         allowed={
-          'root':('messages','threads','bootData','selfTeamIds','channels','reactions'),
-          'bootData':('team_id','user_id'),
+          'root':('messages','threads','bootData','selfTeamIds','channels','reactions','teams','users'),
+          'bootData':('team_id','user_id','team_domain'),
+          'accountTeam':('id','domain'),
+          'accountUser':('id','team_id','name','profile'),
+          'profile':('display_name','real_name'),
           'selfTeamIds':('teamId','defaultWorkspaceId'),
           'message':('type','subtype','ts','thread_ts','channel','channel_id','team','text','edited','reactions','user','_rxn_key','_hidden_stub','no_display'),
           'edited':('ts',),
           'reaction':('name','users','count'),
-          'channel':('id','context_team_id','is_channel','is_group','is_im','is_mpim','is_private'),
+          'channel':('id','name','user','context_team_id','is_channel','is_group','is_im','is_mpim','is_private'),
           'container':('messages','replies','data'),
         }.get(role,())
         for k in allowed:
             if span==k.encode(field_v8._ENCODINGS[tag]):return k
-        if role in ('messages','threads','channels','container','reactions','users','reactionStore'):
+        if role in ('messages','threads','channels','container','reactions','users','reactionStore','teams','accountUsers'):
             try:s=str(span,field_v8._ENCODINGS[tag])
             except UnicodeError:raise ValueError('encoding')
+            if role=='teams' and re.fullmatch(r'T[A-Z0-9]{6,30}',s):return s
+            if role=='accountUsers' and re.fullmatch(r'[UW][A-Z0-9]{6,30}',s):return s
             if role=='container':return s
             if (role=='reactionStore' and re.fullmatch(r'message-[0-9]{1,20}\.[0-9]{1,10}-[CDG][A-Z0-9]{6,30}',s)):return s
             if (role in ('messages','threads','channels') and re.fullmatch(r'[CDG][A-Z0-9]{6,30}',s)) or (role=='container' and re.fullmatch(r'[0-9]{1,20}(\.[0-9]{1,10})?',s)) or (role in ('reactions','users') and s.isdigit()):return s
         return None
     def child(self,role,key):
-        if role=='root':return 'reactionStore' if key=='reactions' else key
+        if role=='root':return {'reactions':'reactionStore','users':'accountUsers'}.get(key,key)
+        if role=='teams':return 'accountTeam'
+        if role=='accountUsers':return 'accountUser'
+        if role=='accountUser':return 'profile' if key=='profile' else 'string'
+        if role in ('profile','accountTeam'):return 'string'
         if role=='reactionStore':return 'reactions'
         if role in ('bootData','selfTeamIds','edited'):return 'string'
         if role in ('messages','threads'):return 'container'

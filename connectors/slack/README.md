@@ -1,7 +1,7 @@
 # Slack connector
 
 Watches delayed, persisted Slack desktop snapshots for new messages, replies, edits,
-and reaction additions/removals in privately selected conversations. The owner has
+and reaction additions/removals in selected conversations and threads. The owner has
 accepted this delayed mode and waived the previous <=60-second requirement.
 
 Staleness is unbounded. Polling more often cannot reveal unpersisted changes.
@@ -20,120 +20,73 @@ The supported source is Slack desktop's local macOS IndexedDB snapshot; Slack mu
 have persisted a supported snapshot for the selected conversations. No network
 access, Slack token or session extraction is used.
 
-The official process can start and handshake on machines without Slack, Python or
-configuration. It does not launch Python or inspect Slack data before Configure.
-Describe before configuration returns a sanitized invalid-parameters response.
-Configure with missing runtime or app data returns a sanitized rejection while the
-process remains available. Watches require successful configuration.
+Startup, Handshake and Configure need neither Python nor a Slack cache. The connector
+first opens the cache when resolving an authorized subscription. Installed files are
+immutable. Back up the external state directory with subscription cursors.
 
-All installed files are immutable. Production subprocesses disable Python bytecode
-writes; SQLite state belongs in the external data directory described below. Do not
-point `EXANGELOS_HOME` or `XDG_DATA_HOME` inside the installed connector: reconciliation
-rejects a ledger path there. Back up that external ledger with subscription cursors.
+## Subscribe to a conversation or thread
 
-## Configuration and portable setup
-
-With the official Slack connector enabled, authorize per-subscription cache discovery once. On a fresh installation, the first Subscribe command installs the official connector and stops at Configure. After granting consent, repeat Subscribe with the conversation ID:
+On first use, Subscribe installs the official connector. Authorize cache access once,
+then repeat Subscribe with your subject:
 
 ```sh
 exangelos connector configure slack subscriptionAccess=persisted-cache
 exangelos subscribe slack D0000002 --intent 'Watch this conversation' --pull-only
 ```
 
-Replace the example ID with the Slack conversation ID. This permission adds positional subscriptions alongside existing private selections. Set `subscriptionAccess=disabled` to revoke it. It needs no snippet,
-selector file or existing pin. Configure records consent without opening the cache.
-Subscribe resolves the ID against the configured cache roots and requires one
-validated persisted account and conversation. Each subscription stores an opaque
-scope handle. Restart and replay reopen that exact scope. Multiple IDs can be
-watched concurrently. An ID found under multiple accounts or roots is rejected;
-`cacheRoot` can limit discovery to a specific source. This authorizes reading
-persisted data even after logout or access changes. Slack sign-in is unverified.
-
-The positional ID is visible to the shell, process arguments and the host handling
-the Subscribe request. Use the private selector workflow below if this matters.
-Back up the entire private state directory, including the per-subscription pins
-and replay ledger. Changing the configured root or revision invalidates handles
-created under the previous settings. Use a new subscription for a new scope.
-
-Configure `sourceMode=persisted-cache` and supply one secret selector. Use
-`conversationId` for a Slack conversation ID, an HTTPS Slack workspace
-`/archives/<conversation>` link (optionally ending in a message permalink), or
-an `https://app.slack.com/client/<workspace>/<conversation>` link. Client links
-also constrain the workspace ID. Archives links select by conversation ID.
-Alternatively, use `conversationSnippet` for literal text in a cached message.
-This explicitly authorizes discovery across cached messages in the configured roots,
-then continued use of the uniquely matching **persisted** account and conversation,
-even after logout, account switching, or access changes. It does not establish current
-sign-in or permission. Do not choose this mode if current authenticated access is required.
-The connector has no live authority adapter and never extracts tokens or sessions.
-
-For the private selector workflow, Configure detects the current user's macOS home and tries
-Slack's standard `Library/Application Support/Slack/IndexedDB` and App Store sandbox
-`Library/Containers/com.tinyspeck.slackmacgap/Data/Library/Application Support/Slack/IndexedDB`
-locations. It derives workspace, account and conversation IDs from validated persisted
-records. It rejects multiple matching roots/accounts/conversations, unreadable or
-changing discovered roots, unsupported data, and incomplete selections. No arbitrary
-first-account choice is made. A distinctive snippet narrows conversation selection;
-`cacheRoot` can explicitly narrow discovery to one source. Names and IDs are not returned
-in public errors, Describe responses, events or cursors.
-
-| Field | Setup use |
-| --- | --- |
-| `subscriptionAccess` | `persisted-cache` authorizes positional ID discovery. Existing private selection credentials are retained. |
-| `sourceMode` | `persisted-cache` sets up the private selector, and `pinned-cache` reopens that private selection. |
-| `conversationSnippet` | Literal snippet in a persisted message. |
-| `conversationId` | Alternative secret selector for an ID or supported conversation link. |
-| `subscriptionCacheRoot` | Optional source folder for positional subscriptions. Defaults to `cacheRoot` or the standard locations. |
-| `cacheRoot` | Optional fallback: absolute IndexedDB folder for a custom installation or supported-format copied snapshot; otherwise macOS locations are detected. |
-| `selectionRevision` | Optional, default `1`: change deliberately to rediscover/reset a selection; use a new subscription without an old cursor. |
-| `pollIntervalMs` | Optional, default `30000`, range `1000`–`3600000`; controls polling, not freshness. |
-| `privateSource` | Legacy fallback only: existing private selection/key JSON; cannot be mixed with new setup fields. |
-
-Fields are catalogue-optional so any invalid Configure reaches the handler and clears
-prior in-memory configuration. Private selector setup requires source mode and one selector.
-The SDK has static Choice/Text/Secret fields and Accepted/Rejected Configure responses,
-but no dynamic discovery picker or custom setup tool. The private workflow selects through a secret
-configuration field; no external bootstrap script or manually authored private JSON is
-needed. Use the host's secret-field input (`--secret-file` or `--secret-command` for CLI
-users); never put snippets in command arguments, subscription parameters or logs.
-
-Setup generates a stable random key and stores a pinned source/account/conversation in
-`$EXANGELOS_HOME/connector-state/slack/setup.json`, or under
-`${XDG_DATA_HOME:-~/.local/share}/exangelos/connector-state/slack/setup.json`.
-Existing external state in the older `connectors/slack` directory is reused when it holds a pin or ledger and has no connector manifest.
-Before installing over legacy state, stop the daemon and back up the whole legacy state directory. If it contains only private Slack state and the new location is absent, move the entire directory to `connector-state/slack` under the same data home. This preserves the pin, ledger and SQLite sidecars together. The updated installer refuses to replace a Slack directory containing private state.
-This connector-managed private file is external to the installation, mode 0600, with a
-mode-0700 containing directory. The snippet is represented there only by a keyed digest;
-the host retains supplied secret fields when omitted from configuration updates.
-Use the CLI's secret-input flags for the mode and revision fields as well. For example:
+Use a D, C or G conversation ID to watch the conversation. To identify a message,
+supply a quoted HTTPS Slack message permalink, an exact timestamp such as
+`1700000000.000001`, or `C0000001:1700000000.000001`. Keep timestamps as strings,
+including all fractional digits. For example,
+`https://fixture.slack.com/archives/C0000001/p1700000000000002?thread_ts=1700000000.000001&cid=C0000001`
+identifies a reply. Its workspace domain must match the cached workspace metadata.
+If the cache lacks that metadata, use `CHANNEL:TIMESTAMP`. A reply selects its
+containing thread by default.
+A top-level message needs an explicit choice:
 
 ```sh
-exangelos connector configure slack --secret-command 'sourceMode=echo persisted-cache' --secret-file conversationSnippet=/path/to/snippet
-exangelos connector configure slack --secret-command 'sourceMode=echo pinned-cache'
+exangelos subscribe slack C0000001:1700000000.000001 scope=conversation --intent 'Watch the conversation' --pull-only
+exangelos subscribe slack C0000001:1700000000.000001 scope=replies --intent 'Watch replies to this message' --pull-only
 ```
 
-The second command retains the pin and drops the stored selector.
-Changing mode clears the host's stored connector secrets. The connector validates the
-existing pin at the same revision and cache location. This mode cannot discover a
-replacement if the pin disappears. To retry a rejected snippet with a known ID,
-supply a new revision such as `--secret-command 'selectionRevision=echo 2'` and `--secret-file conversationId=<path>`
-in the same Configure call. Changing revision clears the old selector before the host
-stores the replacement. Back up this file with the ledger/cursors.
-While setup state is retained, unchanged settings reuse the key and selection, never
-silently discover a different account. The pinned expected scope is enforced by both
-acquisition and Configure, including the boundary between setup and the next read. Home-relative source locations are resolved again at runtime; physical cache
-replacement fails closed. To deliberately change source, snippet, or account, also change
-`selectionRevision`, then start a new subscription. Missing setup state creates a new key
-and old cursors fail closed; corrupt or insecure state requires repair/removal before setup.
-No existing state is overwritten by failed discovery.
+For the MCP `subscribe` tool, pass the same reference as `parameters.selection`.
+For example, use the following arguments, changing `replies` to `conversation`
+to receive events across the conversation:
 
-Support is limited to the existing macOS Slack desktop persisted IndexedDB format,
-with Python 3.10+ and Bun. Default detection is macOS-only; an explicit `cacheRoot` can
-read the same supported-format source on POSIX systems. This does not claim support for
-other Slack cache formats, Windows runtime, complete account enumeration, or live sign-in.
-The legacy [private selection bootstrap](direct/PRIVATE-SELECTION.md) remains available
-for existing installations only. Changing a legacy key/selection also requires a fresh
-subscription. The private selector and legacy workflows use `selection=selected`.
+```json
+{"connector":"slack","parameters":{"selection":"C0000001:1700000000.000001","scope":"replies"},"intent":"Watch replies to this message","pullOnly":true}
+```
+
+The shell, process arguments and requesting host can see the supplied ID or link.
+The host receives a display label based on available same-account cache metadata,
+and stores an opaque scope handle. Labels may identify a DM peer or channel.
+When names are unavailable, a conversation or known peer ID identifies the subject.
+A thread label adds the parent timestamp.
+Message bodies, credentials and other participants' messages are excluded from
+labels and events. Each subscription pins its own source, account, conversation
+and optional thread. Multiple scopes can run concurrently.
+
+Cache access includes persisted data retained after logout or permission changes.
+The cache cannot establish current sign-in. Revoke access with
+`exangelos connector configure slack subscriptionAccess=disabled`. The default
+macOS search checks the standard Slack desktop and App Store sandbox IndexedDB
+directories. For copied caches or nonstandard installations set `cacheRoot` to
+an absolute IndexedDB directory on a supported POSIX system. An existing
+`subscriptionCacheRoot` overrides it. Use a more specific reference or narrow
+the root if matches span multiple accounts, conversations or cache directories.
+`pollIntervalMs` defaults to 30000 and accepts integers from 1000 through 3600000.
+
+## Upgrading existing subscriptions
+
+Configuration no longer selects a conversation. Authorize positional access and
+create a subscription with the original ID or message reference when a legacy
+selection or handle is rejected. The connector leaves old private state in place.
+Keep the private pins, keys, ledger and SQLite sidecars together in
+`$EXANGELOS_HOME/connector-state/slack` (or
+`${XDG_DATA_HOME:-~/.local/share}/exangelos/connector-state/slack`).
+If private state occupies the old install directory `connectors/slack`, the installer
+refuses to replace it. Stop the daemon, back up the directory, and move the entire
+private state directory to `connector-state/slack` if that destination is absent.
 
 ## Source and reconciliation
 
@@ -192,34 +145,4 @@ independent baselines. SDK tests stop and resume at every partial batch boundary
 while a newer snapshot is available. They also exercise Configure, Describe, silent baseline, cursor delivery, resume,
 filtering, polling cancellation and sanitized errors. Source tests replace the process
 service and exercise stdin and output handling. They do not prove actual acquisition
-or live event latency. The parent owns combined Python/reconciliation integration and
-the full repository suite. Historical validation is recorded in [VALIDATION.md](VALIDATION.md).
-
-After the Python source is integrated, run this aggregate-only SDK acquisition check
-from `connectors/slack`, with `PRIVATE_SOURCE_FILE` set to the private JSON file path.
-It reads the real source twice (Configure and the first Watch baseline); it does not
-print protocol responses, markers, paths, message content or exception details:
-
-```sh
-PRIVATE_SOURCE_FILE=/absolute/path/to/private-source.json bun --eval '
-import { readFileSync } from "node:fs";
-import { BunChildProcessSpawner, BunFileSystem, BunPath } from "@effect/platform-bun";
-import { Effect, Layer, Stream } from "effect";
-import { ConnectorTest } from "@exangelos/connector-sdk";
-import { connector } from "./src/Slack.ts";
-const program = Effect.gen(function*() {
-  const privateSource = yield* Effect.try(() => readFileSync(process.env.PRIVATE_SOURCE_FILE, "utf8"));
-  const client = yield* ConnectorTest.makeClient(connector);
-  const configured = yield* client.Configure({ values: { privateSource } });
-  if (configured._tag !== "Accepted") throw new Error("unavailable");
-  const described = yield* client.Describe({ parameters: { selection: "selected" } });
-  const items = yield* client.Watch({ parameters: { selection: "selected" }, eventTypes: [] }).pipe(Stream.take(1), Stream.runCollect);
-  return { configured: true, described: described._tag === "Described", baselineCursor: items.length === 1 && items[0]._tag === "Cursor" };
-}).pipe(Effect.scoped, Effect.provide(BunChildProcessSpawner.layer.pipe(Layer.provide(Layer.merge(BunFileSystem.layer, BunPath.layer)))));
-try { console.log(JSON.stringify(await Effect.runPromise(program))); }
-catch { console.log(JSON.stringify({ acquisition: false })); process.exitCode = 1; }
-'
-```
-
-A successful baseline validates acquisition only. It proves neither a live mutation
-nor bounded latency, atomicity, or complete message/reaction coverage.
+or live event latency. Installed-archive checks are documented in [VALIDATION.md](VALIDATION.md).

@@ -16,11 +16,16 @@ MAX_FILES = 10000
 MAX_MESSAGES = 10000
 
 
+def scope_token(key, selection, epoch):
+    return observation.token(key, 'selected-scope-v2', selection['workspace'], selection['owner'],
+                             sorted(selection['conversations']), selection.get('thread'), epoch)
+
+
 def acquire(request):
     if not isinstance(request, dict) or set(request) - {'selection', 'key', 'root', 'expectedScope'}:
         raise ValueError('request')
     selection = request.get('selection')
-    if not isinstance(selection, dict) or set(selection) != {'workspace', 'owner', 'conversations'}:
+    if not isinstance(selection, dict) or set(selection) not in ({'workspace', 'owner', 'conversations'}, {'workspace', 'owner', 'conversations', 'thread'}):
         raise ValueError('selection')
     workspace, owner = selection['workspace'], selection['owner']
     conversations = selection['conversations']
@@ -31,6 +36,10 @@ def acquire(request):
     if not isinstance(conversations, list) or not 1 <= len(conversations) <= 1000:
         raise ValueError('selection')
     if any(not isinstance(c, str) or not re.fullmatch(r'[CDG][A-Z0-9]{6,30}', c) for c in conversations):
+        raise ValueError('selection')
+    thread = selection.get('thread')
+    if 'thread' in selection and (len(conversations) != 1 or not isinstance(thread, str)
+                                   or not re.fullmatch(observation.TIMESTAMP, thread)):
         raise ValueError('selection')
     if len(set(conversations)) != len(conversations):
         raise ValueError('selection')
@@ -43,7 +52,7 @@ def acquire(request):
         raise ValueError('symlink')
     root = root.resolve(strict=True)
     before, epoch = inventory(root)
-    scope = observation.token(key, 'selected-scope-v1', workspace, owner, sorted(conversations), epoch)
+    scope = scope_token(key, selection, epoch)
     if 'expectedScope' in request and request['expectedScope'] != scope:
         raise ValueError('scope')
     candidates = []
@@ -61,7 +70,7 @@ def acquire(request):
         raise ValueError('generation')
     messages = []
     for conversation in sorted(conversations):
-        selected = observation.snapshot(state, (workspace, owner, conversation), key, require_reactions=False)
+        selected = observation.snapshot(state, (workspace, owner, conversation), key, require_reactions=False, thread_root=thread)
         if not selected['complete']:
             raise ValueError('incomplete')
         messages.extend(selected['messages'])
@@ -72,6 +81,13 @@ def acquire(request):
             'snapshot': observation.token(key, 'selected-snapshot-v1', scope, messages)}
 
 
+def directory_identity(directory):
+    info = directory.lstat()
+    if not stat.S_ISDIR(info.st_mode):
+        raise ValueError('directory')
+    return [info.st_dev, info.st_ino, getattr(info, 'st_birthtime', None)]
+
+
 def inventory(root):
     entries = {}
     total_bytes = 0
@@ -79,10 +95,7 @@ def inventory(root):
     for parent in (root, *root.parents):
         if parent.is_symlink():
             raise ValueError('symlink')
-    info = folder.lstat()
-    if not stat.S_ISDIR(info.st_mode):
-        raise ValueError('directory')
-    epoch = [info.st_dev, info.st_ino, getattr(info, 'st_birthtime', None)]
+    epoch = {'root': directory_identity(root), 'database': directory_identity(folder)}
     for base in (folder, root / 'https_app.slack.com_0.indexeddb.blob'):
         pending = [base]
         while pending:

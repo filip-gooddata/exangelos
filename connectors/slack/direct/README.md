@@ -73,7 +73,7 @@ dependency or change the connector protocol.
 ## Production acquisition
 
 The owner subsequently accepted delayed persisted snapshots and waived the
-60-second bound. `source.py` now provides the explicit private-selection command;
+60-second bound. `source.py` now provides the pinned snapshot reader;
 see [SOURCE.md](SOURCE.md) for stdin/output, generation ordering, limits and
 coherence guarantees. The older evidence above describes the diagnostic milestone.
 The command does not itself register or enable a connector.
