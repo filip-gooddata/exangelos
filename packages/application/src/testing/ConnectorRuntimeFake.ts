@@ -27,6 +27,7 @@ export interface Script {
   /** How `start` answers; it succeeds when omitted. */
   readonly start?:
     | { readonly _tag: "Fail"; readonly reason: string }
+    | { readonly _tag: "Hang" }
     | { readonly _tag: "Incompatible"; readonly version: number; readonly supported: ReadonlyArray<number> }
   /** Accepts every configuration when omitted. */
   readonly configure?: (values: Catalogue.ConfigurationValues) => ConfigureAnswer
@@ -166,6 +167,7 @@ export const layerConnectorRuntime: Layer.Layer<ConnectorRuntime | ConnectorRunt
           if (start?._tag === "Fail") {
             return yield* new ConnectorStartFailed({ connector: launch.name, reason: start.reason })
           }
+          if (start?._tag === "Hang") return yield* Effect.never
           if (start?._tag === "Incompatible") {
             return yield* new IncompatibleProtocol({
               connector: launch.name,

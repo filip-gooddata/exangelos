@@ -4,7 +4,7 @@ import * as Path from "node:path"
 import * as Url from "node:url"
 import * as BunServices from "@effect/platform-bun/BunServices"
 import { describe, expect, it } from "@effect/vitest"
-import { Cause, ConfigProvider, Effect, Layer, Logger, References } from "effect"
+import { Cause, ConfigProvider, Effect, Layer, Logger, Option, References } from "effect"
 import { HttpClient, HttpClientResponse } from "effect/http"
 import * as Tar from "tar"
 import { OfficialConnectorSource, SettingsStore } from "@exangelos/application"
@@ -22,6 +22,8 @@ const official = (name: string): OfficialConnectorSource.Official => ({
   digest: "unchecked"
 })
 
+const earlier = { version: "0.0.9", digest: "sha256-earlier", release: "0.0.8" }
+
 const workspace = Effect.acquireRelease(
   Effect.promise(() => Fs.mkdtemp(Path.join(Os.tmpdir(), "official-connectors-"))),
   (root) => Effect.promise(() => Fs.rm(root, { recursive: true, force: true }))
@@ -38,11 +40,18 @@ const buildArchive = (root: string, folder: string) =>
     return file
   })
 
-const fetch = (
+type Options = { folder?: string; served?: Map<string, Uint8Array>; releaseUrl?: string | undefined; redirect?: string; digest?: string }
+
+const fetch = (root: string, name: string, options: Options) =>
+  withSource(root, name, options, (source, carried) => source.fetch(carried))
+
+const withSource = <A, E>(
   root: string,
   name: string,
-  options: { folder?: string; served?: Map<string, Uint8Array>; releaseUrl?: string | undefined; redirect?: string }
+  options: Options,
+  use: (source: OfficialConnectorSource.OfficialConnectorSource["Service"], carried: OfficialConnectorSource.Official) => Effect.Effect<A, E>
 ) => {
+  const carried = { ...official(name), ...(options.digest === undefined ? {} : { digest: options.digest }) }
   const settings = Layer.succeed(SettingsStore.SettingsStore, {
     read: Effect.succeed<Settings.Settings>(
       options.folder === undefined ? Settings.initial : { ...Settings.initial, officialConnectorFolder: options.folder }
@@ -70,9 +79,8 @@ const fetch = (
     Layer.provide(Layer.mergeAll(BunServices.layer, http, paths))
   )
   return Effect.gen(function*() {
-    const source = yield* OfficialConnectorSource.OfficialConnectorSource
-    return yield* source.fetch(official(name))
-  }).pipe(Effect.provide(OfficialConnectors.layer({ known: [official(name)], releaseUrl: "releaseUrl" in options ? options.releaseUrl : releaseUrl }).pipe(
+    return yield* use(yield* OfficialConnectorSource.OfficialConnectorSource, carried)
+  }).pipe(Effect.provide(OfficialConnectors.layer({ known: [carried], releaseUrl: "releaseUrl" in options ? options.releaseUrl : releaseUrl }).pipe(
     Layer.provide(Layer.mergeAll(settings, imports))
   )))
 }
@@ -136,6 +144,85 @@ describe("OfficialConnectorSource", () => {
 
       expect(failed.reason).toBe("the import holds template, not jira")
       expect(yield* Effect.promise(() => Fs.readFile(sentinel, "utf8"))).toBe("installed")
+    }).pipe(Effect.scoped))
+
+  it.live("replaces an installed copy only when the digest matches, and can put the earlier copy back", () =>
+    Effect.gen(function*() {
+      const root = yield* workspace
+      const folder = Path.join(root, "dist")
+      yield* buildArchive(root, folder)
+      const digest = yield* ConnectorDirectoryLive.digestDirectory(Path.join(root, "build", "template"))
+      const installed = Path.join(root, "connectors", "template")
+      const sentinel = Path.join(installed, "keep.txt")
+      yield* Effect.promise(async () => {
+        await Fs.mkdir(installed, { recursive: true })
+        await Fs.writeFile(sentinel, "installed")
+      })
+      const exists = (path: string) => Effect.promise(() => Fs.access(path).then(() => true, () => false))
+
+      const refused = yield* Effect.flip(withSource(root, "template", { folder, digest: "sha256-other" }, (s, o) => s.replace(o, earlier)))
+      expect(refused.reason).toContain("is not the expected sha256-other")
+      expect(yield* exists(sentinel)).toBe(true)
+
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o, earlier))
+      expect(yield* exists(Path.join(installed, "connector.json"))).toBe(true)
+      expect(yield* exists(sentinel)).toBe(false)
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
+      expect(yield* exists(sentinel)).toBe(true)
+      expect(yield* withSource(root, "template", { folder, digest }, (s, o) => s.kept(o))).toEqual(Option.some(earlier))
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.discard(o))
+
+      yield* withSource(root, "template", { folder, digest }, (s, o) => Effect.andThen(s.replace(o, earlier), s.discard(o)))
+      expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual(["template"])
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
+      expect(yield* exists(Path.join(installed, "connector.json"))).toBe(true)
+
+      // State an interrupted replace left half written under a retired name is never pending.
+      yield* Effect.promise(async () => {
+        await Fs.mkdir(Path.join(root, "connectors", ".template.retired-draft-1"))
+        await Fs.writeFile(Path.join(root, "connectors", ".template.retired-draft-1", "note"), "")
+      })
+      expect(yield* withSource(root, "template", { folder, digest }, (s, o) => s.kept(o))).toEqual(Option.none())
+
+      yield* Effect.promise(() => Fs.rm(installed, { recursive: true, force: true }))
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.replace(o, earlier))
+      const blocked = yield* Effect.flip(withSource(root, "template", { folder, digest }, (s, o) => s.replace(o, earlier)))
+      expect(blocked.reason).toContain("is still kept")
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
+      expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual([".template.refresh", ".template.retired-draft-1"])
+      expect(yield* withSource(root, "template", { folder, digest }, (s, o) => s.kept(o))).toEqual(Option.some(earlier))
+
+      // A discard interrupted after its retiring rename leaves a retired copy, which is not pending.
+      yield* Effect.promise(() => Fs.rename(Path.join(root, "connectors", ".template.refresh"), Path.join(root, "connectors", ".template.retired-1")))
+      expect(yield* withSource(root, "template", { folder, digest }, (s, o) => s.kept(o))).toEqual(Option.none())
+      yield* withSource(root, "template", { folder, digest }, (s, o) => s.discard(o))
+      expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual([])
+    }).pipe(Effect.scoped))
+
+  it.live("keeps an install whose swap the legacy-state guard refuses, and its restore leaves it alone", () =>
+    Effect.gen(function*() {
+      const root = yield* workspace
+      const build = Path.join(root, "build", "template")
+      const folder = Path.join(root, "dist")
+      yield* Effect.promise(async () => {
+        await buildTemplate(build)
+        const manifest = JSON.parse(await Fs.readFile(Path.join(build, "connector.json"), "utf8"))
+        await Fs.writeFile(Path.join(build, "connector.json"), JSON.stringify({ ...manifest, name: "slack" }))
+        await Fs.mkdir(folder, { recursive: true })
+        await Tar.c({ gzip: true, file: Path.join(folder, "slack-0.1.0.tar.gz"), cwd: build, portable: true }, ["."])
+      })
+      const digest = yield* ConnectorDirectoryLive.digestDirectory(build)
+      const state = Path.join(root, "connectors", "slack", "setup.json")
+      yield* Effect.promise(async () => {
+        await Fs.mkdir(Path.dirname(state), { recursive: true })
+        await Fs.writeFile(state, "private")
+      })
+
+      const refused = yield* Effect.flip(withSource(root, "slack", { folder, digest }, (s, o) => s.replace(o, earlier)))
+      expect(refused.reason).toContain("Slack private state")
+      expect(yield* withSource(root, "slack", { folder, digest }, (s, o) => s.kept(o))).toEqual(Option.none())
+      yield* withSource(root, "slack", { folder, digest }, (s, o) => s.restore(o))
+      expect(yield* Effect.promise(() => Fs.readFile(state, "utf8"))).toBe("private")
     }).pipe(Effect.scoped))
 
   it.live("fails for a connector missing from the folder or the release", () =>

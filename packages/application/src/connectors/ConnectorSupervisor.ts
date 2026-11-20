@@ -69,6 +69,15 @@ export class ConnectorSupervisor extends Context.Service<ConnectorSupervisor, {
    * known to be open with the stored wake window.
    */
   readonly settingsChanged: Effect.Effect<void>
+  /**
+   * Runs `effect` while no other change to the connector's files or trust runs: official fetch or
+   * refresh, enable, disable, removal or dev unlink of that name, or any import or dev link.
+   */
+  readonly exclusiveFor: <A, E, R>(name: Ids.ConnectorName, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+  /** Runs `effect`, an import or dev link whose name is known only once placed, exclusively of every name. */
+  readonly exclusive: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+  /** Waits until the startup pass has checked, watched and started every stored connector. */
+  readonly started: Effect.Effect<void>
 }>()("@exangelos/application/ConnectorSupervisor") {}
 
 type Outcome =
@@ -593,7 +602,19 @@ export const layerConnectorSupervisor: Layer.Layer<
       if (connector.trust !== "inert" && !(yield* FiberMap.has(runs, connector.name))) yield* restartRun(connector.name)
     }
   })
-  yield* Effect.forkScoped(startup)
+  // Each change to one name holds one permit of `everyName` and its own name's lock; an import holds them all.
+  const allPermits = 1_000_000
+  const everyName = yield* Semaphore.make(allPermits)
+  const nameLocks = new Map<string, Semaphore.Semaphore>()
+  const nameLock = (name: Ids.ConnectorName) => {
+    const existing = nameLocks.get(name)
+    if (existing !== undefined) return existing
+    const created = Semaphore.makeUnsafe(1)
+    nameLocks.set(name, created)
+    return created
+  }
+  const startedSignal = yield* Deferred.make<void>()
+  yield* Effect.forkScoped(Effect.ensuring(startup, Deferred.succeed(startedSignal, undefined)))
 
   const rewatch = (subscription: Ids.SubscriptionId) =>
     Effect.andThen(FiberMap.remove(streams, subscription), openStream(subscription))
@@ -620,6 +641,9 @@ export const layerConnectorSupervisor: Layer.Layer<
     // The intake may unwatch from inside the stream's own ingest, so the removal runs on its own fiber.
     unwatch: (subscription) => Effect.asVoid(Effect.forkDetach(FiberMap.remove(streams, subscription))),
     rewatch,
-    settingsChanged: Effect.asVoid(Effect.forkIn(refreshes.withPermit(refresh), scope))
+    settingsChanged: Effect.asVoid(Effect.forkIn(refreshes.withPermit(refresh), scope)),
+    exclusiveFor: (name, effect) => everyName.withPermits(1)(nameLock(name).withPermits(1)(effect)),
+    exclusive: (effect) => everyName.withPermits(allPermits)(effect),
+    started: Deferred.await(startedSignal)
   })
 }))
