@@ -110,17 +110,6 @@ const make = Effect.gen(function*() {
         }
       }
 
-      const kept = (name: string) => Path.join(root, `.${name}.previous`)
-      const isPresent = (path: string) => Fs.stat(path).then(() => true, () => false)
-      const noteOf = (name: string) => `${kept(name)}.note`
-      const anyKept = async (name: string) =>
-        (await isPresent(kept(name))) || (await isPresent(`${kept(name)}.absent`)) || (await isPresent(noteOf(name)))
-      const keptNote = (name: string) =>
-        attempt(() => Fs.readFile(noteOf(name), "utf8").then(Option.some, (error: NodeJS.ErrnoException) => {
-          if (error.code === "ENOENT") return Option.none<string>()
-          throw error
-        })).pipe(Effect.mapError((refused) => new ConnectorImportSource.ImportFailed({ reason: refused.reason })))
-
       const moveIntoPlace = (directory: string, name: string, previous: string) =>
         attempt(async () => {
           const target = Path.join(root, name)
@@ -140,35 +129,77 @@ const make = Effect.gen(function*() {
           return { target, previous: replaced ? previous : undefined }
         })
 
-      /**
-       * Like moveIntoPlace, but when no copy is installed it notes at `previous` that there was none, so
-       * restore can remove the new copy. Runs under the swap permit, so the check and the move are one step.
-       */
-      const moveKeeping = (note: string) => (directory: string, name: string, previous: string) =>
-        Effect.gen(function*() {
-          const absent = `${previous}.absent`
-          yield* attempt(async () => {
-            await Fs.writeFile(noteOf(name), note, { flag: "wx" })
-            if (!(await isPresent(Path.join(root, name)))) await Fs.writeFile(absent, "", { flag: "wx" })
-          }).pipe(Effect.tapError(() => Effect.promise(() => Fs.rm(noteOf(name), { force: true }))))
-          return yield* moveIntoPlace(directory, name, previous).pipe(
-            Effect.tapError(() =>
-              Effect.promise(async () => {
-                await Fs.rm(absent, { force: true })
-                await Fs.rm(noteOf(name), { force: true })
-              })
-            )
-          )
-        })
-
       const removeTree = (path: string | undefined) =>
         path === undefined ? Effect.void : Effect.promise(() => Fs.rm(path, { recursive: true, force: true }))
 
+      const isPresent = (path: string) => Fs.stat(path).then(() => true, () => false)
+
+      /**
+       * A replace's rollback state lives in one hidden directory beside the connector: its note, and the
+       * earlier copy at `previous` or a mark at `absent` that there was none. The directory exists from
+       * before the swap until `discard` retires it with one rename, so it is pending exactly while present.
+       */
+      const pending = (name: string) => Path.join(root, `.${name}.refresh`)
+      const retiredPrefix = (name: string) => `.${name}.retired-`
+
+      const keptNote = (name: string) =>
+        attempt(() =>
+          Fs.readFile(Path.join(pending(name), "note"), "utf8").then(Option.some, (error: NodeJS.ErrnoException) => {
+            if (error.code === "ENOENT") return Option.none<string>()
+            throw error
+          })
+        ).pipe(Effect.mapError((refused) => new ConnectorImportSource.ImportFailed({ reason: refused.reason })))
+
+      /** Retires the rollback state with one rename, then deletes it and any retired by an interrupted run. */
+      const retire = (name: string) =>
+        Effect.promise(async () => {
+          await Fs.rename(pending(name), Path.join(root, `${retiredPrefix(name)}${Date.now()}`)).catch(() => undefined)
+          const entries = await Fs.readdir(root).catch(() => [] as Array<string>)
+          for (const entry of entries) {
+            if (entry.startsWith(retiredPrefix(name))) await Fs.rm(Path.join(root, entry), { recursive: true, force: true })
+          }
+        })
+
+      /**
+       * Moves the staged copy in, keeping the earlier one, or the mark that there was none, with the note.
+       * When the move fails, the state is retired only if the earlier copy is back in place; otherwise it
+       * stays for `restore`. Runs under the swap permit.
+       */
+      const moveKeeping = (note: string) => (directory: string, name: string) =>
+        Effect.gen(function*() {
+          const target = Path.join(root, name)
+          const state = pending(name)
+          const previous = Path.join(state, "previous")
+          yield* attempt(async () => {
+            await protectLegacyState(name, target)
+            await Fs.mkdir(state)
+            await Fs.writeFile(Path.join(state, "note"), note)
+          }).pipe(Effect.tapError(() => Effect.promise(() => Fs.rm(state, { recursive: true, force: true }))))
+          return yield* attempt(async () => {
+            const replaced = await Fs.rename(target, previous).then(() => true, () => false)
+            if (!replaced) await Fs.writeFile(Path.join(state, "absent"), "")
+            try {
+              await Fs.rename(directory, target)
+            } catch (error) {
+              if (replaced) {
+                await Fs.rename(previous, target).catch(() => {
+                  throw new Refused({ reason: `${reasonOf(error)}; the earlier copy is kept at ${previous}` })
+                })
+              }
+              await Fs.rm(state, { recursive: true, force: true })
+              throw error
+            }
+            return { target, previous: undefined }
+          })
+        })
+
+      /** Puts back the earlier copy, or removes the new one when there was none. The note stays; repeating it does nothing. */
       const putBack = (name: string) =>
         attempt(async () => {
           const target = Path.join(root, name)
-          const previous = kept(name)
-          const failed = `${previous}.failed`
+          const state = pending(name)
+          const previous = Path.join(state, "previous")
+          const failed = Path.join(state, "failed")
           if (await isPresent(previous)) {
             await Fs.rm(failed, { recursive: true, force: true })
             const moved = await Fs.rename(target, failed).then(() => true, () => false)
@@ -179,10 +210,10 @@ const make = Effect.gen(function*() {
               throw error
             }
             await Fs.rm(failed, { recursive: true, force: true })
-          } else if (await isPresent(`${previous}.absent`)) {
+          } else if (await isPresent(Path.join(state, "absent"))) {
             await Fs.rm(target, { recursive: true, force: true })
+            await Fs.rm(Path.join(state, "absent"), { force: true })
           }
-          await Fs.rm(`${previous}.absent`, { force: true })
         })
 
       const staged = (
@@ -211,7 +242,9 @@ const make = Effect.gen(function*() {
           }
           return yield* Effect.uninterruptible(
             swap.withPermits(1)(
-              (note !== undefined ? moveKeeping(note) : moveIntoPlace)(directory, connector.name, previous(connector.name, staging))
+              note !== undefined
+                ? moveKeeping(note)(directory, connector.name)
+                : moveIntoPlace(directory, connector.name, previous(connector.name, staging))
             )
           )
         }).pipe(
@@ -228,19 +261,15 @@ const make = Effect.gen(function*() {
           Effect.mapError(failed)
         )
 
-      const discard = (name: string) =>
-        Effect.andThen(
-          Effect.andThen(removeTree(kept(name)), removeTree(`${kept(name)}.absent`)),
-          removeTree(noteOf(name))
-        )
+      const discard = (name: string) => swap.withPermits(1)(retire(name))
 
       const replace = (source: ConnectorImportSource.Source, expected: string, digest: string, note: string) =>
         attempt(async () => {
-          if (await anyKept(expected)) {
-            throw new Refused({ reason: `an earlier copy of ${expected} is still kept at ${kept(expected)}` })
+          if (await isPresent(pending(expected))) {
+            throw new Refused({ reason: `an earlier copy of ${expected} is still kept at ${pending(expected)}` })
           }
         }).pipe(
-          Effect.andThen(staged(source, expected, digest, kept, note)),
+          Effect.andThen(staged(source, expected, digest, () => "", note)),
           Effect.map(({ target }) => target),
           Effect.mapError(failed)
         )

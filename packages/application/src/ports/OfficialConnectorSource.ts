@@ -9,8 +9,11 @@ export const Official = Schema.Struct({
 })
 export type Official = typeof Official.Type
 
-/** What an official record said was installed before a replace, kept with it so a rollback can be finished later. */
-export const Earlier = Schema.Struct({ version: Schema.String, digest: Schema.String })
+/**
+ * What an official record said was installed before a replace, kept with it so a rollback can be finished
+ * later: the manifest version and digest of the files, and the release the record took them from.
+ */
+export const Earlier = Schema.Struct({ version: Schema.String, digest: Schema.String, release: Schema.String })
 export type Earlier = typeof Earlier.Type
 
 export class OfficialFetchFailed extends Schema.TaggedError<OfficialFetchFailed>()("OfficialFetchFailed", {
@@ -38,7 +41,7 @@ export class OfficialConnectorSource extends Context.Service<OfficialConnectorSo
   readonly replace: (official: Official, earlier: Earlier) => Effect.Effect<string, OfficialFetchFailed>
   /** Puts back the copy `replace` kept, or removes the new one when none was installed; repeating it does nothing. */
   readonly restore: (official: Official) => Effect.Effect<void, OfficialFetchFailed>
-  /** Deletes the copy and the `earlier` that `replace` kept. */
+  /** Retires what `replace` kept, copy and `earlier` together, then deletes it. */
   readonly discard: (official: Official) => Effect.Effect<void>
   /** The `earlier` of a replace not yet discarded. */
   readonly kept: (official: Official) => Effect.Effect<Option.Option<Earlier>, OfficialFetchFailed>

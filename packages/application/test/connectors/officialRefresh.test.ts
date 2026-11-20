@@ -9,6 +9,8 @@ import {
   enableConnector,
   importConnector,
   layerConnectors,
+  OfficialConnectorSource,
+  removeConnector,
   SubscriptionRepository
 } from "@exangelos/application"
 import {
@@ -306,6 +308,43 @@ describe("an official connector the upgraded binary carries in another version",
         expect(yield* connectorOf("github-pr")).toMatchObject({ version: "0.9.0", digest: "sha256-old", origin: { version: "0.9.0" } })
         expect(yield* Effect.exit(filesDigest)).toMatchObject({ _tag: "Failure" })
         expect(yield* files.replacements).toBe(2)
+      }),
+      ports
+    ))
+
+  it.effect("keeps the record's earlier release on a rollback, so the release is tried again", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* seed(stored({ version: "1.0.0", digest: officialDigest }))
+        yield* (yield* ConnectorFilesFake).put(installed("github-pr", officialDigest))
+
+        yield* daemonRun(settle)
+
+        expect(yield* connectorOf("github-pr")).toMatchObject({ version: "1.0.0", origin: { _tag: "Official", version: "0.9.0" } })
+      }),
+      ports
+    ))
+
+  it.effect("drops what a failed rollback kept once the connector is removed and fetched again", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* seed(stored(), { catalogue: catalogue(), start: { _tag: "Hang" } })
+        const files = yield* ConnectorFilesFake
+        yield* files.publish(installed("github-pr", officialDigest))
+        yield* files.failRestores(1)
+        const official = known[0]!
+
+        yield* daemonRun(Effect.gen(function*() {
+          yield* settle
+          yield* TestClock.adjust("31 seconds")
+          yield* settle
+          yield* removeConnector(you, github)
+          yield* Effect.forkChild(
+            Effect.exit((yield* ConnectorAccess.ConnectorAccess).describe(you, github, { parameters: { name: "acme/app#1" }, main: Option.none() }))
+          )
+          yield* settle
+          expect(yield* (yield* OfficialConnectorSource.OfficialConnectorSource).kept(official)).toEqual(Option.none())
+        }))
       }),
       ports
     ))

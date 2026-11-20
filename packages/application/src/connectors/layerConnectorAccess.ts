@@ -82,7 +82,7 @@ export const refreshOfficial = (official: Official) =>
       Effect.andThen(
         supervisor.update(name, (connector) =>
           isOfficial(connector)
-            ? { ...connector, version: earlier.version, digest: earlier.digest, origin: { _tag: "Official", version: earlier.version } }
+            ? { ...connector, version: earlier.version, digest: earlier.digest, origin: { _tag: "Official", version: earlier.release } }
             : undefined),
         source.discard(official)
       )
@@ -110,12 +110,17 @@ export const refreshOfficial = (official: Official) =>
         const found = yield* repository.find(name)
         if (Option.isNone(found) || !outdated(found.value, official)) return
         const earlier = found.value
+        const kept: Earlier = {
+          version: earlier.version,
+          digest: earlier.digest,
+          release: earlier.origin._tag === "Official" ? earlier.origin.version : earlier.version
+        }
 
         yield* supervisor.stop(name)
 
         const adopt = Effect.gen(function*() {
           const placed = yield* Effect.mapError(
-            source.replace(official, { version: earlier.version, digest: earlier.digest }),
+            source.replace(official, kept),
             (failed) => unavailable(failed.reason)
           )
           const installed = yield* Effect.mapError(directory.read(placed), (e) => unavailable(e.reason))
@@ -142,7 +147,7 @@ export const refreshOfficial = (official: Official) =>
         const rollback = Effect.gen(function*() {
           yield* supervisor.stop(name)
           yield* source.restore(official).pipe(
-            Effect.andThen(settleBack({ version: earlier.version, digest: earlier.digest })),
+            Effect.andThen(settleBack(kept)),
             Effect.catch((failed) =>
               Effect.logError("official connector earlier copy not restored; the next refresh puts it back", Cause.fail(failed)))
           )
@@ -177,7 +182,8 @@ export const layerConnectorAccess: Layer.Layer<
   const supervisor = yield* ConnectorSupervisor
   const repository = yield* ConnectorRepository
   const context = yield* Effect.context<OfficialConnectorSource | ConnectorDirectory | AlertSink | ConnectorSupervisor | ConnectorRepository>()
-  const known = (yield* OfficialConnectorSource).known
+  const officialSource = yield* OfficialConnectorSource
+  const known = officialSource.known
   const failedAt = yield* Ref.make(new Map<string, number>())
 
   /** Refreshes one official connector, at most once per retry window after a failure unless `always`. */
@@ -203,7 +209,12 @@ export const layerConnectorAccess: Layer.Layer<
       Effect.gen(function*() {
         if (Option.isNone(yield* repository.find(name))) {
           yield* supervisor.exclusiveFor(name, Effect.gen(function*() {
-            if (Option.isNone(yield* repository.find(name))) yield* Effect.provide(fetchOfficial(actor, name), context)
+            if (Option.isNone(yield* repository.find(name))) {
+              // Rollback state left by an official copy removed since belongs to no record now.
+              const official = known.find((candidate) => candidate.name === name)
+              if (official !== undefined) yield* officialSource.discard(official)
+              yield* Effect.provide(fetchOfficial(actor, name), context)
+            }
           }))
         } else {
           const official = known.find((candidate) => candidate.name === name)

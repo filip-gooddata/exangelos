@@ -22,7 +22,7 @@ const official = (name: string): OfficialConnectorSource.Official => ({
   digest: "unchecked"
 })
 
-const earlier = { version: "0.0.9", digest: "sha256-earlier" }
+const earlier = { version: "0.0.9", digest: "sha256-earlier", release: "0.0.8" }
 
 const workspace = Effect.acquireRelease(
   Effect.promise(() => Fs.mkdtemp(Path.join(Os.tmpdir(), "official-connectors-"))),
@@ -182,7 +182,12 @@ describe("OfficialConnectorSource", () => {
       const blocked = yield* Effect.flip(withSource(root, "template", { folder, digest }, (s, o) => s.replace(o, earlier)))
       expect(blocked.reason).toContain("is still kept")
       yield* withSource(root, "template", { folder, digest }, (s, o) => s.restore(o))
-      expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual([".template.previous.note"])
+      expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual([".template.refresh"])
+      expect(yield* withSource(root, "template", { folder, digest }, (s, o) => s.kept(o))).toEqual(Option.some(earlier))
+
+      // A discard interrupted after its retiring rename leaves a retired copy, which is not pending.
+      yield* Effect.promise(() => Fs.rename(Path.join(root, "connectors", ".template.refresh"), Path.join(root, "connectors", ".template.retired-1")))
+      expect(yield* withSource(root, "template", { folder, digest }, (s, o) => s.kept(o))).toEqual(Option.none())
       yield* withSource(root, "template", { folder, digest }, (s, o) => s.discard(o))
       expect(yield* Effect.promise(() => Fs.readdir(Path.join(root, "connectors")))).toEqual([])
     }).pipe(Effect.scoped))
