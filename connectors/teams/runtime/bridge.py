@@ -1,21 +1,4 @@
-"""Private native-cache bridge. Null memberships mean unknown, not removal.
-
-Portable commands: `configure` accepts bounded stdin JSON with selectionToken
-and optional absolute cachePath; `configured-snapshot` reuses generated external
-selection state. Only configure discovers native macOS candidates. Neither new
-command reads legacy EXANGELOS_TEAMS_CONFIG/CACHE. Cache selection is not proof
-of signed-in account identity.
-
-SDK: `configure` reads bounded JSON from stdin, discovers only during that call,
-and creates external private selection state. `configured-snapshot` reads that
-state. Neither command uses the legacy Teams config/cache environment variables.
-Legacy diagnostics: `setup` prompts privately and `snapshot` reads the explicit
-EXANGELOS_TEAMS_CONFIG file. Success is one JSON line (setup is silent), exit 0.
-Failure is empty stdout, exit 1, and fixed stderr teams_bridge_unavailable.
-Unsupported/invalid records anywhere in the selected database fail the snapshot.
-Missing/unsupported reaction representations alone are unknown (null). Native
-quote linkage and reaction memberships are bounded to the live-validated shapes.
-"""
+"""Account-qualified, read-only Teams snapshots and private per-selection pins."""
 import sys
 try:
     import resource
@@ -31,9 +14,8 @@ try:
 
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'validation'))
-    import action_probe as action
+    import native_cache as native
     import current_store
-    import reactions
 except BaseException:
     sys.stderr.write('teams_bridge_unavailable\n')
     sys.exit(1)
@@ -70,17 +52,6 @@ def absolute(value):
     return p
 
 
-def config_directory(path):
-    fd = current_store.open_directory(path.parent)
-    try:
-        info = os.fstat(fd)
-        require(info.st_uid == os.getuid() and stat.S_IMODE(info.st_mode) == 0o700)
-        return fd
-    except BaseException:
-        os.close(fd)
-        raise
-
-
 def read_config(fd, name):
     handle = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)
     try:
@@ -91,93 +62,9 @@ def read_config(fd, name):
         raw = os.read(handle, MAX_CONFIG + 1)
         require(len(raw) == before.st_size
                 and current_store.signature(before) == current_store.signature(os.fstat(handle)))
-        value = json.loads(raw)
-        require(type(value) is dict and set(value) == {'key', 'cache', 'scope'})
-        require(type(value['key']) is str and HEX.fullmatch(value['key']))
-        require(type(value['scope']) is str and HEX.fullmatch(value['scope']))
-        absolute(value['cache'])
-        return value
+        return json.loads(raw)
     finally:
         os.close(handle)
-
-
-def acquire(cache):
-    path = absolute(cache)
-    fd = current_store.open_directory(path)
-    try:
-        require(os.fstat(fd).st_uid == os.getuid())
-    finally:
-        os.close(fd)
-    view, storage = current_store.current_view(path)
-    require(storage['stable'] and storage['checksums_verified'])
-    return view
-
-
-def audit_bodies(view, origin, key, selected):
-    memberships = {}
-    # extract intentionally skips missing body candidates; polling must fail closed.
-    for raw_key, raw in view.items():
-        db, store, index, _ = action.prefix(raw_key)
-        if not (db and store and index == 1):
-            continue
-        walk = dict.fromkeys(action.sem.COUNTERS, 0)
-        for node, _, _, _ in action.sem._walk(action.s._decode(raw), walk):
-            if not action.candidate_shape(node, require_body=False):
-                continue
-            fields = action.candidate_fields(node)
-            scopes = {v for f, v in fields.items() if f in action.sem.FIELDS['scope'] - {'teamid'}
-                      and type(v) is str and v}
-            if not any(action.fingerprint(key, 'scope', [origin, db, scope]) == selected for scope in scopes):
-                continue
-            if not any(type(fields.get(f)) in (str, int) for f in action.sem.FIELDS['identity']):
-                continue
-            if not any(f in action.sem.FIELDS['created'] and action.s._timestamp(v) for f, v in fields.items()):
-                continue
-            require(len(scopes) == 1)
-            bodies = [v for f, v in fields.items() if f in ('body', 'content')]
-            require(bodies and all(type(v) is str for v in bodies))
-            require(all(v is None or type(v) in (str, int) for f, v in fields.items()
-                        if f in ('replytoid', 'parentmessageid', 'replytomessageid')))
-            identity = next(fields[f] for f in ('messageid', 'id', 'clientmessageid')
-                            if type(fields.get(f)) in (str, int))
-            marker = action.fingerprint(key, 'identity', identity).hex()
-            values = reactions.members(node)
-            members = None if values is None else sorted(
-                action.fingerprint(key, 'reaction-member', list(value)).hex() for value in values)
-            require(marker not in memberships or memberships[marker] == members)
-            memberships[marker] = members
-        require(not walk['walk_limited'])
-    return memberships
-
-
-def envelope(view, cache, key, selected):
-    databases = {}
-    for raw, value in view.items():
-        db, store, index, _ = action.prefix(raw)
-        if db and store and index == 1:
-            databases.setdefault(db, {})[raw] = value
-    matches = []
-    for records in databases.values():
-        part = action.extract(records, cache, key, selected=selected)
-        if part.rows:
-            matches.append((records, part))
-    require(len(matches) == 1)
-    records, _ = matches[0]
-    part = action.extract(records, cache, key)
-    require(not any(part.stats.values()))
-    part.rows = {marker: row for marker, row in part.rows.items() if marker[0] == selected}
-    require(0 < len(part.rows) <= MAX_ROWS)
-    memberships = audit_bodies(records, cache, key, selected)
-    rows = []
-    for (scope, identity), row in part.rows.items():
-        require(scope == selected and row is not None)
-        body, reaction, _, parents = row[0]
-        require(body[0] in (2, 3) and body[1] is not None and len(parents) <= 1)
-        rows.append({'id': identity.hex(), 'body': body[1].hex(),
-                     'reactions': memberships[identity.hex()],
-                     'parent': next(iter(parents)).hex() if parents else None,
-                     'reaction': reaction[1].hex() if reaction[0] in (2, 3) and reaction[1] else None})
-    return {'scope': selected.hex(), 'messages': sorted(rows, key=lambda r: r['id'])}
 
 
 def save_config(fd, name, config):
@@ -206,7 +93,7 @@ def portable_path():
         root = absolute(os.environ['XDG_DATA_HOME']) / 'exangelos'
     else:
         root = absolute(os.environ.get('HOME')) / '.local/share/exangelos'
-    path = root / 'connectors/teams/selection.json'
+    path = root / 'connectors/teams/pin-key-v1.json'
     require(not path.is_relative_to(Path(__file__).resolve().parents[1]))
     return path
 
@@ -241,83 +128,144 @@ def portable_directory(path, create):
         raise
 
 
-def configure_request():
-    raw = sys.stdin.buffer.read(MAX_CONFIG + 1)
-    require(len(raw) <= MAX_CONFIG)
-    request = json.loads(raw)
-    require(type(request) is dict and set(request) <= {'selectionToken', 'cachePath'})
-    token = request.get('selectionToken')
-    require(type(token) is str and re.fullmatch(r'[A-Za-z0-9_-]{12,128}', token))
-    if 'cachePath' in request:
-        require(os.name == 'posix')
-        candidates = [absolute(request['cachePath'])]
-    else:
-        require(sys.platform == 'darwin')
-        candidates = current_store.discover()
-    require(candidates)
-    return token, candidates
-
-
-def portable_run(command):
-    request = configure_request() if command == 'configure' else None
-    path = portable_path()
-    fd = portable_directory(path, create=command == 'configure')
+def acquire(path):
+    directory = current_store.open_directory(path)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        try:
-            config = read_config(fd, path.name)
-        except FileNotFoundError:
-            require(command == 'configure')
-            config = None
-        if command == 'configured-snapshot':
-            return envelope(acquire(config['cache']), config['cache'],
-                            bytes.fromhex(config['key']), bytes.fromhex(config['scope']))
-        key = bytes.fromhex(config['key']) if config else secrets.token_bytes(32)
-        token, candidates = request
-        matches = []
-        for candidate in candidates:
-            cache = str(absolute(str(candidate)))
-            view = acquire(cache)
-            selection = action.extract(view, cache, key, snippet=token)
-            require(not any(selection.stats.values()))
-            for selected, _ in selection.matches:
-                matches.append((cache, envelope(view, cache, key, selected)))
-        require(len(matches) == 1)
-        cache, snapshot = matches[0]
-        save_config(fd, path.name, {'key': key.hex(), 'cache': cache, 'scope': snapshot['scope']})
-        return snapshot
+        info = os.fstat(directory)
+        require(info.st_uid == os.getuid())
+        view, storage = current_store.current_view(path, expected_directory=(info.st_dev, info.st_ino))
+        require(storage['stable'] and storage['checksums_verified'])
+        identity = [info.st_dev, info.st_ino]
+        if hasattr(info, 'st_birthtime'):
+            identity.append(info.st_birthtime)
+        return identity, native.stores(view)
     finally:
-        os.close(fd)
+        os.close(directory)
+
+
+def choices(cache):
+    if cache is not None:
+        return [absolute(cache)]
+    native.check(sys.platform == 'darwin', 21)
+    candidates = current_store.discover()
+    native.check(candidates, 21)
+    return candidates
+
+
+def resolve(key, reference, cache, account):
+    chat, mid, replies, tenant, group_hint, parent_hint = reference
+    matches = []
+    for path in choices(cache):
+        physical, tables = acquire(path)
+        for table, partition, records in tables:
+            if table != 'replychains-2' or (tenant and tenant != partition[0]):
+                continue
+            if account and partition[:2] != account:
+                continue
+            rows = native.messages(records, chat)
+            if not rows or (mid and mid not in rows):
+                continue
+            name, group = native.conversation_metadata(tables, partition, chat)
+            if group_hint:
+                native.check(group and group == group_hint.lower(), 23)
+            root = (rows[mid][0] or mid) if mid else None
+            native.check(not parent_hint or parent_hint == root, 20)
+            if replies:
+                native.check(root in rows and rows[root][0] is None, 28)
+            pin = {'cache':str(path), 'physical':physical, 'partition':partition,
+                   'chat':chat, 'group':group, 'root':root if replies else None}
+            name = name or ('Teams channel' if native.is_channel(chat) else 'Teams chat')
+            native.snapshot_rows(key, pin, rows, name, group, False)
+            matches.append((pin,name))
+    native.check(matches, 22)
+    native.check(len(matches) == 1, 23)
+    return matches[0]
+
+
+def pinned(key, pin, cache, account, consent):
+    native.check(not account or account == pin['partition'][:2], 24)
+    native.check(cache is None or str(absolute(cache)) == pin['cache'], 24)
+    try:
+        physical, tables = acquire(absolute(pin['cache']))
+    except FileNotFoundError:
+        raise native.Refusal(24) from None
+    native.check(physical == pin['physical'], 24)
+    records = [records for table, binding, records in tables
+               if table == 'replychains-2' and binding == pin['partition']]
+    native.check(len(records) == 1, 24)
+    rows = native.messages(records[0], pin['chat'])
+    native.check(rows and (not pin['root'] or
+                 (pin['root'] in rows and rows[pin['root']][0] is None)), 24)
+    name, group = native.conversation_metadata(tables, pin['partition'], pin['chat'])
+    native.check(group == pin['group'], 24)
+    name = name or ('Teams channel' if native.is_channel(pin['chat']) else 'Teams chat')
+    return name, native.snapshot_rows(key,pin,rows,name,group,consent)
 
 
 def run(command):
-    if command in ('configure', 'configured-snapshot'):
-        return portable_run(command)
-    path = absolute(os.environ.get('EXANGELOS_TEAMS_CONFIG'))
-    fd = config_directory(path)
+    native.check(command in ('resolve','configured-snapshot'), 20)
+    raw = sys.stdin.buffer.read(MAX_CONFIG+1)
+    native.check(len(raw) <= MAX_CONFIG, 20)
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        if command == 'snapshot':
-            config = read_config(fd, path.name)
-            return envelope(acquire(config['cache']), config['cache'],
-                            bytes.fromhex(config['key']), bytes.fromhex(config['scope']))
-        require(command == 'setup')
-        require(not path.resolve().is_relative_to(Path(__file__).resolve().parents[1]))
+        request = json.loads(raw)
+    except (ValueError,UnicodeError):
+        raise native.Refusal(20) from None
+    native.check(type(request) is dict, 20)
+    cache = request.get('cachePath')
+    if 'cachePath' in request:
         try:
-            config = read_config(fd, path.name)
-            key = bytes.fromhex(config['key'])
+            absolute(cache)
+        except ValueError:
+            raise native.Refusal(20) from None
+    account = request.get('account')
+    if 'account' in request:
+        native.check(type(account) is str and re.fullmatch(f'{native.GUID}/{native.GUID}', account), 20)
+        account = account.lower().split('/')
+    reference = None
+    consent = False
+    if command == 'resolve':
+        native.check(set(request) <= {'selection','scope','cachePath','account'},20)
+        value = request.get('selection')
+        if type(value) is str and value.startswith('scope-') and HEX.fullmatch(value[6:]):
+            scope = value[6:]
+            native.check('scope' not in request, 20)
+        else:
+            reference = native.reference(value, request.get('scope'))
+    else:
+        native.check(set(request) <= {'scope','cachePath','includeMessagePreview','account'},20)
+        scope, consent = request.get('scope'), request.get('includeMessagePreview')
+        native.check(type(scope) is str and HEX.fullmatch(scope) and type(consent) is bool,20)
+    state = portable_path()
+    try:
+        fd = portable_directory(state, create=reference is not None)
+    except FileNotFoundError:
+        raise native.Refusal(24) from None
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        try:
+            encoded = read_config(fd,state.name)
+            require(type(encoded) is str and HEX.fullmatch(encoded))
+            key = bytes.fromhex(encoded)
         except FileNotFoundError:
+            native.check(reference is not None, 24)
             key = secrets.token_bytes(32)
-        cache = str(absolute(os.environ.get('EXANGELOS_TEAMS_CACHE')))
-        snippet = action.c.private_snippet()
-        view = acquire(cache)
-        selection = action.extract(view, cache, key, snippet=snippet)
-        require(not any(selection.stats[name] for name in ('invalid', 'walk_gaps', 'acquisition_gaps', 'ambiguous'))
-                and len(selection.matches) == 1)
-        selected, _ = next(iter(selection.matches))
-        envelope(view, cache, key, selected)
-        save_config(fd, path.name, {'key': key.hex(), 'cache': cache, 'scope': selected.hex()})
-        return None
+            save_config(fd,state.name,key.hex())
+        if reference:
+            pin, name = resolve(key, reference, cache, account)
+            scope = native.token(key, 'pin-v1', pin)
+            save_config(fd,'pin-'+scope+'.json',pin)
+        else:
+            try:
+                pin = read_config(fd,'pin-'+scope+'.json')
+            except FileNotFoundError:
+                raise native.Refusal(24) from None
+            native.check(native.token(key,'pin-v1',pin) == scope,24)
+            name, rows = pinned(key,pin,cache,account,consent)
+        if command == 'resolve':
+            if pin['root']:
+                name = f"Replies in {name} (root {pin['root']})"
+            return {'scope':scope,'label':name}
+        return {'scope':scope,'includeMessagePreview':consent,'messages':rows}
     finally:
         os.close(fd)
 
@@ -325,14 +273,14 @@ def run(command):
 def main():
     try:
         limits()
-        require(len(sys.argv) == 2)
+        native.check(len(sys.argv) == 2, 20)
         result = run(sys.argv[1])
-        if result is not None:
-            sys.stdout.write(json.dumps(result, separators=(',', ':')) + '\n')
+        sys.stdout.write(json.dumps(result,separators=(',',':'))+'\n')
         return 0
+    except native.Refusal as exc:
+        return exc.code
     except BaseException:
-        sys.stderr.write('teams_bridge_unavailable\n')
-        return 1
+        return 21
 
 
 if __name__ == '__main__':
