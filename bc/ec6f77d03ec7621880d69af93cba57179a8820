@@ -1,0 +1,87 @@
+connectors/teams/README.md
+  s_e7318fa19b792d::t_755485474b7ec7 3,5,7,9-13,15,17,19,21,23,25,27,29,31,33,35,37,39,41
+connectors/teams/connector.json
+  s_e7318fa19b792d::t_f9a6248932d32e 3,11
+connectors/teams/runtime/bridge.py
+  s_0e553b6dbe2c11::t_f061c15d2ee7ba 1,17,65,96,131-152,155-187,189-202,206-242,244,246-248,250,252-268,276,278,280-281,283
+connectors/teams/runtime/ledger.py
+  s_e7318fa19b792d::t_b4384a78502afd 1,5,7,20,52-90,93,107-116,141,145-146,152-154,164,167-168,181-183,191-193,199,201,208-209,219-225
+connectors/teams/runtime/test_bridge.py
+  s_0e553b6dbe2c11::t_3c445288a4031b 1,3,5-6,8-43,47-81,83,85-94
+connectors/teams/runtime/test_ledger.py
+  s_e7318fa19b792d::t_014b7e3d647990 20-22,28-29,109-195,239,241-243
+connectors/teams/runtime/test_portable.py
+  s_0e553b6dbe2c11::t_6145fdc784d484 1,13,20,22-122,124
+connectors/teams/scripts/README.md
+  s_7be721570c229e::t_a2bd782d2b4eea 1,7,9,11-13
+connectors/teams/scripts/release-fixture.py
+  s_6479cf9cc360d9::t_4ccbeec120e14c 1,11-24,27-29
+connectors/teams/scripts/validate-release.py
+  s_7be721570c229e::t_11274326b18c36 15,17,27,31,61-62,71-88,98-108,112-116,119-121,127-129
+connectors/teams/src/Reconcile.ts
+  s_e7318fa19b792d::t_3475ff65522350 6-19,23-24,33,40,50
+connectors/teams/src/Source.ts
+  s_e7318fa19b792d::t_4fbd0234e098f2 2,4,6-11,13-16,18-26,28,30-53,56-59
+connectors/teams/src/Teams.ts
+  s_e7318fa19b792d::t_984e742a619dd1 1,3,8,17-24,27-29,31-34,37,41-53,55,57-62,64-70,73-76,80-90,92-93,98
+connectors/teams/test/InstalledWake.ts
+  s_7be721570c229e::t_88b114321dc15b 1-31
+connectors/teams/test/ReleaseValidation.ts
+  s_7be721570c229e::t_23ac6c0dea6e22 4-7,78-131,134,137-146,148-178,180-222,224-237,239-260,262-267,269-283
+connectors/teams/test/Teams.test.ts
+  s_e7318fa19b792d::t_d6aa67051a8d6f 2,14-15,17-23,25-26,29-30,33-44,51,63-64,66,70,72-73,84,88-90,92,96-97,101,103,105-107,109,116-117,119,122-123,128,130,132,134,149,158-159,166,172,174,177,184,196,198,201,204,213,227
+connectors/teams/validation/PROVENANCE.md
+  s_b1d1ed414f14e3::t_64ffa9188ef090 3-23
+connectors/teams/validation/current_store.py
+  s_e7318fa19b792d::t_264c0920603baa 368,371,447,455
+connectors/teams/validation/native_cache.py
+  s_0e553b6dbe2c11::t_7a59f1bc137acb 1-2,5,7-10,12,15-102,104-111,115-127,129-205,207-210,212-258
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bcec6f77d03ec7621880d69af93cba57179a8820",
+  "prompts": {},
+  "sessions": {
+    "s_0e553b6dbe2c11": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a204a4-3ea0-7472-a594-dafc3fd5776a",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_6479cf9cc360d9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a204a4-61c8-7760-8fbb-da06bebda6fb",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_7be721570c229e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a204a4-8424-73f3-85fc-e6769ccc4ee2",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_b1d1ed414f14e3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a204aa-c45d-73d0-b4ac-c3bf0ed54c0c",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_e7318fa19b792d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a204a3-68c8-7fe0-b2df-e7051b9f2592",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
