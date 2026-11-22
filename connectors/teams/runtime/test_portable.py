@@ -92,6 +92,31 @@ class PortableTests(unittest.TestCase):
         self.assertIn('/101?',reply['permalink'])
         self.assertEqual(pin,self.call(selection=link.replace('/100?','/101?'),scope='replies')['scope'])
 
+    def test_numeric_message_ids_and_deleted_text_in_native_cache(self):
+        root, reply = 1700000000000.0, 1700000000001.0
+        record = {'conversationId':CHANNEL, 'replyChainId':root, 'messageMap':{
+            str(int(root)):message(root, parentMessageId=root),
+            str(int(reply)):message(reply, parentMessageId=root, deletionInfo={}, content='Deleted fixture text')
+        }}
+        self.install(view([record]))
+        selection = self.call(selection=CHANNEL)['scope']
+        rows = self.call('configured-snapshot',scope=selection,includeMessagePreview=True)['messages']
+        self.assertEqual(len(rows),2)
+        live, = [row for row in rows if row['parent'] is None]
+        deleted, = [row for row in rows if row['parent'] == live['id']]
+        self.assertIn('/1700000000001?',deleted['permalink'])
+        self.assertEqual(live['preview'],'Hello world')
+        self.assertNotIn('preview',deleted)
+        self.assertNotIn('Deleted fixture text',json.dumps(rows))
+
+    def test_invalid_double_ids_refuse_resolution(self):
+        for value in (0.5, -1.0, float(2**53), float('inf'), float('nan')):
+            with self.subTest(value=value):
+                record = chain()
+                record['messageMap']['100']['id'] = value
+                self.install(view([record]))
+                self.call(selection=CHAT,code=21)
+
     def test_legacy_and_invalid_state(self):
         self.call('setup',code=20)
         self.call('snapshot',code=20)

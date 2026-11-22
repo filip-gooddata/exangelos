@@ -4,7 +4,6 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process"
 
 export const Token = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
 const Millis = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8640000000000000 }))
-// Python bounds printable text in Unicode code points. JS lengths count UTF-16 units.
 const bounded = (length: number) => Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(2 * length))
 const context = {
   messageTime: Schema.optionalKey(Millis),

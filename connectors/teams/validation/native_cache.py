@@ -113,6 +113,9 @@ def stores(view):
 
 
 def identifier(v):
+    if type(v) is float:
+        check(v.is_integer() and 0 <= v < 2**53)
+        v = int(v)
     if type(v) is int:
         v = str(v)
     check(type(v) is str and MESSAGE.fullmatch(v))
@@ -171,7 +174,8 @@ def label(value):
 def preview(node):
     props = node.get('properties', {})
     if (type(props) is not dict or node.get('messageType', 'Text') not in ('Text', 'RichText/Html')
-            or any(node.get(f) for f in ('deletionInfo','deleted','redacted','isDeleted','isRedacted','tombstone'))
+            or node.get('deletionInfo') is not None
+            or any(node.get(f) for f in ('deleted','redacted','isDeleted','isRedacted','tombstone'))
             or any(props.get(f) for f in ('deletetime','redacted','deleted','cards','files'))):
         return None
     content = node['content']
