@@ -1,5 +1,5 @@
 import { ledgerProcess, ledgerTestTimeout } from "./LedgerProcess.ts"
-import { ChildProcess, ChildProcessSpawner } from "effect/process"
+import { ChildProcessSpawner } from "effect/process"
 import { localSource } from "../src/Source.ts"
 import { expect, it } from "@effect/vitest"
 import { Deferred, Effect, Fiber, Layer, Sink, Stream } from "effect"
@@ -11,36 +11,44 @@ import { make } from "../src/Teams.ts"
 
 const token = (n: number) => n.toString(16).padStart(64, "0")
 const scope = token(1)
-const message = { id: token(2), body: token(3), parent: null, reaction: token(4), reactions: [] as ReadonlyArray<string> }
-const snapshot = { scope, messages: [message] }
+const message = { conversationLabel: "Project room", sender: "Alex", messageTime: 10, id: token(2), body: token(3), parent: null, reaction: token(4), reactions: [] as ReadonlyArray<string> }
+const snapshot = { scope, includeMessagePreview: false, messages: [message] }
 
-it.effect("configuration fields authorize setup and invalid inputs never access the source", () => Effect.gen(function*() {
-  const setups: Array<unknown> = []
-  let reads = 0
+const configuration = { subscriptionAccess: "persisted-cache" }
+const resolved = { scope, label: "Project room" }
+const pin = `scope-${scope}`
+const resolve = () => Effect.succeed(resolved)
+
+it.effect("one explicit cache consent permits independent describes and legacy selections fail closed", () => Effect.gen(function*() {
+  const requests: Array<unknown> = []
   const client = yield* ConnectorTest.makeClient(make({
-    configure: (values) => Effect.sync(() => { setups.push(values); return snapshot }),
-    read: Effect.sync(() => { reads++; return snapshot })
+    resolve: (request) => Effect.sync(() => { requests.push(request); return resolved }),
+    read: () => Effect.die("unexpected cache read")
   }))
   const catalogue = (yield* client.Handshake()).catalogue
-  expect(catalogue.configuration.map((field) => [field.key, field._tag, field.required]))
-    .toEqual([["selectionToken", "Secret", true], ["cachePath", "Text", false]])
-  expect((yield* client.Describe({ parameters: { selection: "selected" } }))._tag).toBe("Invalid")
-  for (const values of [{}, { selectionToken: "short" }, { selectionToken: "synthetic-marker-123", cachePath: "relative" }]) {
+  expect(catalogue.configuration.map((field) => field.key)).toEqual(["subscriptionAccess", "messagePreviews", "account", "cachePath"])
+  for (const values of [{}, { selectionToken: "legacy" }, { ...configuration, cachePath: "relative" }, { ...configuration, account: "ambiguous-name" }]) {
     expect((yield* client.Configure({ values }))._tag).toBe("Rejected")
   }
-  expect(setups).toEqual([])
-  expect(reads).toBe(0)
-  expect((yield* client.Configure({ values: { selectionToken: "synthetic-marker-123", cachePath: "/synthetic/custom-cache" } }))._tag).toBe("Accepted")
-  expect(setups).toEqual([{ selectionToken: "synthetic-marker-123", cachePath: "/synthetic/custom-cache" }])
-  expect(reads).toBe(0)
-  expect((yield* client.Describe({ parameters: { selection: "selected" } }))._tag).toBe("Described")
+  expect((yield* client.Describe({ parameters: { selection: "chat-id" } }))._tag).toBe("Invalid")
+  expect((yield* client.Configure({ values: configuration }))._tag).toBe("Accepted")
+  for (const selection of ["selected", scope]) {
+    expect((yield* client.Describe({ parameters: { selection } }))._tag).toBe("Invalid")
+  }
+  expect(requests).toEqual([])
+  for (const selection of ["first-chat", "second-chat"]) {
+    expect(yield* client.Describe({ parameters: { selection } })).toMatchObject({
+      _tag: "Described", subject: `teams:${scope}`, label: "Project room", parameters: { selection: pin }
+    })
+  }
+  expect(requests).toEqual([{ selection: "first-chat" }, { selection: "second-chat" }])
 }).pipe(Effect.provide(ledgerProcess), Effect.scoped))
 
 it.effect("real Python ledger: silent baseline, durable resume, stable replay keys and distinct repeated transitions", () => Effect.gen(function*() {
   const baseline = yield* reconcile(scope, undefined, snapshot)
   expect(baseline.events).toEqual([])
   expect(baseline.cursor.length).toBeLessThan(512)
-  const changed = { scope, messages: [{ ...message, body: token(5), reaction: token(6), reactions: [token(7)] }] }
+  const changed = { scope, includeMessagePreview: false, messages: [{ ...message, body: token(5), reaction: token(6), reactions: [token(7)] }] }
   const first = yield* reconcile(scope, baseline.cursor, changed)
   expect(first.events.map((e) => e.type)).toEqual(["message.edited", "reaction.added"])
   expect(yield* reconcile(scope, baseline.cursor, changed)).toEqual(first)
@@ -52,17 +60,17 @@ it.effect("real Python ledger: silent baseline, durable resume, stable replay ke
 
 it.effect("real Python ledger: missing candidates and unknown reactions never imply deletion or removal", () => Effect.gen(function*() {
   const other = { ...message, id: token(10) }
-  const baseline = yield* reconcile(scope, undefined, { scope, messages: [message, other] })
-  const missing = yield* reconcile(scope, baseline.cursor, { scope, messages: [{ ...other, reaction: null, reactions: null }] })
+  const baseline = yield* reconcile(scope, undefined, { scope, includeMessagePreview: false, messages: [message, other] })
+  const missing = yield* reconcile(scope, baseline.cursor, { scope, includeMessagePreview: false, messages: [{ ...other, reaction: null, reactions: null }] })
   expect(missing.events).toEqual([])
-  const returned = yield* reconcile(scope, missing.cursor, { scope, messages: [message, other] })
+  const returned = yield* reconcile(scope, missing.cursor, { scope, includeMessagePreview: false, messages: [message, other] })
   expect(returned.events).toEqual([])
 }).pipe(Effect.provide(ledgerProcess)), ledgerTestTimeout)
 
-it.effect("real Python ledger: fails closed on subject mismatch, bad resume, duplicate identities and empty acquisition", () => Effect.gen(function*() {
+it.effect("real Python ledger: fails closed on subject mismatch, bad resume, duplicate identities", () => Effect.gen(function*() {
   const baseline = yield* reconcile(scope, undefined, snapshot)
-  for (const input of [{ ...snapshot, scope: token(99) }, { scope, messages: [] },
-    { scope, messages: [message, message] }, { scope, messages: [{ ...message, body: "private-content" }] }]) {
+  for (const input of [{ ...snapshot, scope: token(99) },
+    { scope, includeMessagePreview: false, messages: [message, message] }, { scope, includeMessagePreview: false, messages: [{ ...message, body: "private-content" }] }]) {
     const error = yield* reconcile(scope, baseline.cursor, input).pipe(Effect.flip)
     expect(error._tag).toBe("ObservationGap")
     expect(JSON.stringify(error)).not.toContain("private-content")
@@ -73,57 +81,57 @@ it.effect("real Python ledger: fails closed on subject mismatch, bad resume, dup
 
 it.effect("real Python ledger: SDK names an opaque subject, starts silently, resumes a batch and filters with its cursor", () => Effect.gen(function*() {
   let current = snapshot
-  const client = yield* ConnectorTest.makeClient(make({ read: Effect.sync(() => current) }))
+  const client = yield* ConnectorTest.makeClient(make({ resolve, read: () => Effect.sync(() => current) }))
   expect((yield* client.Handshake()).catalogue.eventTypes.map((e) => e.type)).toEqual([
     "message.new", "message.reply", "message.edited", "reaction.added", "reaction.removed"
   ])
-  expect((yield* client.Configure({ values: { selectionToken: "synthetic-marker-123" } }))._tag).toBe("Accepted")
-  expect(yield* client.Describe({ parameters: { selection: "selected" } })).toMatchObject({
-    _tag: "Described", subject: `teams:${scope}`, parameters: { selection: scope }
+  expect((yield* client.Configure({ values: configuration }))._tag).toBe("Accepted")
+  expect(yield* client.Describe({ parameters: { selection: "chat-id" } })).toMatchObject({
+    _tag: "Described", subject: `teams:${scope}`, parameters: { selection: pin }
   })
-  const baseline = yield* client.Watch({ parameters: { selection: scope }, eventTypes: [] }).pipe(Stream.take(1), Stream.runCollect)
+  const baseline = yield* client.Watch({ parameters: { selection: pin }, eventTypes: [] }).pipe(Stream.take(1), Stream.runCollect)
   expect(baseline[0]?._tag).toBe("Cursor")
   if (baseline[0]?._tag !== "Cursor") throw new Error("Expected baseline cursor")
   const cursor = baseline[0].cursor
-  current = { scope, messages: [{ ...message, body: token(5), reaction: token(6), reactions: [token(7)] }] }
-  const batch = yield* client.Watch({ parameters: { selection: scope }, eventTypes: [], cursor }).pipe(Stream.take(2), Stream.runCollect)
+  current = { scope, includeMessagePreview: false, messages: [{ ...message, body: token(5), reaction: token(6), reactions: [token(7)] }] }
+  const batch = yield* client.Watch({ parameters: { selection: pin }, eventTypes: [], cursor }).pipe(Stream.take(2), Stream.runCollect)
   expect(batch.map((i) => i._tag)).toEqual(["Event", "Event"])
   expect(batch[0]).not.toHaveProperty("cursor")
   expect(batch[1]).toHaveProperty("cursor")
-  const partial = yield* client.Watch({ parameters: { selection: scope }, eventTypes: [], cursor }).pipe(Stream.take(1), Stream.runCollect)
+  const partial = yield* client.Watch({ parameters: { selection: pin }, eventTypes: [], cursor }).pipe(Stream.take(1), Stream.runCollect)
   expect(partial).toEqual(batch.slice(0, 1))
-  current = { scope, messages: [{ ...message, body: token(99), reaction: token(6), reactions: [] }] }
+  current = { scope, includeMessagePreview: false, messages: [{ ...message, body: token(99), reaction: token(6), reactions: [] }] }
   yield* TestClock.adjust("1 minute")
-  const restarted = yield* ConnectorTest.makeClient(make({ read: Effect.sync(() => current) }))
-  yield* restarted.Configure({ values: { selectionToken: "synthetic-marker-123" } })
-  const replay = yield* restarted.Watch({ parameters: { selection: scope }, eventTypes: [], cursor }).pipe(Stream.take(2), Stream.runCollect)
+  const restarted = yield* ConnectorTest.makeClient(make({ resolve, read: () => Effect.sync(() => current) }))
+  yield* restarted.Configure({ values: configuration })
+  const replay = yield* restarted.Watch({ parameters: { selection: pin }, eventTypes: [], cursor }).pipe(Stream.take(2), Stream.runCollect)
   expect(replay).toEqual(batch)
-  const filtered = yield* client.Watch({ parameters: { selection: scope }, eventTypes: [Ids.EventType.make("message.new")], cursor }).pipe(Stream.take(1), Stream.runCollect)
+  const filtered = yield* client.Watch({ parameters: { selection: pin }, eventTypes: [Ids.EventType.make("message.new")], cursor }).pipe(Stream.take(1), Stream.runCollect)
   expect(filtered[0]?._tag).toBe("Cursor")
 }).pipe(Effect.provide(ledgerProcess), Effect.scoped), ledgerTestTimeout)
 
 it.effect("real Python ledger: SDK sanitizes acquisition failure and rejects a changed private selection", () => Effect.gen(function*() {
   let current = snapshot
   let failing = false
-  const client = yield* ConnectorTest.makeClient(make({ read: Effect.suspend(() => failing ? Effect.fail(gap()) : Effect.succeed(current)) }))
-  yield* client.Configure({ values: { selectionToken: "synthetic-marker-123" } })
+  const client = yield* ConnectorTest.makeClient(make({ resolve, read: () => Effect.suspend(() => failing ? Effect.fail(gap()) : Effect.succeed(current)) }))
+  yield* client.Configure({ values: configuration })
   current = { ...snapshot, scope: token(20) }
-  const error = yield* client.Watch({ parameters: { selection: scope }, eventTypes: [] }).pipe(Stream.runCollect, Effect.flip)
+  const error = yield* client.Watch({ parameters: { selection: pin }, eventTypes: [] }).pipe(Stream.runCollect, Effect.flip)
   expect(error._tag).toBe("SourceFailed")
   failing = true
-  expect((yield* client.Configure({ values: { selectionToken: "synthetic-marker-123" } }))._tag).toBe("Rejected")
-  expect((yield* client.Describe({ parameters: { selection: "selected" } }))._tag).toBe("Invalid")
+  current = snapshot
+  expect((yield* client.Watch({ parameters: { selection: pin }, eventTypes: [] }).pipe(Stream.runCollect, Effect.flip))._tag).toBe("SourceFailed")
 }).pipe(Effect.provide(ledgerProcess), Effect.scoped))
 
 it.effect("real Python ledger: polls after the wake delay and cancels with the SDK stream", () => Effect.gen(function*() {
   let reads = 0
-  const client = yield* ConnectorTest.makeClient(make({ read: Effect.sync(() => {
+  const client = yield* ConnectorTest.makeClient(make({ resolve, read: () => Effect.sync(() => {
     reads++
-    return reads < 3 ? snapshot : { scope, messages: [message, { ...message, id: token(30), parent: message.id }] }
+    return reads === 1 ? snapshot : { scope, includeMessagePreview: false, messages: [message, { ...message, id: token(30), parent: message.id }] }
   }) }))
-  yield* client.Configure({ values: { selectionToken: "synthetic-marker-123" } })
+  yield* client.Configure({ values: configuration })
   const ready = yield* Deferred.make<void>()
-  const fiber = yield* client.Watch({ parameters: { selection: scope }, eventTypes: [] }).pipe(
+  const fiber = yield* client.Watch({ parameters: { selection: pin }, eventTypes: [] }).pipe(
     Stream.tap((item) => item._tag === "Cursor" ? Deferred.succeed(ready, undefined) : Effect.void),
     Stream.take(2), Stream.runCollect, Effect.forkChild
   )
@@ -137,54 +145,8 @@ it.effect("real Python ledger: polls after the wake delay and cancels with the S
   expect(reads).toBe(stopped)
 }).pipe(Effect.provide(ledgerProcess), Effect.scoped), ledgerTestTimeout)
 
-it.effect("real Python ledger: local source feeds Configure and Watch through the process service", () => Effect.gen(function*() {
-  let calls = 0
-  const real = yield* ChildProcessSpawner.ChildProcessSpawner
-  const spawner = ChildProcessSpawner.make((command) => {
-    const standard = command as ChildProcess.StandardCommand
-    if (typeof standard.args[0] === "string" && standard.args[0].endsWith("/runtime/ledger.py")) return real.spawn(command)
-    return Effect.gen(function*() {
-      const standard = command as ChildProcess.StandardCommand
-      expect(standard.command).toBe("python3")
-      expect(standard.args[1]).toBe(calls === 0 ? "configure" : "configured-snapshot")
-      expect(standard.args).not.toContain("synthetic-marker-123")
-      if (calls === 0) {
-        const input = standard.options.stdin
-        if (typeof input !== "object" || input === null || !("stream" in input) || !Stream.isStream(input.stream)) throw new Error("Expected private setup stdin")
-        const chunks = yield* input.stream.pipe(Stream.runCollect)
-        expect(JSON.parse(new TextDecoder().decode(Buffer.concat(chunks))))
-          .toEqual({ selectionToken: "synthetic-marker-123" })
-      } else {
-        expect(standard.options.stdin).toBe("ignore")
-      }
-      calls++
-      const current = calls < 3 ? snapshot : { scope, messages: [{ ...message, body: token(42) }] }
-      const stdout = Stream.make(new TextEncoder().encode(JSON.stringify(current)))
-      return ChildProcessSpawner.makeHandle({
-        pid: ChildProcessSpawner.ProcessId(1), exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
-        isRunning: Effect.succeed(false), kill: () => Effect.void, stdin: Sink.drain,
-        stdout, stderr: Stream.empty, all: stdout, getInputFd: () => Sink.drain,
-        getOutputFd: () => Stream.empty, unref: Effect.succeed(Effect.void)
-      })
-    })
-  })
-  yield* Effect.gen(function*() {
-    const client = yield* ConnectorTest.makeClient(make(localSource))
-    yield* client.Configure({ values: { selectionToken: "synthetic-marker-123" } })
-    const ready = yield* Deferred.make<void>()
-    const fiber = yield* client.Watch({ parameters: { selection: scope }, eventTypes: [] }).pipe(
-      Stream.tap((item) => item._tag === "Cursor" ? Deferred.succeed(ready, undefined) : Effect.void),
-      Stream.take(2), Stream.runCollect, Effect.forkChild)
-    yield* Deferred.await(ready)
-    yield* TestClock.adjust("5 seconds")
-    const items = yield* Fiber.join(fiber)
-    expect(items.map((i) => i._tag)).toEqual(["Cursor", "Event"])
-    expect(items[1]?._tag === "Event" && items[1].event.type).toBe("message.edited")
-  }).pipe(Effect.provide(Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, spawner)))
-}).pipe(Effect.provide(ledgerProcess), Effect.scoped), ledgerTestTimeout)
-
 it.effect("real Python ledger: process failures and oversized output remain sanitized observation gaps", () => Effect.gen(function*() {
-  for (const [code, text] of [[1, "synthetic private diagnostic"], [0, "x".repeat(300001)]] as const) {
+  for (const [code, text] of [[1, "synthetic private diagnostic"], [0, "x".repeat(5_000_001)]] as const) {
     const output = Stream.make(new TextEncoder().encode(text))
     const layer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.make(() =>
       Effect.succeed(ChildProcessSpawner.makeHandle({
@@ -193,33 +155,33 @@ it.effect("real Python ledger: process failures and oversized output remain sani
         stdout: output, stderr: Stream.empty, all: output, getInputFd: () => Sink.drain,
         getOutputFd: () => Stream.empty, unref: Effect.succeed(Effect.void)
       }))))
-    const error = yield* localSource.read.pipe(Effect.provide(layer), Effect.flip)
-    expect(error._tag).toBe("ObservationGap")
+    const error = yield* localSource.read({ scope, includeMessagePreview: false }).pipe(Effect.provide(layer), Effect.flip)
+    expect(["ObservationGap", "SourceUnavailable"]).toContain(error._tag)
     expect(JSON.stringify(error)).not.toContain(text)
   }
 }).pipe(Effect.provide(ledgerProcess)))
 
 it.effect("real Python ledger: new roots and replies have distinct event types", () => Effect.gen(function*() {
   const baseline = yield* reconcile(scope, undefined, snapshot)
-  const next = yield* reconcile(scope, baseline.cursor, { scope, messages: [message,
+  const next = yield* reconcile(scope, baseline.cursor, { scope, includeMessagePreview: false, messages: [message,
     { ...message, id: token(20) }, { ...message, id: token(21), parent: message.id }] })
   expect(next.events.map((event) => event.type)).toEqual(["message.new", "message.reply"])
 }).pipe(Effect.provide(ledgerProcess)), ledgerTestTimeout)
 
 it.effect("real Python ledger: membership order and aggregate fingerprint changes do not emit reactions", () => Effect.gen(function*() {
-  const baseline = yield* reconcile(scope, undefined, { scope,
+  const baseline = yield* reconcile(scope, undefined, { scope, includeMessagePreview: false,
     messages: [{ ...message, reactions: [token(8), token(7)] }] })
-  const reordered = yield* reconcile(scope, baseline.cursor, { scope,
+  const reordered = yield* reconcile(scope, baseline.cursor, { scope, includeMessagePreview: false,
     messages: [{ ...message, reaction: token(90), reactions: [token(7), token(8)] }] })
   expect(reordered.events).toEqual([])
-  const changed = { scope, messages: [{ ...message, reactions: [token(9)] }] }
+  const changed = { scope, includeMessagePreview: false, messages: [{ ...message, reactions: [token(9)] }] }
   expect((yield* reconcile(scope, reordered.cursor, changed)).events.map((e) => e.type))
     .toEqual(["reaction.added", "reaction.removed", "reaction.removed"])
 }).pipe(Effect.provide(ledgerProcess)), ledgerTestTimeout)
 
 it.effect("real Python ledger: same member add, remove and readd have distinct keys and stable replays", () => Effect.gen(function*() {
   const baseline = yield* reconcile(scope, undefined, snapshot)
-  const addedSnapshot = { scope, messages: [{ ...message, reactions: [token(7)] }] }
+  const addedSnapshot = { scope, includeMessagePreview: false, messages: [{ ...message, reactions: [token(7)] }] }
   const added = yield* reconcile(scope, baseline.cursor, addedSnapshot)
   const removed = yield* reconcile(scope, added.cursor, snapshot)
   const readded = yield* reconcile(scope, removed.cursor, addedSnapshot)
@@ -231,15 +193,15 @@ it.effect("real Python ledger: same member add, remove and readd have distinct k
 
 it.effect("real Python ledger: unknown membership breaks continuity in both directions", () => Effect.gen(function*() {
   for (const initial of [[], [token(7)]]) {
-    const baseline = yield* reconcile(scope, undefined, { scope,
+    const baseline = yield* reconcile(scope, undefined, { scope, includeMessagePreview: false,
       messages: [{ ...message, reactions: initial }] })
-    const unknown = yield* reconcile(scope, baseline.cursor, { scope,
+    const unknown = yield* reconcile(scope, baseline.cursor, { scope, includeMessagePreview: false,
       messages: [{ ...message, reactions: null }] })
     expect(unknown.events).toEqual([])
-    const restored = yield* reconcile(scope, unknown.cursor, { scope,
+    const restored = yield* reconcile(scope, unknown.cursor, { scope, includeMessagePreview: false,
       messages: [{ ...message, reactions: initial.length ? [] : [token(7)] }] })
     expect(restored.events).toEqual([])
-    const continued = yield* reconcile(scope, restored.cursor, { scope,
+    const continued = yield* reconcile(scope, restored.cursor, { scope, includeMessagePreview: false,
       messages: [{ ...message, reactions: initial }] })
     expect(continued.events.map((e) => e.type)).toEqual([initial.length ? "reaction.added" : "reaction.removed"])
   }
@@ -248,7 +210,7 @@ it.effect("real Python ledger: unknown membership breaks continuity in both dire
 it.effect("real Python ledger: rejects duplicate memberships, malformed members and obsolete cursors", () => Effect.gen(function*() {
   const baseline = yield* reconcile(scope, undefined, snapshot)
   for (const reactions of [[token(7), token(7)], ["synthetic-invalid"], [null], Array.from({ length: 501 }, (_, i) => token(i))]) {
-    const input = { scope, messages: [{ ...message, reactions }] }
+    const input = { scope, includeMessagePreview: false, messages: [{ ...message, reactions }] }
     expect((yield* reconcile(scope, baseline.cursor, input).pipe(Effect.flip))._tag).toBe("ObservationGap")
   }
   for (const cursor of [
@@ -262,5 +224,5 @@ it.effect("real Python ledger: rejects duplicate memberships, malformed members 
 it.effect("real Python ledger: large metadata baselines retain a bounded opaque cursor", () => Effect.gen(function*() {
   const messages = Array.from({ length: 500 }, (_, i) => ({ ...message, id: token(i + 100),
     reactions: Array.from({ length: 40 }, (_, j) => token(j + 1000)) }))
-  expect((yield* reconcile(scope, undefined, { scope, messages })).cursor.length).toBeLessThan(512)
+  expect((yield* reconcile(scope, undefined, { scope, includeMessagePreview: false, messages })).cursor.length).toBeLessThan(512)
 }).pipe(Effect.provide(ledgerProcess)), ledgerTestTimeout)

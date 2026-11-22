@@ -1,5 +1,26 @@
 # Teams validation provenance
 
+## Teams desktop observations in 0.2
+
+The connector resolves Teams manager databases by tenant, user and locale. The
+public m365crawl source documents account-qualified database names, the
+`replychains-2` message map, original arrival times, conversation metadata and
+the construction of Teams message links. These formats informed the local
+Python implementation and the synthetic LevelDB fixtures. See the pinned
+[account parser](https://github.com/ourostack/m365crawl/blob/d07df5c68323c018575c35cf4590fe4b2c6fffb6/internal/teamsdesktop/names.go),
+[store reader](https://github.com/ourostack/m365crawl/blob/d07df5c68323c018575c35cf4590fe4b2c6fffb6/internal/teamsdesktop/read.go)
+and [record mapper](https://github.com/ourostack/m365crawl/blob/d07df5c68323c018575c35cf4590fe4b2c6fffb6/internal/teamsdesktop/map.go).
+Microsoft documents [Teams chat and channel deep links](https://learn.microsoft.com/en-us/microsoftteams/platform/concepts/build-and-test/deep-link-teams).
+
+Version 0.2 retired the action and controlled probes from the runtime and
+tooling. The manifest hashes below describe their historical promotion. The
+current installed-release checks use synthetic caches and account partitions.
+They exercise the decoder and delivery path. They do not establish current
+sign-in, access to a server-side thread, live platform compatibility, or
+support for every serializer and Teams account variant.
+
+## Original decoder promotion
+
 Source: implementation and synthetic tests promoted from a local development snapshot.
 
 This promotion is source-derived provenance, not new live evidence. Only the six approved implementation modules and six associated synthetic test modules were promoted. Source files were not modified. Python tokenize COMMENT tokens were removed from destination copies only; trailing whitespace was removed; docstrings and ASTs are preserved. No app data, credentials, raw content, JSON snapshots or live_probe.py were copied.

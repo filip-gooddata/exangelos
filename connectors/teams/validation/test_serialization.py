@@ -14,6 +14,7 @@ def enc(obj):
     if type(obj) is str:
         b = obj.encode('utf-8'); return b'S'+vint(len(b))+b
     if type(obj) is int: return b'I'+vint((obj<<1) ^ (obj>>31))
+    if type(obj) is float: return b'N'+struct.pack('<d',obj)
     if type(obj) is list: return b'A'+vint(len(obj))+b''.join(map(enc,obj))+b'$\0'+vint(len(obj))
     if type(obj) is dict: return b'o'+b''.join(enc(k)+enc(v) for k,v in obj.items())+b'{'+vint(len(obj))
     raise ValueError('fixture_type')

@@ -365,9 +365,10 @@ class Snapshot:
             require(signature(os.stat(name, dir_fd=self.fd, follow_symlinks=False)) == sig)
 
 
-def _current_view(path):
+def _current_view(path, expected_directory=None):
     snap = Snapshot(path)
     try:
+        require(expected_directory is None or snap.start[:2] == expected_directory)
         names = snap.names()
         current = snap.read('CURRENT')
         require(re.fullmatch(rb'MANIFEST-[0-9]+\n', current) is not None)
@@ -443,7 +444,7 @@ def _current_view(path):
         os.close(snap.fd)
 
 
-def current_view(path):
+def current_view(path, expected_directory=None):
     """Return (current byte-key/value mapping, fixed-key counts/booleans).
 
     Raises Invalid with a static message and no chained exception on all
@@ -451,7 +452,7 @@ def current_view(path):
     Callers must never print the returned mapping or raw exception diagnostics.
     """
     try:
-        return _current_view(path)
+        return _current_view(path, expected_directory)
     except Exception:
         pass
     raise Invalid('unavailable') from None

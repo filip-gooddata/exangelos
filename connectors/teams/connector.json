@@ -1,6 +1,6 @@
 {
   "name": "teams",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "entry": {
     "_tag": "Bundle",
     "path": "dist/main.js"
@@ -8,11 +8,9 @@
   "files": [
     "runtime/bridge.py",
     "runtime/ledger.py",
-    "validation/action_probe.py",
-    "validation/controlled_probe.py",
+    "validation/native_cache.py",
     "validation/current_store.py",
     "validation/idb_comparator.py",
-    "validation/semantics.py",
     "validation/serialization.py",
     "validation/reactions.py",
     "validation/probe.py",

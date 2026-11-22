@@ -1,11 +1,13 @@
-Run the bounded release contract from a committed checkout:
+From a committed checkout, run the installed Teams release checks with Bun, pnpm, Git and Python 3.10+ on PATH.
 
 ```sh
 python3 connectors/teams/scripts/validate-release.py --source HEAD
 ```
 
-The default packer is pinned to `75e07311b13bdc1569f7732b89efe682f7406d9b`. The runner exports it with `git archive`, overlays only committed `connectors/teams`, installs frozen dependencies, checks Effect 4.1.4, and invokes the actual packaging CLI. It requires Bun, pnpm, Git and Python 3.10+ on PATH. `--out` selects an external evidence directory; use a fresh directory. No worktree is created.
+For an integration in progress, add `--worktree` to overlay tracked and nonignored Teams files from the checkout. The runner records their SHA-256 hashes. The packer defaults to the source revision. Use `--packer REV` to supply a different host and packer, and `--out DIR` for a fresh evidence directory outside the repository.
 
-The lifecycle contract executes the installed bundle through `StdioConnectorRuntime`, in the install directory with an explicit environment excluding source Python imports and test bytecode suppression. Synthetic cache/config fixtures are generated outside that directory and removed after testing. It checks deferred Configure, preconfiguration sentinels, missing requirements, silent baseline/idle, edited-message delivery, durable replay after process restart, and forbidden installed ledger/setup paths. FIFO metadata plus a Python shim establishes preconfiguration isolation; it is not an operating-system syscall trace. Idle observations span two polling intervals.
+The runner exports the host into a temporary directory, installs frozen dependencies, builds the release archive, verifies its checksum, manifest inventory and installed directory digest, and starts its bundle through the host stdio runtime. It supplies synthetic homes and LevelDB fixtures. A Python shim and FIFO check that startup, unconfigured requests and consent do not invoke Python or read the fixture before a configured subscription request.
 
-Sorted hash and metadata inventories exclude access time, which reads can change. They include file/directory paths, mode, size, mtime and ctime. Evidence contains command/cwd/exit/deadline records, exact revisions, archive hash, case results and inventories; no private fixture content. Source tests are not included in the manifest or release archive. The runner removes build/install trees and synthetic fixtures, retaining the archive and evidence. Each command and lifecycle scope has a finite deadline; production timeout behavior is unchanged.
+The lifecycle cases cover conversation and thread scopes, historical backfill, a fresh burst, edits and reactions, preview policy, restart and replay, legacy selection rejection and account portability. Host intake and delivery pass installed events to the T3 wake adapter, which executes a scratch CLI that captures arguments and stdin. The checks compare those captures to the expected agent command and rendered wake. They exercise host components directly without a daemon or a live T3 thread.
+
+The evidence directory retains the archive, revision record, command outcomes, case log and installed-file inventories. Inventories compare contents, permissions, sizes, mtime and ctime after each connector process. Temporary build, install and synthetic data are removed.
