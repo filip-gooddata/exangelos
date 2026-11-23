@@ -1,0 +1,31 @@
+apps/tray/src/view/Connectors.ts
+  s_d62eee476d040c::t_191f5f3a1de07d 30,37
+apps/tray/src/view/Main.ts
+  s_d62eee476d040c::t_4221e37c50eba2 8
+apps/tray/test/DaemonClient.test.ts
+  s_d62eee476d040c::t_5947f1e3a05fc1 49-50,73
+apps/tray/test/Facts.test.ts
+  s_d62eee476d040c::t_9afebf915f47eb 68,70
+apps/tray/test/Panel.test.ts
+  s_d62eee476d040c::t_7c210509406dea 13
+apps/tray/test/PanelView.test.ts
+  s_d62eee476d040c::t_23e68931ca4b4f 90
+apps/tray/test/fixtures.ts
+  s_d62eee476d040c::t_529e22175a7eae 3-5,53,213-217,251,255,261-262
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1c2f3127bd35e487f5e5659bb72e054d7c44741d",
+  "prompts": {},
+  "sessions": {
+    "s_d62eee476d040c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6048d1db-8b90-4a1a-89a9-a164adfa43b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
