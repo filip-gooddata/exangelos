@@ -1,0 +1,35 @@
+adapters/daemon-client/test/DaemonTransport.test.ts
+  s_65688c5988f66c::t_9e7e0103c362f6 72,84
+adapters/service/src/ServiceManager.ts
+  s_65688c5988f66c::t_60306bcb0867c6 111
+apps/cli/test/entry.test.ts
+  s_65688c5988f66c::t_fa04c85b50fdcf 46
+apps/daemon/src/Daemon.ts
+  s_65688c5988f66c::t_0973e6402d44ca 57
+apps/daemon/src/Handlers.ts
+  s_65688c5988f66c::t_7dc4cba995a0ee 210-214
+packages/application/src/connectors/management.ts
+  s_65688c5988f66c::t_7bb0e1e1939d0e 279
+packages/application/src/ports/ServiceManager.ts
+  s_65688c5988f66c::t_c32555ab1eb276 20-24
+packages/application/src/testing/ServiceManagerFake.ts
+  s_65688c5988f66c::t_4a69dcd39c8a3c 8
+packages/application/test/connectors/management.test.ts
+  s_65688c5988f66c::t_a39b7a1379d816 11,15-16,244-256
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "62fa58b50c983651aa35c2f1cedda0311f04468e",
+  "prompts": {},
+  "sessions": {
+    "s_65688c5988f66c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "1bd71b6e-c8e0-4451-8cb5-24a6a60529dd",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
