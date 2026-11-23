@@ -252,7 +252,8 @@ class SetupTests(unittest.TestCase):
                 migrated = self.resolve('scope-' + legacy['expectedScope'])
                 self.assertEqual(migrated['expectedScope'], legacy['expectedScope'])
                 self.assertEqual(migrated['key'], legacy['key'])
-                fresh = self.resolve(CHANNEL)
+                self.assertEqual(self.resolve(CHANNEL), migrated)
+                fresh = self.resolve(OTHER, scope='replies')
                 self.assertEqual(fresh['volumeIdentity'], {'kind': 'volume'})
                 for active in (fresh, migrated):
                     handle = 'scope-' + active['expectedScope']
@@ -271,6 +272,8 @@ class SetupTests(unittest.TestCase):
 
                     with mock.patch.object(os, 'fstat', Renumbered):
                         self.assertEqual(self.resolve(handle), active)
+                        raw = self.resolve(CHANNEL) if active == migrated else self.resolve(OTHER, scope='replies')
+                        self.assertEqual(raw, active)
                         again = source.acquire(req)
                         self.assertEqual(again, snap)
                         self.assertEqual(ledger.reconcile(dict(snapshot=again, observedAt=1700000001000,
@@ -279,9 +282,19 @@ class SetupTests(unittest.TestCase):
                         self.reject(24, 'scope-' + unverified['expectedScope'])
                     uuid.return_value = '2' * 32
                     self.reject(24, handle)
+                    self.assertNotEqual(self.resolve(CHANNEL)['expectedScope'], migrated['expectedScope'])
                     with self.assertRaises(source.PinnedScopeChanged):
                         source.acquire(req)
                     uuid.return_value = '1' * 32
+
+    def test_raw_reference_migrates_an_existing_pin_before_first_watch_reopen(self):
+        with mock.patch.object(setup.sys, 'platform', 'linux'):
+            original = self.resolve(CHANNEL)
+        with mock.patch.object(setup.sys, 'platform', 'darwin'), mock.patch.object(source, 'volume_uuid', return_value='3' * 32):
+            raw = self.resolve(CHANNEL)
+            self.assertEqual(raw['expectedScope'], original['expectedScope'])
+            self.assertEqual(raw, self.resolve('scope-' + original['expectedScope']))
+            self.assertEqual(raw['volumeIdentity']['kind'], 'legacy')
 
     def test_equivalent_root_spelling_reopens_same_pin(self):
         original = self.resolve(REPLY)
