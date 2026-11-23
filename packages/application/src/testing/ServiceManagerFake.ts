@@ -5,7 +5,7 @@ import { ServiceManager, type Status } from "../ports/ServiceManager.ts"
 export const layerServiceManager = (initial: Status): Layer.Layer<ServiceManager> =>
   Layer.unwrap(Effect.map(Ref.make(initial), (status) =>
     Layer.succeed(ServiceManager, {
-      method: initial.method,
+      startMethod: Effect.succeed(initial.method),
       status: Ref.get(status),
       install: Ref.update(status, (s) => ({ ...s, installed: true })),
       start: Ref.update(status, (s) => ({ ...s, installed: true, running: true }))

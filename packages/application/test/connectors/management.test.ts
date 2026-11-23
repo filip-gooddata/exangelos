@@ -8,10 +8,12 @@ import {
   enableConnector,
   importConnector,
   management,
+  startMethod,
   ConnectorAccess,
   ConnectorRepository,
   ConnectorRuntime,
-  SecretStore
+  SecretStore,
+  ServiceManager
 } from "@exangelos/application"
 import {
   AlertSinkFake,
@@ -239,4 +241,17 @@ describe("the management group", () => {
     expect(Object.keys(management).sort()).toEqual([...DaemonContract.ManagementGroup.requests.keys()].sort())
     expect(Object.keys(management).filter((method) => agent.includes(method))).toEqual([])
   })
+
+  it.effect("answers the start method without asking the service manager for its status", () =>
+    Effect.gen(function*() {
+      const asked = yield* startMethod.pipe(
+        Effect.provideService(ServiceManager.ServiceManager, ServiceManager.ServiceManager.of({
+          startMethod: Effect.succeed("homebrew"),
+          status: Effect.die("status runs brew services info"),
+          install: Effect.void,
+          start: Effect.void
+        }))
+      )
+      expect(asked).toBe("homebrew")
+    }))
 })

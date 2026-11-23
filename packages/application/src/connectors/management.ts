@@ -276,7 +276,7 @@ export const setSettings = (actor: Session.Actor, settings: Settings.Settings) =
   })
 
 /** How this install starts the daemon; the caller adds its own version. Runs no service command. */
-export const startMethod = ServiceManager.use((manager) => Effect.succeed(manager.method))
+export const startMethod = ServiceManager.use((manager) => manager.startMethod)
 
 /** The management group's use cases by contract method. None is offered to the agent group. */
 export const management = {

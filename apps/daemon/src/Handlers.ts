@@ -207,7 +207,11 @@ export const layer = DaemonContract.DaemonContract.toLayer(instrumented({
       })
     ),
   ServiceStatus: () =>
-    Effect.map(startMethod, (startMethod) => ({ version, startMethod })),
+    startMethod.pipe(
+      Effect.catchTag("ServiceFailed", (e) =>
+        Effect.as(Effect.logWarning("service status unavailable", Cause.fail(e)), e.method)),
+      Effect.map((startMethod) => ({ version, startMethod }))
+    ),
   SetEventAlerts: (payload, caller) =>
     Subscriptions.setEventAlerts(actor(caller), payload).pipe(
       Effect.catchTags({ ...lookup, HumanRequired: Errors.ownerOnlySubscription })

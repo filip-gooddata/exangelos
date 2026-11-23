@@ -69,7 +69,7 @@ const serviceServing = (path: string, calls: Array<string>) =>
   Layer.effect(
     ServiceManager.ServiceManager,
     Effect.map(Effect.scope, (scope) => ({
-      method: stopped.method,
+      startMethod: Effect.succeed(stopped.method),
       status: Effect.succeed(stopped),
       install: Effect.sync(() => void calls.push("install")),
       start: Effect.sync(() => void calls.push("start")).pipe(
@@ -81,7 +81,7 @@ const serviceServing = (path: string, calls: Array<string>) =>
   )
 
 const serviceFailing = Layer.succeed(ServiceManager.ServiceManager, {
-  method: stopped.method,
+  startMethod: Effect.succeed(stopped.method),
   status: Effect.succeed({ ...stopped, installed: true }),
   install: Effect.void,
   start: Effect.fail(new ServiceManager.ServiceFailed({ method: "launch-agent", reason: "launchctl bootstrap exited 5" }))

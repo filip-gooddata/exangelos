@@ -54,7 +54,7 @@ export interface Options extends Choices {
 
 const unavailable = (failure: ServiceManager.ServiceFailed) =>
   ServiceManager.ServiceManager.of({
-    method: failure.method,
+    startMethod: Effect.fail(failure),
     status: Effect.fail(failure),
     install: Effect.fail(failure),
     start: Effect.fail(failure)
