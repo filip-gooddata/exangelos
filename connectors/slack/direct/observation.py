@@ -70,7 +70,7 @@ def display_text(value, mrkdwn=False):
         def label(match):
             target, caption = match.groups()
             if caption is not None:
-                return caption if re.match(r'(?:[a-z][a-z0-9+.-]*:|[!@#])', target, re.I) else match[0]
+                return caption
             if target.startswith('!date^'):
                 return ''
             if target.startswith(('mailto:', '!', '#', '@', 'https://', 'http://')):

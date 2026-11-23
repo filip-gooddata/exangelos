@@ -198,6 +198,7 @@ def app_posts():
     attachment = dict(title='Fixture pull request', title_link='https://example.invalid/pulls/42')
     return [
         ('Fixture Jira', dict(blocks=jira), 'FIX-42 moved to Ready'),
+        ('Fixture Jira', dict(blocks=[section('Read <example.invalid/private|Fixture label>')]), 'Read Fixture label'),
         ('Fixture GitHub', dict(attachments=[attachment]), 'Fixture pull request'),
         ('Fixture GitHub', dict(attachments=[dict(blocks=[github])]), 'Merged pull request 42'),
         ('Fixture GitHub', dict(text='<https://example.invalid/job|job> '+'a'*40, blocks=[opaque_label]), 'Merged '+'a'*40),
