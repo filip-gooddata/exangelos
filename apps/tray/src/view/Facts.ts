@@ -248,6 +248,10 @@ export const connectorIcon = (connectors: ReadonlyArray<Connector.Status>, name:
   return icon === undefined ? undefined : `data:${icon.mediaType};base64,${icon.data}`
 }
 
+/** What a row is called: the connector's label, else the agent's intent; never the raw subject, which only the tooltip and detail view show. */
+export const rowLabel = (subscription: Subscription.Subscription): string =>
+  subscription.label === "" ? subscription.intent : subscription.label
+
 /** What a row's tooltip tells beyond its label: the connector, the raw subject and the expiry. */
 export const rowHover = (now: number, subscription: Subscription.Subscription): string =>
   [

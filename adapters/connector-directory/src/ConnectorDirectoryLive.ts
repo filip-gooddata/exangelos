@@ -121,7 +121,8 @@ export const layer = Layer.effect(
             Effect.option
           )
           if (Option.isNone(manifest) || manifest.value.icon === undefined) return Option.none()
-          return yield* readIcon(at, manifest.value.icon).pipe(
+          const declared = manifest.value.icon
+          return yield* (typeof declared === "string" ? readIcon(at, declared) : Effect.fail("the icon is not a path")).pipe(
             Effect.tap(() => Effect.sync(() => refused.delete(at))),
             Effect.asSome,
             Effect.catch((reason) => {

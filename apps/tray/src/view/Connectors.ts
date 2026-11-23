@@ -4,7 +4,7 @@ import type { Html } from "foldkit/html"
 import { Request } from "../state/Panel.ts"
 import * as Facts from "./Facts.ts"
 import { type ImportKind, Message, type Model } from "./Model.ts"
-import { ask, button, fact, go, type H, header, mono, notices, pill, connectorBadge, section } from "./Parts.ts"
+import { ask, button, connectorBadge, fact, go, type H, header, iconOf, mono, notices, pill, section } from "./Parts.ts"
 
 const plain = (h: H, model: Model, title: string, text: string): ReadonlyArray<Html> => [
   header(h, model, title),
@@ -12,7 +12,7 @@ const plain = (h: H, model: Model, title: string, text: string): ReadonlyArray<H
   null
 ]
 
-const loadedConnectors = (model: Model): Result.Result<ReadonlyArray<Connector.Connector>, string> => {
+const loadedConnectors = (model: Model): Result.Result<ReadonlyArray<Connector.Status>, string> => {
   const { state } = model
   switch (state._tag) {
     case "Loading":
@@ -27,14 +27,14 @@ const loadedConnectors = (model: Model): Result.Result<ReadonlyArray<Connector.C
 const configuredByText = (connector: Connector.Connector): string | undefined =>
   connector.configuredBy === undefined ? undefined : `configured by ${Facts.actorName(connector.configuredBy)}`
 
-const connectorRow = (h: H, connector: Connector.Status): Html => {
+const connectorRow = (h: H, model: Model, connector: Connector.Status): Html => {
   const configured = configuredByText(connector)
   return h.keyed("button")(connector.name, [
     h.Type("button"),
     h.Class("row connector-row"),
     h.OnClick(go({ _tag: "Connector", name: connector.name }))
   ], [
-    connectorBadge(h, connector.name, Facts.connectorIcon([connector], connector.name)),
+    connectorBadge(h, connector.name, iconOf(model, [connector], connector.name)),
     h.span([h.Class("row-body")], [
       h.span([h.Class("row-line")], [
         h.span([h.Class("row-label")], [connector.name]),
@@ -137,7 +137,7 @@ export const connectors = (h: H, model: Model): ReadonlyArray<Html> => {
         ? h.p([h.Class(model.state._tag === "Ready" ? "load-error" : "quiet-line")], [loaded.failure])
         : loaded.success.length === 0
         ? h.p([h.Class("quiet-line")], ["No connectors yet. Import one below."])
-        : h.section([h.Class("connector-list"), h.AriaLabel("Connectors")], loaded.success.map((connector) => connectorRow(h, connector))),
+        : h.section([h.Class("connector-list"), h.AriaLabel("Connectors")], loaded.success.map((connector) => connectorRow(h, model, connector))),
       importSection(h, model)
     ]),
     importFooter(h, model)

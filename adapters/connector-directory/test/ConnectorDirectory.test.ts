@@ -63,21 +63,27 @@ describe("ConnectorDirectory", () => {
       Effect.gen(function*() {
         yield* Effect.promise(() => buildTemplate(Path.join(root, "template")))
         yield* writeConnector(Path.join(root, "github-pr"), "github-pr")
-        yield* Effect.promise(async () => {
-          const manifest = Path.join(root, "github-pr", "connector.json")
-          const json = JSON.parse(await Fs.readFile(manifest, "utf8")) as object
-          await Fs.writeFile(manifest, JSON.stringify({ ...json, icon: "icon.png" }))
-          await Fs.writeFile(Path.join(root, "github-pr", "icon.png"), "<svg/>")
-        })
+        yield* writeConnector(Path.join(root, "jira"), "jira")
+        const withIcon = (name: string, icon: unknown) =>
+          Effect.promise(async () => {
+            const manifest = Path.join(root, name, "connector.json")
+            const json = JSON.parse(await Fs.readFile(manifest, "utf8")) as object
+            await Fs.writeFile(manifest, JSON.stringify({ ...json, icon }))
+          })
+        yield* withIcon("github-pr", "icon.png")
+        yield* withIcon("jira", null)
+        yield* Effect.promise(() => Fs.writeFile(Path.join(root, "github-pr", "icon.png"), "<svg/>"))
         const directory = yield* ConnectorDirectory.ConnectorDirectory
 
         const connectors = yield* directory.list
         const template = yield* directory.icon(Ids.ConnectorName.make("template"))
         const refused = yield* directory.icon(Ids.ConnectorName.make("github-pr"))
+        const notAPath = yield* directory.icon(Ids.ConnectorName.make("jira"))
 
-        expect(connectors.map((connector) => connector.name)).toEqual(["github-pr", "template"])
+        expect(connectors.map((connector) => connector.name)).toEqual(["github-pr", "jira", "template"])
         expect(Option.map(template, (icon) => icon.mediaType)).toEqual(Option.some("image/svg+xml"))
         expect(refused).toEqual(Option.none())
+        expect(notAPath).toEqual(Option.none())
       })
     ).pipe(Effect.scoped))
 

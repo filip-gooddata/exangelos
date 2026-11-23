@@ -5,7 +5,7 @@ import type { Detail } from "../daemon/DaemonClient.ts"
 import { bySession, type PanelState, Request } from "../state/Panel.ts"
 import * as Facts from "./Facts.ts"
 import { Message, type Model } from "./Model.ts"
-import { button, count, go, type H, notices, pill, connectorBadge, when } from "./Parts.ts"
+import { button, connectorBadge, count, go, type H, iconOf, notices, pill, when } from "./Parts.ts"
 
 type Ready = Extract<PanelState, { _tag: "Ready" }>
 
@@ -33,7 +33,7 @@ const needsYouStrip = (h: H, model: Model, state: Ready): Html => {
     ...alerts.map((alert) => {
       const item = Facts.needsYouItem(model.now, alert, connectors, subscriptions)
       return h.div([h.Class("needs-you-item")], [
-        connectorBadge(h, item.connector, Facts.connectorIcon(connectors, item.connector)),
+        connectorBadge(h, item.connector, iconOf(model, connectors, item.connector)),
         h.div([h.Class("needs-you-text")], [
           h.p([h.Class("line-main")], [item.title]),
           h.p([h.Class("line-quiet")], [item.detail])
@@ -78,17 +78,17 @@ const row = (
     h.Title(Facts.rowHover(model.now, subscription)),
     h.OnClick(go({ _tag: "Subscription", id: subscription.id }))
   ], [
-    connectorBadge(h, subscription.connector, Facts.connectorIcon(connectors, subscription.connector)),
+    connectorBadge(h, subscription.connector, iconOf(model, connectors, subscription.connector)),
     h.span([h.Class("row-body")], [
       h.span([h.Class("row-line")], [
-        h.span([h.Class("row-label")], [subscription.label === "" ? subscription.subject : subscription.label]),
+        h.span([h.Class("row-label")], [Facts.rowLabel(subscription)]),
         tag === undefined ? null : pill(h, tag, tone === "alert" ? "ember" : "quiet"),
         h.span([h.Class("row-aside")], [
           event === undefined ? null : h.span([h.Class("time")], [Facts.age(model.now, event.occurredAt)]),
           pending > 0 && Facts.isOpen(subscription) ? count(h, pending) : null
         ])
       ]),
-      h.span([h.Class("row-intent")], [subscription.intent]),
+      subscription.label === "" ? null : h.span([h.Class("row-intent")], [subscription.intent]),
       facts.length === 0 ? null : h.span([h.Class("row-fact")], [facts.join(". ")])
     ])
   ])
@@ -136,10 +136,10 @@ const closedList = (h: H, model: Model, state: Ready, closed: ReadonlyArray<Subs
           h.Title(Facts.rowHover(model.now, subscription)),
           h.OnClick(go({ _tag: "Subscription", id: subscription.id }))
         ], [
-          connectorBadge(h, subscription.connector, Facts.connectorIcon(connectors, subscription.connector)),
+          connectorBadge(h, subscription.connector, iconOf(model, connectors, subscription.connector)),
           h.span([h.Class("row-body")], [
             h.span([h.Class("row-line")], [
-              h.span([h.Class("row-label")], [subscription.label === "" ? subscription.subject : subscription.label])
+              h.span([h.Class("row-label")], [Facts.rowLabel(subscription)])
             ]),
             h.span([h.Class("row-fact")], [Facts.stateFact(model.now, subscription, undefined, titles)])
           ])

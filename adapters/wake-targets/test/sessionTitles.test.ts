@@ -1,7 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Duration, Effect, Layer, Option } from "effect"
+import { Duration, Effect, Option } from "effect"
 import { TestClock } from "effect/testing"
-import { SessionTitles as Port } from "@exangelos/application"
 import type { Session } from "@exangelos/domain"
 import { SessionTitles, T3 } from "../src/index.ts"
 import { exited, fakeBin, recordingSpawner } from "./fixtures.ts"
@@ -12,11 +11,8 @@ const thread: Session.Target = { harness: "t3", sessionId: "thread-1" }
 const withTitles = (answer: { readonly exitCode: number; readonly stdout?: string }) =>
   Effect.gen(function*() {
     const runner = yield* recordingSpawner(answer)
-    const service = yield* Effect.provide(
-      Port.SessionTitles.use(Effect.succeed),
-      SessionTitles.layer({ lookup: () => fakeBin }).pipe(Layer.provide(runner.layer))
-    )
-    return { titles: service.titles, spawned: runner.spawned }
+    const service = yield* SessionTitles.make({ lookup: () => fakeBin }).pipe(Effect.provide(runner.layer))
+    return { titles: service.titles, lookup: service.lookup, spawned: runner.spawned }
   })
 
 describe("T3 thread titles", () => {
@@ -38,13 +34,14 @@ describe("T3 thread titles", () => {
 
 describe("session titles", () => {
   it.effect("names a T3 thread through t3 thread show and leaves out harnesses without a resolver", () =>
-    Effect.gen(function*() {
-      const { titles, spawned } = yield* withTitles({ exitCode: 0, stdout: shown("Tray design pass") })
-      const result = yield* titles([
+    Effect.scoped(Effect.gen(function*() {
+      const { lookup, spawned } = yield* withTitles({ exitCode: 0, stdout: shown("Tray design pass") })
+      const result = yield* lookup([
         thread,
         { harness: "codex", sessionId: "c-1" },
         { harness: "claude-code", sessionId: "cc-1" },
-        { harness: "my-agent", sessionId: "m-1" }
+        { harness: "my-agent", sessionId: "m-1" },
+        { harness: "constructor", sessionId: "k-1" }
       ])
       expect(result).toEqual([{ harness: "t3", sessionId: "thread-1", title: "Tray design pass" }])
       expect(yield* spawned).toEqual([{
@@ -52,43 +49,49 @@ describe("session titles", () => {
         args: ["--log-level", "fatal", "thread", "show", "--json", "--messages", "0", "--", "thread-1"],
         stdin: ""
       }])
-    }))
+    })))
 
   it.effect("leaves out a session t3 doesn't know or that has no t3 to ask", () =>
-    Effect.gen(function*() {
-      const { titles } = yield* withTitles({ exitCode: 1 })
-      expect(yield* titles([thread])).toEqual([])
+    Effect.scoped(Effect.gen(function*() {
+      const { lookup } = yield* withTitles({ exitCode: 1 })
+      expect(yield* lookup([thread])).toEqual([])
       const runner = yield* recordingSpawner({ exitCode: 0, stdout: shown("Tray") })
       const nowhere = { ...fakeBin, isExecutable: () => false }
-      const missing = yield* Effect.provide(
-        Port.SessionTitles.use(Effect.succeed),
-        SessionTitles.layer({ lookup: () => nowhere }).pipe(Layer.provide(runner.layer))
-      )
-      expect(yield* missing.titles([thread])).toEqual([])
+      const missing = yield* SessionTitles.make({ lookup: () => nowhere }).pipe(Effect.provide(runner.layer))
+      expect(yield* missing.lookup([thread])).toEqual([])
       expect(yield* runner.spawned).toEqual([])
-    }))
+    })))
 
   it.effect("keeps a found title for 10 minutes", () =>
-    Effect.gen(function*() {
-      const { titles, spawned } = yield* withTitles({ exitCode: 0, stdout: shown("Tray") })
-      yield* titles([thread, thread])
+    Effect.scoped(Effect.gen(function*() {
+      const { lookup, spawned } = yield* withTitles({ exitCode: 0, stdout: shown("Tray") })
+      yield* lookup([thread, thread])
       yield* TestClock.adjust("9 minutes")
-      yield* titles([thread])
+      yield* lookup([thread])
       expect(yield* spawned).toHaveLength(1)
       yield* TestClock.adjust("2 minutes")
-      expect(yield* titles([thread])).toEqual([{ ...thread, title: "Tray" }])
+      expect(yield* lookup([thread])).toEqual([{ ...thread, title: "Tray" }])
       expect(yield* spawned).toHaveLength(2)
-    }))
+    })))
 
   it.effect("keeps a missing title for 2 minutes", () =>
-    Effect.gen(function*() {
-      const { titles, spawned } = yield* withTitles({ exitCode: 1 })
-      yield* titles([thread])
+    Effect.scoped(Effect.gen(function*() {
+      const { lookup, spawned } = yield* withTitles({ exitCode: 1 })
+      yield* lookup([thread])
       yield* TestClock.adjust("1 minute")
-      yield* titles([thread])
+      yield* lookup([thread])
       expect(yield* spawned).toHaveLength(1)
       yield* TestClock.adjust("90 seconds")
-      yield* titles([thread])
+      yield* lookup([thread])
       expect(yield* spawned).toHaveLength(2)
-    }))
+    })))
+
+  it.effect("answers a poll from what it knows and looks up the rest in the background", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const { lookup, spawned, titles } = yield* withTitles({ exitCode: 0, stdout: shown("Tray") })
+      expect(yield* titles([thread])).toEqual([])
+      yield* lookup([thread])
+      expect(yield* titles([thread])).toEqual([{ ...thread, title: "Tray" }])
+      expect(yield* spawned).toHaveLength(1)
+    })))
 })

@@ -6,7 +6,7 @@ import type { Detail } from "../daemon/DaemonClient.ts"
 import { type PanelState, Request } from "../state/Panel.ts"
 import * as Facts from "./Facts.ts"
 import { Message, type Model } from "./Model.ts"
-import { ask, connectorBadge, count, fact, type H, header, mono, notices, pill, section } from "./Parts.ts"
+import { ask, connectorBadge, count, fact, type H, header, iconOf, mono, notices, pill, section } from "./Parts.ts"
 
 type Ready = Extract<PanelState, { _tag: "Ready" }>
 
@@ -32,7 +32,7 @@ const factsSection = (h: H, model: Model, subscription: Subscription.Subscriptio
   const titles = titlesOf(state)
   return h.section([h.Class("section subscription-facts")], [
     h.div([h.Class("subscription-hero")], [
-      connectorBadge(h, subscription.connector, Facts.connectorIcon(connectors, subscription.connector)),
+      connectorBadge(h, subscription.connector, iconOf(model, connectors, subscription.connector)),
       h.p([h.Class("subscription-intent")], [subscription.intent])
     ]),
     h.p([h.Class("state-sentence")], [Facts.stateSentence(model.now, subscription, suspended, titles)]),
@@ -182,7 +182,7 @@ export const subscription = (h: H, model: Model, id: string): ReadonlyArray<Html
     ]
   const open = found.state._tag === "Active" || found.state._tag === "Paused" || found.state._tag === "Expired"
   return [
-    header(h, model, found.label === "" ? found.subject : found.label),
+    header(h, model, Facts.rowLabel(found)),
     h.main([h.Class("body")], [
       ...notices(h, model),
       factsSection(h, model, found, state),

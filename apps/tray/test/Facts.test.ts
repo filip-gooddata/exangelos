@@ -94,4 +94,9 @@ describe("sessions, logos and rows", () => {
     expect(Facts.rowFact(now, paused, undefined, Facts.noTitles)).toMatch(/^Paused .*backlog reached 20/)
     expect(Facts.rowHover(now, subscription())).toBe("github-pr: acme/app#123\nExpires in 7 days")
   })
+
+  it("calls a row by its label, else by its intent, never by its raw subject", () => {
+    expect(Facts.rowLabel(subscription({ label: "Checkout fix" }))).toBe("Checkout fix")
+    expect(Facts.rowLabel(subscription({ label: "", subject: "slack:0e6ec01d87da", intent: "Wake me on posts" }))).toBe("Wake me on posts")
+  })
 })

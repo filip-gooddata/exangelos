@@ -42,7 +42,9 @@ export const Model = Schema.Struct({
   settings: Schema.Record(Schema.String, Schema.String),
   confirming: Schema.NullOr(RequestSchema),
   busy: Schema.Boolean,
-  notice: Schema.NullOr(Notice)
+  notice: Schema.NullOr(Notice),
+  /** Icons the panel could not draw; their connectors show initials instead. */
+  brokenIcons: Schema.Array(Schema.String)
 })
 export type Model = typeof Model.Type
 
@@ -64,7 +66,8 @@ export const Message = defineMessageUnion({
   Confirmed: {},
   Dismissed: {},
   Performed: { request: RequestSchema },
-  Refused: { text: Schema.String }
+  Refused: { text: Schema.String },
+  IconFailed: { src: Schema.String }
 })
 export type Message = typeof Message.Type
 
@@ -83,7 +86,8 @@ export const initial = (state: PanelState, now: number, screen: Screen = { _tag:
   settings: {},
   confirming: null,
   busy: false,
-  notice: null
+  notice: null,
+  brokenIcons: []
 })
 
 const drafts = {
@@ -198,6 +202,8 @@ export const makeUpdate = (perform: (request: Request) => Effect.Effect<void, Re
       Ticked: ({ now }) => ({ model: { ...model, now } }),
       Navigated: ({ screen }) => ({ model: { ...model, ...drafts, screen, notice: null, acknowledgedOpen: false } }),
       ToggledClosed: () => ({ model: { ...model, closedOpen: !model.closedOpen } }),
+      IconFailed: ({ src }) =>
+        ({ model: model.brokenIcons.includes(src) ? model : { ...model, brokenIcons: [...model.brokenIcons, src] } }),
       ToggledAcknowledged: () => ({ model: { ...model, acknowledgedOpen: !model.acknowledgedOpen } }),
       ChoseAckThrough: ({ number }) => ({ model: { ...model, ackThrough: number } }),
       ToggledRetarget: () => ({ model: { ...model, retargeting: !model.retargeting } }),

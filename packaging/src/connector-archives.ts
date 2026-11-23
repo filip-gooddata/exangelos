@@ -58,6 +58,9 @@ const declaredFiles = (connectorDirectory: string, manifest: Manifest) =>
   Effect.try({
     try: () => {
       const root = realpathSync(connectorDirectory)
+      if (manifest.icon !== undefined && typeof manifest.icon !== "string") {
+        throw new ConnectorManifestInvalid({ message: `${manifest.name}: icon must be a path to an .svg or .png` })
+      }
       const declared = [
         ...(manifest.files ?? []).map((path) => ["file", path] as const),
         ...(manifest.icon === undefined ? [] : [["icon", manifest.icon] as const])

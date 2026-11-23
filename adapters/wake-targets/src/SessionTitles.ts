@@ -1,4 +1,4 @@
-import { Cache, Duration, Effect, Exit, Layer, Option } from "effect"
+import { Cache, Duration, Effect, Exit, Layer, Option, Scope } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import { SessionTitles } from "@exangelos/application"
 import type { Session } from "@exangelos/domain"
@@ -33,26 +33,42 @@ export interface Options {
 
 const separator = "\u0000"
 
+const keyOf = (session: Session.Target) => `${session.harness}${separator}${session.sessionId}`
+
+const named = (session: Session.Target) => (title: string): Session.SessionTitle => ({
+  harness: session.harness,
+  sessionId: session.sessionId,
+  title
+})
+
+export interface Titles {
+  /** The titles already known, at once. Sessions not looked up yet, or whose entry expired, are looked up in the background. */
+  readonly titles: (sessions: ReadonlyArray<Session.Target>) => Effect.Effect<ReadonlyArray<Session.SessionTitle>>
+  /** Looks up every session not known yet and waits for the answers. */
+  readonly lookup: (sessions: ReadonlyArray<Session.Target>) => Effect.Effect<ReadonlyArray<Session.SessionTitle>>
+}
+
 /**
  * Titles found through each harness's CLI and kept in the daemon's memory. Concurrent lookups of
- * one session share a run; a session the CLI can't name is left out.
+ * one session share a run; a session the CLI can't name is left out. Background lookups live as long as `Scope`.
  */
-export const layer = (
+export const make = (
   options: Options = {}
-): Layer.Layer<SessionTitles.SessionTitles, never, ChildProcessSpawner.ChildProcessSpawner> =>
-  Layer.effect(SessionTitles.SessionTitles, Effect.gen(function*() {
+): Effect.Effect<Titles, never, ChildProcessSpawner.ChildProcessSpawner | Scope.Scope> =>
+  Effect.gen(function*() {
+    const scope = yield* Scope.Scope
     const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
-    const lookup = options.lookup ?? Executable.system
+    const where = options.lookup ?? Executable.system
     const limit = Duration.fromInputUnsafe(options.limit ?? Duration.seconds(5))
     const found = Duration.fromInputUnsafe(options.found ?? Duration.minutes(10))
     const missing = Duration.fromInputUnsafe(options.missing ?? Duration.minutes(2))
 
     const resolve = (key: string): Effect.Effect<Option.Option<string>> => {
       const [harness = "", sessionId = ""] = key.split(separator)
-      const resolver = resolvers[harness as Session.Harness]
+      const resolver = Object.hasOwn(resolvers, harness) ? resolvers[harness as Session.Harness] : undefined
       if (resolver === undefined) return Effect.succeedNone
       return Effect.gen(function*() {
-        const located = Executable.locate(resolver.invocation(sessionId), lookup())
+        const located = Executable.locate(resolver.invocation(sessionId), where())
         const outcome = "_tag" in located ? located : yield* run(spawner, located, limit)
         const title = resolver.title(outcome)
         if (Option.isNone(title)) {
@@ -67,15 +83,29 @@ export const layer = (
       timeToLive: (exit) => Exit.isSuccess(exit) && Option.isSome(exit.value) ? found : missing
     })
 
-    return {
-      titles: (sessions) =>
-        Effect.forEach(
-          sessions,
-          (session) =>
-            Cache.get(cache, `${session.harness}${separator}${session.sessionId}`).pipe(
-              Effect.map(Option.map((title) => ({ harness: session.harness, sessionId: session.sessionId, title })))
-            ),
-          { concurrency: options.concurrency ?? 4 }
-        ).pipe(Effect.map((titles) => titles.flatMap(Option.toArray)))
-    }
-  }))
+    const lookup = (sessions: ReadonlyArray<Session.Target>) =>
+      Effect.forEach(sessions, (session) => Cache.get(cache, keyOf(session)).pipe(Effect.map(Option.map(named(session)))), {
+        concurrency: options.concurrency ?? 4
+      }).pipe(Effect.map((titles) => titles.flatMap(Option.toArray)))
+
+    const titles = (sessions: ReadonlyArray<Session.Target>) =>
+      Effect.gen(function*() {
+        const known: Array<Session.SessionTitle> = []
+        const unknown: Array<Session.Target> = []
+        for (const session of sessions) {
+          const entry = yield* Cache.getSuccess(cache, keyOf(session))
+          if (Option.isNone(entry)) unknown.push(session)
+          else if (Option.isSome(entry.value)) known.push(named(session)(entry.value.value))
+        }
+        if (unknown.length > 0) yield* Effect.forkIn(lookup(unknown), scope)
+        return known
+      })
+
+    return { titles, lookup }
+  })
+
+/** {@link make} as the daemon's {@link SessionTitles.SessionTitles}: the panel's polls never wait on a harness CLI. */
+export const layer = (
+  options: Options = {}
+): Layer.Layer<SessionTitles.SessionTitles, never, ChildProcessSpawner.ChildProcessSpawner> =>
+  Layer.effect(SessionTitles.SessionTitles, Effect.map(make(options), ({ titles }) => ({ titles })))

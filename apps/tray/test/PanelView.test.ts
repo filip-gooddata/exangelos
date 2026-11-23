@@ -4,6 +4,7 @@ import { Duration, Effect, Result } from "effect"
 import { Scene } from "foldkit/test"
 import { Request } from "../src/state/Panel.ts"
 import { editedSettings, eventAlertsKey, initial, makeUpdate, Message } from "../src/view/Model.ts"
+import { iconOf } from "../src/view/Parts.ts"
 import { view } from "../src/view/PanelView.ts"
 import * as Fixtures from "./fixtures.ts"
 
@@ -102,5 +103,15 @@ describe("panel view", () => {
       Scene.expect(Scene.selector("img.badge-logo")).toExist(),
       Scene.expect(Scene.text("SL")).toExist()
     )
+  })
+
+  it("draws initials for a connector whose logo failed to load", () => {
+    const connectors = Result.getOrThrow((Fixtures.quiet as Extract<typeof Fixtures.quiet, { _tag: "Ready" }>).connectors)
+    const src = iconOf(ready, connectors, "github-pr")
+    expect(src).toBeDefined()
+    const broken = update(ready, Message.IconFailed({ src: src! })).model
+    expect(iconOf(broken, connectors, "github-pr")).toBeUndefined()
+    expect(iconOf(broken, connectors, "jira")).toBeDefined()
+    Scene.scene({ update, view }, Scene.given(broken), Scene.expect(Scene.text("GP")).toExist())
   })
 })
