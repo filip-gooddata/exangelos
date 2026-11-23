@@ -309,6 +309,18 @@ export class RemoveHarness extends Rpc.make("RemoveHarness", {
   error: Schema.Union([HumanRequired, UnknownHarness])
 }) {}
 
+export const SessionTitle = Session.SessionTitle
+export type SessionTitle = Session.SessionTitle
+
+/**
+ * The human title of each session its harness can name, looked up through the harness CLI and
+ * cached in the daemon. A session without one is left out; the call never fails for it.
+ */
+export class SessionTitles extends Rpc.make("SessionTitles", {
+  payload: { sessions: Schema.Array(Session.Target) },
+  success: Schema.Array(SessionTitle)
+}) {}
+
 export const StartMethod = Schema.Literals(["homebrew", "launch-agent", "systemd-user", "foreground"])
 export type StartMethod = typeof StartMethod.Type
 
@@ -329,6 +341,7 @@ export class ManagementGroup extends RpcGroup.make(
   SetSettings,
   SetHarness,
   RemoveHarness,
+  SessionTitles,
   ServiceStatus
 ) {}
 

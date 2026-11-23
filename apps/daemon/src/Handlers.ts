@@ -11,6 +11,7 @@ import {
   listConnectors,
   removeConnector,
   startMethod,
+  sessionTitles,
   setSettings,
   Subscriptions
 } from "@exangelos/application"
@@ -38,6 +39,7 @@ const polled: ReadonlySet<string> = new Set([
   "Events",
   "ListConnectorAlerts",
   "GetSettings",
+  "SessionTitles",
   "ServiceStatus"
 ])
 
@@ -206,6 +208,7 @@ export const layer = DaemonContract.DaemonContract.toLayer(instrumented({
         SettingsWriteFailed: Effect.die
       })
     ),
+  SessionTitles: ({ sessions }) => sessionTitles(sessions),
   ServiceStatus: () =>
     startMethod.pipe(
       Effect.catchTag("ServiceFailed", (e) =>

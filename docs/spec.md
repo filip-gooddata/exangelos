@@ -279,6 +279,7 @@ The second group is offered to the CLI and the tray only, never to the MCP serve
 - Dev link and unlink.
 - Read and change settings.
 - Service status (daemon running, version, start method).
+- Session titles: the human title of each given session, such as a T3 Code thread's title, so the panel can show it in place of the session id. The daemon asks the harness CLI (`t3 thread show --json --messages 0`; Codex and Claude Code have no lookup yet) with a 5 second limit, keeps a found title for 10 minutes and a missing one for 2 minutes in memory, and leaves out every session it can't name instead of failing.
 
 The third group runs inside the daemon:
 

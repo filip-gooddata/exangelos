@@ -59,7 +59,7 @@ describe("request logging", () => {
 
   it.effect("keeps successful polled reads out of a debug log, and changes and failures in it", () =>
     Effect.gen(function*() {
-      for (const method of ["List", "ListConnectors", "ListConnectorAlerts", "Show", "Events", "GetSettings", "ServiceStatus"]) {
+      for (const method of ["List", "ListConnectors", "ListConnectorAlerts", "Show", "Events", "GetSettings", "SessionTitles", "ServiceStatus"]) {
         expect(yield* run(logged(method, caller, Effect.succeed(1)), "Debug")).toEqual([])
         const [failed] = yield* run(logged(method, caller, Effect.fail({ _tag: "Unavailable" })), "Debug")
         expect(failed.level).toBe("Warn")

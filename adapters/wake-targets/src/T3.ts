@@ -1,3 +1,4 @@
+import { Option, Schema } from "effect"
 import type { Invocation, Outcome, Verdict } from "./Attempt.ts"
 import { delivered, exitReason, failed, timedOutReason } from "./Attempt.ts"
 
@@ -30,3 +31,42 @@ export const interpret = (outcome: Outcome): Verdict => {
       return outcome.exitCode === 0 ? delivered() : failed(exitReason("t3", outcome))
   }
 }
+
+/**
+ * `t3 thread show --json --messages 0 -- <thread>`: the thread without its messages. A known thread
+ * exits 0 with `{ "thread": { "threadId", "title", ... }, "messages": [] }`; an unknown one exits 1
+ * with "Thread <id> is no longer available." (hand check, 2026-11-23).
+ */
+export const titleInvocation = (sessionId: string): Invocation => ({
+  program: "t3",
+  args: ["--log-level", "fatal", "thread", "show", "--json", "--messages", "0", "--", sessionId]
+})
+
+const Shown = Schema.Struct({ thread: Schema.Struct({ title: Schema.String }) })
+const decodeShown = Schema.decodeUnknownOption(Shown)
+
+const parsed = (text: string): Option.Option<unknown> => {
+  try {
+    return Option.some(JSON.parse(text))
+  } catch {
+    return Option.none()
+  }
+}
+
+/** The JSON document in t3's output, after any log lines t3 printed before it. */
+const document = (stdout: string): Option.Option<unknown> => {
+  const whole = parsed(stdout)
+  if (Option.isSome(whole)) return whole
+  const start = stdout.search(/^\{/m)
+  return start < 0 ? Option.none() : parsed(stdout.slice(start))
+}
+
+/** The thread's title, trimmed. A failed run, output that isn't a thread or a blank title is none. */
+export const title = (outcome: Outcome): Option.Option<string> =>
+  outcome._tag !== "Exited" || outcome.exitCode !== 0
+    ? Option.none()
+    : document(outcome.stdout).pipe(
+      Option.flatMap(decodeShown),
+      Option.map((shown) => shown.thread.title.trim()),
+      Option.filter((text) => text.length > 0)
+    )

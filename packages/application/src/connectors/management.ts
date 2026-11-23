@@ -6,6 +6,7 @@ import { ImportFailed, ConnectorImportSource, type Source } from "../ports/Conne
 import { ConnectorRepository, type ConnectorChange, type ConnectorChangeKind } from "../ports/ConnectorRepository.ts"
 import { SecretStore, type SecretStoreFailed } from "../ports/SecretStore.ts"
 import { ServiceManager } from "../ports/ServiceManager.ts"
+import { SessionTitles } from "../ports/SessionTitles.ts"
 import { SettingsStore } from "../ports/SettingsStore.ts"
 import { ConnectorNotFound } from "../seam/ConnectorAccess.ts"
 import { listConnectorAlerts } from "./listConnectorAlerts.ts"
@@ -278,6 +279,10 @@ export const setSettings = (actor: Session.Actor, settings: Settings.Settings) =
 /** How this install starts the daemon; the caller adds its own version. Runs no service command. */
 export const startMethod = ServiceManager.use((manager) => manager.startMethod)
 
+/** The title of each session its harness can name, for the panel. */
+export const sessionTitles = (sessions: ReadonlyArray<Session.Target>) =>
+  SessionTitles.use((titles) => titles.titles(sessions))
+
 /** The management group's use cases by contract method. None is offered to the agent group. */
 export const management = {
   ImportConnector: importConnector,
@@ -292,5 +297,6 @@ export const management = {
   SetSettings: setSettings,
   SetHarness: setHarness,
   RemoveHarness: removeHarness,
+  SessionTitles: sessionTitles,
   ServiceStatus: startMethod
 } as const

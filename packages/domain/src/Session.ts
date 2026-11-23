@@ -25,6 +25,14 @@ export type NamedSession = typeof NamedSession.Type
 export const Target = Schema.Union([Session, NamedSession])
 export type Target = typeof Target.Type
 
+/** A session's human title as its harness names it, such as a T3 Code thread's title. */
+export const SessionTitle = Schema.Struct({
+  harness: Schema.Union([Harness, HarnessName]),
+  sessionId: Schema.NonEmptyString,
+  title: Schema.NonEmptyString
+})
+export type SessionTitle = typeof SessionTitle.Type
+
 export const isBuiltInTarget = (target: Target): target is Session => isBuiltIn(target.harness)
 
 export const Actor = Schema.TaggedUnion({
