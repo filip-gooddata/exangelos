@@ -157,8 +157,16 @@ export const connectors = (list: ReadonlyArray<Connector.Connector>): string =>
       connector.catalogue === undefined ? "" : connector.catalogue.eventTypes.map((spec) => spec.type).join(", ")
     ])).join("\n")
 
-export const connector = (connector: Connector.Connector): string => {
+const observationReasons: Record<Connector.ObservationCategory, string> = {
+  unavailable: "source unavailable. Check the source application and connector configuration",
+  unreadable: "source could not be read. Check the configured location and read permissions",
+  "invalid-data": "source or checkpoint could not be validated. Check source availability and connector compatibility",
+  "scope-changed": "saved source identity could not be verified. Check the configured location and reselect the source if it changed"
+}
+
+export const connector = (connector: Connector.Status): string => {
   const catalogue = connector.catalogue
+  const observation = connector.observation
   const lines = fields([
     ["Connector", `${connector.name} ${connector.version}`],
     ["Origin", origin(connector.origin)],
@@ -167,6 +175,10 @@ export const connector = (connector: Connector.Connector): string => {
     ["Configuration", configurationText(connector.configuration)],
     ["Configured by", connector.configuredBy === undefined ? undefined : actorText(connector.configuredBy)],
     ["Process", connector.process],
+    ["Observation", observation === undefined ? undefined : [
+      observation.categories.map((category) => observationReasons[category]).join("; "),
+      `(${observation.affectedWatches} ${observation.affectedWatches === 1 ? "watch" : "watches"} affected)`
+    ].join(" ")],
     ["Unavailable since", connector.unavailableSince === undefined ? undefined : time(connector.unavailableSince)],
     ["Main parameter", catalogue?.parameters.main],
     [

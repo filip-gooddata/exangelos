@@ -165,15 +165,20 @@ def discover(roots, secret, target, scope):
         except FileNotFoundError:
             inventories[root] = None
             continue
-        before, epoch = source.inventory(root)
-        inventories[root] = before, epoch
+        binding = {'kind': 'volume'} if sys.platform == 'darwin' else None
+        try:
+            before, epoch = source.inventory(root, binding)
+        except source.VolumeIdentityUnavailable:
+            binding = None
+            before, epoch = source.inventory(root)
+        inventories[root] = (before, epoch), binding
         observed = False
 
         def collect(state, generation):
             nonlocal observed
             observed = True
             for candidate in candidates(state, target):
-                matches.append((root, epoch, *candidate))
+                matches.append((root, epoch, binding, *candidate))
 
         result = source.scan.run(root, observe=collect)
         require(observed and not result['external_rejections'] and not result['files_changed'] and result['current_unchanged'])
@@ -183,7 +188,7 @@ def discover(roots, secret, target, scope):
         raise SetupRejected(22)
     if len(matches) != 1:
         raise SetupRejected(23)
-    root, epoch, workspace, owner, channel, parent, _, label = matches[0]
+    root, epoch, binding, workspace, owner, channel, parent, _, label = matches[0]
     selection = dict(workspace=workspace, owner=owner, conversations=[channel])
     if parent:
         if scope is None and parent == target.timestamp:
@@ -193,12 +198,15 @@ def discover(roots, secret, target, scope):
     key = observation.token(secret, 'subscription-key-v2', epoch['root'], workspace, owner, channel, selection.get('thread'))
     request = dict(selection=selection, key=key, root=str(root),
                    expectedScope=source.scope_token(bytes.fromhex(key), selection, epoch))
+    if binding:
+        request['volumeIdentity'] = binding
     validate(request)
     for inspected, expected in inventories.items():
         if expected is None:
             require(not inspected.exists())
         else:
-            require(source.inventory(inspected) == expected)
+            previous, mode = expected
+            require(source.inventory(inspected, mode) == previous)
     return epoch, request, label
 
 
@@ -247,21 +255,42 @@ def setup(values):
         epoch = saved.get('epoch')
         if not isinstance(epoch, dict) or saved['request']['expectedScope'] != handle[1]:
             raise SetupRejected(24)
+        binding = saved['request'].get('volumeIdentity')
         for configured_root in roots.values():
             root = safe_path(configured_root)
             try:
-                identity = source.directory_identity(root)
-            except FileNotFoundError:
+                identity = source.directory_identity(root, binding)
+            except (FileNotFoundError, source.PinnedScopeChanged):
                 continue
             if identity == epoch.get('root'):
                 break
         else:
             raise SetupRejected(24)
-        if source.inventory(root)[1] != epoch:
-            raise SetupRejected(24)
+        try:
+            if source.inventory(root, binding)[1] != epoch:
+                raise SetupRejected(24)
+        except source.PinnedScopeChanged:
+            raise SetupRejected(24) from None
         request = dict(saved['request'], root=str(root))
         label = saved['label']
         validate(request)
+        if binding is None and sys.platform == 'darwin':
+            # Add proof only while both original directory identities still match.
+            # The historical device numbers remain inputs to the scope token.
+            paths = dict(root=root, database=root / 'https_app.slack.com_0.indexeddb.leveldb')
+            try:
+                aliases = {
+                    part: [source.directory_identity(folder, {'kind': 'volume'}, verified_legacy=epoch[part])[0], epoch[part][0]]
+                    for part, folder in paths.items()
+                }
+            except source.VolumeIdentityUnavailable:
+                aliases = None
+            except source.PinnedScopeChanged:
+                raise SetupRejected(24) from None
+            if aliases:
+                request['volumeIdentity'] = dict(kind='legacy', **aliases)
+                validate(request)
+                save_json(path, dict(saved, request=request))
     else:
         with locked(directory):
             try:

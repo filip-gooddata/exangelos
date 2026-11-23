@@ -82,6 +82,8 @@ it.effect("real Python ledger SDK restarts with a persisted cursor and checkpoin
   yield* first.Configure({ values: consent })
   const items = yield* first.Watch({ parameters, eventTypes: [] }).pipe(Stream.take(1), Stream.runCollect)
   if (items[0]?._tag !== "Cursor") throw new Error("Expected baseline cursor")
+  const quiet = yield* first.Watch({ parameters, eventTypes: [], cursor: items[0].cursor }).pipe(Stream.take(1), Stream.runCollect)
+  expect(quiet).toEqual(items)
   const changed = { ...baseline, generation: "2", snapshot: token(11), messages: [{ ...message, body: token(5), reactions: [] }] }
   const restarted = yield* ConnectorTest.makeClient(make({ setup, read: () => Effect.succeed(changed) }))
   yield* restarted.Configure({ values: consent })

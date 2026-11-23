@@ -39,3 +39,15 @@ export const Connector = Schema.Struct({
   unavailableSince: Schema.optionalKey(Schema.DateTimeUtc)
 })
 export type Connector = typeof Connector.Type
+
+export const ObservationCategory = Schema.Literals(["unavailable", "unreadable", "invalid-data", "scope-changed"])
+export type ObservationCategory = typeof ObservationCategory.Type
+
+export const Status = Schema.Struct({
+  ...Connector.fields,
+  observation: Schema.optionalKey(Schema.Struct({
+    affectedWatches: Schema.Int,
+    categories: Schema.Array(ObservationCategory)
+  }))
+})
+export type Status = typeof Status.Type

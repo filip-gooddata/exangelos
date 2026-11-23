@@ -55,7 +55,7 @@ const connectors = Command.make(
       const client = yield* Connection
       const listed = client.ListConnectors()
       yield* Option.match(name, {
-        onNone: () => respond(listed, { schema: Schema.Array(Connector.Connector), text: Text.connectors }),
+        onNone: () => respond(listed, { schema: Schema.Array(Connector.Status), text: Text.connectors }),
         onSome: (wanted) =>
           respond(
             Effect.flatMap(listed, (all) => {
@@ -64,7 +64,7 @@ const connectors = Command.make(
                 ? Effect.fail(new DaemonContract.ConnectorNotFound({ connector: wanted }))
                 : Effect.succeed(found)
             }),
-            { schema: Connector.Connector, text: Text.connector }
+            { schema: Connector.Status, text: Text.connector }
           )
       })
     })

@@ -945,3 +945,46 @@ describe("secrets at the connector stderr and debug report boundaries", () => {
     }
   }, 60_000)
 })
+
+it("reports observation failures on a persisted watch after restart and clears them on quiet recovery", async () => {
+  const sharedHome = home
+  home = join(root, "h-observation")
+  const fixture = join(root, "sources", "observation")
+  const marker = join(root, "fail-observation")
+  const log = () => readFile(join(home, "logs", "daemon.jsonl"), "utf8")
+  try {
+    build("build", "apps/cli/e2e/observation-connector.ts", "--target=bun", `--outfile=${join(fixture, "dist", "main.js")}`)
+    await writeFile(join(fixture, "connector.json"), JSON.stringify({
+      name: "observation", version: "0.1.0", entry: { _tag: "Bundle", path: "dist/main.js" }
+    }))
+    daemon = startDaemon()
+    await listUntilReady()
+    json("connector", "dev-link", fixture)
+    const { id } = json("subscribe", "observation", marker, "--pull-only", "--intent", "Observe fixture")
+    await eventually(() => expect(json("show", id).subscription.cursor).toBe("baseline"))
+    expect(json("connectors", "observation").observation).toBeUndefined()
+    expect(await stop(daemon)).toBe(true)
+    await writeFile(marker, "")
+    daemon = startDaemon()
+    await listUntilReady()
+    await eventually(async () => {
+      const attempts = (await readFile(marker + ".attempts", "utf8")).trim().split("\n")
+      expect(attempts.filter((cursor) => cursor === "baseline").length).toBeGreaterThanOrEqual(2)
+    })
+    const status = json("connectors", "observation")
+    expect(status).toMatchObject({ process: "running", observation: { affectedWatches: 1, categories: ["unreadable"] } })
+    expect(run(exangelos, "connectors", "observation").stdout).toContain("source could not be read")
+    await rm(marker)
+    await eventually(() => expect(json("connectors", "observation").observation).toBeUndefined())
+    expect(json("events", id)).toEqual([])
+    expect(json("show", id).subscription).toMatchObject({ cursor: "baseline", state: { _tag: "Active" } })
+    const contents = await log()
+    const warnings = contents.trim().split("\n").map((line) => JSON.parse(line)).filter((r) => r.msg === "watch observation failed")
+    expect(warnings).toMatchObject([{ level: "WARN", ann: { connector: "observation", subscription: id, category: "unreadable" } }])
+    expect(contents + JSON.stringify(status)).not.toContain("private-fixture-error-content")
+  } finally {
+    if (daemon) await stop(daemon)
+    daemon = undefined
+    home = sharedHome
+  }
+}, 60_000)

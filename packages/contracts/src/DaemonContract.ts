@@ -97,7 +97,7 @@ const SubscriptionLookup = Schema.Union([SubscriptionNotFound, InvalidRequest])
 const id = { id: Ids.SubscriptionId }
 
 export class ListConnectors extends Rpc.make("ListConnectors", {
-  success: Schema.Array(Connector.Connector)
+  success: Schema.Array(Connector.Status)
 }) {}
 
 export class Subscribe extends Rpc.make("Subscribe", {

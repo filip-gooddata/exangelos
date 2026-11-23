@@ -1,6 +1,6 @@
 import { Context, Schema } from "effect"
 import type { Effect, Scope, Stream } from "effect"
-import { Catalogue, Event, Ids } from "@exangelos/domain"
+import { Catalogue, Connector, Event, Ids } from "@exangelos/domain"
 
 export const Entry = Schema.TaggedUnion({
   Bundle: { path: Schema.String },
@@ -59,7 +59,8 @@ export class CredentialsRejected extends Schema.TaggedError<CredentialsRejected>
 
 export class SourceFailed extends Schema.TaggedError<SourceFailed>()("SourceFailed", {
   connector: Ids.ConnectorName,
-  reason: Schema.String
+  reason: Schema.String,
+  category: Schema.optionalKey(Connector.ObservationCategory)
 }) {}
 
 export interface ConnectorProcess {

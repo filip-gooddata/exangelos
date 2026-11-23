@@ -4,6 +4,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/process"
 
 const Token = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
 const Identifier = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256))
+const VolumeAlias = Schema.Tuple([Schema.String.check(Schema.isPattern(/^[a-f0-9]{32}$/)), Schema.Int])
 export const Request = Schema.Struct({
   selection: Schema.Struct({
     workspace: Identifier,
@@ -12,6 +13,10 @@ export const Request = Schema.Struct({
     conversations: Schema.Array(Identifier).check(Schema.isMinLength(1), Schema.isMaxLength(500))
   }),
   key: Token,
+  volumeIdentity: Schema.optionalKey(Schema.Union([
+    Schema.Struct({ kind: Schema.Literal("volume") }),
+    Schema.Struct({ kind: Schema.Literal("legacy"), root: VolumeAlias, database: VolumeAlias })
+  ])),
   expectedScope: Schema.optional(Token),
   root: Schema.optional(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(4096)))
 })
@@ -52,9 +57,14 @@ const setupReasons: Readonly<Record<number, string>> = {
   27: 'Top-level message. For the whole conversation retry exangelos subscribe slack "<reference>" scope=conversation --intent "<intent>" --pull-only. For its replies use scope=replies. In MCP subscribe, set parameters to {"selection":"<reference>","scope":"conversation"} or {"selection":"<reference>","scope":"replies"}'
 }
 export class SourceUnavailable extends Schema.TaggedError<SourceUnavailable>()("SourceUnavailable", {
-  reason: Schema.String
+  reason: Schema.String,
+  category: Schema.optionalKey(Schema.Literals(["unavailable", "unreadable", "invalid-data", "scope-changed"]))
 }) {}
-const unavailable = () => new SourceUnavailable({ reason: snapshotReason })
+const exitCategories: Readonly<Record<number, SourceUnavailable["category"]>> = {
+  1: "invalid-data", 21: "unreadable", 24: "scope-changed"
+}
+const unavailable = () => new SourceUnavailable({ reason: snapshotReason, category: "unavailable" })
+const invalid = () => new SourceUnavailable({ reason: snapshotReason, category: "invalid-data" })
 export interface Source<R = never> {
   readonly setup: (values: Readonly<Record<string, string>>) => Effect.Effect<typeof Resolved.Type, SourceUnavailable, R>
   readonly read: (request: typeof Request.Type & { readonly includePreview?: true }) => Effect.Effect<typeof Snapshot.Type, SourceUnavailable, R>
@@ -86,16 +96,16 @@ const runPython = (script: "source" | "setup", request: unknown) => Effect.gen(f
         }, catch: unavailable
       }))), child.exitCode
     ], { concurrency: "unbounded" })
-    if (code !== 0) return yield* new SourceUnavailable({ reason: script === "setup"
-      ? setupReasons[code] ?? snapshotReason : snapshotReason })
+    if (code !== 0) return yield* new SourceUnavailable({
+      category: exitCategories[code] ?? "unavailable",
+      reason: script === "setup" ? setupReasons[code] ?? snapshotReason : snapshotReason })
     return text + decoder.decode()
   }).pipe(Effect.scoped, Effect.timeout("45 seconds"), Effect.mapError((error) => error instanceof SourceUnavailable ? error : unavailable()))
 
 export const localSource: Source<ChildProcessSpawner.ChildProcessSpawner> = {
   setup: (values) => runPython("setup", values).pipe(Effect.flatMap(decodeResolved)),
   read: (request) => runPython("source", request).pipe(
-    Effect.flatMap((text) => Effect.try({ try: () => JSON.parse(text) as unknown, catch: unavailable })),
-    Effect.flatMap(Schema.decodeUnknownEffect(Snapshot)),
-    Effect.mapError(unavailable)
+    Effect.flatMap((text) => Effect.try({ try: () => JSON.parse(text) as unknown, catch: invalid })),
+    Effect.flatMap((input) => Schema.decodeUnknownEffect(Snapshot)(input).pipe(Effect.mapError(invalid)))
   )
 }

@@ -242,6 +242,47 @@ class SetupTests(unittest.TestCase):
         url = f'https://second.slack.com/archives/{CHANNEL}/p' + TIME.replace('.', '')
         self.assertEqual(self.resolve(url, scope='replies'), second)
 
+    def test_restart_after_device_renumbering_preserves_verified_volume_and_cursor(self):
+        # Run on POSIX CI with synthetic volume identities and a changed mount device number.
+        with mock.patch.object(source, 'volume_uuid', return_value='1' * 32) as uuid:
+            with mock.patch.object(setup.sys, 'platform', 'linux'):
+                legacy = self.resolve(CHANNEL)
+                unverified = self.resolve(REPLY)
+            with mock.patch.object(setup.sys, 'platform', 'darwin'):
+                migrated = self.resolve('scope-' + legacy['expectedScope'])
+                self.assertEqual(migrated['expectedScope'], legacy['expectedScope'])
+                self.assertEqual(migrated['key'], legacy['key'])
+                fresh = self.resolve(CHANNEL)
+                self.assertEqual(fresh['volumeIdentity'], {'kind': 'volume'})
+                for active in (fresh, migrated):
+                    handle = 'scope-' + active['expectedScope']
+                    req = {k: v for k, v in active.items() if k != 'label'}
+                    snap = source.acquire(req)
+                    before = ledger.reconcile(dict(snapshot=snap, observedAt=1700000000000), self.home / 'ledger')
+                    original_stat = os.fstat
+
+                    class Renumbered:
+                        def __init__(self, fd):
+                            self.info = original_stat(fd)
+                            self.st_dev = self.info.st_dev + 1
+
+                        def __getattr__(self, name):
+                            return getattr(self.info, name)
+
+                    with mock.patch.object(os, 'fstat', Renumbered):
+                        self.assertEqual(self.resolve(handle), active)
+                        again = source.acquire(req)
+                        self.assertEqual(again, snap)
+                        self.assertEqual(ledger.reconcile(dict(snapshot=again, observedAt=1700000001000,
+                                                               cursor=before['cursor']), self.home / 'ledger'),
+                                         dict(events=[], cursor=before['cursor']))
+                        self.reject(24, 'scope-' + unverified['expectedScope'])
+                    uuid.return_value = '2' * 32
+                    self.reject(24, handle)
+                    with self.assertRaises(source.PinnedScopeChanged):
+                        source.acquire(req)
+                    uuid.return_value = '1' * 32
+
     def test_equivalent_root_spelling_reopens_same_pin(self):
         original = self.resolve(REPLY)
         for suffix in ('/', '/.', '/../cache'):

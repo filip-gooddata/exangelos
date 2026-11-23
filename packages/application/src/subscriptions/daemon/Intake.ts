@@ -99,6 +99,7 @@ const apply = (before: Subscription.Subscription, item: Event.WatchItem) =>
       case "Event":
         return yield* admitEvent(before, item.event, Option.fromUndefinedOr(item.cursor))
       case "Cursor": {
+        if (item.cursor === before.cursor) return unchanged(before)
         const subscription = { ...before, cursor: item.cursor }
         yield* commit(Option.some(before), { subscription, wake: Option.none() })
         yield* Effect.logDebug("cursor advanced")

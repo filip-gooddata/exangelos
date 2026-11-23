@@ -330,14 +330,16 @@ def exercise(installed, home):
         failed_watch(wire, replies)
         wire.configure(config)
         check(describe(wire, top, 'replies') == replies, 'stable handle after consent restored')
-        wire.watch(replies, batches[replies][-1]['cursor'])
+        saved = batches[replies][-1]['cursor']
+        check(wire.chunk(wire.watch(replies, saved)) == [dict(_tag='Cursor', cursor=saved)], 'quiet recovery checkpoint')
         wire.receive(1.2, quiet=True)
     check_wake(batches[replies][0]['event'], replies, home, 'Thread reply by "Fixture Avery" in "Slack #fixture"')
     cursors[conversation] = batches[conversation][-1]['cursor']
     with Wire(installed, home) as wire:
         wire.configure(dict(config, messagePreviews='enabled'))
         check(describe(wire, CHANNEL) == conversation, 'preview opt-in preserves subject')
-        wire.watch(conversation, cursors[conversation])
+        saved = cursors[conversation]
+        check(wire.chunk(wire.watch(conversation, saved)) == [dict(_tag='Cursor', cursor=saved)], 'preview change preserves checkpoint')
         wire.receive(1.2, quiet=True)
 
     now = time.time_ns() // 1000
