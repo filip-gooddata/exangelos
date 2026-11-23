@@ -1,0 +1,73 @@
+adapters/connector-runtime/src/StdioConnectorRuntime.ts
+  s_e3758105bd06cb::t_b7f508b7517d0e 107
+apps/cli/e2e/binary.test.ts
+  s_e3758105bd06cb::t_34672725ba0ad2 948-990
+apps/cli/e2e/observation-connector.ts
+  s_e3758105bd06cb::t_e481cab9e56e72 1-22
+apps/cli/src/commands/Agent.ts
+  s_e3758105bd06cb::t_d0947a82c57e32 58,67
+apps/cli/src/render/Text.ts
+  s_b2d2f751a89df2::t_a9d5a2e3a424b8 160-167,169,178-181
+connectors/slack/README.md
+  s_b2d2f751a89df2::t_bf6d7d161395fe 123-129,132-139
+connectors/slack/connector.json
+  s_b2d2f751a89df2::t_f211d7f6540e90 3
+connectors/slack/direct/setup.py
+  s_b2d2f751a89df2::t_dfb8fccc1ebde7 168-174,181,191,201-202,208-209,258,262-263,269-273,277-293
+connectors/slack/direct/source.py
+  s_b2d2f751a89df2::t_9c22eab199b0bd 2,20-23,30,62-63,66,72,95-97,99-109,111-135,142,210-213
+connectors/slack/direct/test_setup.py
+  s_b2d2f751a89df2::t_2b2a941e26c212 245-285
+connectors/slack/direct/test_source.py
+  s_e3758105bd06cb::t_03ce06f298d2db 168-176
+connectors/slack/src/Slack.ts
+  s_b2d2f751a89df2::t_2129d865581f1e 50,76-78,86,93-94,96,104,110-112
+connectors/slack/src/Source.ts
+  s_b2d2f751a89df2::t_a4375420c15d04 7,16-19,60-61,63-67,99-101,108-109
+connectors/slack/test/Slack.test.ts
+  s_b2d2f751a89df2::t_0c3bbd6d1b0124 85-86
+connectors/slack/test/Source.test.ts
+  s_e3758105bd06cb::t_b850e43a4ab7ee 47-56
+connectors/slack/test/archive_validation.py
+  s_e3758105bd06cb::t_5fae41d22ce0b6 333-334,341-342
+packages/application/src/connectors/ConnectorSupervisor.ts
+  s_e3758105bd06cb::t_aab78c5043ecb4 64,126-134,300,317-323,338-341,661
+packages/application/src/connectors/listConnectors.ts
+  s_e3758105bd06cb::t_8d026ede6fcbcb 3,8-9
+packages/application/src/ports/ConnectorRuntime.ts
+  s_e3758105bd06cb::t_47791d8c65f3fa 3,62-63
+packages/application/src/subscriptions/daemon/Intake.ts
+  s_e3758105bd06cb::t_3f7070b3a8b68e 102
+packages/application/test/listConnectors.test.ts
+  s_e3758105bd06cb::t_3b81e33f22806e 4,20
+packages/contracts/src/ConnectorProtocol.ts
+  s_e3758105bd06cb::t_96449ecb7e0aa8 3,41-43
+packages/contracts/src/DaemonContract.ts
+  s_e3758105bd06cb::t_440202061cc7a5 100
+packages/domain/src/Connector.ts
+  s_e3758105bd06cb::t_bef06613ab50a6 42-53
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e412c2543b3cbd16d3af12201a53a94dc08c816d",
+  "prompts": {},
+  "sessions": {
+    "s_b2d2f751a89df2": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a207b6-a0bd-7a61-a1e2-0fbdef0883d0",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_e3758105bd06cb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a207b8-35c9-7f73-a16e-c9c90819b016",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
