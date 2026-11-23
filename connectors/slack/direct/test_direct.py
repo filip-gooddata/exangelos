@@ -82,6 +82,21 @@ class DirectTests(unittest.TestCase):
         rows[TIME].update(bot_id='B0000001', username='Fixture Bot')
         self.assertEqual(read()['sender'], 'Fixture Bot')
 
+    def test_member_names_require_matching_identity_and_workspace(self):
+        identity, team = 'U0000002', SELECTION[0]
+        row = dict(id=identity, team_id=team, profile=dict(display_name='Example'))
+        state = dict(members={identity: row})
+        def name():
+            return observation.member_name(projected(state), team, identity)
+        self.assertEqual(name(), 'Example')
+        for key, bad in [('id', 'U9999999'), ('team_id', 'T9999999'), ('team_id', None),
+                         ('profile', dict(display_name='Example', team='T9999999')),
+                         ('profile', dict(display_name='xoxb-example'))]:
+            with self.subTest(key=key), mock.patch.dict(row, {key: bad}):
+                self.assertIsNone(name())
+        with mock.patch.dict(state, users={identity: dict(team='T9999999')}):
+            self.assertIsNone(name())
+
     def test_delivery_preview_policy_after_projection(self):
         data = fixture()
         message = data['messages'][CHANNEL][TIME]

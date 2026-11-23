@@ -137,7 +137,7 @@ def candidates(state, target):
         if channel not in messages and channel not in channels:
             continue
         if target.timestamp is None:
-            yield workspace, owner, channel, None, verified, observation.conversation_label(state, workspace, channel)
+            yield workspace, owner, channel, None, verified, observation.conversation_label(state, workspace, channel, include_members=True)
             continue
         rows = messages.get(channel, {})
         require(isinstance(rows, dict))
@@ -152,7 +152,7 @@ def candidates(state, target):
         require(parent is None or isinstance(parent, str) and re.fullmatch(TS, parent))
         parent = parent or target.timestamp
         if target.parent is None or parent == target.parent:
-            yield workspace, owner, channel, parent, verified, observation.conversation_label(state, workspace, channel)
+            yield workspace, owner, channel, parent, verified, observation.conversation_label(state, workspace, channel, include_members=True)
 
 
 def subscription_identity(secret, epoch, selection):

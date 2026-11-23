@@ -3,6 +3,7 @@
 Usage: python3 -B refresh_validation.py OLD_CLI OLD_ARCHIVE NEW_CLI NEW_ARCHIVE
 Both daemons run in the same disposable home. No network or Slack account is needed.
 """
+import argparse
 from contextlib import contextmanager
 import json
 import os
@@ -26,7 +27,8 @@ def until(probe):
     raise AssertionError(f'timed out waiting for {probe.__name__}')
 
 
-def exercise(root, old_cli, old_archive, new_cli, new_archive):
+def exercise(root, old_cli, old_archive, new_cli, new_archive, members):
+    assert old_archive.name != new_archive.name, 'two distinct official versions required'
     release = root / 'archives'
     release.mkdir()
     for archive in (old_archive, new_archive):
@@ -48,6 +50,11 @@ def exercise(root, old_cli, old_archive, new_cli, new_archive):
     channel = 'D0000002'
     state = fixture()
     state['messages'][channel] = {}
+    peer = 'U0000002'
+    if members:
+        state['channels'] = {channel: dict(id=channel, user=peer)}
+        state['members'] = {peer: dict(id=peer, team=state['selfTeamIds']['teamId'],
+                                      profile=dict(display_name='Example'))}
     database(cache, state)
 
     @contextmanager
@@ -85,15 +92,26 @@ def exercise(root, old_cli, old_archive, new_cli, new_archive):
         ts = f'{time.time_ns() // 1000:016d}'
         ts = ts[:-6] + '.' + ts[-6:]
         message = dict(type='message', ts=ts, text='Synthetic delivery', _rxn_key=f'message-{ts}-{channel}')
+        if members:
+            message.update(user=peer, subtype=b'_')
         state['messages'][channel][ts] = message
         database(cache, state, sequence=30)
         event, = until(lambda: cli('events', watch['id']))
         assert event['payload']['preview'] == message['text']
+        if members:
+            assert event['payload']['sender'] == 'Example'
+            assert event['payload']['conversationLabel'] == 'Slack DM with Example'
+            assert 'by "Example" in "Slack DM with Example"' in event['summary']
         rendered = until(lambda: (root / 'wake').exists() and (root / 'wake').read_text())
         assert event['summary'] in rendered and message['text'] in rendered
 
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--members', action='store_true', help='exercise member profiles and V8 undefined subtype')
+    for name in ('old_cli', 'old_archive', 'new_cli', 'new_archive'):
+        parser.add_argument(name, type=lambda arg: Path(arg).resolve(strict=True))
+    args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='slack-refresh-', dir='/tmp') as disposable:
-        exercise(Path(disposable).resolve(), *(Path(arg).resolve(strict=True) for arg in sys.argv[1:]))
+        exercise(Path(disposable).resolve(), **vars(args))
     print('Official refresh retained preview consent in the installed payload and wake.')

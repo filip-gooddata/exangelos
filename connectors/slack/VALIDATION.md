@@ -24,7 +24,7 @@ the newer daemon in the same disposable home, and checks the refreshed
 connector's stored event and delivered wake.
 
 ```sh
-python3 -B connectors/slack/test/refresh_validation.py OLD_CLI OLD_ARCHIVE NEW_CLI NEW_ARCHIVE
+python3 -B connectors/slack/test/refresh_validation.py --members OLD_CLI OLD_ARCHIVE NEW_CLI NEW_ARCHIVE
 ```
 
 These tests establish behavior for persisted snapshots. Staleness is unbounded,

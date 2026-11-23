@@ -17,7 +17,7 @@ class Reader(skip_v8.Reader):
         if tag not in field_v8._ENCODINGS:raise ValueError('key_tag')
         span=self.string_span(tag)
         allowed={
-          'root':('messages','threads','bootData','selfTeamIds','channels','reactions','teams','users'),
+          'root':('messages','threads','bootData','selfTeamIds','channels','reactions','teams','users','members'),
           'bootData':('team_id','user_id','team_domain'),
           'accountTeam':('id','domain'),
           'accountUser':('id','team','team_id','context_team_id','name','profile'),
@@ -41,7 +41,7 @@ class Reader(skip_v8.Reader):
             if (role in ('messages','threads','channels') and re.fullmatch(r'[CDG][A-Z0-9]{6,30}',s)) or (role=='container' and re.fullmatch(r'[0-9]{1,20}(\.[0-9]{1,10})?',s)) or (role in ('reactions','users') and s.isdigit()):return s
         return None
     def child(self,role,key):
-        if role=='root':return {'reactions':'reactionStore','users':'accountUsers'}.get(key,key)
+        if role=='root':return {'reactions':'reactionStore','users':'accountUsers','members':'accountUsers'}.get(key,key)
         if role=='teams':return 'accountTeam'
         if role=='accountUsers':return 'accountUser'
         if role=='accountUser':return 'profile' if key=='profile' else 'string'

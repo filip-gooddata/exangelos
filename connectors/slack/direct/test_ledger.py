@@ -76,6 +76,17 @@ class LedgerTests(unittest.TestCase):
                 self.call(invalid, cursor)
         self.assertEqual(self.call(snapshot(2, [message(1)]), cursor)['events'], [])
 
+    def test_member_names_preserve_committed_cursor_and_exact_replay(self):
+        baseline = snapshot(1, [message(1)])
+        cursor = self.call(baseline)['cursor']
+        baseline['messages'][0]['memberSender'] = 'Example'
+        self.assertEqual(self.call(baseline, cursor), {'events': [], 'cursor': cursor})
+        changed = snapshot(2, [message(1, 'edit')])
+        first = self.call(changed, cursor)
+        changed['messages'][0]['memberSender'] = 'Example'
+        self.assertEqual(self.call(changed, cursor), first)
+        self.assertEqual(first['events'][0]['payload']['sender'], 'U0000001')
+
     def test_only_eligible_edges_persist_previews(self):
         baseline = snapshot(1, [dict(message(1), preview='baseline only')])
         cursor = self.call(baseline)['cursor']

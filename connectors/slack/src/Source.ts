@@ -37,6 +37,8 @@ export const Snapshot = Schema.Struct({
   complete: Schema.Literal(true),
   messages: Schema.Array(Schema.Struct({
     ...MessageContext.fields,
+    memberSender: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160))),
+    memberPeer: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160))),
     id: Token, body: Token, reply: Schema.Boolean,
     reactions: Schema.Array(Token).check(Schema.isMaxLength(100)),
     reactionsComplete: Schema.Boolean

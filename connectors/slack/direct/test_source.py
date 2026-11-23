@@ -85,6 +85,20 @@ class SourceTests(unittest.TestCase):
             for raw in (SELECTION[1], str(root), 'ab' * 32):
                 self.assertNotIn(raw, first.stdout)
 
+    def test_member_names_preserve_existing_snapshot_marker(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            state = fixture()
+            peer = 'U0000002'
+            state['messages'][CHANNEL][TIME]['user'] = peer
+            database(root, state)
+            old = json.loads(self.invoke(request(root)).stdout)
+            state['members'] = {peer: dict(id=peer, team=SELECTION[0], profile=dict(display_name='Example'))}
+            database(root, state)
+            current = json.loads(self.invoke(request(root)).stdout)
+            self.assertEqual(current['messages'][0].pop('memberSender'), 'Example')
+            self.assertEqual(current, old)
+
     def test_preview_uses_only_selected_conversation_and_thread(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

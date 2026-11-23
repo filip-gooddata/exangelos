@@ -445,7 +445,8 @@ def exercise(installed, home):
     peer = 'U0000002'
     name = '🌊' * 80
     state['channels'][dm] = {'id': dm, 'is_im': True, 'user': peer}
-    state['users'][peer]['profile']['display_name'] = name
+    del state['users'][peer]
+    state['members'] = {peer: dict(id=peer, team=SELECTION[0], profile=dict(display_name=name))}
     state['messages'][dm].clear()
     users = [f'U{i:07d}' for i in range(100)]
     for i in range(500):
@@ -454,15 +455,17 @@ def exercise(installed, home):
         state['reactions'][f'message-{ts}-{dm}'] = [{'name': 'wave', 'users': users, 'count': 100}]
     state['messages'][dm][fresh[0]]['text'] = 'edited synthetic DM'
     database(app, state, sequence=110)
-    boundary = resume(dm_handle)
+    boundary = resume(dm_handle, 'enabled')
     check(len(boundary) == 1 and boundary[0]['event']['type'] == 'message.edited'
           and boundary[0]['event']['payload']['sender'] == name
           and boundary[0]['event']['payload']['conversationLabel'] == 'Slack DM with ' + name,
           'full reaction snapshot preserves Unicode sender and conversation')
+    check_wake(boundary[0]['event'], dm_handle, home,
+               f'Message edited (message author: "{name}") in "Slack DM with {name}"', 'edited synthetic DM')
     final_state = inventory(private)
     check(all(entry in final_state for entry in original), 'legacy user state preserved')
     return dict(dmHistorySuppressed=19, dmArrivals=3, distinctSubjects=len(distinct), conversationEvents=len(batches[conversation]),
-                repliesEvents=len(batches[replies]), exactReplays=2, renderedWakeChecks=8, legacyV1Replays=1, legacyPayloadReplays=1, preservedLegacyFiles=len(original))
+                repliesEvents=len(batches[replies]), exactReplays=2, renderedWakeChecks=9, legacyV1Replays=1, legacyPayloadReplays=1, preservedLegacyFiles=len(original))
 
 
 def main():

@@ -14,6 +14,7 @@ import sqlite3
 import sys
 import uuid
 
+from observation import safe_name
 from state_directory import state_directory
 
 
@@ -110,6 +111,9 @@ def snapshot_metadata(snapshot):
         if 'preview' in message:
             preview = message['preview']
             require(isinstance(preview, str) and 0 < len(preview) <= 160 and preview.isprintable())
+        for field in ('memberSender', 'memberPeer'):
+            if field in message:
+                require(safe_name(message[field]))
         timestamp = message.get('messageTs')
         require(isinstance(timestamp, str) and re.fullmatch(r'[0-9]{1,20}\.[0-9]{1,10}', timestamp))
         for field, limit in [('conversationLabel', 128), ('permalink', 512), ('sender', 80)]:
@@ -230,7 +234,7 @@ def reconcile(request, path=None):
                 db.commit()
                 return {'events': [], 'cursor': cursor}
         # Previews belong only to eligible delivery edges, never to baselines or version history.
-        previews = {row['id']: row['preview'] for row in snapshot['messages'] if 'preview' in row}
+        delivery = {row['id']: row for row in snapshot['messages']}
         commit = uuid.uuid4().hex
         result = {'events': [], 'cursor': f'4:{lineage}:{commit}'}
         db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)', (lineage, commit, snapshot['scope'], snapshot['generation'], snapshot['snapshot'], '2:' + digest))
@@ -253,8 +257,13 @@ def reconcile(request, path=None):
                 identity = packed([lineage, snapshot['scope'], message['id'], revision, kind, transition])
                 payload = {field: message[field] for field in ('messageTs', 'conversationLabel', 'permalink', 'sender')
                            if field in message}
-                if kind in ('message.new', 'thread.reply', 'message.edited') and message['id'] in previews:
-                    payload['preview'] = previews[message['id']]
+                context = delivery[message['id']]
+                if 'memberSender' in context:
+                    payload['sender'] = context['memberSender']
+                if 'memberPeer' in context:
+                    payload['conversationLabel'] = 'Slack DM with ' + context['memberPeer']
+                if kind in ('message.new', 'thread.reply', 'message.edited') and 'preview' in context:
+                    payload['preview'] = context['preview']
                 result['events'].append({'type': kind, 'occurredAt': observed_at, 'summary': wake_summary(kind, payload, observed_at),
                                          'dedupeKey': 'slack:' + hashlib.sha256(identity.encode()).hexdigest(),
                                          'payload': dict(payload, version=1, count=1)})
