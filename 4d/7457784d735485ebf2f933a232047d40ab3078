@@ -1,0 +1,65 @@
+connectors/shared/excerpt.py
+  s_b0720e0f40ac78::t_a9ff15bd3aa3ad 1-28
+connectors/slack/README.md
+  s_b0720e0f40ac78::t_8163f975895d56 105-124
+connectors/slack/VALIDATION.md
+  s_b0720e0f40ac78::t_263b4ae3f534a7 24-26
+connectors/slack/connector.json
+  s_b0720e0f40ac78::t_f499dba0a4ebed 9
+connectors/slack/direct/observation.py
+  s_b0720e0f40ac78::t_3ba8c59796e122 5-6,11-16,50,62-63,67-68,71-80,85-108,116-120,122-124,126-131,136-137,139,141-142,147-151,153-155
+connectors/slack/direct/projection.py
+  s_b0720e0f40ac78::t_787b72c2efb5c0 9-10,12,107,111-112
+connectors/slack/direct/test_direct.py
+  s_b0720e0f40ac78::t_4a29d5b18cb555 125-133,151,165-168,170-178,181
+connectors/slack/package.json
+  s_b0720e0f40ac78::t_20e829a9b882d9 9
+connectors/slack/src/Slack.ts
+  s_b0720e0f40ac78::t_39774a1d75b83b 32
+connectors/slack/test/archive_validation.py
+  s_b0720e0f40ac78::t_b3d9f19a4c7d6b 48,166,203,206,209-213,217-218
+connectors/slack/test/refresh_validation.py
+  s_b0720e0f40ac78::t_60fba02e62b76d 30,87,91-93,96,102-106,112,117
+connectors/teams/README.md
+  s_4ebbffb66b3645::t_7756106d027d88 27-31
+connectors/teams/connector.json
+  s_4ebbffb66b3645::t_35f2b861ce2804 3,9
+connectors/teams/package.json
+  s_4ebbffb66b3645::t_05e852a45e7509 9
+connectors/teams/runtime/test_bridge.py
+  s_4ebbffb66b3645::t_cc1cc13bc58e29 3,62-81
+connectors/teams/scripts/README.md
+  s_4ebbffb66b3645::t_79882e10ee2c35 7
+connectors/teams/scripts/validate-release.py
+  s_4ebbffb66b3645::t_5d897d910d1196 61,74,87-90
+connectors/teams/src/Teams.ts
+  s_4ebbffb66b3645::t_b6d22b8a8ea559 32
+connectors/teams/test/ReleaseValidation.ts
+  s_4ebbffb66b3645::t_2b062dd5fd222d 45,84-85,215,235-239,241
+connectors/teams/validation/native_cache.py
+  s_4ebbffb66b3645::t_9f1dbe99f701ff 5-7,13-17,164,180-244,247-248,250-251,254-264
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4d7457784d735485ebf2f933a232047d40ab3078",
+  "prompts": {},
+  "sessions": {
+    "s_4ebbffb66b3645": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20922-7e4f-7220-a51a-21511542e425",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_b0720e0f40ac78": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20921-76c2-7671-9fbe-1022619daaa4",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
