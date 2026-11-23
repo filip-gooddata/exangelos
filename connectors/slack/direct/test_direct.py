@@ -145,6 +145,49 @@ class DirectTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '^scope$'):
             selected()
 
+    def test_opted_in_app_layout_projection_and_screening(self):
+        data = fixture()
+        msg = data['messages'][CHANNEL][TIME]
+        rich = dict(type='rich_text_section', elements=[
+            dict(type='text', text='Changes to '),
+            dict(type='link', text='the release', url='https://hidden.invalid')])
+        msg.update(app_id='A0000001', text='', blocks=[dict(type='rich_text', elements=[rich])])
+
+        def preview():
+            state = projection.project(b'\xff\x10' + encode(data), [CHANNEL])
+            return observation.snapshot(state, SELECTION, KEY, include_preview=True)['messages'][0].get('preview')
+
+        self.assertEqual(preview(), 'Changes to the release')
+        self.assertNotIn('blocks', projected(data)['messages'][CHANNEL][TIME])
+        msg['text'] = 'Safe primary'
+        self.assertEqual(preview(), 'Safe primary')
+        rich['elements'][0]['text'] = 'pass'
+        rich['elements'][1]['text'] = 'word'
+        self.assertIsNone(preview())
+        del rich['elements'][1]['text']
+        self.assertIsNone(preview())
+        msg['blocks'] = [dict(type='section', text=dict(type='mrkdwn', text='Read <https://fixture.invalid/path|the report>'))]
+        msg['text'] = 'token'
+        self.assertIsNone(preview())
+        msg['text'] = ''
+        self.assertEqual(preview(), 'Read the report')
+        msg['blocks'][0]['text']['type'] = 'plain_text'
+        self.assertIsNone(preview())
+        msg['blocks'] = []
+        msg['text'] = '<https://fixture.invalid/path|Release notes>'
+        self.assertEqual(preview(), 'Release notes')
+        msg['mrkdwn'] = False
+        self.assertIsNone(preview())
+        msg.update(text='', attachments=[dict(title='Issue updated', text='Ready for review',
+                                               title_link='https://hidden.invalid', fallback='[removed]')])
+        self.assertIsNone(preview())
+        del msg['attachments'][0]['fallback']
+        self.assertEqual(preview(), 'Issue updated Ready for review')
+        for shape in ([dict(type='button', text=dict(type='plain_text', text='Hidden'))],
+                      [dict(type='section', text=dict(type='plain_text', text='secret'))]):
+            msg['blocks'] = shape
+            self.assertIsNone(preview())
+
     def test_projected_user_and_channel_labels_fail_closed(self):
         data = fixture()
         author = 'U0000002'

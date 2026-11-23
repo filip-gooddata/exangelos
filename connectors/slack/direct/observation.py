@@ -52,17 +52,112 @@ def safe_text(value):
     return value.isprintable() and not SENSITIVE.search(unicodedata.normalize('NFKC', value))
 
 
+# Only a labeled web link in a mrkdwn position has separable display text.
+# Mentions, unlabeled targets, nested markup and control characters fail closed.
+DISPLAY_LINK = re.compile(r'<https?://[A-Za-z0-9.-]+(?::[0-9]+)?(?:/[^<>|\s]*)?\|([^<>|\r\n]+)>')
+
+
+def display_text(value, mrkdwn=False):
+    if not isinstance(value, str) or len(value) > 4096:
+        raise ValueError('preview')
+    if mrkdwn and any(not char.isprintable() and char not in ' \t\r\n' for char in value):
+        raise ValueError('preview')
+    if mrkdwn:
+        def label(match):
+            text = display_text(match[1])
+            if not text:
+                raise ValueError('preview')
+            return text
+        value = DISPLAY_LINK.sub(label, value)
+    value = re.sub(r'[ \t\r\n]+', ' ', value).strip(' ')
+    if value and (not safe_text(value) or (mrkdwn and SENSITIVE.search(
+            unicodedata.normalize('NFKC', re.sub(r'[*_~]', '', value))))):
+        raise ValueError('preview')
+    return value
+
+
+def layout_items(row, field):
+    values = row.get(field, {})
+    if not isinstance(values, dict) or set(values) != {str(i) for i in range(len(values))}:
+        raise ValueError('preview')
+    return (values[str(i)] for i in range(len(values)))
+
+
+def block_text(row):
+    for block in layout_items(row, 'blocks'):
+        if not isinstance(block, dict):
+            raise ValueError('preview')
+        kind = block.get('type')
+        if kind == 'rich_text':
+            for section in layout_items(block, 'elements'):
+                if not isinstance(section, dict) or section.get('type') != 'rich_text_section':
+                    raise ValueError('preview')
+                runs = []
+                for run in layout_items(section, 'elements'):
+                    if not isinstance(run, dict) or run.get('type') not in ('text', 'link') or not isinstance(run.get('text'), str):
+                        raise ValueError('preview')
+                    # Adjacent rich-text runs have no implicit whitespace.
+                    if run['type'] == 'link' and not run['text'].strip():
+                        raise ValueError('preview')
+                    runs.append(run['text'])
+                yield display_text(''.join(runs))
+            continue
+        if kind == 'section':
+            objects = ([block['text']] if 'text' in block else []) + list(layout_items(block, 'fields'))
+        elif kind == 'header':
+            objects = [block.get('text')]
+        elif kind == 'context':
+            objects = layout_items(block, 'elements')
+        elif kind in ('actions', 'divider', 'image'):
+            continue
+        else:
+            raise ValueError('preview')
+        for obj in objects:
+            if not isinstance(obj, dict):
+                raise ValueError('preview')
+            if kind == 'context' and obj.get('type') == 'image':
+                continue
+            if obj.get('type') not in ('plain_text', 'mrkdwn') or (kind == 'header' and obj.get('type') != 'plain_text'):
+                raise ValueError('preview')
+            yield display_text(obj.get('text'), obj['type'] == 'mrkdwn' and kind != 'header')
+
+
+def attachment_text(row):
+    for attachment in layout_items(row, 'attachments'):
+        if not isinstance(attachment, dict):
+            raise ValueError('preview')
+        if 'fallback' in attachment:
+            display_text(attachment['fallback'], True)  # screen alternate notification text
+        formats = list(layout_items(attachment, 'mrkdwn_in'))
+        for field in ('pretext', 'title', 'text'):
+            if field in attachment:
+                yield display_text(attachment[field], field in ('text', 'pretext') and field in formats)
+        for entry in layout_items(attachment, 'fields'):
+            if not isinstance(entry, dict):
+                raise ValueError('preview')
+            for field in ('title', 'value'):
+                if field in entry:
+                    yield display_text(entry[field], field == 'value' and 'fields' in formats)
+        yield from block_text(attachment)
+
+
 def message_preview(message):
     if (message.get('type') != 'message' or message.get('subtype') not in (None, 'bot_message')
             or any(message.get(field, False) is not False for field in ('redacted', 'is_redacted', 'deleted', 'is_deleted', 'tombstone'))):
         return None
-    value = message['text']
-    if len(value) > 4096:
+    app = (message.get('subtype') == 'bot_message'
+           or any(isinstance(message.get(field), str) and re.fullmatch(pattern, message[field])
+                  for field, pattern in (('app_id', r'A[A-Z0-9]{6,30}'), ('bot_id', r'B[A-Z0-9]{6,30}'))))
+    try:
+        primary = display_text(message['text'], app and message.get('mrkdwn', True) is True)
+        if not app:
+            return primary[:160] or None
+        # Check every supported representation before choosing one or clipping.
+        pieces = [part for part in (*block_text(message), *attachment_text(message)) if part]
+        layout = display_text(' '.join(pieces))
+    except ValueError:
         return None
-    # Inspect the whole value before clipping so a sensitive suffix suppresses
-    # the entire preview. Fold only ordinary message layout whitespace.
-    value = re.sub(r'[ \t\r\n]+', ' ', value).strip(' ')
-    return value[:160] if value and safe_text(value) else None
+    return (primary or layout)[:160] or None
 
 
 def same_team(row, workspace):

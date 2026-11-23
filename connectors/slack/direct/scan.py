@@ -19,7 +19,7 @@ class CheckedTable(ldb.LdbFile):
         return super()._read_block(handle)
 
 
-def run(root, consume=None, observe=None):
+def run(root, consume=None, observe=None, preview_channels=()):
     folder=root/'https_app.slack.com_0.indexeddb.leveldb'
     current=folder/'CURRENT'
     if current.is_symlink() or current.stat().st_size>128: raise ValueError('current')
@@ -127,7 +127,7 @@ def run(root, consume=None, observe=None):
             data=acquire.payload(b'\x00'+b)
             steps['envelope_unwrapped']=True
             if data is None:raise ValueError('nested')
-            state=redux_fields.project(data)
+            state=redux_fields.project(data, preview_channels)
             identity=observation.scope(state)
             record_key=io.BytesIO(r.user_key[n:])
             if record_key.read(1)!=b'\x01':raise ValueError('scope')

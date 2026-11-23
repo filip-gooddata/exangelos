@@ -102,7 +102,13 @@ history, the receiving agent session, desktop alerts, and debug-level
 event payload logs. The private ledger retains committed excerpts for exact
 replay, including after previews are disabled.
 
-The connector uses only the selected message's plain text. It folds layout
+The connector uses the selected message's text. For app and bot posts, it
+can also use section, header, context and rich-text section blocks or
+legacy attachment titles, bodies and fields. A labeled web link in a
+supported formatted-text position contributes its display label. Link
+destinations, image URLs and interactive values are excluded. Safe
+top-level text takes precedence over the layout. A sensitive match in
+either representation suppresses the excerpt. The connector folds layout
 whitespace and includes up to 160 Unicode code points. It omits excerpts
 for unsupported message forms, bodies longer than 4,096 code points, and
 text with recognized credential, redaction, link, markup or unsafe control
