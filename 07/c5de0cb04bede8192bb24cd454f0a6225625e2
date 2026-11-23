@@ -1,0 +1,61 @@
+adapters/connector-directory/src/ConnectorDirectoryLive.ts
+  s_d62eee476d040c::t_9dfad4ae615cea 124-125
+adapters/connector-directory/test/ConnectorDirectory.test.ts
+  s_d62eee476d040c::t_e32ca925ba47cf 66-75,81,83,86
+adapters/wake-targets/src/SessionTitles.ts
+  s_7154cc8c81ebf7::t_ae33cd49416002 1,36-50,53,55,57-59,61,68,71,86-111
+adapters/wake-targets/test/sessionTitles.test.ts
+  s_d62eee476d040c::t_0966fd82235f25 2,14-15,37-39,43-44,52,55-57,60-61,63,66-68,70,73,75,78-80,82,85,87-96
+apps/tray/src/view/Connectors.ts
+  s_d62eee476d040c::t_9ca75b039818c9 7,15,30,37,140
+apps/tray/src/view/Facts.ts
+  s_d62eee476d040c::t_5b197107dfdf35 251-254
+apps/tray/src/view/Main.ts
+  s_d62eee476d040c::t_f76d38bc0d1aac 8,36,81,84,91,139,142
+apps/tray/src/view/Model.ts
+  s_d62eee476d040c::t_621f57a09625a7 45-47,69-70,89-90,205-206
+apps/tray/src/view/Parts.ts
+  s_d62eee476d040c::t_d391a82732a022 3-4,14-20,24-30
+apps/tray/src/view/Subscription.ts
+  s_d62eee476d040c::t_e8be51b7606711 9,35,185
+apps/tray/test/Facts.test.ts
+  s_d62eee476d040c::t_3dfe5c21e7f5f5 97-101
+apps/tray/test/PanelView.test.ts
+  s_d62eee476d040c::t_e1fc9622cc9c13 7,107-116
+docs/spec.md
+  s_d62eee476d040c::t_11ffc37041b5e5 282,306
+packages/application/src/ports/SessionTitles.ts
+  s_d62eee476d040c::t_f3284f779b0542 6
+packages/connector-sdk/src/index.ts
+  s_d62eee476d040c::t_dda3ebc276acbc 4-5
+packages/connector-sdk/test/Manifest.test.ts
+  s_d62eee476d040c::t_e909c22a3fc1c5 1-10
+packages/contracts/src/Manifest.ts
+  s_d62eee476d040c::t_a7b960a67cd89e 29-30,32
+packaging/src/connector-archives.ts
+  s_d62eee476d040c::t_b4772e29083a7f 61-63
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "07c5de0cb04bede8192bb24cd454f0a6225625e2",
+  "prompts": {},
+  "sessions": {
+    "s_7154cc8c81ebf7": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6efb2bff-be53-4d62-82f8-85691d41bb77",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_d62eee476d040c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6048d1db-8b90-4a1a-89a9-a164adfa43b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
