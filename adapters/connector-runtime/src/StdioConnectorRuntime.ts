@@ -104,7 +104,7 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
             case "CredentialsRejected":
               return new ConnectorRuntime.CredentialsRejected({ connector, reason: error.reason })
             case "SourceFailed":
-              return new ConnectorRuntime.SourceFailed({ connector, reason: error.reason })
+              return new ConnectorRuntime.SourceFailed({ connector, reason: error.reason, ...(error.category && { category: error.category }) })
           }
         })),
       exited: child.exitCode.pipe(

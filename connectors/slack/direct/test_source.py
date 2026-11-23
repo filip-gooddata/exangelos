@@ -165,6 +165,15 @@ class SourceTests(unittest.TestCase):
                     self.assertEqual(result.stdout, '')
                     self.assertEqual(result.stderr, 'Slack persisted source unavailable.\n')
 
+    def test_missing_cache_and_changed_pin_have_distinct_private_failures(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            absent = self.invoke(request(root))
+            self.assertEqual((absent.returncode, absent.stdout, absent.stderr), (21, '', ''))
+            database(root)
+            changed = self.invoke(dict(request(root), expectedScope='0' * 64))
+            self.assertEqual((changed.returncode, changed.stdout, changed.stderr), (24, '', ''))
+
     def test_full_scan_mutation_rejected(self):
         import source
         from unittest.mock import patch

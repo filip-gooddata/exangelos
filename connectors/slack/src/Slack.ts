@@ -47,7 +47,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
       const { label, ...request } = yield* source.setup({
         subscriptionAccess: "persisted-cache", subject,
         ...(scope !== undefined && { scope }), ...(configuration.cacheRoot && { cacheRoot: configuration.cacheRoot })
-      }).pipe(Effect.mapError((error) => new Connector.ParametersInvalid({ reason: error.reason })))
+      })
       if (pin.test(subject) && subject !== `scope-${request.expectedScope}`) {
         return yield* new Connector.ParametersInvalid({ reason: retired })
       }
@@ -73,7 +73,9 @@ export const make = <R>(source: Source<R>) => Connector.make({
       describe: ({ selection, scope }) => Effect.gen(function*() {
         const configuration = yield* Ref.get(configured)
         if (!configuration) return yield* new Connector.ParametersInvalid({ reason: authorize })
-        const { request, label } = yield* resolve(configuration, selection, scope)
+        const { request, label } = yield* resolve(configuration, selection, scope).pipe(
+          Effect.mapError((error) => new Connector.ParametersInvalid({ reason: error.reason }))
+        )
         return { subject: `slack:${request.expectedScope}`, label, parameters: { selection: `scope-${request.expectedScope}` } }
       }),
       watch: ({ parameters, cursor }) => Stream.unwrap(Effect.gen(function*() {
@@ -81,16 +83,17 @@ export const make = <R>(source: Source<R>) => Connector.make({
         if (!configuration) return yield* new Connector.SourceFailed({ reason: authorize })
         if (!pin.test(parameters.selection) || parameters.scope !== undefined) return yield* new Connector.SourceFailed({ reason: retired })
         const { request } = yield* resolve(configuration, parameters.selection).pipe(
-          Effect.mapError((error) => new Connector.SourceFailed({ reason: error.reason }))
+          Effect.mapError((error) => new Connector.SourceFailed({ reason: error.reason, category: error._tag === "SourceUnavailable" ? error.category ?? "unavailable" : "scope-changed" }))
         )
         return Stream.paginate({ cursor, first: true }, (state) => Effect.gen(function*() {
           if (!state.first) yield* Effect.sleep(configuration.interval)
           if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason })
           const startedAt = state.cursor === undefined ? yield* Clock.currentTimeMillis : undefined
           const snapshot = yield* source.read(configuration.includePreview ? { ...request, includePreview: true } : request)
-          if (snapshot.scope !== request.expectedScope || (yield* Ref.get(configured)) !== configuration) {
-            return yield* new Connector.SourceFailed({ reason })
+          if (snapshot.scope !== request.expectedScope) {
+            return yield* new Connector.SourceFailed({ reason, category: "scope-changed" })
           }
+          if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason: authorize })
           const result = yield* reconcile(state.cursor, snapshot, startedAt)
           if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason: authorize })
           const items = result.events.map((event, index) => events[event.type].item({
@@ -98,13 +101,15 @@ export const make = <R>(source: Source<R>) => Connector.make({
             payload: event.payload ?? { count: 1 }, dedupeKey: event.dedupeKey,
             ...(index === result.events.length - 1 ? { cursor: result.cursor } : {})
           }))
-          if (items.length === 0 && state.cursor !== result.cursor) items.push(Connector.cursor(result.cursor))
+          if (items.length === 0 && (state.first || state.cursor !== result.cursor)) items.push(Connector.cursor(result.cursor))
           return [items, Option.some({ cursor: result.cursor as string | undefined, first: false })] as const
         }).pipe(
           Effect.catchTag("LegacyCursor", () => Effect.succeed([[Connector.end(
             "This Slack cursor predates message freshness tracking. Create a new subscription for the same selection to establish a baseline."
           )], Option.none()] as const)),
-          Effect.mapError(() => new Connector.SourceFailed({ reason }))
+          Effect.mapError((error) => error._tag === "SourceFailed" ? error : new Connector.SourceFailed({
+            reason, category: error._tag === "SourceUnavailable" ? error.category ?? "unavailable" : "invalid-data"
+          }))
         ))
       }))
     }

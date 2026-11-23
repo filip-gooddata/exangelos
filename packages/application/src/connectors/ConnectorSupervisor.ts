@@ -61,6 +61,7 @@ export class ConnectorSupervisor extends Context.Service<ConnectorSupervisor, {
   readonly reconfigure: (name: Ids.ConnectorName) => Effect.Effect<Connector.Configuration>
   /** The running process of an available connector, waiting while it starts. */
   readonly ready: (name: Ids.ConnectorName) => Effect.Effect<ConnectorProcess, Refusal.ConnectorUnavailable>
+  readonly status: (connector: Connector.Connector) => Connector.Status
   readonly watch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly unwatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly rewatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
@@ -122,6 +123,15 @@ export const layerConnectorSupervisor: Layer.Layer<
   const writes = yield* Semaphore.make(1)
   const refreshes = yield* Semaphore.make(1)
   const scope = yield* Effect.scope
+  const observationFailures = new Map<Ids.SubscriptionId, { name: Ids.ConnectorName; category: Connector.ObservationCategory }>()
+  const status = (connector: Connector.Connector): Connector.Status => {
+    const failures = Array.from(observationFailures.values()).filter((failure) => failure.name === connector.name)
+    if (failures.length === 0) return connector
+    return {
+      ...connector,
+      observation: { affectedWatches: failures.length, categories: [...new Set(failures.map((f) => f.category))].sort() }
+    }
+  }
   const openedWith = yield* Ref.make<ReadonlyMap<Ids.SubscriptionId, Duration.Duration>>(new Map())
   const recordWakeWindow = (id: Ids.SubscriptionId, wakeWindow: Duration.Duration | undefined) =>
     Ref.update(openedWith, (all) => {
@@ -287,6 +297,7 @@ export const layerConnectorSupervisor: Layer.Layer<
           Stream.runForEachWhile((item) =>
             // Interrupting the stream waits until an item is fully ingested.
             Effect.map(Effect.uninterruptible(intake.ingest(id, item)), (verdict) => {
+              observationFailures.delete(id)
               failures = 0
               stop = verdict === "stop"
               return !stop
@@ -303,6 +314,13 @@ export const layerConnectorSupervisor: Layer.Layer<
             yield* Effect.forkDetach(rejectCredentials(name, process, configured, error.reason))
             return
           }
+          const category = error.category ?? "unavailable"
+          if (observationFailures.get(id)?.category !== category) {
+            observationFailures.set(id, { name, category })
+            yield* Effect.logWarning("watch observation failed").pipe(
+              Effect.annotateLogs({ connector: name, subscription: id, category })
+            )
+          }
         }
         failures++
         yield* Effect.sleep(backoff(failures))
@@ -317,7 +335,10 @@ export const layerConnectorSupervisor: Layer.Layer<
       const connector = yield* connectors.find(name)
       const process = (yield* Ref.get(processes)).get(name)
       if (Option.isNone(connector) || !ConnectorRules.isAvailable(connector.value) || process === undefined) return
-      yield* FiberMap.run(streams, id, Effect.ensuring(runStream(id, name, process), recordWakeWindow(id, undefined)), {
+      yield* FiberMap.run(streams, id, Effect.ensuring(runStream(id, name, process), Effect.suspend(() => {
+        observationFailures.delete(id)
+        return recordWakeWindow(id, undefined)
+      })), {
         onlyIfMissing: true
       })
     })
@@ -637,6 +658,7 @@ export const layerConnectorSupervisor: Layer.Layer<
     remove,
     reconfigure,
     ready,
+    status,
     watch: openStream,
     // The intake may unwatch from inside the stream's own ingest, so the removal runs on its own fiber.
     unwatch: (subscription) => Effect.asVoid(Effect.forkDetach(FiberMap.remove(streams, subscription))),

@@ -155,6 +155,12 @@ def candidates(state, target):
             yield workspace, owner, channel, parent, verified, observation.conversation_label(state, workspace, channel)
 
 
+def subscription_identity(secret, epoch, selection):
+    key = observation.token(secret, 'subscription-key-v2', epoch['root'], selection['workspace'],
+                            selection['owner'], selection['conversations'][0], selection.get('thread'))
+    return key, source.scope_token(bytes.fromhex(key), selection, epoch)
+
+
 def discover(roots, secret, target, scope):
     matches = []
     inventories = {}
@@ -165,15 +171,20 @@ def discover(roots, secret, target, scope):
         except FileNotFoundError:
             inventories[root] = None
             continue
-        before, epoch = source.inventory(root)
-        inventories[root] = before, epoch
+        binding = {'kind': 'volume'} if sys.platform == 'darwin' else None
+        try:
+            before, epoch = source.inventory(root, binding)
+        except source.VolumeIdentityUnavailable:
+            binding = None
+            before, epoch = source.inventory(root)
+        inventories[root] = (before, epoch), binding
         observed = False
 
         def collect(state, generation):
             nonlocal observed
             observed = True
             for candidate in candidates(state, target):
-                matches.append((root, epoch, *candidate))
+                matches.append((root, epoch, binding, *candidate))
 
         result = source.scan.run(root, observe=collect)
         require(observed and not result['external_rejections'] and not result['files_changed'] and result['current_unchanged'])
@@ -183,22 +194,24 @@ def discover(roots, secret, target, scope):
         raise SetupRejected(22)
     if len(matches) != 1:
         raise SetupRejected(23)
-    root, epoch, workspace, owner, channel, parent, _, label = matches[0]
+    root, epoch, binding, workspace, owner, channel, parent, _, label = matches[0]
     selection = dict(workspace=workspace, owner=owner, conversations=[channel])
     if parent:
         if scope is None and parent == target.timestamp:
             raise SetupRejected(27)
         if scope != 'conversation':
             selection['thread'] = parent
-    key = observation.token(secret, 'subscription-key-v2', epoch['root'], workspace, owner, channel, selection.get('thread'))
-    request = dict(selection=selection, key=key, root=str(root),
-                   expectedScope=source.scope_token(bytes.fromhex(key), selection, epoch))
+    key, handle = subscription_identity(secret, epoch, selection)
+    request = dict(selection=selection, key=key, root=str(root), expectedScope=handle)
+    if binding:
+        request['volumeIdentity'] = binding
     validate(request)
     for inspected, expected in inventories.items():
         if expected is None:
             require(not inspected.exists())
         else:
-            require(source.inventory(inspected) == expected)
+            previous, mode = expected
+            require(source.inventory(inspected, mode) == previous)
     return epoch, request, label
 
 
@@ -213,6 +226,96 @@ def save_json(path, saved):
     finally:
         if os.path.exists(temporary):
             os.unlink(temporary)
+
+
+def read_json(path):
+    with os.fdopen(private_file(path, os.O_RDONLY)) as stream:
+        raw = stream.read(source.MAX_INPUT + 1)
+    require(len(raw) <= source.MAX_INPUT)
+    return json.loads(raw, object_pairs_hook=source.unique_object)
+
+
+def reopen(directory, roots, handle):
+    path = directory / ('scope-' + handle + '.json')
+    try:
+        saved = read_json(path)
+    except FileNotFoundError:
+        raise SetupRejected(24) from None
+    if saved.get('version') != 2:
+        raise SetupRejected(24)
+    epoch = saved.get('epoch')
+    if not isinstance(epoch, dict) or saved['request']['expectedScope'] != handle:
+        raise SetupRejected(24)
+    binding = saved['request'].get('volumeIdentity')
+    for configured_root in roots.values():
+        root = safe_path(configured_root)
+        try:
+            identity = source.directory_identity(root, binding)
+        except (FileNotFoundError, source.PinnedScopeChanged):
+            continue
+        if identity == epoch.get('root'):
+            break
+    else:
+        raise SetupRejected(24)
+    try:
+        if source.inventory(root, binding)[1] != epoch:
+            raise SetupRejected(24)
+    except source.PinnedScopeChanged:
+        raise SetupRejected(24) from None
+    request = dict(saved['request'], root=str(root))
+    label = saved['label']
+    validate(request)
+    if binding is None and sys.platform == 'darwin':
+        # Add proof only while both original directory identities still match.
+        # The historical device numbers remain inputs to the scope token.
+        paths = dict(root=root, database=root / 'https_app.slack.com_0.indexeddb.leveldb')
+        try:
+            aliases = {
+                part: [source.directory_identity(folder, {'kind': 'volume'}, verified_legacy=epoch[part])[0], epoch[part][0]]
+                for part, folder in paths.items()
+            }
+        except source.VolumeIdentityUnavailable:
+            aliases = None
+        except source.PinnedScopeChanged:
+            raise SetupRejected(24) from None
+        if aliases:
+            request['volumeIdentity'] = dict(kind='legacy', **aliases)
+            validate(request)
+            # The volume-keyed alias keeps equivalent raw references on this subject.
+            portable = {part: [pair[0], *epoch[part][1:]] for part, pair in aliases.items()}
+            try:
+                secret = bytes.fromhex(read_json(directory / 'subscriptions-key.json'))
+            except FileNotFoundError:
+                secret = None
+            if secret is not None:
+                _, canonical = subscription_identity(secret, portable, request['selection'])
+                save_json(directory / ('alias-' + canonical + '.json'), handle)
+            save_json(path, dict(saved, request=request))
+    return request, label
+
+
+def equivalent_pin(directory, root, secret, request):
+    try:
+        handle = read_json(directory / ('alias-' + request['expectedScope'] + '.json'))
+        require(isinstance(handle, str) and re.fullmatch('[a-f0-9]{64}', handle))
+    except FileNotFoundError:
+        # Before the first verified reopen, the pre-upgrade scope is still
+        # derivable from the device numbers at the selected location.
+        legacy_epoch = {
+            'root': source.directory_identity(root),
+            'database': source.directory_identity(root / 'https_app.slack.com_0.indexeddb.leveldb')
+        }
+        _, handle = subscription_identity(secret, legacy_epoch, request['selection'])
+        if not (directory / ('scope-' + handle + '.json')).exists():
+            return None
+    try:
+        existing, _ = reopen(directory, {'selected': root}, handle)
+    except SetupRejected as error:
+        if error.args == (24,):
+            return None
+        raise
+    require(existing['selection'] == request['selection'])
+    return existing
 
 
 def setup(values):
@@ -233,35 +336,7 @@ def setup(values):
     roots = locations(custom)
     directory = private_directory()
     if handle:
-        path = directory / (subject + '.json')
-        try:
-            fd = private_file(path, os.O_RDONLY)
-        except FileNotFoundError:
-            raise SetupRejected(24) from None
-        with os.fdopen(fd) as stream:
-            raw = stream.read(source.MAX_INPUT + 1)
-        require(len(raw) <= source.MAX_INPUT)
-        saved = json.loads(raw, object_pairs_hook=source.unique_object)
-        if saved.get('version') != 2:
-            raise SetupRejected(24)
-        epoch = saved.get('epoch')
-        if not isinstance(epoch, dict) or saved['request']['expectedScope'] != handle[1]:
-            raise SetupRejected(24)
-        for configured_root in roots.values():
-            root = safe_path(configured_root)
-            try:
-                identity = source.directory_identity(root)
-            except FileNotFoundError:
-                continue
-            if identity == epoch.get('root'):
-                break
-        else:
-            raise SetupRejected(24)
-        if source.inventory(root)[1] != epoch:
-            raise SetupRejected(24)
-        request = dict(saved['request'], root=str(root))
-        label = saved['label']
-        validate(request)
+        request, label = reopen(directory, roots, handle[1])
     else:
         with locked(directory):
             try:
@@ -274,8 +349,14 @@ def setup(values):
                     secret = json.loads(stream.read(128))
             require(isinstance(secret, str) and re.fullmatch(r'[a-f0-9]{64}', secret))
         epoch, request, label = discover(roots, bytes.fromhex(secret), target, scope)
-        path = directory / ('scope-' + request['expectedScope'] + '.json')
-        save_json(path, dict(version=2, epoch=epoch, request=request, label=label))
+        existing = None
+        if request.get('volumeIdentity') == {'kind': 'volume'}:
+            existing = equivalent_pin(directory, Path(request['root']), bytes.fromhex(secret), request)
+        if existing is None:
+            path = directory / ('scope-' + request['expectedScope'] + '.json')
+            save_json(path, dict(version=2, epoch=epoch, request=request, label=label))
+        else:
+            request = existing
     selection = request['selection']
     require(isinstance(label, str) and len(label) <= 128 and label.isprintable())
     if 'thread' in selection:

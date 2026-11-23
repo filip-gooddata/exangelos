@@ -44,3 +44,13 @@ it.effect("source sanitizes nonzero exit, malformed output, oversized output and
     expect(JSON.stringify(failure)).not.toContain("fixture-")
   }
 }))
+
+it.effect("source retains only a bounded failure category from the helper", () => Effect.gen(function*() {
+  for (const [exit, category] of [[21, "unreadable"], [24, "scope-changed"], [1, "invalid-data"], [99, "unavailable"]] as const) {
+    const fault = yield* localSource.read(request).pipe(
+      Effect.provide(processLayer(new TextEncoder().encode("fixture-private-output"), exit)), Effect.flip
+    )
+    expect(fault.category).toBe(category)
+    expect(JSON.stringify(fault)).not.toContain("fixture")
+  }
+}))

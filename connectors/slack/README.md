@@ -120,7 +120,22 @@ an absolute IndexedDB directory on a supported POSIX system. An existing
 the root if matches span multiple accounts, conversations or cache directories.
 `pollIntervalMs` defaults to 30000 and accepts integers from 1000 through 3600000.
 
+Run `exangelos connectors slack` to inspect current watch failures. A running
+connector can have a watch that cannot read or validate its source. The daemon
+logs a warning when a watch enters a failure category and retries with backoff.
+A successful observation clears the warning from status, including when the
+saved cursor stays the same. An unchanged cache may lag behind Slack. A
+successful read establishes only that the local snapshot could be observed.
+
 ## Upgrading existing subscriptions
+
+Slack 0.4.1 uses the filesystem volume UUID on supported macOS volumes. A
+restart can change a volume's device number. When an older pin still matches,
+the first successful reopen records the verified volume UUIDs and preserves
+the original scope and cursor. If the device number already changed, the
+older pin has no proof of the original volume. Select the conversation again
+to establish a fresh baseline. Events between the old cursor and the new
+baseline may be missed.
 
 Configuration no longer selects a conversation. Authorize positional access and
 create a subscription with the original ID or message reference when a legacy

@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
-import { Catalogue, Event, Ids } from "@exangelos/domain"
+import { Catalogue, Connector, Event, Ids } from "@exangelos/domain"
 
 export const version = 1
 
@@ -38,7 +38,9 @@ export class CredentialsRejected extends Schema.TaggedError<CredentialsRejected>
 }) {}
 
 export class SourceFailed extends Schema.TaggedError<SourceFailed>()("SourceFailed", {
-  reason: Schema.String
+  reason: Schema.String,
+  /** Safe for operator status and logs. The daemon keeps the free-form reason private. */
+  category: Schema.optionalKey(Connector.ObservationCategory)
 }) {}
 
 export const WatchError = Schema.Union([CredentialsRejected, SourceFailed])

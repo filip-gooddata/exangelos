@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import { listConnectors, ConnectorRepository } from "@exangelos/application"
-import { layerRepositories } from "@exangelos/application/testing"
+import { layer } from "./connectors/harness.ts"
 import { catalogue, connector } from "./fixtures.ts"
 
 describe("listConnectors", () => {
@@ -17,5 +17,5 @@ describe("listConnectors", () => {
         ["github-pr", catalogue],
         ["template", catalogue]
       ])
-    }).pipe(Effect.provide(layerRepositories)))
+    }).pipe(Effect.provide(layer)))
 })

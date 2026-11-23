@@ -1,4 +1,5 @@
 import contextlib
+import ctypes
 import json
 import logging
 import os
@@ -16,13 +17,17 @@ MAX_FILES = 10000
 MAX_MESSAGES = 10000
 
 
+class PinnedScopeChanged(ValueError):
+    pass
+
+
 def scope_token(key, selection, epoch):
     return observation.token(key, 'selected-scope-v2', selection['workspace'], selection['owner'],
                              sorted(selection['conversations']), selection.get('thread'), epoch)
 
 
 def acquire(request):
-    if not isinstance(request, dict) or set(request) - {'selection', 'key', 'root', 'expectedScope', 'includePreview'}:
+    if not isinstance(request, dict) or set(request) - {'selection', 'key', 'root', 'expectedScope', 'includePreview', 'volumeIdentity'}:
         raise ValueError('request')
     include_preview = request.get('includePreview', False)
     if type(include_preview) is not bool:
@@ -54,16 +59,17 @@ def acquire(request):
     if root.is_symlink():
         raise ValueError('symlink')
     root = root.resolve(strict=True)
-    before, epoch = inventory(root)
+    binding = request.get('volumeIdentity')
+    before, epoch = inventory(root, binding)
     scope = scope_token(key, selection, epoch)
     if 'expectedScope' in request and request['expectedScope'] != scope:
-        raise ValueError('scope')
+        raise PinnedScopeChanged('scope')
     candidates = []
     def collect(state, generation):
         if observation.scope(state) == (workspace, owner):
             candidates.append((state, generation))
     result = scan.run(root, observe=collect)
-    after, after_epoch = inventory(root)
+    after, after_epoch = inventory(root, binding)
     if before != after or epoch != after_epoch or result['files_changed'] or not result['current_unchanged']:
         raise ValueError('mutation')
     if result['external_rejections'] or len(candidates) != 1:
@@ -86,21 +92,54 @@ def acquire(request):
             'snapshot': observation.token(key, 'selected-snapshot-v1', scope, marker_rows)}
 
 
-def directory_identity(directory):
-    info = directory.lstat()
-    if not stat.S_ISDIR(info.st_mode):
-        raise ValueError('directory')
-    return [info.st_dev, info.st_ino, getattr(info, 'st_birthtime', None)]
+class VolumeIdentityUnavailable(ValueError):
+    pass
 
 
-def inventory(root):
+def volume_uuid(fd):
+    # Darwin sys/attr.h: five attribute groups, ATTR_VOL_INFO | ATTR_VOL_UUID.
+    attrs = struct.pack('=HHIIIII', 5, 0, 0, 0x80040000, 0, 0, 0)
+    result = ctypes.create_string_buffer(20)
+    libc = ctypes.CDLL(None, use_errno=True)
+    if not hasattr(libc, 'fgetattrlist') or libc.fgetattrlist(fd, attrs, result, len(result), 0) != 0:
+        raise VolumeIdentityUnavailable('volume identity unavailable')
+    size, uuid = struct.unpack('=I16s', result.raw)
+    if size != len(result) or not any(uuid):
+        raise VolumeIdentityUnavailable('volume identity unavailable')
+    return uuid.hex()
+
+
+def directory_identity(directory, binding=None, part='root', *, verified_legacy=None):
+    fd = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        info = os.fstat(fd)
+        birth = getattr(info, 'st_birthtime', None)
+        device = info.st_dev
+        if verified_legacy is not None and [device, info.st_ino, birth] != verified_legacy:
+            raise PinnedScopeChanged('scope')
+        if binding is not None:
+            uuid = volume_uuid(fd)
+            if binding['kind'] == 'legacy':
+                expected, device = binding[part]
+                if uuid != expected:
+                    raise PinnedScopeChanged('scope')
+            elif binding['kind'] == 'volume':
+                device = uuid
+            else:
+                raise ValueError('identity')
+        return [device, info.st_ino, birth]
+    finally:
+        os.close(fd)
+
+
+def inventory(root, binding=None):
     entries = {}
     total_bytes = 0
     folder = root / 'https_app.slack.com_0.indexeddb.leveldb'
     for parent in (root, *root.parents):
         if parent.is_symlink():
             raise ValueError('symlink')
-    epoch = {'root': directory_identity(root), 'database': directory_identity(folder)}
+    epoch = {'root': directory_identity(root, binding), 'database': directory_identity(folder, binding, 'database')}
     for base in (folder, root / 'https_app.slack.com_0.indexeddb.blob'):
         pending = [base]
         while pending:
@@ -168,6 +207,10 @@ def main():
             output = json.dumps(result, sort_keys=True, separators=(',', ':'), ensure_ascii=False).encode('utf-8')
             if len(output) > 8 * 1024 * 1024:
                 raise ValueError('limit')
+    except PinnedScopeChanged:
+        return 24
+    except (FileNotFoundError, PermissionError):
+        return 21
     except BaseException:
         sys.stderr.write('Slack persisted source unavailable.\n')
         return 1
