@@ -5,7 +5,7 @@ field_v8=skip_v8.field_v8
 ABSENT_PROFILE = object()
 # Only selected message rows opt into the extra layout projection.
 LAYOUT_OBJECTS = {
-    'block': {'type': 'layoutString', 'text': 'textObject', 'fields': 'textObjects', 'elements': 'textObjects'},
+    'block': {'title': 'textObject', 'type': 'layoutString', 'text': 'textObject', 'fields': 'textObjects', 'elements': 'textObjects'},
     'textObject': {'type': 'layoutString', 'text': 'layoutString', 'elements': 'richRuns'},
     'richRun': {'type': 'layoutString', 'text': 'layoutString'},
     'attachment': {'title': 'layoutString', 'pretext': 'layoutString', 'text': 'layoutString',

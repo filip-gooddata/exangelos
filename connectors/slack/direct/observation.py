@@ -54,7 +54,7 @@ def safe_text(value):
 
 # Only a labeled web link in a mrkdwn position has separable display text.
 # Mentions, unlabeled targets, nested markup and control characters fail closed.
-DISPLAY_LINK = re.compile(r'<https?://[A-Za-z0-9.-]+(?::[0-9]+)?(?:/[^<>|\s]*)?\|([^<>|\r\n]+)>')
+DISPLAY_LINK = re.compile(r'<https?://[A-Za-z0-9.-]+(?::[0-9]+)?(?:[/#?][^<>|\s]*)?\|([^<>|\r\n]+)>')
 
 
 def display_text(value, mrkdwn=False):
@@ -108,6 +108,8 @@ def block_text(row):
             objects = [block.get('text')]
         elif kind == 'context':
             objects = layout_items(block, 'elements')
+        elif kind == 'image' and 'title' in block:
+            objects = [block['title']]
         elif kind in ('actions', 'divider', 'image'):
             continue
         else:
@@ -117,7 +119,7 @@ def block_text(row):
                 raise ValueError('preview')
             if kind == 'context' and obj.get('type') == 'image':
                 continue
-            if obj.get('type') not in ('plain_text', 'mrkdwn') or (kind == 'header' and obj.get('type') != 'plain_text'):
+            if obj.get('type') not in ('plain_text', 'mrkdwn') or (kind in ('header', 'image') and obj.get('type') != 'plain_text'):
                 raise ValueError('preview')
             yield display_text(obj.get('text'), obj['type'] == 'mrkdwn' and kind != 'header')
 

@@ -171,6 +171,9 @@ class DirectTests(unittest.TestCase):
         self.assertIsNone(preview())
         msg['text'] = ''
         self.assertEqual(preview(), 'Read the report')
+        for suffix in ('?page=next', '#latest'):
+            msg['blocks'][0]['text']['text'] = f'Read <https://fixture.invalid{suffix}|the report>'
+            self.assertEqual(preview(), 'Read the report')
         msg['blocks'][0]['text']['type'] = 'plain_text'
         self.assertIsNone(preview())
         msg['blocks'] = []
@@ -187,6 +190,25 @@ class DirectTests(unittest.TestCase):
                       [dict(type='section', text=dict(type='plain_text', text='secret'))]):
             msg['blocks'] = shape
             self.assertIsNone(preview())
+
+    def test_visible_image_title_screened_before_clipping(self):
+        data = fixture()
+        title = dict(type='plain_text', text='🌻' * 170)
+        image = dict(type='image', title=title, image_url='https://hidden.invalid', alt_text='image metadata')
+        msg = data['messages'][CHANNEL][TIME]
+        msg.update(subtype='bot_message', text='', blocks=[image])
+
+        def preview():
+            state = projection.project(b'\xff\x10' + encode(data), [CHANNEL])
+            return observation.snapshot(state, SELECTION, KEY, include_preview=True)['messages'][0].get('preview')
+
+        self.assertEqual(preview(), '🌻' * 160)
+        title['text'] += '[redacted]'
+        self.assertIsNone(preview())
+        msg['text'] = 'Build complete'
+        self.assertIsNone(preview())
+        del image['title']
+        self.assertEqual(preview(), 'Build complete')
 
     def test_projected_user_and_channel_labels_fail_closed(self):
         data = fixture()
