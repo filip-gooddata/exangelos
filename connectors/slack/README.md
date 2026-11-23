@@ -108,7 +108,11 @@ or unconfigured installations keep previews off. Changing the setting does
 not rewrite previously committed events.
 
 The connector prefers visible block and attachment text to a notification
-fallback. It reads section fields, headers, context text, rich-text runs,
+fallback. Scoped app and bot messages can omit that fallback when their
+layout contains supported visible text. An absent or undefined fallback uses
+the same body marker as an empty string. Slack’s edit timestamp records edits
+to these messages. A layout change alone does not trigger an edit event.
+It reads section fields, headers, context text, rich-text runs,
 image titles, button labels and attachment titles and bodies. Labeled links
 contribute their labels. An address displayed as text can appear in the
 excerpt. Hidden link targets, image URLs and interactive values are excluded.

@@ -68,7 +68,7 @@ def acquire(request):
     def collect(state, generation):
         if observation.scope(state) == (workspace, owner):
             candidates.append((state, generation))
-    result = scan.run(root, observe=collect, preview_channels=conversations if include_preview else ())
+    result = scan.run(root, observe=collect, layout_channels=conversations)
     after, after_epoch = inventory(root, binding)
     if before != after or epoch != after_epoch or result['files_changed'] or not result['current_unchanged']:
         raise ValueError('mutation')

@@ -143,16 +143,25 @@ def attachment_text(row):
         yield from block_text(attachment)
 
 
-def message_preview(message):
+def excerpt_eligible(message):
     subtype = message.get('subtype')
     if (message.get('type') != 'message' or
             (subtype is not None and (not isinstance(subtype, str) or not subtype or subtype in
              ('message_deleted', 'tombstone', 'message_changed', 'message_replied', 'ekm_access_denied'))) or
             any(message.get(field, False) is not False for field in ('redacted', 'is_redacted', 'deleted', 'is_deleted', 'tombstone'))):
-        return None
-    layout = ' '.join(part for part in (*block_text(message), *attachment_text(message)) if part.strip())
-    text = layout or display_text(message.get('text'), message.get('mrkdwn', True) is True)
-    return finish_excerpt(text) or None
+        return False
+    return True
+
+
+def app_message(message):
+    return message.get('subtype') == 'bot_message' or (
+        message.get('subtype') is None and any(
+            isinstance(message.get(field), str) and re.fullmatch(pattern, message[field])
+            for field, pattern in (('bot_id', r'B[A-Z0-9]{6,30}'), ('app_id', r'A[A-Z0-9]{6,30}'))))
+
+
+def visible_layout(message):
+    return ' '.join(part for part in (*block_text(message), *attachment_text(message)) if part.strip())
 
 
 def same_team(row, workspace):
@@ -283,7 +292,14 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
                 raise ValueError('incomplete')
             if thread != thread_root or timestamp == thread_root:
                 continue
-        if hidden or not isinstance(message.get('text'), str):
+        fallback = message.get('text')
+        eligible = not hidden and same_team(message, workspace) and excerpt_eligible(message)
+        missing_app_text = 'text' not in message and app_message(message)
+        layout = visible_layout(message) if eligible and (include_preview or missing_app_text) else ''
+        if missing_app_text and any(c.isprintable() and not c.isspace() for c in layout):
+            # Slack's optional notification fallback uses the existing empty-text body marker.
+            fallback = ''
+        if hidden or not isinstance(fallback, str):
             complete = False
             continue
         if not require_reactions and 'edited' in message:
@@ -310,7 +326,9 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
             rx_complete = False
         sender = message_sender(state, workspace, message)
         sender_name = member_name(state, workspace, sender) if sender == message.get('user') else None
-        preview = message_preview(message) if include_preview and same_team(message, workspace) else None
+        preview = None
+        if include_preview and eligible:
+            preview = finish_excerpt(layout or display_text(fallback, message.get('mrkdwn', True) is True))
         result.append({
             'messageTs': timestamp, 'conversationLabel': label,
             'permalink': message_permalink(domain, workspace, channel, timestamp, thread),
@@ -319,7 +337,7 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
             **({'memberPeer': peer_name} if peer_name else {}),
             **({'preview': preview} if preview else {}),
             'id': token(key, 'message', *selection, timestamp),
-            'body': token(key, 'body', message['text'], message.get('edited')),
+            'body': token(key, 'body', fallback, message.get('edited')),
             'reply': isinstance(message.get('thread_ts'), str) and message['thread_ts'] != timestamp,
             'reactions': sorted(actors), 'reactionsComplete': rx_complete
         })

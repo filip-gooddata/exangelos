@@ -111,6 +111,35 @@ class DirectTests(unittest.TestCase):
             with self.subTest(value=malformed), self.assertRaises(ValueError):
                 projected(dict(members={'U0000002': dict(profile=dict(display_name=malformed))}))
 
+    def test_optional_app_fallback_preserves_markers_and_requires_visible_layout(self):
+        data = fixture()
+        row = data['messages'][CHANNEL][TIME]
+        row.update(text='', app_id='A0000001', attachments=[dict(title='Example layout')])
+
+        def snapshot(enabled):
+            state = projection.project(b'\xff\x10' + encode(data), [CHANNEL])
+            return observation.snapshot(state, SELECTION, KEY, include_preview=enabled)
+
+        for enabled in (False, True):
+            row['text'] = ''
+            reference = snapshot(enabled)
+            self.assertTrue(reference['complete'])
+            self.assertEqual(reference['messages'][0].get('preview'), 'Example layout' if enabled else None)
+            del row['text']
+            self.assertEqual(snapshot(enabled), reference)
+            row['text'] = b'_'
+            self.assertEqual(snapshot(enabled), reference)
+        del row['text']
+        for change in (dict(text=None), dict(text=42), dict(text={}), dict(type='unknown'),
+                       dict(subtype='unsupported'), dict(app_id='invalid'), dict(hidden=True),
+                       dict(redacted=True), dict(deleted=True), dict(subtype='message_deleted'),
+                       dict(attachments=[dict(fallback='private metadata')]), dict(attachments=[dict(title=123)])):
+            with self.subTest(change=change), mock.patch.dict(row, change):
+                for enabled in (False, True):
+                    result = snapshot(enabled)
+                    self.assertFalse(result['complete'])
+                    self.assertEqual(result['messages'], [])
+
     def test_delivery_preview_policy_after_projection(self):
         data = fixture()
         message = data['messages'][CHANNEL][TIME]

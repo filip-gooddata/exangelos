@@ -3,7 +3,8 @@ import re
 import skip_v8
 field_v8=skip_v8.field_v8
 ABSENT_PROFILE = object()
-# Only selected message rows opt into the extra layout projection.
+UNDEFINED_TEXT = object()
+# Project display layout only in the selected conversations.
 LAYOUT_OBJECTS = {
     'block': {'title': 'textObject', 'type': 'layoutString', 'text': 'textObject', 'fields': 'textObjects', 'elements': 'textObjects'},
     'textObject': {'type': 'layoutString', 'text': 'textOrObject', 'elements': 'richRuns'},
@@ -28,7 +29,7 @@ class Reader(skip_v8.Reader):
         if role in LAYOUT_LISTS and tag in (ord('I'),ord('U')):
             n=self.uint();return str(n >> 1 if tag==ord('I') else n)
         if tag in (ord('I'),ord('U')):
-            n=self.uint();return str(n) if role in ('container','previewContainer','reactions','users') else None
+            n=self.uint();return str(n) if role in ('container','layoutContainer','reactions','users') else None
         if tag not in field_v8._ENCODINGS:raise ValueError('key_tag')
         span=self.string_span(tag)
         if role in LAYOUT_LISTS:
@@ -36,11 +37,11 @@ class Reader(skip_v8.Reader):
             try:key=str(span,field_v8._ENCODINGS[tag])
             except UnicodeError:return None
             return key if re.fullmatch('[0-9]{1,3}',key) else None
-        if role=='previewMessage':
+        if role=='layoutMessage':
             for key in ('blocks','attachments','app_id','mrkdwn'):
                 if span==key.encode(field_v8._ENCODINGS[tag]):return key
             role='message'
-        if role=='previewContainer':role='container'
+        if role=='layoutContainer':role='container'
         allowed={
           'root':('messages','threads','bootData','selfTeamIds','channels','reactions','teams','users','members'),
           'bootData':('team_id','user_id','team_domain'),
@@ -70,11 +71,12 @@ class Reader(skip_v8.Reader):
     def child(self,role,key):
         if role in LAYOUT_LISTS:return LAYOUT_LISTS[role]
         if role in LAYOUT_OBJECTS:return LAYOUT_OBJECTS[role][key]
-        if role=='messages' and key in self.preview_channels:return 'previewContainer'
-        if role=='previewContainer':return 'previewContainer' if key in ('messages','replies','data') else 'previewMessage'
-        if role=='previewMessage':
+        if role=='messages' and key in self.layout_channels:return 'layoutContainer'
+        if role=='layoutContainer':return 'layoutContainer' if key in ('messages','replies','data') else 'layoutMessage'
+        if role=='layoutMessage':
             if key in ('blocks','attachments'):return key
             if key=='mrkdwn':return 'bool'
+            if key=='text':return 'fallbackText'
             role='message'
         if role=='root':return {'reactions':'reactionStore','users':'accountUsers','members':'accountUsers'}.get(key,key)
         if role=='teams':return 'accountTeam'
@@ -117,6 +119,9 @@ class Reader(skip_v8.Reader):
             self.pos=start;self.value(depth,'skip');return None
         if role in LAYOUT_OBJECTS and tag!=ord('o'):
             self.pos=start;self.value(depth,'skip');return None
+        if role=='fallbackText':
+            if tag==ord('_'):return UNDEFINED_TEXT
+            role='string'
         if role=='subtype':
             if tag==ord('_'):return None
             if tag in field_v8._ENCODINGS:return str(self.string_span(tag),field_v8._ENCODINGS[tag])
@@ -140,6 +145,8 @@ class Reader(skip_v8.Reader):
                     if key in out:raise ValueError('duplicate')
                     out[key]=v
             if self.uint()!=count:raise ValueError('count')
+            if role=='layoutMessage' and out.get('text') is UNDEFINED_TEXT:
+                del out['text']
             if role=='accountUser' and out.get('profile') is ABSENT_PROFILE:
                 del out['profile']
             return out
@@ -167,9 +174,9 @@ class Reader(skip_v8.Reader):
             return out
         self.pos=start;self.value(depth,'skip');return None
 
-def project(data, preview_channels=()):
+def project(data, layout_channels=()):
     reader=Reader(data,field_v8.Limits(max_bytes=16*1024*1024,max_nodes=1000000))
-    reader.preview_channels=frozenset(preview_channels)
+    reader.layout_channels=frozenset(layout_channels)
     return reader.select(data)
 
 def summary(value):

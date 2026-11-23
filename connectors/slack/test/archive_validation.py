@@ -279,6 +279,8 @@ def exercise(installed, home):
         messages[ts] = message
 
     add(other)
+    del messages[other]['text']
+    messages[other].update(subtype='bot_message', attachments=[dict(title='Baseline attachment')])
     dm, group = 'D0000002', 'G0000003'
     state['messages'].update({dm: {}, group: {}})
     database(app, state)
@@ -434,6 +436,10 @@ def exercise(installed, home):
     for index, (sender, fields, preview) in enumerate(cases):
         ts = timestamp(now - len(cases) + index)
         add_app(ts, sender, fields)
+        if index == 0:
+            del messages[ts]['text']
+        elif index == 2:
+            messages[ts]['text'] = b'_'  # V8 undefined with a visible attachment
         expected_apps[ts] = (sender, preview)
     first_app_ts = min(expected_apps)
     hidden_ts = timestamp(now)
@@ -464,10 +470,20 @@ def exercise(installed, home):
     ts = current_timestamp()
     messages[first_app_ts]['blocks'] = [dict(type='header', text=dict(type='plain_text', text='New heading'))]
     add_app(ts, 'Fixture Jira', cases[0][1])
+    del messages[ts]['text']
     database(app, state, sequence=66)
     opt_out = resume(conversation, 'disabled')
     check(len(opt_out) == 1 and opt_out[0]['event']['payload']['messageTs'] == ts, 'new app delivery after opt-out')
     check_wake(opt_out[0]['event'], conversation, home, 'New message by "Fixture Jira" in "Slack #fixture"')
+    cursors[conversation] = opt_out[-1]['cursor']
+    messages[first_app_ts]['edited'] = dict(ts=current_timestamp())
+    database(app, state, sequence=67)
+    edited_layout = resume(conversation, 'enabled')
+    check(len(edited_layout) == 1 and edited_layout[0]['event']['type'] == 'message.edited' and
+          edited_layout[0]['event']['payload']['messageTs'] == first_app_ts, 'layout-only app edit identity')
+    check_wake(edited_layout[0]['event'], conversation, home,
+               'Message edited (message author: "Fixture Jira") in "Slack #fixture"', 'New heading')
+    check(resume(conversation, 'disabled') == edited_layout, 'layout-only edit replays its committed excerpt')
     with Wire(installed, home) as wire:
         wire.configure(config)
         dm_handle = describe(wire, dm)
