@@ -1,0 +1,111 @@
+adapters/connector-directory/src/ConnectorDirectoryLive.ts
+  s_b0720e0f40ac78::t_7d0a92d3b63599 3,6,9,114-136
+adapters/connector-directory/src/Icon.ts
+  s_c60aba82e601d3::t_4663f2e8054890 1-64
+adapters/connector-directory/src/index.ts
+  s_b0720e0f40ac78::t_11145a4c755945 3
+adapters/connector-directory/test/ConnectorDirectory.test.ts
+  s_38b81c25699315::t_5eb21fdb9b7bff 6,8,61-83
+adapters/connector-directory/test/Icon.test.ts
+  s_c60aba82e601d3::t_3fc4815551b7aa 1-61
+adapters/connector-directory/test/template.ts
+  s_c60aba82e601d3::t_82f7ce8e7af48d 7,12
+apps/cli/src/commands/Agent.ts
+  s_c60aba82e601d3::t_df4be8c5950102 56-57
+connectors/file-watch/README.md
+  s_a57459a966682e::t_34ef8cd64b495a 1-7
+connectors/file-watch/connector.json
+  s_d62eee476d040c::t_80dac634f4b098 3-5
+connectors/file-watch/icon.svg
+  s_38b81c25699315::t_aa7b8e6f1f3d10 1
+connectors/github-pr/README.md
+  s_a57459a966682e::t_79e6eb43dbd4b7 42-45
+connectors/github-pr/connector.json
+  s_d62eee476d040c::t_eeb4a396d3f4ce 3-5
+connectors/github-pr/icon.svg
+  s_38b81c25699315::t_cfbcf9c0b8f336 1
+connectors/jira/README.md
+  s_a57459a966682e::t_e3656be3fc08c6 1-7
+connectors/jira/connector.json
+  s_d62eee476d040c::t_b735dd1c005fe0 3-5
+connectors/jira/icon.svg
+  s_c60aba82e601d3::t_c90d6b918c5229 1
+connectors/jira/test/connector.test.ts
+  s_d62eee476d040c::t_eae7b9d2fd601c 230
+connectors/template/connector.json
+  s_c60aba82e601d3::t_a904ed9b3ace8d 4-5
+connectors/template/icon.svg
+  s_38b81c25699315::t_cbedf7ef3328fa 1
+docs/spec.md
+  s_c60aba82e601d3::t_9f5a144e7e91ec 305,482
+packages/application/src/connectors/listConnectors.ts
+  s_b0720e0f40ac78::t_507a4c3d58a2a2 1-2,6,10-17
+packages/application/src/ports/ConnectorDirectory.ts
+  s_b0720e0f40ac78::t_7504d87d7d08bd 2-3,32-36
+packages/application/src/testing/ConnectorFilesFake.ts
+  s_b0720e0f40ac78::t_3dd93094a03ae6 81-82
+packages/contracts/src/Manifest.ts
+  s_b0720e0f40ac78::t_d947622034a8a3 26-31
+packages/domain/src/Connector.ts
+  s_c60aba82e601d3::t_e71dc7f8b49ab1 46-52,55
+packaging/src/connector-archives.ts
+  s_c60aba82e601d3::t_00253a71747162 26,61-65,68,71,74-77
+packaging/test/connector-archives.test.ts
+  s_2608aeef11b36c::t_b3cbb1a7e9e151 41-47,50,66-67,87,119-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7565b705e4b9256ad0674cb6d324d3ea3be25ccd",
+  "prompts": {},
+  "sessions": {
+    "s_2608aeef11b36c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "878e020a-108b-4304-9d82-bf475b6b07ca",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_38b81c25699315": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20931-8f5c-7321-b585-3e9c2e408c39",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_a57459a966682e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20932-dde7-7773-849c-17ddff85c2c2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_b0720e0f40ac78": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20921-76c2-7671-9fbe-1022619daaa4",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_c60aba82e601d3": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5f8ec629-7b96-4398-bf58-f7db8a10d5ba",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_d62eee476d040c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6048d1db-8b90-4a1a-89a9-a164adfa43b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
