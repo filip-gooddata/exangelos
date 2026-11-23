@@ -82,4 +82,25 @@ describe("panel view", () => {
       Scene.expect(Scene.text("Waiting on checks and review for the checkout test fix.")).toExist()
     )
   })
+
+  it("heads each session group with its title, keeps the id for hover and leaves raw subjects out of the rows", () => {
+    Scene.scene(
+      { update, view },
+      Scene.given(ready),
+      Scene.expect(Scene.title("T3 Code session 5c1e0a4f-2b7d-4e19-9a63-0f8d2c41b7e5")).toHaveText(/Checkout CI cleanup/),
+      Scene.expect(Scene.text("b81f3d02…")).toExist(),
+      Scene.expect(Scene.text("Slack #releases")).toExist(),
+      Scene.expect(Scene.text(/slack:0e6ec01d/)).toBeAbsent(),
+      Scene.expect(Scene.text(/Expires in 6 days/)).toBeAbsent()
+    )
+  })
+
+  it("shows a connector's logo where it has one and its initials where it has none", () => {
+    Scene.scene(
+      { update, view },
+      Scene.given(ready),
+      Scene.expect(Scene.selector("img.badge-logo")).toExist(),
+      Scene.expect(Scene.text("SL")).toExist()
+    )
+  })
 })

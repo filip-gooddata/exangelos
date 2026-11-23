@@ -6,7 +6,7 @@ import type { Detail } from "../daemon/DaemonClient.ts"
 import { type PanelState, Request } from "../state/Panel.ts"
 import * as Facts from "./Facts.ts"
 import { Message, type Model } from "./Model.ts"
-import { ask, count, fact, type H, header, mono, notices, pill, section } from "./Parts.ts"
+import { ask, connectorBadge, count, fact, type H, header, mono, notices, pill, section } from "./Parts.ts"
 
 type Ready = Extract<PanelState, { _tag: "Ready" }>
 
@@ -16,26 +16,31 @@ const plain = (h: H, model: Model, title: string, text: string): ReadonlyArray<H
   null
 ]
 
-const wakeTargetText = (target: Session.Target | undefined): string =>
-  target === undefined ? "Pull-only" : `${Facts.harnessName(target.harness)} session ${target.sessionId}`
+const titlesOf = (state: Ready): Facts.Titles => Result.getOrElse(Result.map(state.titles, Facts.titlesFrom), () => Facts.noTitles)
 
-const expiryText = (now: number, subscription: Subscription.Subscription): string =>
-  DateTime.toEpochMillis(subscription.expiresAt) > now
-    ? Facts.until(now, subscription.expiresAt)
-    : Facts.ago(now, subscription.expiresAt)
+const wakeTargetText = (target: Session.Target | undefined, titles: Facts.Titles): string =>
+  target === undefined ? "Pull-only" : Facts.sessionName(target, titles)
+
+const wakeTarget = (h: H, target: Session.Target | undefined, titles: Facts.Titles): Html =>
+  target === undefined
+    ? h.span([], ["Pull-only"])
+    : h.span([h.Title(Facts.sessionHover(target))], [wakeTargetText(target, titles)])
 
 const factsSection = (h: H, model: Model, subscription: Subscription.Subscription, state: Ready): Html => {
-  const suspended = Facts.suspendedOn(subscription, Result.getOrElse(state.connectors, () => []))
+  const connectors = Result.getOrElse(state.connectors, () => [])
+  const suspended = Facts.suspendedOn(subscription, connectors)
+  const titles = titlesOf(state)
   return h.section([h.Class("section subscription-facts")], [
-    h.p([h.Class("state-sentence")], [Facts.stateSentence(model.now, subscription, suspended)]),
-    fact(h, "Subscription", subscription.id, { mono: true }),
+    h.div([h.Class("subscription-hero")], [
+      connectorBadge(h, subscription.connector, Facts.connectorIcon(connectors, subscription.connector)),
+      h.p([h.Class("subscription-intent")], [subscription.intent])
+    ]),
+    h.p([h.Class("state-sentence")], [Facts.stateSentence(model.now, subscription, suspended, titles)]),
+    fact(h, "Wakes", wakeTarget(h, subscription.wakeTarget, titles)),
     fact(h, "Connector", subscription.connector),
-    fact(h, "Subject", subscription.subject, { mono: true }),
-    fact(h, "Label", subscription.label === "" ? "None" : subscription.label),
-    fact(h, "Intent", subscription.intent),
     fact(h, "Event types", subscription.eventTypes === undefined ? "All" : subscription.eventTypes.join(", ")),
-    fact(h, "Wake target", wakeTargetText(subscription.wakeTarget)),
-    fact(h, "Expires", expiryText(model.now, subscription))
+    fact(h, "Subject", subscription.subject, { mono: true }),
+    fact(h, "Subscription", subscription.id, { mono: true })
   ])
 }
 
@@ -100,8 +105,8 @@ const wakesSection = (h: H, model: Model, detail: Detail): Html => {
   ])
 }
 
-const historySection = (h: H, model: Model, detail: Detail): Html => {
-  const entries = Facts.history(detail)
+const historySection = (h: H, model: Model, detail: Detail, titles: Facts.Titles): Html => {
+  const entries = Facts.history(detail, titles)
   return section(h, "History", [
     entries.length === 0 ? h.p([h.Class("quiet-line")], ["Nothing has changed yet."]) : null,
     ...entries.map((entry) =>
@@ -121,7 +126,7 @@ const retargetSection = (h: H, model: Model, subscription: Subscription.Subscrip
   const choices: ReadonlyArray<readonly [string, DaemonContract.TargetChoice]> = [
     ...sessions
       .filter((session) => !sameTarget(session, subscription.wakeTarget))
-      .map((session) => [wakeTargetText(session), { _tag: "Session", session }] as const),
+      .map((session) => [wakeTargetText(session, titlesOf(state)), { _tag: "Session", session }] as const),
     ...(subscription.wakeTarget === undefined ? [] : [["Pull-only, no wake target", { _tag: "PullOnly" }] as const])
   ]
   return section(h, "Wake another session", [
@@ -173,7 +178,7 @@ export const subscription = (h: H, model: Model, id: string): ReadonlyArray<Html
     : [
       eventsSection(h, model, detail.success, ackThrough),
       wakesSection(h, model, detail.success),
-      historySection(h, model, detail.success)
+      historySection(h, model, detail.success, titlesOf(state))
     ]
   const open = found.state._tag === "Active" || found.state._tag === "Paused" || found.state._tag === "Expired"
   return [

@@ -1,6 +1,9 @@
 import { type Catalogue, type Event, Ids, Limits, type Connector, type Session, type Settings, type Subscription, type Wake } from "@exangelos/domain"
 import { DateTime, Result } from "effect"
-import type { Detail } from "../src/daemon/DaemonClient.ts"
+import fileWatchIcon from "../../../connectors/file-watch/icon.svg?raw"
+import githubIcon from "../../../connectors/github-pr/icon.svg?raw"
+import jiraIcon from "../../../connectors/jira/icon.svg?raw"
+import type { Detail, SessionTitle } from "../src/daemon/DaemonClient.ts"
 import * as Panel from "../src/state/Panel.ts"
 import { PanelState } from "../src/state/Panel.ts"
 
@@ -42,16 +45,20 @@ export const now = DateTime.toEpochMillis(nowAt)
 const ago = (parts: Partial<DateTime.DateTime.PartsForMath>) => DateTime.subtract(nowAt, parts)
 const ahead = (parts: Partial<DateTime.DateTime.PartsForMath>) => DateTime.add(nowAt, parts)
 
-const t3: Session.Session = { harness: "t3", sessionId: "Fix flaky checkout test" }
-const claude: Session.Session = { harness: "claude-code", sessionId: "api-gateway" }
-const codex: Session.Session = { harness: "codex", sessionId: "Docs refresh" }
+const t3: Session.Session = { harness: "t3", sessionId: "5c1e0a4f-2b7d-4e19-9a63-0f8d2c41b7e5" }
+const claude: Session.Session = { harness: "claude-code", sessionId: "b81f3d02-6c4e-47a1-8f95-2d7e0c9a13b6" }
+const codex: Session.Session = { harness: "codex", sessionId: "019a4c2e-7d31-7b80-a5f2-6e9c1d0b3f47" }
+
+/** The titles the daemon resolves: only T3 Code tells one, the other sessions fall back to their shortened ids. */
+export const titles: ReadonlyArray<SessionTitle> = [{ harness: "t3", sessionId: t3.sessionId, title: "Checkout CI cleanup" }]
 
 const names = {
   github: Ids.ConnectorName.make("github-pr"),
   jira: Ids.ConnectorName.make("jira"),
   files: Ids.ConnectorName.make("file-watch"),
   linear: Ids.ConnectorName.make("linear-issues"),
-  mine: Ids.ConnectorName.make("my-connector")
+  mine: Ids.ConnectorName.make("my-connector"),
+  slack: Ids.ConnectorName.make("slack")
 }
 
 const sample = (
@@ -92,6 +99,15 @@ const open = [
     lastNumber: 2,
     ackedThrough: 2
   }),
+  sample(
+    "sub_s1ck",
+    names.slack,
+    "slack:0e6ec01d87da5f615d1321fffc00fec72523e04c8c345660b6f1a962865973c7",
+    "Slack #releases",
+    "Wake me on new top-level posts in #releases.",
+    t3,
+    { lastNumber: 1, ackedThrough: 1 }
+  ),
   sample("sub_q41d", names.jira, "OPS-231", "Rotate staging certificates", "Start the certificate rollout when OPS-231 is approved.", claude),
   sample("sub_c8ta", names.files, "~/code/api-gateway/dist/**", "Build output", "Rerun the contract tests when the build output changes.", claude, {
     state: { _tag: "Paused", reason: { _tag: "BacklogCount", limit: 20 } },
@@ -170,6 +186,7 @@ const details = (codexReachable: boolean): ReadonlyArray<Detail> => {
       ]
     },
     { ...quietDetail("sub_2m9x"), events: [event("sub_2m9x", 2, "checks.passed", "all checks passed", ago({ hours: 3 }))] },
+    { ...quietDetail("sub_s1ck"), events: [event("sub_s1ck", 1, "message.posted", "New post in #releases", ago({ minutes: 4 }))] },
     quietDetail("sub_q41d"),
     quietDetail("sub_c8ta"),
     {
@@ -193,7 +210,12 @@ const details = (codexReachable: boolean): ReadonlyArray<Detail> => {
 const hexDigest = (seed: string): string =>
   Array.from({ length: 64 }, (_, i) => "0123456789abcdef"[(seed.charCodeAt(i % seed.length) * (i + 7)) % 16]).join("")
 
-const official = (name: Ids.ConnectorName, version: string, rest: Partial<Connector.Connector> = {}): Connector.Connector => ({
+const svg = (text: string): Connector.Icon => ({
+  mediaType: "image/svg+xml",
+  data: btoa(String.fromCharCode(...new TextEncoder().encode(text)))
+})
+
+const official = (name: Ids.ConnectorName, version: string, rest: Partial<Connector.Status> = {}): Connector.Status => ({
   name,
   version,
   origin: { _tag: "Official", version },
@@ -225,17 +247,19 @@ export const inertConnector: Connector.Connector = {
   process: "stopped"
 }
 
-const connectors = (needsYou: boolean): ReadonlyArray<Connector.Connector> => [
-  official(names.github, "1.2.0"),
+const connectors = (needsYou: boolean): ReadonlyArray<Connector.Status> => [
+  official(names.github, "1.2.0", { icon: svg(githubIcon) }),
+  official(names.slack, "0.4.0"),
   needsYou
     ? official(names.jira, "1.0.3", {
+      icon: svg(jiraIcon),
       catalogue: jiraCatalogue,
       configuration: { _tag: "Rejected", reason: "401 Unauthorized from acme.atlassian.net" },
       configuredBy: { _tag: "You" },
       unavailableSince: ago({ minutes: 25 })
     })
-    : official(names.jira, "1.0.3", { catalogue: jiraCatalogue, configuredBy: { _tag: "You" } }),
-  official(names.files, "1.0.0", { configuration: { _tag: "Set" } }),
+    : official(names.jira, "1.0.3", { icon: svg(jiraIcon), catalogue: jiraCatalogue, configuredBy: { _tag: "You" } }),
+  official(names.files, "1.0.0", { icon: svg(fileWatchIcon), configuration: { _tag: "Set" } }),
   ...(needsYou ? [inertConnector] : []),
   {
     name: names.mine,
@@ -255,6 +279,7 @@ const ready = (needsYou: boolean): PanelState => {
   return PanelState.Ready({
     subscriptions: Result.succeed([...open, ...closed]),
     details: Result.succeed(details(!needsYou)),
+    titles: Result.succeed(titles),
     connectors: Result.succeed(installed),
     needsYou: Result.succeed(
       Panel.needsYou(installed, needsYou ? [{ _tag: "WaitsForEnable", connector: names.linear }] : [])
@@ -274,6 +299,7 @@ export const needsYou: PanelState = ready(true)
 export const empty: PanelState = PanelState.Ready({
   subscriptions: Result.succeed([]),
   details: Result.succeed([]),
+  titles: Result.succeed([]),
   connectors: Result.succeed([official(names.github, "1.2.0")]),
   needsYou: Result.succeed([]),
   settings: Result.succeed(settings),

@@ -9,6 +9,7 @@ import {
   type Detail,
   type Section,
   type ServiceStatus,
+  type SessionTitle,
   type Snapshot,
   snapshot
 } from "../daemon/DaemonClient.ts"
@@ -20,7 +21,8 @@ export type PanelState = Data.TaggedEnum<{
   Ready: {
     readonly subscriptions: Section<ReadonlyArray<Subscription.Subscription>>
     readonly details: Section<ReadonlyArray<Detail>>
-    readonly connectors: Section<ReadonlyArray<Connector.Connector>>
+    readonly titles: Section<ReadonlyArray<SessionTitle>>
+    readonly connectors: Section<ReadonlyArray<Connector.Status>>
     readonly needsYou: Section<ReadonlyArray<Alert.Alert>>
     readonly settings: Section<Settings.Settings>
     readonly status: Section<ServiceStatus>
@@ -152,10 +154,11 @@ export const fromLoad = <R>(
   load: Effect.Effect<Snapshot, DaemonNotRunning, R>
 ): Effect.Effect<PanelState, never, R> =>
   load.pipe(
-    Effect.map(({ details, connectors, settings, status, subscriptions, trustAlerts }) =>
+    Effect.map(({ details, connectors, settings, status, subscriptions, titles, trustAlerts }) =>
       PanelState.Ready({
         subscriptions,
         details,
+        titles,
         connectors,
         needsYou: Result.flatMap(connectors, (loaded) => Result.map(trustAlerts, (alerts) => needsYou(loaded, alerts))),
         settings,

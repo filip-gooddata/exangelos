@@ -10,8 +10,11 @@ export const go = (screen: Screen) => Message.Navigated({ screen })
 
 export const when = (condition: boolean, render: () => Html): Html => (condition ? render() : null)
 
-export const connectorBadge = (h: H, name: string): Html =>
-  h.span([h.Class("badge-connector"), h.AriaHidden(true)], [connectorInitials(name)])
+/** The connector's logo, or its initials when its manifest names no icon. */
+export const connectorBadge = (h: H, name: string, icon?: string): Html =>
+  icon === undefined
+    ? h.span([h.Class("badge-connector"), h.AriaHidden(true)], [connectorInitials(name)])
+    : h.img([h.Class("badge-connector badge-logo"), h.Src(icon), h.Alt(""), h.AriaHidden(true)])
 
 export const pill = (h: H, text: string, tone: "quiet" | "ember" = "quiet"): Html =>
   h.span([h.Class(`pill pill-${tone}`)], [text])

@@ -46,7 +46,8 @@ const handlers = (listDies: boolean, connectors: ReadonlyArray<ReturnType<typeof
   GetSettings: unused,
   SetSettings: unused,
   SetHarness: unused,
-  RemoveHarness: unused
+  RemoveHarness: unused,
+  SessionTitles: ({ sessions }) => Effect.succeed(sessions.map((session) => ({ ...session, title: `Title of ${session.sessionId}` })))
 })
 
 const daemon = (path: string, listDies = false, connectors = [connector()]) =>
@@ -69,6 +70,7 @@ describe("daemon client over a unix socket", () => {
         const loaded = yield* DaemonClient.snapshot
         expect(Result.getOrThrow(loaded.subscriptions).map((s) => s.id)).toEqual(["sub_7f3k", "sub_done"])
         expect(Result.getOrThrow(loaded.details).map((d) => d.subscription.id)).toEqual(["sub_7f3k", "sub_done"])
+        expect(Result.getOrThrow(loaded.titles)).toEqual([{ harness: "t3", sessionId: "thread-alice", title: "Title of thread-alice" }])
         expect(Result.getOrThrow(loaded.connectors).map((p) => p.name)).toEqual(["github-pr"])
         expect(Result.getFailure(loaded.settings)).toEqual(Option.some("GetSettings: not served in this test"))
         expect(Result.getOrThrow(loaded.status)).toEqual({ version: "you", startMethod: "foreground" })

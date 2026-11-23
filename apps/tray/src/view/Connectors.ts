@@ -27,14 +27,14 @@ const loadedConnectors = (model: Model): Result.Result<ReadonlyArray<Connector.C
 const configuredByText = (connector: Connector.Connector): string | undefined =>
   connector.configuredBy === undefined ? undefined : `configured by ${Facts.actorName(connector.configuredBy)}`
 
-const connectorRow = (h: H, connector: Connector.Connector): Html => {
+const connectorRow = (h: H, connector: Connector.Status): Html => {
   const configured = configuredByText(connector)
   return h.keyed("button")(connector.name, [
     h.Type("button"),
     h.Class("row connector-row"),
     h.OnClick(go({ _tag: "Connector", name: connector.name }))
   ], [
-    connectorBadge(h, connector.name),
+    connectorBadge(h, connector.name, Facts.connectorIcon([connector], connector.name)),
     h.span([h.Class("row-body")], [
       h.span([h.Class("row-line")], [
         h.span([h.Class("row-label")], [connector.name]),
