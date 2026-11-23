@@ -624,14 +624,17 @@ describe("local logs and the debug report", () => {
 })
 
 describe("official connectors from a release address", () => {
-  const archive = (name: string) => `${name}-0.1.0.tar.gz`
+  const archive = async (name: string) => {
+    const manifest = JSON.parse(await readFile(join(repo, "connectors", name, "connector.json"), "utf8")) as { version: string }
+    return `${name}-${manifest.version}.tar.gz`
+  }
 
   // Serves the archive with one byte of its bundle changed, keeping the original to restore.
   const tamper = async (name: string) => {
-    const served = join(root, "release", archive(name))
+    const served = join(root, "release", await archive(name))
     const unpacked = join(root, "tampered", name)
     await mkdir(unpacked, { recursive: true })
-    await copyFile(served, join(root, "tampered", archive(name)))
+    await copyFile(served, join(root, "tampered", await archive(name)))
     expect(Bun.spawnSync(["tar", "-xzf", served, "-C", unpacked]).exitCode).toBe(0)
     const entry = join(unpacked, "dist", "main.js")
     const bytes = await readFile(entry)
@@ -651,7 +654,7 @@ describe("official connectors from a release address", () => {
     expect(refused.stderr.trim()).toMatch(/^file-watch is unavailable: its checksum does not match the one this binary carries\./)
     expect(connectorNamed("file-watch")).toMatchObject({ trust: "inert" })
     expect(run(exangelos, "connector", "remove", "file-watch").status).toBe(0)
-    await copyFile(join(root, "tampered", archive("file-watch")), join(root, "release", archive("file-watch")))
+    await copyFile(join(root, "tampered", await archive("file-watch")), join(root, "release", await archive("file-watch")))
   }, 30_000)
 
   it("fetches github-pr and jira, and describes a subscription to each against a local stand-in", async () => {
