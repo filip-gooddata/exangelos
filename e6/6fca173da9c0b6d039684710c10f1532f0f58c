@@ -1,0 +1,49 @@
+connectors/slack/VALIDATION.md
+  s_3ee016bdcb2688::t_ec92b05d4183bb 27
+connectors/slack/direct/ledger.py
+  s_3ee016bdcb2688::t_c0e00b4b09fa7b 17,114-116,237,260-266
+connectors/slack/direct/observation.py
+  s_fa46e0d6807769::t_f7e7169c5d698a 91-108,120,129-130,162-163,216,222-223
+connectors/slack/direct/projection.py
+  s_3ee016bdcb2688::t_fc6d90a57198c7 20,44
+connectors/slack/direct/setup.py
+  s_fa46e0d6807769::t_509c248f8fbcb4 140,155
+connectors/slack/direct/source.py
+  s_3ee016bdcb2688::t_a34857ff7e37b2 90
+connectors/slack/direct/test_direct.py
+  s_fa46e0d6807769::t_b97d052df5505f 85-99
+connectors/slack/direct/test_ledger.py
+  s_3ee016bdcb2688::t_bca81cd56ccafd 79-89
+connectors/slack/direct/test_source.py
+  s_3ee016bdcb2688::t_c193c2515e1d64 88-101
+connectors/slack/src/Source.ts
+  s_3ee016bdcb2688::t_2f4f95f099730c 40-41
+connectors/slack/test/archive_validation.py
+  s_3ee016bdcb2688::t_c34b426065f8ee 448-449,458,463-464,468
+connectors/slack/test/refresh_validation.py
+  s_3ee016bdcb2688::t_326950aa838913 6,30-31,53-57,95-96,101-104,110-114,116
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e66fca173da9c0b6d039684710c10f1532f0f58c",
+  "prompts": {},
+  "sessions": {
+    "s_3ee016bdcb2688": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a207ef-2eb9-7001-848c-b1a8aa08166d",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_fa46e0d6807769": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a207f6-7768-78c0-a72c-9483207c1b7c",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
