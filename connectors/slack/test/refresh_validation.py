@@ -53,6 +53,7 @@ def exercise(root, old_cli, old_archive, new_cli, new_archive, members):
     peer = 'U0000002'
     if members:
         state['channels'] = {channel: dict(id=channel, user=peer)}
+        state['users'] = {peer: dict(id=peer, team=state['selfTeamIds']['teamId'])}
         state['members'] = {peer: dict(id=peer, team=state['selfTeamIds']['teamId'],
                                       profile=dict(display_name='Example'))}
     database(cache, state)

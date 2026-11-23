@@ -33,7 +33,9 @@ class Reader(skip_v8.Reader):
             if span==k.encode(field_v8._ENCODINGS[tag]):return k
         if role in ('messages','threads','channels','container','reactions','users','reactionStore','teams','accountUsers'):
             try:s=str(span,field_v8._ENCODINGS[tag])
-            except UnicodeError:raise ValueError('encoding')
+            except UnicodeError:
+                if role=='accountUsers':return None
+                raise ValueError('encoding')
             if role=='teams' and re.fullmatch(r'T[A-Z0-9]{6,30}',s):return s
             if role=='accountUsers' and re.fullmatch(r'[UW][A-Z0-9]{6,30}',s):return s
             if role=='container':return s
@@ -44,8 +46,9 @@ class Reader(skip_v8.Reader):
         if role=='root':return {'reactions':'reactionStore','users':'accountUsers','members':'accountUsers'}.get(key,key)
         if role=='teams':return 'accountTeam'
         if role=='accountUsers':return 'accountUser'
-        if role=='accountUser':return 'profile' if key=='profile' else 'string'
-        if role in ('profile','accountTeam'):return 'string'
+        if role=='accountUser':return 'profile' if key=='profile' else 'profileString'
+        if role=='profile':return 'profileString'
+        if role=='accountTeam':return 'string'
         if role=='reactionStore':return 'reactions'
         if role in ('bootData','selfTeamIds','edited'):return 'string'
         if role in ('messages','threads'):return 'container'
@@ -63,6 +66,10 @@ class Reader(skip_v8.Reader):
     def read(self,role,depth):
         self.node(depth);start=self.pos;tag=self.tag()
         if role=='skip':self.pos=start;return self.value(depth,'skip')
+        if role=='profileString' and tag in field_v8._ENCODINGS:
+            span=self.string_span(tag)
+            try:return str(span,field_v8._ENCODINGS[tag])
+            except UnicodeError:return None
         if role=='subtype':
             if tag==ord('_'):return None
             if tag in field_v8._ENCODINGS:return str(self.string_span(tag),field_v8._ENCODINGS[tag])

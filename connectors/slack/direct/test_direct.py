@@ -94,8 +94,11 @@ class DirectTests(unittest.TestCase):
                          ('profile', dict(display_name='xoxb-example'))]:
             with self.subTest(key=key), mock.patch.dict(row, {key: bad}):
                 self.assertIsNone(name())
-        with mock.patch.dict(state, users={identity: dict(team='T9999999')}):
-            self.assertIsNone(name())
+        with mock.patch.dict(state, users={identity: dict(id=identity, team=team)}):
+            self.assertEqual(name(), 'Example')
+        for conflict in (dict(team='T9999999'), dict(id='U9999999'), dict(profile=dict(team='T9999999'))):
+            with mock.patch.dict(state, users={identity: conflict}):
+                self.assertIsNone(name())
 
     def test_delivery_preview_policy_after_projection(self):
         data = fixture()

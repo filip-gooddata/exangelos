@@ -91,8 +91,14 @@ def user_label(state, workspace, identity):
 def member_name(state, workspace, identity):
     if not isinstance(identity, str) or not re.fullmatch(r'[UW][A-Z0-9]{6,30}', identity):
         return None
-    if identity in (state.get('users') or {}):
-        return None
+    users = state.get('users') or {}
+    if identity in users:
+        user = users[identity]
+        if not isinstance(user, dict) or user.get('id', identity) != identity or not same_team(user, workspace):
+            return None
+        profile = user.get('profile', {})
+        if not isinstance(profile, dict) or not same_team(profile, workspace):
+            return None
     member = (state.get('members') or {}).get(identity)
     if not isinstance(member, dict) or member.get('id') != identity:
         return None
