@@ -1,0 +1,47 @@
+apps/tray/src-tauri/tauri.conf.json
+  s_d62eee476d040c::t_7b49bb17644ae0 13
+apps/tray/src/daemon/DaemonClient.ts
+  s_d62eee476d040c::t_f265aafc325b40 2,43-44,48-49,103-111,115-125,127,130
+apps/tray/src/state/Panel.ts
+  s_d62eee476d040c::t_bf1f97dd9dfb97 12,24-25,157,161
+apps/tray/src/view/Connectors.ts
+  s_d62eee476d040c::t_dba215f6439610 30,37
+apps/tray/src/view/Facts.ts
+  s_d62eee476d040c::t_5020d06cf844c6 42-67,100,107,112-117,126-127,135,140-145,156,161,225,229,245-270
+apps/tray/src/view/Main.ts
+  s_d62eee476d040c::t_21f438f2bc5530 8,17-18,36,53-56,62-63,67-68,71-72,74,77-78,81,84-85,92,100,103-108,110-112,115-116,121-125,136,139,141-144,150,154,156,158,217
+apps/tray/src/view/Parts.ts
+  s_d62eee476d040c::t_0aff04096b6769 13-17
+apps/tray/src/view/Subscription.ts
+  s_d62eee476d040c::t_d3af2bc9e2730f 9,19,21-27,30-32,34-39,42-43,108-109,129,181
+apps/tray/src/view/panel.css
+  s_d62eee476d040c::t_a6e2ae860f30bf 290-294,550,552,558-562,568,576-579,597,599,629,648-650,659,661,665-681,685-686,723,792-815
+apps/tray/test/DaemonClient.test.ts
+  s_d62eee476d040c::t_c9b71db62c1eb9 49-50,73
+apps/tray/test/Facts.test.ts
+  s_d62eee476d040c::t_90f95480436c3b 69-97
+apps/tray/test/Panel.test.ts
+  s_d62eee476d040c::t_1458e25711cc5c 13
+apps/tray/test/PanelView.test.ts
+  s_d62eee476d040c::t_feb7750c398284 85-105
+apps/tray/test/fixtures.ts
+  s_d62eee476d040c::t_efcb8a92076f13 3-6,48-53,60-61,102-110,189,213-218,250-252,255,261-262,282,302
+apps/tray/test/raw.d.ts
+  s_d62eee476d040c::t_cf000c37ab0a9c 1-4
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5b827d0ce4927f4c262d274ec068e57502a5126a",
+  "prompts": {},
+  "sessions": {
+    "s_d62eee476d040c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6048d1db-8b90-4a1a-89a9-a164adfa43b0",
+        "model": "unknown"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
