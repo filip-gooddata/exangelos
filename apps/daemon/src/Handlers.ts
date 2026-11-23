@@ -10,7 +10,7 @@ import {
   listConnectorAlerts,
   listConnectors,
   removeConnector,
-  serviceStatus,
+  startMethod,
   setSettings,
   Subscriptions
 } from "@exangelos/application"
@@ -59,7 +59,7 @@ const errorOf = (cause: Cause.Cause<unknown>): string =>
 
 const report = (method: string, exit: Exit.Exit<unknown, unknown>): Effect.Effect<void> => {
   if (Exit.isSuccess(exit)) {
-    const log = polled.has(method) ? Effect.logDebug : Effect.logInfo
+    const log = polled.has(method) ? Effect.logTrace : Effect.logInfo
     return log("request handled").pipe(Effect.annotateLogs({ outcome: "ok" }))
   }
   const cause = exit.cause
@@ -207,12 +207,7 @@ export const layer = DaemonContract.DaemonContract.toLayer(instrumented({
       })
     ),
   ServiceStatus: () =>
-    serviceStatus.pipe(
-      Effect.map((status) => status.method),
-      Effect.catchTag("ServiceFailed", (e) =>
-        Effect.as(Effect.logWarning("service status unavailable", Cause.fail(e)), e.method)),
-      Effect.map((startMethod) => ({ version, startMethod }))
-    ),
+    Effect.map(startMethod, (startMethod) => ({ version, startMethod })),
   SetEventAlerts: (payload, caller) =>
     Subscriptions.setEventAlerts(actor(caller), payload).pipe(
       Effect.catchTags({ ...lookup, HumanRequired: Errors.ownerOnlySubscription })

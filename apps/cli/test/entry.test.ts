@@ -43,6 +43,7 @@ const run = (
     const manager = Layer.succeed(
       ServiceManager.ServiceManager,
       ServiceManager.ServiceManager.of({
+        method: "launch-agent",
         status: Effect.sync(() => {
           ran.push("status")
           return { method: "launch-agent" as const, installed: false, running: false }

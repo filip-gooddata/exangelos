@@ -275,8 +275,8 @@ export const setSettings = (actor: Session.Actor, settings: Settings.Settings) =
     return written
   })
 
-/** Whether the daemon service runs and how it started; the caller adds its own version. */
-export const serviceStatus = ServiceManager.use((manager) => manager.status)
+/** How this install starts the daemon; the caller adds its own version. Runs no service command. */
+export const startMethod = ServiceManager.use((manager) => Effect.succeed(manager.method))
 
 /** The management group's use cases by contract method. None is offered to the agent group. */
 export const management = {
@@ -292,5 +292,5 @@ export const management = {
   SetSettings: setSettings,
   SetHarness: setHarness,
   RemoveHarness: removeHarness,
-  ServiceStatus: serviceStatus
+  ServiceStatus: startMethod
 } as const
