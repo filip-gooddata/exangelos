@@ -10,6 +10,7 @@ type Answer = Effect.Effect<DaemonClient.Snapshot, DaemonClient.DaemonNotRunning
 
 const rest = {
   details: Result.succeed([]),
+  titles: Result.succeed([]),
   settings: Result.succeed(Settings.initial),
   status: Result.succeed({ version: "1.0.0", startMethod: "foreground" as const })
 }

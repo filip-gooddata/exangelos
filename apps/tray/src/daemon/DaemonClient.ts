@@ -1,5 +1,5 @@
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
-import type { Alert, Connector, Settings, Subscription } from "@exangelos/domain"
+import type { Alert, Connector, Session, Settings, Subscription } from "@exangelos/domain"
 import { Context, Effect, Layer, Predicate, Result, Schema } from "effect"
 import { type Rpc, RpcClient, RpcSerialization } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
@@ -40,10 +40,13 @@ export type Detail = DaemonContract.Details
 
 export type ServiceStatus = Rpc.Success<typeof DaemonContract.ServiceStatus>
 
+export type SessionTitle = DaemonContract.SessionTitle
+
 export interface Snapshot {
   readonly subscriptions: Section<ReadonlyArray<Subscription.Subscription>>
   readonly details: Section<ReadonlyArray<Detail>>
-  readonly connectors: Section<ReadonlyArray<Connector.Connector>>
+  readonly titles: Section<ReadonlyArray<SessionTitle>>
+  readonly connectors: Section<ReadonlyArray<Connector.Status>>
   readonly trustAlerts: Section<ReadonlyArray<Alert.Alert>>
   readonly settings: Section<Settings.Settings>
   readonly status: Section<ServiceStatus>
@@ -97,18 +100,34 @@ export const command = <A, E>(
     Effect.catchDefect((defect) => Effect.fail(new CallFailed({ message: describeDefect(defect) })))
   )
 
+/** Each distinct session the subscriptions wake, in first-seen order. */
+export const wokenSessions = (subscriptions: ReadonlyArray<Subscription.Subscription>): ReadonlyArray<Session.Target> => {
+  const seen = new Map<string, Session.Target>()
+  for (const { wakeTarget } of subscriptions) {
+    if (wakeTarget !== undefined) seen.set(`${wakeTarget.harness}\u0000${wakeTarget.sessionId}`, wakeTarget)
+  }
+  return [...seen.values()]
+}
+
 const listed = (client: DaemonClient["Service"]) =>
   Effect.flatMap(section("List", client.List({ all: true })), (subscriptions) =>
     Result.match(subscriptions, {
-      onFailure: (message) => Effect.succeed({ subscriptions, details: Result.fail(message) }),
-      onSuccess: (all) =>
-        Effect.map(
-          section("Show", Effect.forEach(all, ({ id }) => client.Show({ id }), { concurrency: "unbounded" })),
-          (details) => ({ subscriptions, details })
+      onFailure: (message) => Effect.succeed({ subscriptions, details: Result.fail(message), titles: Result.fail(message) }),
+      onSuccess: (all) => {
+        const sessions = wokenSessions(all)
+        return Effect.map(
+          Effect.all({
+            details: section("Show", Effect.forEach(all, ({ id }) => client.Show({ id }), { concurrency: "unbounded" })),
+            titles: sessions.length === 0
+              ? Effect.succeed(Result.succeed<ReadonlyArray<SessionTitle>>([]))
+              : section("SessionTitles", client.SessionTitles({ sessions }))
+          }, { concurrency: "unbounded" }),
+          ({ details, titles }) => ({ subscriptions, details, titles })
         )
+      }
     }))
 
-/** Loads every subscription, closed ones included, with the details of each, the connectors with their trust alerts, the settings and the service status. A call that fails or that the daemon answers with a defect fails only its own section; the details fail with the first failing `Show`, or with `List`. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */
+/** Loads every subscription, closed ones included, with the details of each, the titles of the sessions they wake, the connectors with their trust alerts, the settings and the service status. A call that fails or that the daemon answers with a defect fails only its own section; the details fail with the first failing `Show`, or with `List`. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */
 export const snapshot: Effect.Effect<Snapshot, DaemonNotRunning, DaemonClient> = Effect.flatMap(
   DaemonClient,
   (client) =>

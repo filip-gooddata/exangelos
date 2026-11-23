@@ -66,3 +66,37 @@ describe("secretStored", () => {
     expect(Facts.secretStored(connector({ configuration: { _tag: "Missing" } }), token)).toBeUndefined()
   })
 })
+
+describe("sessions, logos and rows", () => {
+  it("names a session by its resolved title, else by its shortened id", () => {
+    const t3 = { harness: "t3", sessionId: "37b94c9c-84e8-4980-bcec-1c528c34369e" } as const
+    const codex = { harness: "codex", sessionId: "short-id" } as const
+    const titles = Facts.titlesFrom([{ ...t3, title: "Tooling: Exangelos" }])
+    expect(Facts.sessionTitle(t3, titles)).toBe("Tooling: Exangelos")
+    expect(Facts.sessionTitle(t3, Facts.noTitles)).toBe("37b94c9c…")
+    expect(Facts.sessionTitle(codex, titles)).toBe("short-id")
+    expect(Facts.sessionHover(t3)).toBe("T3 Code session 37b94c9c-84e8-4980-bcec-1c528c34369e")
+  })
+
+  it("serves a connector's icon as a data URL and nothing when it has none", () => {
+    const withIcon = { ...connector(), icon: { mediaType: "image/svg+xml", data: "PHN2Zy8+" } } as const
+    expect(Facts.connectorIcon([withIcon], "github-pr")).toBe("data:image/svg+xml;base64,PHN2Zy8+")
+    expect(Facts.connectorIcon([connector()], "github-pr")).toBeUndefined()
+    expect(Facts.connectorIcon([withIcon], "jira")).toBeUndefined()
+  })
+
+  it("keeps a plain active row to two lines and tells the state otherwise", () => {
+    const now = DateTime.toEpochMillis(subscription().createdAt)
+    expect(Facts.rowFact(now, subscription(), undefined, Facts.noTitles)).toBeUndefined()
+    const soon = subscription({ expiresAt: DateTime.add(subscription().createdAt, { hours: 3 }) })
+    expect(Facts.rowFact(now, soon, undefined, Facts.noTitles)).toBe("Expires in 3 h")
+    const paused = subscription({ state: { _tag: "Paused", reason: { _tag: "BacklogCount", limit: 20 } } })
+    expect(Facts.rowFact(now, paused, undefined, Facts.noTitles)).toMatch(/^Paused .*backlog reached 20/)
+    expect(Facts.rowHover(now, subscription())).toBe("github-pr: acme/app#123\nExpires in 7 days")
+  })
+
+  it("calls a row by its label, else by its intent, never by its raw subject", () => {
+    expect(Facts.rowLabel(subscription({ label: "Checkout fix" }))).toBe("Checkout fix")
+    expect(Facts.rowLabel(subscription({ label: "", subject: "slack:0e6ec01d87da", intent: "Wake me on posts" }))).toBe("Wake me on posts")
+  })
+})

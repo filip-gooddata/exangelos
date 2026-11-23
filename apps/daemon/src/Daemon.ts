@@ -9,6 +9,7 @@ import {
   runSubscriptionDaemon,
   SecretStore,
   ServiceManager,
+  type SessionTitles,
   SubscriptionIntake,
   SettingsStore,
   type WakeTarget
@@ -43,6 +44,7 @@ export interface Choices {
   readonly serviceManager: Layer.Layer<ServiceManager.ServiceManager, never, Platform>
   readonly secretStore: Layer.Layer<SecretStore.SecretStore, never, Platform>
   readonly wakeTarget: Layer.Layer<WakeTarget.WakeTarget, never, Platform | SettingsStore.SettingsStore>
+  readonly sessionTitles: Layer.Layer<SessionTitles.SessionTitles, never, Platform>
 }
 
 export interface Options extends Choices {
@@ -82,7 +84,8 @@ export const platformChoices = (options: Service.ServiceManager.Options): Choice
   alerts: Alerts.layer.pipe(Layer.provide(options.platform === "darwin" ? layerMacOS : layerLinux)),
   serviceManager: serviceManager(options),
   secretStore: SecretStores.layer(options.platform),
-  wakeTarget: WakeTargets.layer()
+  wakeTarget: WakeTargets.layer(),
+  sessionTitles: WakeTargets.SessionTitles.layer()
 })
 
 const database = Layer.unwrap(
@@ -140,6 +143,7 @@ const ports = (options: Options) =>
     options.alerts,
     options.serviceManager,
     options.wakeTarget,
+    options.sessionTitles,
     StdioConnectorRuntime.layer(options.runtime)
   ).pipe(
     Layer.provideMerge(Layer.mergeAll(settings, knownSecrets(options.secretStore), ConnectorDirectoryLive.layer))

@@ -39,8 +39,32 @@ export const until = (now: number, at: DateTime.Utc): string => {
 /** The short time at the right edge of a row: "2 min", "3 h", "2 days". */
 export const age = (now: number, at: DateTime.Utc): string => span(now - millis(at))
 
-export const actorName = (actor: Session.Actor): string =>
-  actor._tag === "You" ? "you" : `${harnessName(actor.session.harness)} session ${actor.session.sessionId}`
+/** Session titles the daemon resolved through each harness, keyed by {@link titleKey}. */
+export type Titles = ReadonlyMap<string, string>
+
+export const noTitles: Titles = new Map()
+
+export const titleKey = (target: Session.Target): string => `${target.harness}\u0000${target.sessionId}`
+
+export const titlesFrom = (
+  titles: ReadonlyArray<{ readonly harness: string; readonly sessionId: string; readonly title: string }>
+): Titles => new Map(titles.map((t) => [titleKey(t), t.title] as const))
+
+/** A long id cut to its first eight characters, for when no title is known. */
+export const shortId = (id: string): string => (id.length <= 12 ? id : `${id.slice(0, 8)}…`)
+
+/** The session's title when its harness told one, else its shortened id. */
+export const sessionTitle = (target: Session.Target, titles: Titles): string =>
+  titles.get(titleKey(target)) ?? shortId(target.sessionId)
+
+/** The full identity of a session, for a tooltip. */
+export const sessionHover = (target: Session.Target): string => `${harnessName(target.harness)} session ${target.sessionId}`
+
+export const sessionName = (target: Session.Target, titles: Titles): string =>
+  `${harnessName(target.harness)} · ${sessionTitle(target, titles)}`
+
+export const actorName = (actor: Session.Actor, titles: Titles = noTitles): string =>
+  actor._tag === "You" ? "you" : sessionName(actor.session, titles)
 
 export const pending = (subscription: Subscription.Subscription): number =>
   subscription.lastNumber - subscription.ackedThrough
@@ -73,19 +97,24 @@ export const stateTag = (subscription: Subscription.Subscription, suspended: boo
   }
 }
 
-const pauseReason = (reason: Subscription.PauseReason, subscription: Subscription.Subscription): string => {
+const pauseReason = (reason: Subscription.PauseReason, subscription: Subscription.Subscription, titles: Titles): string => {
   switch (reason._tag) {
     case "BacklogCount":
       return `the backlog reached ${reason.limit} pending events`
     case "BacklogAge":
       return `its oldest pending event passed ${span(Duration.toMillis(reason.limit))}`
     case "Actor":
-      return `${actorName(reason.actor)} paused it with ${pending(subscription)} pending`
+      return `${actorName(reason.actor, titles)} paused it with ${pending(subscription)} pending`
   }
 }
 
 /** The state fact on a row's third line. */
-export const stateFact = (now: number, subscription: Subscription.Subscription, suspended?: Connector.Connector): string => {
+export const stateFact = (
+  now: number,
+  subscription: Subscription.Subscription,
+  suspended?: Connector.Connector,
+  titles: Titles = noTitles
+): string => {
   const { state, stateSince } = subscription
   switch (state._tag) {
     case "Active":
@@ -94,8 +123,8 @@ export const stateFact = (now: number, subscription: Subscription.Subscription, 
         : `Expires ${until(now, subscription.expiresAt)}`
     case "Paused":
       return state.reason._tag === "Actor"
-        ? `Paused by ${actorName(state.reason.actor)} ${ago(now, stateSince)}`
-        : `Paused ${ago(now, stateSince)}: ${pauseReason(state.reason, subscription)}`
+        ? `Paused by ${actorName(state.reason.actor, titles)} ${ago(now, stateSince)}`
+        : `Paused ${ago(now, stateSince)}: ${pauseReason(state.reason, subscription, titles)}`
     case "Expired":
       return `Expired ${ago(now, stateSince)}`
     case "Ended":
@@ -103,12 +132,17 @@ export const stateFact = (now: number, subscription: Subscription.Subscription, 
         ? `Ended ${ago(now, stateSince)} after its last allowed event`
         : `Ended ${ago(now, stateSince)} by the connector: ${state.reason.reason}`
     case "Cancelled":
-      return `Cancelled ${ago(now, stateSince)} by ${actorName(state.actor)}`
+      return `Cancelled ${ago(now, stateSince)} by ${actorName(state.actor, titles)}`
   }
 }
 
 /** The state in whole sentences, for the top of one subscription. */
-export const stateSentence = (now: number, subscription: Subscription.Subscription, suspended?: Connector.Connector): string => {
+export const stateSentence = (
+  now: number,
+  subscription: Subscription.Subscription,
+  suspended?: Connector.Connector,
+  titles: Titles = noTitles
+): string => {
   const { state, stateSince } = subscription
   const expires = `Expires ${until(now, subscription.expiresAt)}.`
   switch (state._tag) {
@@ -119,12 +153,12 @@ export const stateSentence = (now: number, subscription: Subscription.Subscripti
           suspended.unavailableSince === undefined ? "" : ` since ${ago(now, suspended.unavailableSince)}`
         }. It continues by itself when the connector returns. ${expires}`
     case "Paused":
-      return `Paused ${ago(now, stateSince)}: ${pauseReason(state.reason, subscription)}. Nothing is watched while paused. ${expires}`
+      return `Paused ${ago(now, stateSince)}: ${pauseReason(state.reason, subscription, titles)}. Nothing is watched while paused. ${expires}`
     case "Expired":
       return `Expired ${ago(now, stateSince)}. Nothing is watched until someone resumes it.`
     case "Ended":
     case "Cancelled":
-      return `${stateFact(now, subscription)}.`
+      return `${stateFact(now, subscription, undefined, titles)}.`
   }
 }
 
@@ -188,11 +222,11 @@ export interface HistoryEntry {
 }
 
 /** Changes and wakes, newest first. A stop the daemon made itself has no change, so its wake carries it. */
-export const history = (detail: Detail): ReadonlyArray<HistoryEntry> =>
+export const history = (detail: Detail, titles: Titles = noTitles): ReadonlyArray<HistoryEntry> =>
   [
     ...detail.changes.map((change): HistoryEntry => ({
       title: changeTitle(change),
-      by: `By ${actorName(change.actor)}`,
+      by: `By ${actorName(change.actor, titles)}`,
       at: change.at
     })),
     ...detail.wakes.map((wake): HistoryEntry => ({
@@ -207,6 +241,36 @@ export const pendingEvents = (detail: Detail): ReadonlyArray<Event.Event> =>
 
 export const acknowledgedEvents = (detail: Detail): ReadonlyArray<Event.Event> =>
   detail.events.filter((event) => event.number <= detail.subscription.ackedThrough).sort((a, b) => b.number - a.number)
+
+/** The connector's logo as an image source, when its manifest names a valid icon. */
+export const connectorIcon = (connectors: ReadonlyArray<Connector.Status>, name: string): string | undefined => {
+  const icon = connectors.find((connector) => connector.name === name)?.icon
+  return icon === undefined ? undefined : `data:${icon.mediaType};base64,${icon.data}`
+}
+
+/** What a row is called: the connector's label, else the agent's intent; never the raw subject, which only the tooltip and detail view show. */
+export const rowLabel = (subscription: Subscription.Subscription): string =>
+  subscription.label === "" ? subscription.intent : subscription.label
+
+/** What a row's tooltip tells beyond its label: the connector, the raw subject and the expiry. */
+export const rowHover = (now: number, subscription: Subscription.Subscription): string =>
+  [
+    `${subscription.connector}: ${subscription.subject}`,
+    ...(isOpen(subscription) ? [`Expires ${until(now, subscription.expiresAt)}`] : [])
+  ].join("\n")
+
+/** The row's quiet third line: the state when it is not plainly active, an expiry within a day, else nothing. */
+export const rowFact = (
+  now: number,
+  subscription: Subscription.Subscription,
+  suspended: Connector.Connector | undefined,
+  titles: Titles
+): string | undefined =>
+  subscription.state._tag !== "Active" || suspended !== undefined
+    ? stateFact(now, subscription, suspended, titles)
+    : millis(subscription.expiresAt) - now < day
+    ? `Expires ${until(now, subscription.expiresAt)}`
+    : undefined
 
 export const connectorInitials = (name: string): string => {
   const parts = name.split(/[^a-z0-9]+/i).filter((part) => part.length > 0)

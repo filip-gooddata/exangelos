@@ -23,6 +23,12 @@ export const Manifest = Schema.Struct({
   name: Ids.ConnectorName,
   version: Schema.NonEmptyString,
   entry: Entry,
-  files: Schema.optionalKey(Schema.Array(Schema.NonEmptyString))
+  files: Schema.optionalKey(Schema.Array(Schema.NonEmptyString)),
+  /**
+   * The connector's logo: a path relative to the connector folder to an `.svg` or `.png` of at most 32 KiB.
+   * Any value decodes, so a bad icon, even one that is not a string, leaves the connector without a logo
+   * instead of refusing its manifest.
+   */
+  icon: Schema.optionalKey(Schema.Unknown)
 })
 export type Manifest = typeof Manifest.Type

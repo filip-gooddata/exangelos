@@ -23,6 +23,7 @@ interface Manifest {
   readonly version: string
   readonly entry: { readonly _tag: "Bundle"; readonly path: string } | { readonly _tag: "Native" }
   readonly files?: ReadonlyArray<string>
+  readonly icon?: string
 }
 
 export class ConnectorManifestInvalid extends Data.TaggedError("ConnectorManifestInvalid")<{ readonly message: string }> {}
@@ -57,16 +58,26 @@ const declaredFiles = (connectorDirectory: string, manifest: Manifest) =>
   Effect.try({
     try: () => {
       const root = realpathSync(connectorDirectory)
-      return (manifest.files ?? []).flatMap((declared) => {
+      if (manifest.icon !== undefined && typeof manifest.icon !== "string") {
+        throw new ConnectorManifestInvalid({ message: `${manifest.name}: icon must be a path to an .svg or .png` })
+      }
+      const declared = [
+        ...(manifest.files ?? []).map((path) => ["file", path] as const),
+        ...(manifest.icon === undefined ? [] : [["icon", manifest.icon] as const])
+      ]
+      return declared.flatMap(([kind, declared]) => {
         const path = resolve(root, declared)
         if (isAbsolute(declared) || !isInside(root, path)) {
-          throw new ConnectorManifestInvalid({ message: `${manifest.name}: file ${declared} is outside the connector folder` })
+          throw new ConnectorManifestInvalid({ message: `${manifest.name}: ${kind} ${declared} is outside the connector folder` })
         }
         if (!existsSync(path)) {
-          throw new ConnectorManifestInvalid({ message: `${manifest.name}: file ${declared} does not exist` })
+          throw new ConnectorManifestInvalid({ message: `${manifest.name}: ${kind} ${declared} does not exist` })
         }
         if (realpathSync(path) !== path) {
-          throw new ConnectorManifestInvalid({ message: `${manifest.name}: file ${declared} is a link or goes through one` })
+          throw new ConnectorManifestInvalid({ message: `${manifest.name}: ${kind} ${declared} is a link or goes through one` })
+        }
+        if (kind === "icon" && !lstatSync(path).isFile()) {
+          throw new ConnectorManifestInvalid({ message: `${manifest.name}: icon ${declared} is not an ordinary file` })
         }
         return filesUnder(root, path)
       })

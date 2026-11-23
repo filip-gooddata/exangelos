@@ -287,6 +287,11 @@ select:focus-visible {
   text-transform: uppercase;
 }
 
+.badge-logo {
+  object-fit: contain;
+  background: none;
+}
+
 .pill {
   flex: none;
   display: inline-block;
@@ -542,26 +547,34 @@ select:focus-visible {
 
 .group-head {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 6px;
-  padding: 6px 12px 2px;
+  padding: 8px 12px 4px;
   min-width: 0;
 }
 
 .group-harness {
   flex: none;
-  font-size: 11px;
-  color: var(--text-2);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--text-3);
 }
 
 .group-session {
   flex: 0 1 auto;
   min-width: 0;
+  font-size: 12px;
   font-weight: 600;
   color: var(--text);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.group-head .pill {
+  margin-left: auto;
 }
 
 .group-session.mono {
@@ -581,9 +594,9 @@ select:focus-visible {
 .row {
   display: flex;
   align-items: flex-start;
-  gap: 8px;
+  gap: 10px;
   width: 100%;
-  padding: 6px 12px;
+  padding: 7px 12px 8px;
 }
 
 .row:hover {
@@ -613,6 +626,7 @@ select:focus-visible {
 .row-label {
   flex: 0 1 auto;
   min-width: 0;
+  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -631,9 +645,9 @@ select:focus-visible {
 }
 
 .row-intent {
-  font-size: 11.5px;
-  color: var(--text);
-  opacity: 0.82;
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--text-2);
   overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-box-orient: vertical;
@@ -642,17 +656,34 @@ select:focus-visible {
 }
 
 .row-fact {
+  margin-top: 1px;
   font-size: 11px;
-  color: var(--text-2);
+  color: var(--text-3);
   overflow-wrap: anywhere;
 }
 
-.row-fact .mono {
-  font-size: 10.5px;
+.row-muted .row-label,
+.row-closed .row-label {
+  color: var(--text-2);
+}
+
+.row-muted > .badge-connector,
+.row-closed > .badge-connector {
+  opacity: 0.55;
+}
+
+.row-alert .row-fact {
+  color: var(--ember);
+}
+
+.row-closed {
+  padding-top: 5px;
+  padding-bottom: 6px;
 }
 
 .row-closed .row-label {
-  font-size: 11.5px;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .closed {
@@ -689,7 +720,7 @@ select:focus-visible {
 /* Empty state */
 
 .empty {
-  padding: 20px 16px;
+  padding: 28px 18px 20px;
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -756,6 +787,30 @@ select:focus-visible {
 .section > p:not([class]) {
   margin-bottom: 6px;
   font-size: 12px;
+}
+
+.subscription-hero {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.subscription-hero > .badge-connector {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  font-size: 11px;
+}
+
+.subscription-intent {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  user-select: text;
+  -webkit-user-select: text;
 }
 
 .state-sentence {

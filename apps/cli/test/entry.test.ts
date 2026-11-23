@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it } from "@effect/vitest"
 import { Effect, Layer, Option, Runtime } from "effect"
 import { TestConsole } from "effect/testing"
 import { ServiceManager } from "@exangelos/application"
-import { layerAlertSink, layerSecretStore, layerWakeTarget } from "@exangelos/application/testing"
+import { layerAlertSink, layerSecretStore, layerSessionTitles, layerWakeTarget } from "@exangelos/application/testing"
 import { Paths } from "@exangelos/paths"
 import * as Entry from "../src/Entry.ts"
 import { daemonServer } from "./harness.ts"
@@ -60,6 +60,7 @@ const run = (
         serviceManager: manager,
         secretStore: layerSecretStore,
         wakeTarget: layerWakeTarget,
+        sessionTitles: layerSessionTitles,
         officialConnectors: [],
         releaseUrl: undefined
       }

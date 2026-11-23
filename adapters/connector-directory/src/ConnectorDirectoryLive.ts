@@ -1,10 +1,12 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { Duration, Effect, FileSystem, Layer, Schema, Stream } from "effect"
+import { Duration, Effect, FileSystem, Layer, Option, Schema, Stream } from "effect"
 import { ConnectorDirectory } from "@exangelos/application"
 import { Manifest } from "@exangelos/contracts"
+import type { Ids } from "@exangelos/domain"
 import { Paths } from "@exangelos/paths"
 import { digestDirectory } from "./Digest.ts"
+import { readIcon } from "./Icon.ts"
 
 const { ManifestInvalid, ConnectorDirectoryFailed } = ConnectorDirectory
 
@@ -109,6 +111,29 @@ export const layer = Layer.effect(
           Stream.mapError((error) => new ConnectorDirectoryFailed({ reason: error.message }))
         )
 
-      return { list, read: readConnector, remove, changes }
+      const refused = new Map<string, string>()
+      const icon = (name: Ids.ConnectorName, directory?: string) =>
+        Effect.gen(function*() {
+          const at = directory === undefined ? Path.join(root, name) : Path.resolve(directory)
+          const manifest = yield* Effect.tryPromise(() => Fs.readFile(Path.join(at, Manifest.fileName), "utf8")).pipe(
+            Effect.flatMap((text) => Effect.try(() => JSON.parse(text) as unknown)),
+            Effect.flatMap(Schema.decodeUnknownEffect(Manifest.Manifest)),
+            Effect.option
+          )
+          if (Option.isNone(manifest) || manifest.value.icon === undefined) return Option.none()
+          const declared = manifest.value.icon
+          return yield* (typeof declared === "string" ? readIcon(at, declared) : Effect.fail("the icon is not a path")).pipe(
+            Effect.tap(() => Effect.sync(() => refused.delete(at))),
+            Effect.asSome,
+            Effect.catch((reason) => {
+              // The panel lists connectors often; warn once per refusal rather than on every listing.
+              if (refused.get(at) === reason) return Effect.succeedNone
+              refused.set(at, reason)
+              return Effect.as(Effect.logWarning(`Connector ${name} has no icon: ${reason}`), Option.none())
+            })
+          )
+        })
+
+      return { list, read: readConnector, remove, changes, icon }
     })
 )

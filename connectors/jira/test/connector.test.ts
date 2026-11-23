@@ -227,6 +227,6 @@ describe("Jira connector", () => {
     const manifest = Schema.decodeUnknownSync(Manifest.Manifest)(
       JSON.parse(readFileSync(new URL("../connector.json", import.meta.url), "utf8"))
     )
-    expect(manifest).toEqual({ name: "jira", version: "0.1.0", entry: { _tag: "Bundle", path: "dist/main.js" } })
+    expect(manifest).toEqual({ name: "jira", version: "0.1.1", entry: { _tag: "Bundle", path: "dist/main.js" }, icon: "icon.svg" })
   })
 })

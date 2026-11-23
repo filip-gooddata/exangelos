@@ -5,7 +5,7 @@ import type { Detail } from "../daemon/DaemonClient.ts"
 import { bySession, type PanelState, Request } from "../state/Panel.ts"
 import * as Facts from "./Facts.ts"
 import { Message, type Model } from "./Model.ts"
-import { button, count, go, type H, mono, notices, pill, connectorBadge, when } from "./Parts.ts"
+import { button, connectorBadge, count, go, type H, iconOf, notices, pill, when } from "./Parts.ts"
 
 type Ready = Extract<PanelState, { _tag: "Ready" }>
 
@@ -13,6 +13,8 @@ export const subscribeCommand = `exangelos subscribe github-pr acme/app#123 --in
 
 const detailsById = (state: Ready): ReadonlyMap<string, Detail> =>
   new Map(Result.getOrElse(Result.map(state.details, (all) => all.map((d) => [d.subscription.id, d] as const)), () => []))
+
+const titlesOf = (state: Ready): Facts.Titles => Result.getOrElse(Result.map(state.titles, Facts.titlesFrom), () => Facts.noTitles)
 
 const loaded = <A>(section: Result.Result<ReadonlyArray<A>, string>): ReadonlyArray<A> =>
   Result.getOrElse(section, () => [])
@@ -31,7 +33,7 @@ const needsYouStrip = (h: H, model: Model, state: Ready): Html => {
     ...alerts.map((alert) => {
       const item = Facts.needsYouItem(model.now, alert, connectors, subscriptions)
       return h.div([h.Class("needs-you-item")], [
-        connectorBadge(h, item.connector),
+        connectorBadge(h, item.connector, iconOf(model, connectors, item.connector)),
         h.div([h.Class("needs-you-text")], [
           h.p([h.Class("line-main")], [item.title]),
           h.p([h.Class("line-quiet")], [item.detail])
@@ -48,41 +50,46 @@ const lastEvent = (detail: Detail | undefined) =>
     undefined
   )
 
+/** How a row reads at a glance: calm when active, muted when paused or expired, ember when it needs a look. */
+export const rowTone = (subscription: Subscription.Subscription, suspended: boolean, retrying: boolean): "calm" | "muted" | "alert" =>
+  suspended || retrying ? "alert" : subscription.state._tag === "Active" ? "calm" : "muted"
+
 const row = (
   h: H,
   model: Model,
   subscription: Subscription.Subscription,
   detail: Detail | undefined,
-  connectors: ReadonlyArray<Connector.Connector>
+  connectors: ReadonlyArray<Connector.Status>,
+  titles: Facts.Titles
 ): Html => {
   const suspended = Facts.suspendedOn(subscription, connectors)
   const tag = Facts.stateTag(subscription, suspended !== undefined)
-  const waiting = subscription.state._tag === "Expired" || subscription.state._tag === "Paused" || subscription.state._tag === "Active"
-    ? Facts.retryingWake(detail)
-    : undefined
+  const waiting = Facts.isOpen(subscription) ? Facts.retryingWake(detail) : undefined
+  const tone = rowTone(subscription, suspended !== undefined, waiting !== undefined)
   const event = lastEvent(detail)
   const pending = Facts.pending(subscription)
-  const fact = [
-    Facts.stateFact(model.now, subscription, suspended),
+  const facts = [
+    Facts.rowFact(model.now, subscription, suspended, titles),
     ...(waiting === undefined ? [] : [Facts.retryFact(model.now, waiting)])
-  ].join(". ")
+  ].filter((fact): fact is string => fact !== undefined)
   return h.keyed("button")(subscription.id, [
     h.Type("button"),
-    h.Class("row"),
+    h.Class(`row row-${tone}`),
+    h.Title(Facts.rowHover(model.now, subscription)),
     h.OnClick(go({ _tag: "Subscription", id: subscription.id }))
   ], [
-    connectorBadge(h, subscription.connector),
+    connectorBadge(h, subscription.connector, iconOf(model, connectors, subscription.connector)),
     h.span([h.Class("row-body")], [
       h.span([h.Class("row-line")], [
-        h.span([h.Class("row-label")], [subscription.label]),
-        tag === undefined ? null : pill(h, tag),
+        h.span([h.Class("row-label")], [Facts.rowLabel(subscription)]),
+        tag === undefined ? null : pill(h, tag, tone === "alert" ? "ember" : "quiet"),
         h.span([h.Class("row-aside")], [
           event === undefined ? null : h.span([h.Class("time")], [Facts.age(model.now, event.occurredAt)]),
           pending > 0 && Facts.isOpen(subscription) ? count(h, pending) : null
         ])
       ]),
-      h.span([h.Class("row-intent")], [subscription.intent]),
-      h.span([h.Class("row-fact")], [mono(h, subscription.subject, "subject"), h.span([h.Class("sep")], [" · "]), fact])
+      subscription.label === "" ? null : h.span([h.Class("row-intent")], [subscription.intent]),
+      facts.length === 0 ? null : h.span([h.Class("row-fact")], [facts.join(". ")])
     ])
   ])
 }
@@ -90,29 +97,32 @@ const row = (
 const groups = (h: H, model: Model, state: Ready, open: ReadonlyArray<Subscription.Subscription>): ReadonlyArray<Html> => {
   const details = detailsById(state)
   const connectors = loaded(state.connectors)
+  const titles = titlesOf(state)
   return bySession(open).map((group) => {
     const waiting = group.subscriptions.map((s) => Facts.retryingWake(details.get(s.id))).find((w) => w !== undefined)
-    const title = Option.match(group.wakeTarget, {
-      onNone: () => [h.span([h.Class("group-harness")], ["Pull-only"]), h.span([h.Class("group-session")], ["No wake target"])],
-      onSome: (session) => [
+    const head = Option.match(group.wakeTarget, {
+      onNone: () => h.h2([h.Class("group-head")], [
+        h.span([h.Class("group-harness")], ["Pull-only"]),
+        h.span([h.Class("group-session")], ["No session to wake"])
+      ]),
+      onSome: (session) => h.h2([h.Class("group-head"), h.Title(Facts.sessionHover(session))], [
         h.span([h.Class("group-harness")], [Facts.harnessName(session.harness)]),
-        h.span([h.Class("group-session mono")], [session.sessionId])
-      ]
+        h.span([h.Class("group-session")], [Facts.sessionTitle(session, titles)]),
+        waiting === undefined ? null : pill(h, "Not answering", "ember")
+      ])
     })
     return h.section([h.Class("group")], [
-      h.h2([h.Class("group-head")], [
-        ...title,
-        waiting === undefined
-          ? null
-          : h.span([h.Class("group-quiet")], [`Not answering: ${waiting.attempts.count} attempts`])
-      ]),
-      ...group.subscriptions.map((s) => row(h, model, s, details.get(s.id), connectors))
+      head,
+      ...group.subscriptions.map((s) => row(h, model, s, details.get(s.id), connectors, titles))
     ])
   })
 }
 
-const closedList = (h: H, model: Model, closed: ReadonlyArray<Subscription.Subscription>): Html =>
-  closed.length === 0 ? null : h.section([h.Class("closed")], [
+const closedList = (h: H, model: Model, state: Ready, closed: ReadonlyArray<Subscription.Subscription>): Html => {
+  if (closed.length === 0) return null
+  const connectors = loaded(state.connectors)
+  const titles = titlesOf(state)
+  return h.section([h.Class("closed")], [
     h.button([h.Type("button"), h.Class("disclosure"), h.AriaExpanded(model.closedOpen), h.OnClick(Message.ToggledClosed())], [
       h.span([h.Class("chevron")], [model.closedOpen ? "⌄" : "›"]),
       h.span([], ["Closed subscriptions"]),
@@ -123,26 +133,29 @@ const closedList = (h: H, model: Model, closed: ReadonlyArray<Subscription.Subsc
         h.keyed("button")(subscription.id, [
           h.Type("button"),
           h.Class("row row-closed"),
+          h.Title(Facts.rowHover(model.now, subscription)),
           h.OnClick(go({ _tag: "Subscription", id: subscription.id }))
         ], [
-          connectorBadge(h, subscription.connector),
+          connectorBadge(h, subscription.connector, iconOf(model, connectors, subscription.connector)),
           h.span([h.Class("row-body")], [
-            h.span([h.Class("row-line")], [mono(h, subscription.subject, "row-label")]),
-            h.span([h.Class("row-intent")], [subscription.intent]),
-            h.span([h.Class("row-fact")], [Facts.stateFact(model.now, subscription)])
+            h.span([h.Class("row-line")], [
+              h.span([h.Class("row-label")], [Facts.rowLabel(subscription)])
+            ]),
+            h.span([h.Class("row-fact")], [Facts.stateFact(model.now, subscription, undefined, titles)])
           ])
         ])
       )
       : [])
   ])
+}
 
 const emptyState = (h: H): Html =>
   h.section([h.Class("empty")], [
-    h.h2([h.Class("empty-title")], ["No agent has subscribed yet."]),
+    h.h2([h.Class("empty-title")], ["Nothing to watch yet"]),
     h.p([], [
-      "Only agents subscribe, and each one states its intent. You cannot add a subscription here. A session appears as a group once it subscribes."
+      "Agents subscribe when they want to hear back about a pull request, a ticket or a file, and each one states its intent. You cannot add one here. Each session shows up as its own group."
     ]),
-    h.p([h.Class("empty-label")], ["An agent runs"]),
+    h.p([h.Class("empty-label")], ["An agent runs, for example"]),
     h.pre([h.Class("command mono")], [subscribeCommand])
   ])
 
@@ -201,7 +214,7 @@ export const main = (h: H, model: Model): ReadonlyArray<Html> => {
           failure(h, "subscriptions", state.subscriptions),
           failure(h, "the subscriptions' events and wakes", state.details),
           ...(Result.isSuccess(state.subscriptions) && open.length === 0 ? [emptyState(h)] : groups(h, model, state, open)),
-          closedList(h, model, closed)
+          closedList(h, model, state, closed)
         ]),
         footer(h, model)
       ]

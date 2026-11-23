@@ -1,5 +1,6 @@
 {
   "name": "template",
   "version": "0.1.0",
-  "entry": { "_tag": "Bundle", "path": "dist/main.js" }
+  "entry": { "_tag": "Bundle", "path": "dist/main.js" },
+  "icon": "icon.svg"
 }

@@ -1,6 +1,7 @@
 import type { Html, HtmlBuilder } from "foldkit/html"
 import type { Request } from "../state/Panel.ts"
-import { connectorInitials } from "./Facts.ts"
+import type { Connector } from "@exangelos/domain"
+import { connectorIcon, connectorInitials } from "./Facts.ts"
 import { Message, type Model, type Screen } from "./Model.ts"
 
 export type H = HtmlBuilder<Message>
@@ -10,8 +11,23 @@ export const go = (screen: Screen) => Message.Navigated({ screen })
 
 export const when = (condition: boolean, render: () => Html): Html => (condition ? render() : null)
 
-export const connectorBadge = (h: H, name: string): Html =>
-  h.span([h.Class("badge-connector"), h.AriaHidden(true)], [connectorInitials(name)])
+/** The connector's logo as an image source, unless it has none or the panel failed to draw it. */
+export const iconOf = (model: Model, connectors: ReadonlyArray<Connector.Status>, name: string): string | undefined => {
+  const icon = connectorIcon(connectors, name)
+  return icon === undefined || model.brokenIcons.includes(icon) ? undefined : icon
+}
+
+/** The connector's logo, or its initials when it has none or the logo fails to load. */
+export const connectorBadge = (h: H, name: string, icon?: string): Html =>
+  icon === undefined
+    ? h.span([h.Class("badge-connector"), h.AriaHidden(true)], [connectorInitials(name)])
+    : h.img([
+      h.Class("badge-connector badge-logo"),
+      h.Src(icon),
+      h.Alt(""),
+      h.AriaHidden(true),
+      h.OnError(Message.IconFailed({ src: icon }))
+    ])
 
 export const pill = (h: H, text: string, tone: "quiet" | "ember" = "quiet"): Html =>
   h.span([h.Class(`pill pill-${tone}`)], [text])
