@@ -108,6 +108,7 @@ export const make = Effect.gen(function*() {
     )
 
   return ServiceManager.ServiceManager.of({
+    startMethod: Effect.succeed(method),
     status: userService.status(label).pipe(
       Effect.map((status) => ({
         method,

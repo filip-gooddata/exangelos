@@ -22,12 +22,12 @@ const capture = (records: Array<Record>) =>
     })
   })
 
-const run = <A, E>(effect: Effect.Effect<A, E>) =>
+const run = <A, E>(effect: Effect.Effect<A, E>, minimum: "Trace" | "Debug" = "Trace") =>
   Effect.gen(function*() {
     const records: Array<Record> = []
     yield* Effect.exit(effect).pipe(
       Effect.provide(Logger.layer([capture(records)])),
-      Effect.provideService(References.MinimumLogLevel, "Debug")
+      Effect.provideService(References.MinimumLogLevel, minimum)
     )
     return records
   })
@@ -50,11 +50,24 @@ describe("request logging", () => {
       expect(failed.annotations).toMatchObject({ method: "Show", outcome: "error", error: "SubscriptionNotFound" })
 
       const [polled] = yield* run(logged("List", caller, Effect.succeed([])))
-      expect(polled.level).toBe("Debug")
+      expect(polled.level).toBe("Trace")
 
       const [defect] = yield* run(logged("Ack", caller, Effect.die("broken")))
       expect(defect.level).toBe("Error")
       expect(defect.annotations).toMatchObject({ method: "Ack", outcome: "error", error: "defect" })
+    }))
+
+  it.effect("keeps successful polled reads out of a debug log, and changes and failures in it", () =>
+    Effect.gen(function*() {
+      for (const method of ["List", "ListConnectors", "ListConnectorAlerts", "Show", "Events", "GetSettings", "ServiceStatus"]) {
+        expect(yield* run(logged(method, caller, Effect.succeed(1)), "Debug")).toEqual([])
+        const [failed] = yield* run(logged(method, caller, Effect.fail({ _tag: "Unavailable" })), "Debug")
+        expect(failed.level).toBe("Warn")
+      }
+      for (const method of ["Subscribe", "SetSettings", "EnableConnector", "Ack"]) {
+        const [changed] = yield* run(logged(method, caller, Effect.succeed(1)), "Debug")
+        expect(changed.level).toBe("Info")
+      }
     }))
 
   it.effect("keeps a failure's fields and causes, without credentials or address extras", () =>

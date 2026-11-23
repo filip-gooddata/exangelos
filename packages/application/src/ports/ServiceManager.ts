@@ -18,6 +18,11 @@ export class ServiceFailed extends Schema.TaggedError<ServiceFailed>()("ServiceF
 
 export class ServiceManager extends Context.Service<ServiceManager, {
   /**
+   * How this install starts the daemon, known without asking the service manager; fails only when
+   * the service settings could not be read.
+   */
+  readonly startMethod: Effect.Effect<StartMethod, ServiceFailed>
+  /**
    * The start method of this install: the Homebrew service for a formula install, otherwise the
    * own LaunchAgent or systemd user unit; foreground for a daemon no service started.
    */
