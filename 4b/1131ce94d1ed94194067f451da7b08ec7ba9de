@@ -1,0 +1,19 @@
+apps/cli/e2e/binary.test.ts
+  s_d62eee476d040c::t_deb2415b5b7085 627-630,634,637,657
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6b1f2825b909d822aeeda9780cc76036f3bb773b",
+  "prompts": {},
+  "sessions": {
+    "s_d62eee476d040c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "6048d1db-8b90-4a1a-89a9-a164adfa43b0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
