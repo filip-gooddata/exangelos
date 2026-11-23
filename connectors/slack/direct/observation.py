@@ -2,8 +2,16 @@
 import hashlib
 import hmac
 import json
+from pathlib import Path
+import sys
 import re
 import unicodedata
+
+
+# Installed bundles carry the shared renderer in dist.
+connector_dir = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(connector_dir.parent / 'shared' if (connector_dir / 'package.json').is_file() else connector_dir / 'dist'))
+from excerpt import finish_excerpt
 
 
 TIMESTAMP = r'[0-9]{1,20}\.[0-9]{1,10}'
@@ -39,8 +47,7 @@ def workspace_domain(state, workspace):
     return None
 
 
-# Match credential vocabulary used by the host's debug-report scrubber. Also
-# suppress common standalone credentials, opaque strings, links and markup.
+# Existing metadata policy for display names, independent of message excerpts.
 SENSITIVE = re.compile(
     r'token|key|secret|passw|auth|cookie|bearer|\bbasic\b|session|credential|signature|sig=|'
     r'redact|\[(?:removed|deleted|hidden)\]|[•●█]{2,}|passcode|passwd|private[ _-]*key|otp\b|webhook|xox[a-z]-|xapp-|gh[pousr]_|github_pat_|sk-|AKIA|ASIA|eyJ|'
@@ -52,114 +59,100 @@ def safe_text(value):
     return value.isprintable() and not SENSITIVE.search(unicodedata.normalize('NFKC', value))
 
 
-# Only a labeled web link in a mrkdwn position has separable display text.
-# Mentions, unlabeled targets, nested markup and control characters fail closed.
-DISPLAY_LINK = re.compile(r'<https?://[A-Za-z0-9.-]+(?::[0-9]+)?(?:[/#?][^<>|\s]*)?\|([^<>|\r\n]+)>')
+# Slack angle-bracket entities separate a visible label from its target.
+SLACK_ENTITY = re.compile(r'<([^<>|]+)(?:\|([^<>]*))?>')
 
 
 def display_text(value, mrkdwn=False):
-    if not isinstance(value, str) or len(value) > 4096:
-        raise ValueError('preview')
-    if mrkdwn and any(not char.isprintable() and char not in ' \t\r\n' for char in value):
-        raise ValueError('preview')
+    if not isinstance(value, str):
+        return ''
     if mrkdwn:
         def label(match):
-            text = display_text(match[1])
-            if not text:
-                raise ValueError('preview')
-            return text
-        value = DISPLAY_LINK.sub(label, value)
-    value = re.sub(r'[ \t\r\n]+', ' ', value).strip(' ')
-    if value and (not safe_text(value) or (mrkdwn and SENSITIVE.search(
-            unicodedata.normalize('NFKC', re.sub(r'[*_~]', '', value))))):
-        raise ValueError('preview')
+            target, caption = match.groups()
+            if caption is not None:
+                return caption if re.match(r'(?:[a-z][a-z0-9+.-]*:|[!@#])', target, re.I) else match[0]
+            if target.startswith('!date^'):
+                return ''
+            if target.startswith(('mailto:', '!', '#', '@', 'https://', 'http://')):
+                return target.removeprefix('mailto:').removeprefix('!')
+            return match[0]
+        value = SLACK_ENTITY.sub(label, value)
+        value = value.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
     return value
 
 
 def layout_items(row, field):
-    values = row.get(field, {})
-    if not isinstance(values, dict) or set(values) != {str(i) for i in range(len(values))}:
-        raise ValueError('preview')
-    return (values[str(i)] for i in range(len(values)))
+    values = row.get(field)
+    if isinstance(values, dict):
+        yield from (item for item in values.values() if isinstance(item, dict))
+
+
+def text_object(obj):
+    if isinstance(obj, dict) and obj.get('type') in ('plain_text', 'mrkdwn'):
+        return display_text(obj.get('text'), obj['type'] == 'mrkdwn')
+    return ''
+
+
+def rich_text(section):
+    kind = section.get('type')
+    if kind == 'rich_text_list':
+        return ' '.join(rich_text(item) for item in layout_items(section, 'elements'))
+    if kind not in ('rich_text_section', 'rich_text_quote', 'rich_text_preformatted'):
+        return ''
+    runs = []
+    for run in layout_items(section, 'elements'):
+        if run.get('type') == 'text':
+            runs.append(display_text(run.get('text')))
+        elif run.get('type') == 'link':
+            runs.append(display_text(run.get('text') or run.get('url')))
+    return ''.join(runs)
 
 
 def block_text(row):
     for block in layout_items(row, 'blocks'):
-        if not isinstance(block, dict):
-            raise ValueError('preview')
         kind = block.get('type')
         if kind == 'rich_text':
             for section in layout_items(block, 'elements'):
-                if not isinstance(section, dict) or section.get('type') != 'rich_text_section':
-                    raise ValueError('preview')
-                runs = []
-                for run in layout_items(section, 'elements'):
-                    if not isinstance(run, dict) or run.get('type') not in ('text', 'link') or not isinstance(run.get('text'), str):
-                        raise ValueError('preview')
-                    # Adjacent rich-text runs have no implicit whitespace.
-                    if run['type'] == 'link' and not run['text'].strip():
-                        raise ValueError('preview')
-                    runs.append(run['text'])
-                yield display_text(''.join(runs))
-            continue
-        if kind == 'section':
-            objects = ([block['text']] if 'text' in block else []) + list(layout_items(block, 'fields'))
+                yield rich_text(section)
+        elif kind == 'section':
+            yield text_object(block.get('text'))
+            for field in layout_items(block, 'fields'):
+                yield text_object(field)
         elif kind == 'header':
-            objects = [block.get('text')]
+            yield text_object(block.get('text'))
+        elif kind == 'image':
+            yield text_object(block.get('title'))
         elif kind == 'context':
-            objects = layout_items(block, 'elements')
-        elif kind == 'image' and 'title' in block:
-            objects = [block['title']]
-        elif kind in ('actions', 'divider', 'image'):
-            continue
-        else:
-            raise ValueError('preview')
-        for obj in objects:
-            if not isinstance(obj, dict):
-                raise ValueError('preview')
-            if kind == 'context' and obj.get('type') == 'image':
-                continue
-            if obj.get('type') not in ('plain_text', 'mrkdwn') or (kind in ('header', 'image') and obj.get('type') != 'plain_text'):
-                raise ValueError('preview')
-            yield display_text(obj.get('text'), obj['type'] == 'mrkdwn' and kind != 'header')
+            for obj in layout_items(block, 'elements'):
+                yield text_object(obj)
+        elif kind == 'actions':
+            for action in layout_items(block, 'elements'):
+                if action.get('type') == 'button':
+                    yield text_object(action.get('text'))
 
 
 def attachment_text(row):
     for attachment in layout_items(row, 'attachments'):
-        if not isinstance(attachment, dict):
-            raise ValueError('preview')
-        if 'fallback' in attachment:
-            display_text(attachment['fallback'], True)  # screen alternate notification text
-        formats = list(layout_items(attachment, 'mrkdwn_in'))
+        formats = attachment.get('mrkdwn_in')
+        formats = formats.values() if isinstance(formats, dict) else ()
         for field in ('pretext', 'title', 'text'):
-            if field in attachment:
-                yield display_text(attachment[field], field in ('text', 'pretext') and field in formats)
+            yield display_text(attachment.get(field), field in formats)
         for entry in layout_items(attachment, 'fields'):
-            if not isinstance(entry, dict):
-                raise ValueError('preview')
-            for field in ('title', 'value'):
-                if field in entry:
-                    yield display_text(entry[field], field == 'value' and 'fields' in formats)
+            yield display_text(entry.get('title'))
+            yield display_text(entry.get('value'), 'fields' in formats)
         yield from block_text(attachment)
 
 
 def message_preview(message):
-    if (message.get('type') != 'message' or message.get('subtype') not in (None, 'bot_message')
-            or any(message.get(field, False) is not False for field in ('redacted', 'is_redacted', 'deleted', 'is_deleted', 'tombstone'))):
+    subtype = message.get('subtype')
+    if (message.get('type') != 'message' or
+            (subtype is not None and (not isinstance(subtype, str) or not subtype or subtype in
+             ('message_deleted', 'tombstone', 'message_changed', 'message_replied', 'ekm_access_denied'))) or
+            any(message.get(field, False) is not False for field in ('redacted', 'is_redacted', 'deleted', 'is_deleted', 'tombstone'))):
         return None
-    app = (message.get('subtype') == 'bot_message'
-           or any(isinstance(message.get(field), str) and re.fullmatch(pattern, message[field])
-                  for field, pattern in (('app_id', r'A[A-Z0-9]{6,30}'), ('bot_id', r'B[A-Z0-9]{6,30}'))))
-    try:
-        primary = display_text(message['text'], app and message.get('mrkdwn', True) is True)
-        if not app:
-            return primary[:160] or None
-        # Check every supported representation before choosing one or clipping.
-        pieces = [part for part in (*block_text(message), *attachment_text(message)) if part]
-        layout = display_text(' '.join(pieces))
-    except ValueError:
-        return None
-    return (primary or layout)[:160] or None
+    layout = ' '.join(part for part in (*block_text(message), *attachment_text(message)) if part.strip())
+    text = layout or display_text(message.get('text'), message.get('mrkdwn', True) is True)
+    return finish_excerpt(text) or None
 
 
 def same_team(row, workspace):

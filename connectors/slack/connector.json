@@ -6,6 +6,7 @@
     "path": "dist/main.js"
   },
   "files": [
+    "dist/excerpt.py",
     "direct/source.py",
     "direct/setup.py",
     "direct/state_directory.py",

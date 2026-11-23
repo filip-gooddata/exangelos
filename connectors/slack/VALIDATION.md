@@ -21,7 +21,9 @@ private state. Keep generated evidence outside the checkout.
 To verify a release upgrade, supply two CLI builds and their matching official
 Slack archives. The check configures previews through the older CLI, starts
 the newer daemon in the same disposable home, and checks the refreshed
-connector's stored event and delivered wake.
+connector's stored event and delivered wake on the original subscription. Run
+with both `--previews enabled` and `--previews disabled` to exercise the
+persisted choices.
 
 ```sh
 python3 -B connectors/slack/test/refresh_validation.py --members OLD_CLI OLD_ARCHIVE NEW_CLI NEW_ARCHIVE

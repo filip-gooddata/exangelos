@@ -6,7 +6,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
-    "build": "bun build src/main.ts --target=bun --outfile=dist/main.js",
+    "build": "bun build src/main.ts --target=bun --outfile=dist/main.js && cp ../shared/excerpt.py dist/excerpt.py",
     "typecheck": "effect-tsgo tsc --noEmit -p tsconfig.json",
     "test": "vitest run test/"
   },

@@ -29,7 +29,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
   }) }),
   configuration: [
     Catalogue.choice("subscriptionAccess", { label: "Allow reading the persisted Teams cache and sharing conversation labels, message authors, times and links, including cached data after logout", choices: ["disabled", "persisted-cache"], required: false }),
-    Catalogue.choice("messagePreviews", { label: "Share short message excerpts in agent wakes, event history, desktop alerts and debug payload logs", choices: ["disabled", "enabled"], required: false }),
+    Catalogue.choice("messagePreviews", { label: "Share potentially confidential visible message text as short excerpts in agent wakes, event history, desktop alerts and debug payload logs", choices: ["disabled", "enabled"], required: false }),
     Catalogue.text("account", { label: "Optional cached Teams account, in tenant GUID/user GUID format", required: false }),
     Catalogue.text("cachePath", { label: "Optional absolute Teams IndexedDB cache directory. Leave blank for native macOS discovery", required: false })
   ],

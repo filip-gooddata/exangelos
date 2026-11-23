@@ -45,7 +45,7 @@ def inventory(root):
 class Wire:
     def __init__(self, installed, home, path=None):
         env = {'PATH': str(path) if path is not None else os.environ['PATH']}
-        env.update(HOME=str(home), EXANGELOS_HOME=str(home / 'state'), XDG_DATA_HOME=str(home / 'xdg'),
+        env.update(FIXTURE_API_TOKEN='fictional-installed-secret', HOME=str(home), EXANGELOS_HOME=str(home / 'state'), XDG_DATA_HOME=str(home / 'xdg'),
                    XDG_CONFIG_HOME=str(home / 'config'), XDG_CACHE_HOME=str(home / 'cache'),
                    APPDATA=str(home / 'roaming'), LOCALAPPDATA=str(home / 'local'))
         self.p = subprocess.Popen([BUN, 'dist/main.js'], cwd=installed, env=env,
@@ -163,7 +163,7 @@ def check_wake(event, handle, home, label, preview=None, *, once=False):
         timing += f', observed {observed:%Y-%m-%d %H:%M:%S}.{observed.microsecond // 1000:03d} UTC'
     summary = f'{label} ({timing})'
     if preview is not None:
-        summary += ' | Untrusted message excerpt: ' + json.dumps(preview)
+        summary += ' | Untrusted message excerpt: ' + json.dumps(preview, ensure_ascii=False)
     check(event['summary'] == summary, f"{event['type']} summary: {event['summary']!r}")
     check(('preview' in event['payload']) == (preview is not None) and event['payload'].get('preview') == preview,
           'preview presence and contents')
@@ -200,20 +200,22 @@ def app_posts():
         ('Fixture Jira', dict(blocks=jira), 'FIX-42 moved to Ready'),
         ('Fixture GitHub', dict(attachments=[attachment]), 'Fixture pull request'),
         ('Fixture GitHub', dict(attachments=[dict(blocks=[github])]), 'Merged pull request 42'),
-        ('Fixture GitHub', dict(text='Build passed', blocks=[opaque_label]), None),
+        ('Fixture GitHub', dict(text='<https://example.invalid/job|job> '+'a'*40, blocks=[opaque_label]), 'Merged '+'a'*40),
         ('Fixture Jira', dict(blocks=[*jira, context]), 'FIX-42 moved to Ready Fixture board'),
         ('Fixture Jira', dict(text='<https://example.invalid/issues/42|FIX-42> updated', blocks=jira,
-                             attachments=[attachment]), 'FIX-42 updated'),
+                             attachments=[attachment]), 'FIX-42 moved to Ready Fixture pull request'),
         ('Fixture GitHub', dict(blocks=[section('Build passed')], attachments=[attachment]),
          'Build passed Fixture pull request'),
-        ('Fixture Jira', dict(text='token removed', blocks=jira), None),
-        ('Fixture GitHub', dict(attachments=[attachment], blocks=[section('password removed')]), None),
-        ('Fixture GitHub', dict(text='Build passed', attachments=[dict(attachment, fallback='secret removed')]), None),
+        ('Fixture Jira', dict(text='Credential rotation', blocks=[section('Rotate <https://example.invalid/guide|credentials>'), context]), 'Rotate credentials Fixture board'),
+        ('Fixture GitHub', dict(attachments=[attachment], blocks=[section('password removed')]), 'password removed Fixture pull request'),
+        ('Fixture GitHub', dict(text='Build passed', attachments=[dict(attachment, fallback='secret removed')]), 'Fixture pull request'),
+        ('Fixture Jira', dict(text='Status fictional-installed-secret ready'), 'Status [redacted] ready'),
+        ('Fixture Jira', dict(text='🌻' * 200), '🌻' * 160),
         ('Fixture Jira', dict(redacted=True, blocks=jira), None),
         ('Fixture GitHub', dict(deleted=True, attachments=[attachment]), None),
         ('Fixture GitHub', dict(text='<https://example.invalid/builds/42|' + 'a' * 40 + '>',
-                               attachments=[attachment]), None),
-        ('Fixture Jira', dict(blocks=[section('<https://example.invalid/issues/42>')]), None),
+                               attachments=[attachment]), 'Fixture pull request'),
+        ('Fixture Jira', dict(blocks=[section('<https://example.invalid/issues/42>')]), 'https://example.invalid/issues/42'),
         ('Fixture GitHub', dict(blocks=[dict(type='actions', elements=[
             dict(type='button', action_id='internal-action', value='internal-value')])]), None),
     ]

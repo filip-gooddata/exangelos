@@ -29,7 +29,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
   }) }),
   configuration: [
     Catalogue.choice("subscriptionAccess", { label: "Allow reading persisted Slack cache data and sharing conversation labels, message timestamps, links and available senders with the host, even after logout or access changes (sign-in unverified)", choices: ["persisted-cache", "disabled"], required: false }),
-    Catalogue.choice("messagePreviews", { label: "Share short excerpts from selected messages in new message, reply and edit events, including wakes, stored event history, desktop alerts and debug payload logs", choices: ["disabled", "enabled"], required: false }),
+    Catalogue.choice("messagePreviews", { label: "Share short visible excerpts, which may contain confidential text, from selected messages in new message, reply and edit events, including wakes, stored event history, desktop alerts and debug payload logs", choices: ["disabled", "enabled"], required: false }),
     Catalogue.text("cacheRoot", { label: "Optional absolute IndexedDB folder for a custom Slack installation", required: false }),
     Catalogue.text("subscriptionCacheRoot", { label: "Optional subscription cache folder override (takes precedence over cacheRoot)", required: false }),
     Catalogue.text("pollIntervalMs", { label: "Poll interval in milliseconds (staleness is unbounded)", required: false })

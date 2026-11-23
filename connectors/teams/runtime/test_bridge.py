@@ -1,5 +1,6 @@
 """Native Teams store projections exercised with synthetic data only."""
 import unittest
+from unittest.mock import patch
 from urllib.parse import quote
 
 import bridge
@@ -58,15 +59,28 @@ class BridgeTests(unittest.TestCase):
         unknown, = select(CHAT,[message(imDisplayName='', originalArrivalTime=None, lastModifiedDateTime=STAMP)])
         self.assertFalse({'sender','messageTime'} & unknown.keys())
 
-    def test_screen_before_clipping_and_exclude_deleted_or_rich(self):
-        for change in ({'content':'benign '*30+'password'}, {'content':'<p>hello</p>'},
-                       {'content':'hello\u202e'}, {'deletionInfo':{'time':STAMP}},
-                       {'properties':{'deletetime':STAMP}}, {'redacted':True}):
+    def test_visible_excerpts(self):
+        for text in ('password and token rotation', 'a' * 64, '[removed]', '123456', 'x = 2 < 3'):
+            self.assertEqual(select(CHAT,[message(content=text)])[0]['preview'], text)
+        self.assertEqual(n.preview(message(content='word ' * 1000)), ('word ' * 32))
+        self.assertEqual(n.preview(message(content='hello\u202eworld\nmessage')), 'hello world message')
+        with patch.dict('os.environ', {'SYNTHETIC_TOKEN':'not-for-wakes'}, clear=True):
+            self.assertEqual(n.preview(message(content='password: not-for-wakes approved')), 'password: [redacted] approved')
+        rich = ('<p>Hello <b>pass</b>word <a href="https://hidden.invalid">label</a> '
+                '<span hidden>invisible</span><script>private</script><!-- comment -->'
+                '<img src="internal"><blockquote>quoted reply</blockquote>tail</p>')
+        self.assertEqual(n.preview(message(messageType='RichText/Html', content=rich)), 'Hello password label tail')
+        styled = ('<div class="message-content"><span class="formatted" style="color:#cf2233; font-weight: bold">'
+                  'status</span> <span style="color: rgb(25, 12, 0)">green</span>'
+                  '<span class="visually-hidden">private</span><span aria-hidden="true">secret</span>'
+                  '<span style="color:blue; display:none">secret</span></div>')
+        self.assertEqual(n.preview(message(messageType='RichText/Html', content=styled)), 'status green')
+        for change in ({'deletionInfo':{'time':STAMP}}, {'properties':{'deletetime':STAMP}},
+                       {'redacted':True}, {'hidden':True}, {'messageType':'Unsupported'},
+                       {'messageType':'RichText/Html', 'content':'<style>p{display:none}</style><p>private</p>'},
+                       {'messageType':'RichText/Html', 'content':'<span hidden>private</p>'}):
             self.assertNotIn('preview', select(CHAT,[message(**change)])[0])
-        self.assertEqual(select(CHAT,[message(messageType='RichText/Html',content='<p>Hello <b>world</b></p>')])[0]['preview'],'Hello world')
-        self.assertNotIn('preview',select(CHAT,[message(messageType='RichText/Html',content='<b>pass</b>word')])[0])
         self.assertNotIn('permalink',select('19:'+'='*380+'@thread.v2',[message()])[0])
-        self.assertEqual(len(select(CHAT,[message(content='ok '*140)])[0]['preview']),160)
 
     def test_quotes_not_parents_and_channel_parent_link(self):
         row, = select(CHAT,[message(content='<blockquote itemscope itemtype="http://schema.skype.com/Reply" itemid="99">Q</blockquote>')])

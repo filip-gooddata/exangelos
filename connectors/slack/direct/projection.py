@@ -6,11 +6,10 @@ ABSENT_PROFILE = object()
 # Only selected message rows opt into the extra layout projection.
 LAYOUT_OBJECTS = {
     'block': {'title': 'textObject', 'type': 'layoutString', 'text': 'textObject', 'fields': 'textObjects', 'elements': 'textObjects'},
-    'textObject': {'type': 'layoutString', 'text': 'layoutString', 'elements': 'richRuns'},
-    'richRun': {'type': 'layoutString', 'text': 'layoutString'},
+    'textObject': {'type': 'layoutString', 'text': 'textOrObject', 'elements': 'richRuns'},
+    'richRun': {'type': 'layoutString', 'text': 'layoutString', 'url': 'layoutString', 'elements': 'richRuns'},
     'attachment': {'title': 'layoutString', 'pretext': 'layoutString', 'text': 'layoutString',
-                   'blocks': 'blocks', 'fields': 'attachmentFields', 'mrkdwn_in': 'formatNames',
-                   'fallback': 'layoutString'},
+                   'blocks': 'blocks', 'fields': 'attachmentFields', 'mrkdwn_in': 'formatNames'},
     'attachmentField': {'title': 'layoutString', 'value': 'layoutString'},
 }
 LAYOUT_LISTS = {'blocks': 'block', 'attachments': 'attachment', 'textObjects': 'textObject',
@@ -105,12 +104,12 @@ class Reader(skip_v8.Reader):
             span=self.string_span(tag)
             try:return str(span,field_v8._ENCODINGS[tag])
             except UnicodeError:return None
+        if role=='textOrObject':role='textObject' if tag==ord('o') else 'layoutString'
         if role=='layoutString':
             if tag in field_v8._ENCODINGS:
                 span=self.string_span(tag)
-                if len(span)<=16384:
-                    try:return str(span,field_v8._ENCODINGS[tag])
-                    except UnicodeError:pass
+                try:return str(span,field_v8._ENCODINGS[tag])
+                except UnicodeError:pass
             else:
                 self.pos=start;self.value(depth,'skip')
             return None
