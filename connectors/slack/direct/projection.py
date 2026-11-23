@@ -2,6 +2,7 @@
 import re
 import skip_v8
 field_v8=skip_v8.field_v8
+ABSENT_PROFILE = object()
 class Reader(skip_v8.Reader):
     def select(self,data):
         self.data=memoryview(data);self.pos=0;self.nodes=0;self.objects=0
@@ -17,7 +18,7 @@ class Reader(skip_v8.Reader):
         if tag not in field_v8._ENCODINGS:raise ValueError('key_tag')
         span=self.string_span(tag)
         allowed={
-          'root':('messages','threads','bootData','selfTeamIds','channels','reactions','teams','users'),
+          'root':('messages','threads','bootData','selfTeamIds','channels','reactions','teams','users','members'),
           'bootData':('team_id','user_id','team_domain'),
           'accountTeam':('id','domain'),
           'accountUser':('id','team','team_id','context_team_id','name','profile'),
@@ -33,7 +34,9 @@ class Reader(skip_v8.Reader):
             if span==k.encode(field_v8._ENCODINGS[tag]):return k
         if role in ('messages','threads','channels','container','reactions','users','reactionStore','teams','accountUsers'):
             try:s=str(span,field_v8._ENCODINGS[tag])
-            except UnicodeError:raise ValueError('encoding')
+            except UnicodeError:
+                if role=='accountUsers':return None
+                raise ValueError('encoding')
             if role=='teams' and re.fullmatch(r'T[A-Z0-9]{6,30}',s):return s
             if role=='accountUsers' and re.fullmatch(r'[UW][A-Z0-9]{6,30}',s):return s
             if role=='container':return s
@@ -41,17 +44,19 @@ class Reader(skip_v8.Reader):
             if (role in ('messages','threads','channels') and re.fullmatch(r'[CDG][A-Z0-9]{6,30}',s)) or (role=='container' and re.fullmatch(r'[0-9]{1,20}(\.[0-9]{1,10})?',s)) or (role in ('reactions','users') and s.isdigit()):return s
         return None
     def child(self,role,key):
-        if role=='root':return {'reactions':'reactionStore','users':'accountUsers'}.get(key,key)
+        if role=='root':return {'reactions':'reactionStore','users':'accountUsers','members':'accountUsers'}.get(key,key)
         if role=='teams':return 'accountTeam'
         if role=='accountUsers':return 'accountUser'
-        if role=='accountUser':return 'profile' if key=='profile' else 'string'
-        if role in ('profile','accountTeam'):return 'string'
+        if role=='accountUser':return 'profile' if key=='profile' else 'profileString'
+        if role=='profile':return 'profileString'
+        if role=='accountTeam':return 'string'
         if role=='reactionStore':return 'reactions'
         if role in ('bootData','selfTeamIds','edited'):return 'string'
         if role in ('messages','threads'):return 'container'
         if role=='channels':return 'channel'
         if role=='channel':return 'bool' if key.startswith('is_') else 'string'
         if role=='container':return 'container' if key in ('messages','replies','data') else 'message'
+        if role=='message' and key=='subtype':return 'subtype'
         if role=='message' and key=='thread_ts':return 'thread'
         if role=='message' and key in ('_hidden_stub','no_display','hidden','redacted','is_redacted','deleted','is_deleted','tombstone'):return 'bool'
         if role=='message':return key if key in ('edited','reactions') else 'string'
@@ -62,6 +67,15 @@ class Reader(skip_v8.Reader):
     def read(self,role,depth):
         self.node(depth);start=self.pos;tag=self.tag()
         if role=='skip':self.pos=start;return self.value(depth,'skip')
+        if role=='profile' and tag in (ord('0'),ord('_')):return ABSENT_PROFILE
+        if role=='profileString' and tag in field_v8._ENCODINGS:
+            span=self.string_span(tag)
+            try:return str(span,field_v8._ENCODINGS[tag])
+            except UnicodeError:return None
+        if role=='subtype':
+            if tag==ord('_'):return None
+            if tag in field_v8._ENCODINGS:return str(self.string_span(tag),field_v8._ENCODINGS[tag])
+            self.pos=start;self.value(depth,'skip');return {'unsupported':True}
         if role=='thread' and tag in (ord('0'),ord('_')):return None
         if role in ('string','thread') and tag in field_v8._ENCODINGS:
             return str(self.string_span(tag),field_v8._ENCODINGS[tag])
@@ -81,6 +95,8 @@ class Reader(skip_v8.Reader):
                     if key in out:raise ValueError('duplicate')
                     out[key]=v
             if self.uint()!=count:raise ValueError('count')
+            if role=='accountUser' and out.get('profile') is ABSENT_PROFILE:
+                del out['profile']
             return out
         if tag in (ord('A'),ord('a')):
             self.objects+=1;length=self.uint()
@@ -98,6 +114,8 @@ class Reader(skip_v8.Reader):
                     if key in out:raise ValueError('duplicate')
                     out[key]=v
             if self.uint()!=count or self.uint()!=length:raise ValueError('count')
+            if role=='accountUser' and out.get('profile') is ABSENT_PROFILE:
+                del out['profile']
             return out
         self.pos=start;self.value(depth,'skip');return None
 

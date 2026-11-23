@@ -85,6 +85,33 @@ class SourceTests(unittest.TestCase):
             for raw in (SELECTION[1], str(root), 'ab' * 32):
                 self.assertNotIn(raw, first.stdout)
 
+    def test_unrelated_undecodable_member_label_keeps_selected_watch_available(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            team, owner = 'T9999999', 'U9999999'
+            other = fixture()
+            other['bootData']['user_id'] = owner
+            other['selfTeamIds'] = dict(teamId=team, defaultWorkspaceId=team)
+            other['members'] = {owner: dict(id=owner, team=team, profile=dict(display_name=b'c\x02\x00\xd8'))}
+            database(root, additional_accounts=[((team, owner), other)])
+            result = self.invoke(dict(request(root), includePreview=True))
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertEqual(json.loads(result.stdout)['messages'][0]['preview'], 'fixture body')
+
+    def test_member_names_preserve_existing_snapshot_marker(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            state = fixture()
+            peer = 'U0000002'
+            state['messages'][CHANNEL][TIME]['user'] = peer
+            database(root, state)
+            old = json.loads(self.invoke(request(root)).stdout)
+            state['members'] = {peer: dict(id=peer, team=SELECTION[0], profile=dict(display_name='Example'))}
+            database(root, state)
+            current = json.loads(self.invoke(request(root)).stdout)
+            self.assertEqual(current['messages'][0].pop('memberSender'), 'Example')
+            self.assertEqual(current, old)
+
     def test_preview_uses_only_selected_conversation_and_thread(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

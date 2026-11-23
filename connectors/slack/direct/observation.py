@@ -53,7 +53,7 @@ def safe_text(value):
 
 
 def message_preview(message):
-    if (message.get('type') != 'message' or ('subtype' in message and message['subtype'] != 'bot_message')
+    if (message.get('type') != 'message' or message.get('subtype') not in (None, 'bot_message')
             or any(message.get(field, False) is not False for field in ('redacted', 'is_redacted', 'deleted', 'is_deleted', 'tombstone'))):
         return None
     value = message['text']
@@ -88,6 +88,30 @@ def user_label(state, workspace, identity):
     return identity
 
 
+def member_name(state, workspace, identity):
+    if not isinstance(identity, str) or not re.fullmatch(r'[UW][A-Z0-9]{6,30}', identity):
+        return None
+    users = state.get('users') or {}
+    if identity in users:
+        user = users[identity]
+        if not isinstance(user, dict) or user.get('id', identity) != identity or not same_team(user, workspace):
+            return None
+        profile = user.get('profile', {})
+        if not isinstance(profile, dict) or not same_team(profile, workspace):
+            return None
+    member = (state.get('members') or {}).get(identity)
+    if not isinstance(member, dict) or member.get('id') != identity:
+        return None
+    profile = member.get('profile')
+    if not isinstance(profile, dict) or not all(same_team(row, workspace) for row in (member, profile)):
+        return None
+    if not any(row.get(field) == workspace for row in (member, profile)
+               for field in ('team', 'team_id', 'context_team_id')):
+        return None
+    return next((value for value in (profile.get('display_name'), profile.get('real_name'), member.get('name'))
+                 if safe_name(value)), None)
+
+
 def message_sender(state, workspace, message):
     user = user_label(state, workspace, message.get('user'))
     if user:
@@ -99,7 +123,7 @@ def message_sender(state, workspace, message):
     return None
 
 
-def conversation_label(state, workspace, channel):
+def conversation_label(state, workspace, channel, *, include_members=False):
     metadata = (state.get('channels') or {}).get(channel) or {}
     if metadata.get('id', channel) != channel or not same_team(metadata, workspace):
         raise ValueError('scope')
@@ -108,6 +132,8 @@ def conversation_label(state, workspace, channel):
     if channel.startswith('D'):
         peer = metadata.get('user')
         name = user_label(state, workspace, peer)
+        if include_members and name == peer:
+            name = member_name(state, workspace, peer) or name
         if name:
             return 'Slack DM with ' + name
     elif safe_name(metadata.get('name')):
@@ -139,6 +165,8 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
     if not isinstance(messages, dict):
         raise ValueError('selection')
     label = conversation_label(state, workspace, channel)
+    peer = ((state.get('channels') or {}).get(channel) or {}).get('user')
+    peer_name = member_name(state, workspace, peer) if channel.startswith('D') and label == f'Slack DM with {peer}' else None
     domain = workspace_domain(state, workspace)
     result = []
     complete = True
@@ -191,11 +219,14 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
         if len(set(actors)) != len(actors):
             rx_complete = False
         sender = message_sender(state, workspace, message)
+        sender_name = member_name(state, workspace, sender) if sender == message.get('user') else None
         preview = message_preview(message) if include_preview and same_team(message, workspace) else None
         result.append({
             'messageTs': timestamp, 'conversationLabel': label,
             'permalink': message_permalink(domain, workspace, channel, timestamp, thread),
             **({'sender': sender} if sender else {}),
+            **({'memberSender': sender_name} if sender_name else {}),
+            **({'memberPeer': peer_name} if peer_name else {}),
             **({'preview': preview} if preview else {}),
             'id': token(key, 'message', *selection, timestamp),
             'body': token(key, 'body', message['text'], message.get('edited')),

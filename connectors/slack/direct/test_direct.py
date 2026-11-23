@@ -78,9 +78,38 @@ class DirectTests(unittest.TestCase):
         self.assertEqual(context['sender'], 'Fixture Peer')
         data['users'][peer]['team_id'] = 'T9999999'
         self.assertEqual(read()['sender'], peer)
+        data['members'] = {peer: dict(id=peer, team_id=SELECTION[0], profile=dict(display_name='Member Example'))}
+        for nullish in (None, b'_'):
+            data['users'][peer] = dict(id=peer, team_id=SELECTION[0], profile=nullish)
+            delivered = read()
+            self.assertEqual(delivered['memberSender'], 'Member Example')
+            self.assertEqual(delivered['memberPeer'], 'Member Example')
         del rows[TIME]['user']
         rows[TIME].update(bot_id='B0000001', username='Fixture Bot')
         self.assertEqual(read()['sender'], 'Fixture Bot')
+
+    def test_member_names_require_matching_identity_and_workspace(self):
+        identity, team = 'U0000002', SELECTION[0]
+        row = dict(id=identity, team_id=team, profile=dict(display_name='Example'))
+        state = dict(members={identity: row})
+        def name():
+            return observation.member_name(projected(state), team, identity)
+        self.assertEqual(name(), 'Example')
+        for key, bad in [('id', 'U9999999'), ('team_id', 'T9999999'), ('team_id', None),
+                         ('profile', dict(display_name='Example', team='T9999999')),
+                         ('profile', dict(display_name='xoxb-example'))]:
+            with self.subTest(key=key), mock.patch.dict(row, {key: bad}):
+                self.assertIsNone(name())
+        with mock.patch.dict(state, users={identity: dict(id=identity, team=team)}):
+            self.assertEqual(name(), 'Example')
+        for conflict in (dict(team='T9999999'), dict(id='U9999999'), dict(profile=dict(team='T9999999'))):
+            with mock.patch.dict(state, users={identity: conflict}):
+                self.assertIsNone(name())
+
+    def test_optional_profile_strings_require_valid_framing(self):
+        for malformed in (b'c\x01a', b'c\xfe\x01a'):
+            with self.subTest(value=malformed), self.assertRaises(ValueError):
+                projected(dict(members={'U0000002': dict(profile=dict(display_name=malformed))}))
 
     def test_delivery_preview_policy_after_projection(self):
         data = fixture()
@@ -90,6 +119,7 @@ class DirectTests(unittest.TestCase):
             return observation.snapshot(projected(data), SELECTION, KEY, require_reactions=False,
                                         include_preview=True)['messages'][0]
 
+        message['subtype'] = b'_'  # V8 undefined
         message['text'] = '  Status\tupdate\r\n' + '🌻' * 180
         self.assertEqual(selected()['preview'], 'Status update ' + '🌻' * 146)
         for text in ('', ' \t', 'ordinary ' * 513, '🌻' * 170 + 'xoxb-fixture', 'password: sample',
@@ -99,6 +129,10 @@ class DirectTests(unittest.TestCase):
                 message['text'] = text
                 self.assertNotIn('preview', selected())
         message['text'] = 'ordinary message'
+        for subtype in (None, 1, False, {}, [], '', 'message_deleted'):
+            message['subtype'] = subtype
+            self.assertNotIn('preview', selected())
+        del message['subtype']
         for field, value in [('is_redacted', True), ('deleted', True), ('redacted', 'unknown'), ('subtype', 'message_deleted')]:
             message[field] = value
             self.assertNotIn('preview', selected())
