@@ -39,3 +39,7 @@ The watch ends when the pull request is merged or closed, and gives that as the 
 ## Cursor
 
 The cursor is JSON with `v: 1`. It holds the head, the base branch and oid, which failures, passes, conflict and readiness were already reported for that head, and for reviews, comments and threads the newest creation time seen plus the ids created at that instant. A cursor of an unknown version starts a new baseline: the first poll reports the current state but none of the history before it.
+
+## Logo
+
+`icon.svg` is an original mark drawn for Exangelos (MIT). It is not GitHub's logo.

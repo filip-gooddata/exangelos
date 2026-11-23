@@ -38,10 +38,16 @@ describe("official connector archives (contract test with the real bun and tar)"
   })
 })
 
-const writeConnector = (directory: string, files: ReadonlyArray<string>, build: string, entry = "dist/main.js") => {
+const writeConnector = (
+  directory: string,
+  files: ReadonlyArray<string>,
+  build: string,
+  entry = "dist/main.js",
+  icon?: string
+) => {
   writeFileSync(
     join(directory, "connector.json"),
-    JSON.stringify({ name: "extras", version: "0.0.1", entry: { _tag: "Bundle", path: entry }, files })
+    JSON.stringify({ name: "extras", version: "0.0.1", entry: { _tag: "Bundle", path: entry }, files, icon })
   )
   writeFileSync(join(directory, "package.json"), JSON.stringify({ name: "extras-fixture", private: true, scripts: { build } }))
 }
@@ -57,7 +63,8 @@ describe("declared files in a connector archive (contract test with the real bun
     mkdirSync(join(connector, "runtime", "bin"), { recursive: true })
     mkdirSync(out)
     mkdirSync(unpacked)
-    writeConnector(connector, ["runtime", "notes.txt"], "bun build src/main.ts --target=bun --outfile=dist/main.js")
+    writeConnector(connector, ["runtime", "notes.txt"], "bun build src/main.ts --target=bun --outfile=dist/main.js", "dist/main.js", "icon.svg")
+    writeFileSync(join(connector, "icon.svg"), `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"/>`)
     writeFileSync(
       join(connector, "src", "main.ts"),
       `import { readFileSync } from "node:fs"\nimport { join } from "node:path"\nprocess.stdout.write(readFileSync(join(import.meta.dir, "..", "runtime", "message.txt"), "utf8"))\n`
@@ -77,6 +84,7 @@ describe("declared files in a connector archive (contract test with the real bun
       expect(listing.toSorted()).toEqual([
         "connector.json",
         "dist/main.js",
+        "icon.svg",
         "notes.txt",
         "runtime/bin/tool",
         "runtime/message.txt"
@@ -106,6 +114,23 @@ describe("declared files in a connector archive (contract test with the real bun
       writeConnector(directory, [declared], "true")
       const error = yield* Effect.flip(buildConnectorArchive(directory, directory))
       expect(error._tag).toBe("ConnectorManifestInvalid")
+      expect(error.message).toContain(message)
+    }).pipe(withRealPrograms))
+
+  it.effect.each([
+    ["../outside.svg", "icon ../outside.svg is outside the connector folder"],
+    ["missing.svg", "icon missing.svg does not exist"],
+    ["linked.svg", "icon linked.svg is a link"],
+    ["dist", "icon dist is not an ordinary file"]
+  ])("refuses a manifest icon %s", ([icon, message]) =>
+    Effect.gen(function*() {
+      const directory = temporaryDirectory("icon-refused")
+      mkdirSync(join(directory, "dist"))
+      writeFileSync(join(directory, "dist", "main.js"), "")
+      writeFileSync(join(directory, "real.svg"), "<svg/>")
+      symlinkSync("real.svg", join(directory, "linked.svg"))
+      writeConnector(directory, [], "true", "dist/main.js", icon)
+      const error = yield* Effect.flip(buildConnectorArchive(directory, directory))
       expect(error.message).toContain(message)
     }).pipe(withRealPrograms))
 })

@@ -53,7 +53,8 @@ const connectors = Command.make(
   ({ name }) =>
     Effect.gen(function*() {
       const client = yield* Connection
-      const listed = client.ListConnectors()
+      // The logo is for the panel; agents reading the listing have no use for its base64.
+      const listed = Effect.map(client.ListConnectors(), (all) => all.map(({ icon: _, ...connector }) => connector))
       yield* Option.match(name, {
         onNone: () => respond(listed, { schema: Schema.Array(Connector.Status), text: Text.connectors }),
         onSome: (wanted) =>

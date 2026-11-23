@@ -78,6 +78,8 @@ export const layerConnectorFiles = (known: ReadonlyArray<Official>): Layer.Layer
             Stream.filter((path) => path === directory),
             Stream.map(() => undefined)
           )
+     ,
+        icon: () => Effect.succeedNone
       }),
       Layer.succeed(ConnectorImportSource, {
         place: (source) =>

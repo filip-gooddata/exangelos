@@ -43,8 +43,16 @@ export type Connector = typeof Connector.Type
 export const ObservationCategory = Schema.Literals(["unavailable", "unreadable", "invalid-data", "scope-changed"])
 export type ObservationCategory = typeof ObservationCategory.Type
 
+/** A connector's logo: the bytes of its manifest icon, base64-encoded. */
+export const Icon = Schema.Struct({
+  mediaType: Schema.Literals(["image/svg+xml", "image/png"]),
+  data: Schema.String
+})
+export type Icon = typeof Icon.Type
+
 export const Status = Schema.Struct({
   ...Connector.fields,
+  icon: Schema.optionalKey(Icon),
   observation: Schema.optionalKey(Schema.Struct({
     affectedWatches: Schema.Int,
     categories: Schema.Array(ObservationCategory)
