@@ -346,7 +346,7 @@ def exercise(installed, home):
     new, new_reply = timestamp(now - 1), timestamp(now)
     add(new)
     add(new_reply, TIME)
-    messages[new]['text'] = 'new excerpt'
+    messages[new].update(text='new excerpt', subtype=b'_')
     messages[new_reply]['text'] = 'reply excerpt'
     messages[TIME].update(text='edited excerpt', user='U0000003')
     state['reactions'][messages[TIME]['_rxn_key']] = [{'name': 'heart', 'count': 1, 'users': ['U0000002']}]

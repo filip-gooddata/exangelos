@@ -90,6 +90,7 @@ class DirectTests(unittest.TestCase):
             return observation.snapshot(projected(data), SELECTION, KEY, require_reactions=False,
                                         include_preview=True)['messages'][0]
 
+        message['subtype'] = b'_'  # V8 undefined
         message['text'] = '  Status\tupdate\r\n' + '🌻' * 180
         self.assertEqual(selected()['preview'], 'Status update ' + '🌻' * 146)
         for text in ('', ' \t', 'ordinary ' * 513, '🌻' * 170 + 'xoxb-fixture', 'password: sample',
@@ -99,6 +100,10 @@ class DirectTests(unittest.TestCase):
                 message['text'] = text
                 self.assertNotIn('preview', selected())
         message['text'] = 'ordinary message'
+        for subtype in (None, 1, False, {}, [], '', 'message_deleted'):
+            message['subtype'] = subtype
+            self.assertNotIn('preview', selected())
+        del message['subtype']
         for field, value in [('is_redacted', True), ('deleted', True), ('redacted', 'unknown'), ('subtype', 'message_deleted')]:
             message[field] = value
             self.assertNotIn('preview', selected())

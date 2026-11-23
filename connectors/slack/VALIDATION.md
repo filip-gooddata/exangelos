@@ -18,5 +18,14 @@ standard input for assertions. CLI end-to-end tests
 cover positional arguments, MCP parameters and installer protection for legacy
 private state. Keep generated evidence outside the checkout.
 
+To verify a release upgrade, supply two CLI builds and their matching official
+Slack archives. The check configures previews through the older CLI, starts
+the newer daemon in the same disposable home, and checks the refreshed
+connector's stored event and delivered wake.
+
+```sh
+python3 -B connectors/slack/test/refresh_validation.py OLD_CLI OLD_ARCHIVE NEW_CLI NEW_ARCHIVE
+```
+
 These tests establish behavior for persisted snapshots. Staleness is unbounded,
 and intermediate events can be missed. See the [source evidence](direct/evidence.md).

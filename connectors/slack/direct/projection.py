@@ -52,6 +52,7 @@ class Reader(skip_v8.Reader):
         if role=='channels':return 'channel'
         if role=='channel':return 'bool' if key.startswith('is_') else 'string'
         if role=='container':return 'container' if key in ('messages','replies','data') else 'message'
+        if role=='message' and key=='subtype':return 'subtype'
         if role=='message' and key=='thread_ts':return 'thread'
         if role=='message' and key in ('_hidden_stub','no_display','hidden','redacted','is_redacted','deleted','is_deleted','tombstone'):return 'bool'
         if role=='message':return key if key in ('edited','reactions') else 'string'
@@ -62,6 +63,10 @@ class Reader(skip_v8.Reader):
     def read(self,role,depth):
         self.node(depth);start=self.pos;tag=self.tag()
         if role=='skip':self.pos=start;return self.value(depth,'skip')
+        if role=='subtype':
+            if tag==ord('_'):return None
+            if tag in field_v8._ENCODINGS:return str(self.string_span(tag),field_v8._ENCODINGS[tag])
+            self.pos=start;self.value(depth,'skip');return {'unsupported':True}
         if role=='thread' and tag in (ord('0'),ord('_')):return None
         if role in ('string','thread') and tag in field_v8._ENCODINGS:
             return str(self.string_span(tag),field_v8._ENCODINGS[tag])

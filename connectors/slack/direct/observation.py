@@ -53,7 +53,7 @@ def safe_text(value):
 
 
 def message_preview(message):
-    if (message.get('type') != 'message' or ('subtype' in message and message['subtype'] != 'bot_message')
+    if (message.get('type') != 'message' or message.get('subtype') not in (None, 'bot_message')
             or any(message.get(field, False) is not False for field in ('redacted', 'is_redacted', 'deleted', 'is_deleted', 'tombstone'))):
         return None
     value = message['text']
