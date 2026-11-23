@@ -111,6 +111,35 @@ class DirectTests(unittest.TestCase):
             with self.subTest(value=malformed), self.assertRaises(ValueError):
                 projected(dict(members={'U0000002': dict(profile=dict(display_name=malformed))}))
 
+    def test_optional_app_fallback_preserves_markers_and_requires_visible_layout(self):
+        data = fixture()
+        row = data['messages'][CHANNEL][TIME]
+        row.update(text='', app_id='A0000001', attachments=[dict(title='Example layout')])
+
+        def snapshot(enabled):
+            state = projection.project(b'\xff\x10' + encode(data), [CHANNEL])
+            return observation.snapshot(state, SELECTION, KEY, include_preview=enabled)
+
+        for enabled in (False, True):
+            row['text'] = ''
+            reference = snapshot(enabled)
+            self.assertTrue(reference['complete'])
+            self.assertEqual(reference['messages'][0].get('preview'), 'Example layout' if enabled else None)
+            del row['text']
+            self.assertEqual(snapshot(enabled), reference)
+            row['text'] = b'_'
+            self.assertEqual(snapshot(enabled), reference)
+        del row['text']
+        for change in (dict(text=None), dict(text=42), dict(text={}), dict(type='unknown'),
+                       dict(subtype='unsupported'), dict(app_id='invalid'), dict(hidden=True),
+                       dict(redacted=True), dict(deleted=True), dict(subtype='message_deleted'),
+                       dict(attachments=[dict(fallback='private metadata')]), dict(attachments=[dict(title=123)])):
+            with self.subTest(change=change), mock.patch.dict(row, change):
+                for enabled in (False, True):
+                    result = snapshot(enabled)
+                    self.assertFalse(result['complete'])
+                    self.assertEqual(result['messages'], [])
+
     def test_delivery_preview_policy_after_projection(self):
         data = fixture()
         message = data['messages'][CHANNEL][TIME]
@@ -122,12 +151,15 @@ class DirectTests(unittest.TestCase):
         message['subtype'] = b'_'  # V8 undefined
         message['text'] = '  Status\tupdate\r\n' + '🌻' * 180
         self.assertEqual(selected()['preview'], 'Status update ' + '🌻' * 146)
-        for text in ('', ' \t', 'ordinary ' * 513, '🌻' * 170 + 'xoxb-fixture', 'password: sample',
-                     'Bearer sample', 'redacted', '[removed]', '••••', 'user\x00name', 'hidden\u202etext', '<@U0000002>',
-                     'https://example.invalid/?q=private', 'ghp_example', 's' * 32, '１２３４５６'):
-            with self.subTest(text=text[:16]):
-                message['text'] = text
-                self.assertNotIn('preview', selected())
+        for text, expected in [('', None), (' \t', None), ('🌻' * 5000, '🌻' * 160),
+                               ('opaque ' + 's' * 40, 'opaque ' + 's' * 40),
+                               ('credentials and password', 'credentials and password'),
+                               ('before\x00after', 'before after'), ('user\u202ename', 'user name')]:
+            message['text'] = text
+            self.assertEqual(selected().get('preview'), expected)
+        with mock.patch.dict('os.environ', {'FIXTURE_TOKEN': 'abcde', 'FIXTURE_KEY': 'defgh'}):
+            message['text'] = 'before abcdefgh after'
+            self.assertEqual(selected()['preview'], 'before [redacted] after')
         message['text'] = 'ordinary message'
         for subtype in (None, 1, False, {}, [], '', 'message_deleted'):
             message['subtype'] = subtype
@@ -144,6 +176,38 @@ class DirectTests(unittest.TestCase):
         message.update(team=SELECTION[0], team_id='T9999999')
         with self.assertRaisesRegex(ValueError, '^scope$'):
             selected()
+
+    def test_opted_in_app_visible_layout_projection(self):
+        data = fixture()
+        msg = data['messages'][CHANNEL][TIME]
+        rich = dict(type='rich_text_section', elements=[
+            dict(type='text', text='Changes to '),
+            dict(type='link', text='the release', url='https://hidden.invalid')])
+        msg.update(app_id='A0000001', text='', blocks=[dict(type='rich_text', elements=[rich])])
+
+        def preview():
+            state = projection.project(b'\xff\x10' + encode(data), [CHANNEL])
+            return observation.snapshot(state, SELECTION, KEY, include_preview=True)['messages'][0].get('preview')
+
+        self.assertEqual(preview(), 'Changes to the release')
+        self.assertNotIn('blocks', projected(data)['messages'][CHANNEL][TIME])
+        msg['text'] = 'Generic fallback'
+        self.assertEqual(preview(), 'Changes to the release')
+        rich['elements'][1]['text'] = 'a' * 40
+        self.assertEqual(preview(), 'Changes to ' + 'a' * 40)
+        del rich['elements'][1]['text']
+        msg['blocks'][0]['elements'] = [dict(type='rich_text_list', elements=[rich])]
+        self.assertEqual(preview(), 'Changes to https://hidden.invalid')
+        msg['blocks'] = [dict(type='section', text=dict(type='mrkdwn', text='Read <https://fixture.invalid/path|the credential report>')),
+                         dict(type='actions', elements=[dict(type='button', value='invisible', text=dict(type='plain_text', text='Open'))])]
+        self.assertEqual(preview(), 'Read the credential report Open')
+        msg.update(blocks=[], attachments=[dict(title='Issue updated', text='Ready for review',
+                                                title_link='https://hidden.invalid', fallback='alternate')])
+        self.assertEqual(preview(), 'Issue updated Ready for review')
+        msg.update(attachments=[], text='<https://fixture.invalid/path|Release notes>')
+        self.assertEqual(preview(), 'Release notes')
+        msg['mrkdwn'] = False
+        self.assertEqual(preview(), msg['text'])
 
     def test_projected_user_and_channel_labels_fail_closed(self):
         data = fixture()

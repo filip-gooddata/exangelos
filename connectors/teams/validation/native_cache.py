@@ -2,11 +2,18 @@
 from datetime import datetime
 import hashlib
 import hmac
-from html import unescape
+from html.parser import HTMLParser
+from pathlib import Path
+import sys
 import json
 import re
 import unicodedata
 from urllib.parse import parse_qsl, quote, unquote, urlencode, urlsplit
+
+# Source checkouts share the renderer; installed bundles carry it in dist.
+connector_dir = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(connector_dir.parent / 'shared' if (connector_dir / 'package.json').is_file() else connector_dir / 'dist'))
+from excerpt import finish_excerpt
 
 import reactions
 import serialization as ser
@@ -154,8 +161,7 @@ def messages(records, chat):
     return rows
 
 
-# Match credential vocabulary used by the host's debug-report scrubber. Also
-# suppress common standalone credentials, opaque strings, links and markup.
+# Preserve the existing restrictions on metadata used as display labels.
 SENSITIVE = re.compile(
     r'token|key|secret|passw|auth|cookie|bearer|\bbasic\b|session|credential|signature|sig=|'
     r'redact|\[(?:removed|deleted|hidden)\]|[•●█]{2,}|passcode|passwd|private[ _-]*key|otp\b|webhook|xox[a-z]-|xapp-|gh[pousr]_|github_pat_|sk-|AKIA|ASIA|eyJ|'
@@ -171,24 +177,91 @@ def label(value):
     return value if type(value) is str and value == value.strip() and 0 < len(value) <= 80 and safe_text(value) else None
 
 
+# Formatting declarations with explicit, opaque values. Other styles can hide
+# text (directly or through the cascade), so omit their subtrees.
+FORMAT_STYLE = re.compile(
+    r'color\s*:\s*(?:#[a-f0-9]{3}(?:[a-f0-9]{3})?|rgb\(\s*\d{1,3}\s*,\s*\d{1,3}\s*,\s*\d{1,3}\s*\)|'
+    r'black|white|red|green|blue|purple|orange|gray|grey|yellow)|'
+    r'font-weight\s*:\s*(?:normal|bold|bolder|lighter|[1-9]00)|font-style\s*:\s*(?:normal|italic|oblique)',
+    re.I | re.ASCII)
+HIDDEN_CLASS = re.compile(r'hidden|invisible|sr[-_]?only|screen[-_]?reader|visually[-_]?hide|d-none', re.I)
+
+
+def visible_attribute(tag, key, value):
+    if key == 'class':
+        return not HIDDEN_CLASS.search(value or '')
+    if key == 'style':
+        return all(FORMAT_STYLE.fullmatch(part.strip()) for part in (value or '').split(';') if part.strip())
+    if key == 'aria-hidden':
+        return (value or '').lower() == 'false'
+    return key == 'title' or (tag == 'a' and key in ('href', 'target', 'rel'))
+
+
+class VisibleHtml(HTMLParser):
+    inline = {'b', 'i', 'u', 'em', 'strong', 's', 'code', 'span', 'a'}
+    block = {'p', 'div', 'pre', 'ol', 'ul', 'li'}
+    void = {'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'}
+
+    def __init__(self):
+        super().__init__()
+        self.stack = []
+        self.parts = []
+        self.valid = True
+
+    def handle_starttag(self, tag, attrs):
+        if tag == 'style' or (tag == 'link' and any(
+                key == 'rel' and 'stylesheet' in (value or '').lower().split() for key, value in attrs)):
+            self.valid = False
+        if tag in self.void:
+            if tag in ('br', 'hr'):
+                self.handle_data(' ')
+            return
+        visible = (not self.stack or self.stack[-1][1]) and (
+            tag in self.inline or tag in self.block) and all(
+            visible_attribute(tag, key, value) for key, value in attrs)
+        self.stack.append((tag, visible))
+        if tag in self.block:
+            self.handle_data(' ')
+
+    def handle_startendtag(self, tag, attrs):
+        if tag not in self.void:
+            self.valid = False
+        else:
+            self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        if not self.stack or self.stack[-1][0] != tag:
+            self.valid = False
+            return
+        if tag in self.block:
+            self.handle_data(' ')
+        self.stack.pop()
+
+    def handle_data(self, data):
+        if not self.stack or self.stack[-1][1]:
+            self.parts.append(data)
+
+
 def preview(node):
     props = node.get('properties', {})
-    if (type(props) is not dict or node.get('messageType', 'Text') not in ('Text', 'RichText/Html')
+    kind = node.get('messageType')
+    if (type(props) is not dict or kind not in (None, 'Text', 'RichText/Html')
             or node.get('deletionInfo') is not None
-            or any(node.get(f) for f in ('deleted','redacted','isDeleted','isRedacted','tombstone'))
-            or any(props.get(f) for f in ('deletetime','redacted','deleted','cards','files'))):
+            or any(node.get(f) for f in ('deleted','redacted','isDeleted','isRedacted','tombstone','hidden','isHidden'))
+            or any(props.get(f) for f in ('deletetime','redacted','deleted','hidden','isHidden'))):
         return None
     content = node['content']
-    if len(content) > 4096:
-        return None
-    if '<' in content and node.get('messageType') == 'RichText/Html':
-        # Only plain formatting is eligible. Quotes, cards, links, attributes,
-        # hidden text and malformed markup leave delimiters and suppress it.
-        content = re.sub(r'</?(?:b|i|strong|em)>', '', content, flags=re.I)
-        content = re.sub(r'</?p>|<br\s*/?>', ' ', content, flags=re.I)
-        content = unescape(content)
-    text = re.sub(r'[ \t\r\n]+', ' ', content).strip(' ')
-    return text[:160] if text and safe_text(text) else None
+    if kind == 'RichText/Html' or (kind is None and re.search(r'<[!/?a-zA-Z]', content)):
+        parser = VisibleHtml()
+        try:
+            parser.feed(content)
+            if parser.rawdata or parser.stack or not parser.valid:
+                return None
+            parser.close()
+        except (AssertionError, ValueError):
+            return None
+        content = ''.join(parser.parts)
+    return finish_excerpt(content) or None
 
 
 def original_time(value):

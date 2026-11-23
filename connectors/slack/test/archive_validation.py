@@ -45,7 +45,7 @@ def inventory(root):
 class Wire:
     def __init__(self, installed, home, path=None):
         env = {'PATH': str(path) if path is not None else os.environ['PATH']}
-        env.update(HOME=str(home), EXANGELOS_HOME=str(home / 'state'), XDG_DATA_HOME=str(home / 'xdg'),
+        env.update(FIXTURE_API_TOKEN='fictional-installed-secret', HOME=str(home), EXANGELOS_HOME=str(home / 'state'), XDG_DATA_HOME=str(home / 'xdg'),
                    XDG_CONFIG_HOME=str(home / 'config'), XDG_CACHE_HOME=str(home / 'cache'),
                    APPDATA=str(home / 'roaming'), LOCALAPPDATA=str(home / 'local'))
         self.p = subprocess.Popen([BUN, 'dist/main.js'], cwd=installed, env=env,
@@ -163,7 +163,7 @@ def check_wake(event, handle, home, label, preview=None, *, once=False):
         timing += f', observed {observed:%Y-%m-%d %H:%M:%S}.{observed.microsecond // 1000:03d} UTC'
     summary = f'{label} ({timing})'
     if preview is not None:
-        summary += ' | Untrusted message excerpt: ' + json.dumps(preview)
+        summary += ' | Untrusted message excerpt: ' + json.dumps(preview, ensure_ascii=False)
     check(event['summary'] == summary, f"{event['type']} summary: {event['summary']!r}")
     check(('preview' in event['payload']) == (preview is not None) and event['payload'].get('preview') == preview,
           'preview presence and contents')
@@ -180,6 +180,46 @@ def check_wake(event, handle, home, label, preview=None, *, once=False):
                                                stdin=expected)], 'rendered T3 command and stdin')
     with (home.parent / 'rendered-wakes.jsonl').open('a') as log:
         log.write(capture.stdout.strip() + '\n')
+
+
+def app_posts():
+    def section(value):
+        return dict(type='section', text=dict(type='mrkdwn', text=value))
+
+    jira = [section('<https://example.invalid/issues/42|FIX-42> moved to Ready')]
+    context = dict(type='context', elements=[dict(type='image', image_url='https://example.invalid/icon',
+                                                  alt_text='fixture icon'),
+                                             dict(type='plain_text', text='Fixture board')])
+    github = dict(type='rich_text', elements=[dict(type='rich_text_section', elements=[
+        dict(type='text', text='Merged '),
+        dict(type='link', url='https://example.invalid/pulls/42', text='pull request 42')])])
+    opaque_label = deepcopy(github)
+    opaque_label['elements'][0]['elements'][1]['text'] = 'a' * 40
+    attachment = dict(title='Fixture pull request', title_link='https://example.invalid/pulls/42')
+    return [
+        ('Fixture Jira', dict(blocks=jira), 'FIX-42 moved to Ready'),
+        ('Fixture Jira', dict(blocks=[section('Read <example.invalid/private|Fixture label>')]), 'Read Fixture label'),
+        ('Fixture GitHub', dict(attachments=[attachment]), 'Fixture pull request'),
+        ('Fixture GitHub', dict(attachments=[dict(blocks=[github])]), 'Merged pull request 42'),
+        ('Fixture GitHub', dict(text='<https://example.invalid/job|job> '+'a'*40, blocks=[opaque_label]), 'Merged '+'a'*40),
+        ('Fixture Jira', dict(blocks=[*jira, context]), 'FIX-42 moved to Ready Fixture board'),
+        ('Fixture Jira', dict(text='<https://example.invalid/issues/42|FIX-42> updated', blocks=jira,
+                             attachments=[attachment]), 'FIX-42 moved to Ready Fixture pull request'),
+        ('Fixture GitHub', dict(blocks=[section('Build passed')], attachments=[attachment]),
+         'Build passed Fixture pull request'),
+        ('Fixture Jira', dict(text='Credential rotation', blocks=[section('Rotate <https://example.invalid/guide|credentials>'), context]), 'Rotate credentials Fixture board'),
+        ('Fixture GitHub', dict(attachments=[attachment], blocks=[section('password removed')]), 'password removed Fixture pull request'),
+        ('Fixture GitHub', dict(text='Build passed', attachments=[dict(attachment, fallback='secret removed')]), 'Fixture pull request'),
+        ('Fixture Jira', dict(text='Status fictional-installed-secret ready'), 'Status [redacted] ready'),
+        ('Fixture Jira', dict(text='🌻' * 200), '🌻' * 160),
+        ('Fixture Jira', dict(redacted=True, blocks=jira), None),
+        ('Fixture GitHub', dict(deleted=True, attachments=[attachment]), None),
+        ('Fixture GitHub', dict(text='<https://example.invalid/builds/42|' + 'a' * 40 + '>',
+                               attachments=[attachment]), 'Fixture pull request'),
+        ('Fixture Jira', dict(blocks=[section('<https://example.invalid/issues/42>')]), 'https://example.invalid/issues/42'),
+        ('Fixture GitHub', dict(blocks=[dict(type='actions', elements=[
+            dict(type='button', action_id='internal-action', value='internal-value')])]), None),
+    ]
 
 
 def exercise(installed, home):
@@ -239,6 +279,8 @@ def exercise(installed, home):
         messages[ts] = message
 
     add(other)
+    del messages[other]['text']
+    messages[other].update(subtype='bot_message', attachments=[dict(title='Baseline attachment')])
     dm, group = 'D0000002', 'G0000003'
     state['messages'].update({dm: {}, group: {}})
     database(app, state)
@@ -381,6 +423,67 @@ def exercise(installed, home):
     disabled = resume(conversation, 'disabled')
     check(len(disabled) == 1 and disabled[0]['event']['type'] == 'message.edited', 'one future edit after opt-out')
     check_wake(disabled[0]['event'], conversation, home, 'Message edited (message author: "Fixture Avery") in "Slack #fixture"')
+    cursors[conversation] = disabled[-1]['cursor']
+    cases = app_posts()
+    expected_apps = {}
+
+    def add_app(ts, sender, fields):
+        messages[ts] = dict(ts=ts, type='message', text='', bot_id='B0000001', username=sender,
+                            subtype='bot_message', _rxn_key=f'message-{ts}-{CHANNEL}')
+        messages[ts].update(fields)
+
+    now = time.time_ns() // 1000
+    for index, (sender, fields, preview) in enumerate(cases):
+        ts = timestamp(now - len(cases) + index)
+        add_app(ts, sender, fields)
+        if index == 0:
+            del messages[ts]['text']
+        elif index == 2:
+            messages[ts]['text'] = b'_'  # V8 undefined with a visible attachment
+        expected_apps[ts] = (sender, preview)
+    first_app_ts = min(expected_apps)
+    hidden_ts = timestamp(now)
+    add_app(hidden_ts, 'Fixture Jira', dict(cases[0][1], hidden=True))
+    database(app, state, sequence=61)
+    with Wire(installed, home) as wire:
+        wire.configure(dict(config, messagePreviews='enabled'))
+        failed_watch(wire, conversation, cursors[conversation])
+    del messages[hidden_ts]
+    database(app, state, sequence=62)
+    app_batch = resume(conversation, 'enabled')
+    check(len(app_batch) == len(cases), 'one delivery per visible app post')
+    for item in app_batch:
+        event = item['event']
+        ts = event['payload']['messageTs']
+        sender, preview = expected_apps.pop(ts)
+        link = f'https://fixture.slack.com/archives/{CHANNEL}/p{ts.replace(".", "")}'
+        payload = dict(version=1, count=1, messageTs=ts, sender=sender,
+                       conversationLabel='Slack #fixture', permalink=link)
+        if preview is not None:
+            payload['preview'] = preview
+        check(event['type'] == 'message.new' and event['payload'] == payload,
+              f'installed app payload for {sender} at {ts}: {event["payload"]!r}')
+        check_wake(event, conversation, home, f'New message by "{sender}" in "Slack #fixture"', preview)
+    check(not expected_apps and resume(conversation, 'disabled') == app_batch, 'immutable app delivery replay')
+    cursors[conversation] = app_batch[-1]['cursor']
+
+    ts = current_timestamp()
+    messages[first_app_ts]['blocks'] = [dict(type='header', text=dict(type='plain_text', text='New heading'))]
+    add_app(ts, 'Fixture Jira', cases[0][1])
+    del messages[ts]['text']
+    database(app, state, sequence=66)
+    opt_out = resume(conversation, 'disabled')
+    check(len(opt_out) == 1 and opt_out[0]['event']['payload']['messageTs'] == ts, 'new app delivery after opt-out')
+    check_wake(opt_out[0]['event'], conversation, home, 'New message by "Fixture Jira" in "Slack #fixture"')
+    cursors[conversation] = opt_out[-1]['cursor']
+    messages[first_app_ts]['edited'] = dict(ts=current_timestamp())
+    database(app, state, sequence=67)
+    edited_layout = resume(conversation, 'enabled')
+    check(len(edited_layout) == 1 and edited_layout[0]['event']['type'] == 'message.edited' and
+          edited_layout[0]['event']['payload']['messageTs'] == first_app_ts, 'layout-only app edit identity')
+    check_wake(edited_layout[0]['event'], conversation, home,
+               'Message edited (message author: "Fixture Jira") in "Slack #fixture"', 'New heading')
+    check(resume(conversation, 'disabled') == edited_layout, 'layout-only edit replays its committed excerpt')
     with Wire(installed, home) as wire:
         wire.configure(config)
         dm_handle = describe(wire, dm)
@@ -465,7 +568,8 @@ def exercise(installed, home):
     final_state = inventory(private)
     check(all(entry in final_state for entry in original), 'legacy user state preserved')
     return dict(dmHistorySuppressed=19, dmArrivals=3, distinctSubjects=len(distinct), conversationEvents=len(batches[conversation]),
-                repliesEvents=len(batches[replies]), exactReplays=2, renderedWakeChecks=9, legacyV1Replays=1, legacyPayloadReplays=1, preservedLegacyFiles=len(original))
+                repliesEvents=len(batches[replies]), exactReplays=2, appDeliveries=len(cases) + 1,
+                renderedWakeChecks=len((home.parent / 'rendered-wakes.jsonl').read_text().splitlines()), legacyV1Replays=1, legacyPayloadReplays=1, preservedLegacyFiles=len(original))
 
 
 def main():

@@ -27,7 +27,7 @@ def until(probe):
     raise AssertionError(f'timed out waiting for {probe.__name__}')
 
 
-def exercise(root, old_cli, old_archive, new_cli, new_archive, members):
+def exercise(root, old_cli, old_archive, new_cli, new_archive, members, previews):
     assert old_archive.name != new_archive.name, 'two distinct official versions required'
     release = root / 'archives'
     release.mkdir()
@@ -84,31 +84,37 @@ def exercise(root, old_cli, old_archive, new_cli, new_archive, members):
         cli('subscribe', 'slack', channel, '--intent', 'Install fixture', '--pull-only', required=False)
         assert old_archive.name == f'slack-{version(cli)}.tar.gz'
         cli('connector', 'configure', 'slack', 'subscriptionAccess=persisted-cache',
-            'messagePreviews=enabled', 'pollIntervalMs=1000', 'cacheRoot=' + str(cache))
+            'messagePreviews=' + previews, 'pollIntervalMs=1000', 'cacheRoot=' + str(cache))
+
+        watch = cli('subscribe', 'slack', channel, '--intent', 'Observe fixture', '--target', 'capture:fixture')
+        until(lambda: cli('show', watch['id'])['subscription'].get('cursor'))
 
     with daemon(new_cli) as cli:
         until(lambda: new_archive.name == f'slack-{version(cli)}.tar.gz')
-        watch = cli('subscribe', 'slack', channel, '--intent', 'Observe fixture', '--target', 'capture:fixture')
-        until(lambda: cli('show', watch['id'])['subscription'].get('cursor'))
         ts = f'{time.time_ns() // 1000:016d}'
         ts = ts[:-6] + '.' + ts[-6:]
-        message = dict(type='message', ts=ts, text='Synthetic delivery', _rxn_key=f'message-{ts}-{channel}')
+        message = dict(type='message', ts=ts, text='Synthetic credential rotation', _rxn_key=f'message-{ts}-{channel}')
         if members:
             message.update(user=peer, subtype=b'_')
         state['messages'][channel][ts] = message
         database(cache, state, sequence=30)
         event, = until(lambda: cli('events', watch['id']))
-        assert event['payload']['preview'] == message['text']
+        if previews == 'enabled':
+            assert event['payload']['preview'] == message['text']
+            assert 'Untrusted message excerpt: ' + json.dumps(message['text']) in event['summary']
+        else:
+            assert 'preview' not in event['payload'] and message['text'] not in event['summary']
         if members:
             assert event['payload']['sender'] == 'Example'
             assert event['payload']['conversationLabel'] == 'Slack DM with Example'
             assert 'by "Example" in "Slack DM with Example"' in event['summary']
         rendered = until(lambda: (root / 'wake').exists() and (root / 'wake').read_text())
-        assert event['summary'] in rendered and message['text'] in rendered
+        assert event['summary'] in rendered and (message['text'] in rendered) == (previews == 'enabled')
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--previews', choices=('enabled', 'disabled'), default='enabled')
     parser.add_argument('--members', action='store_true', help='exercise member profiles and V8 undefined subtype')
     for name in ('old_cli', 'old_archive', 'new_cli', 'new_archive'):
         parser.add_argument(name, type=lambda arg: Path(arg).resolve(strict=True))

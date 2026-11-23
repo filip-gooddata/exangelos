@@ -42,7 +42,7 @@ const baseEnv = {
   HOME: scratch, TMPDIR: scratch, PATH: `${resolve(python, "..")}:/usr/bin:/bin`,
   EXANGELOS_HOME: join(scratch, "home"), XDG_DATA_HOME: join(scratch, "xdg"),
   XDG_CONFIG_HOME: join(scratch, "config"), XDG_CACHE_HOME: join(scratch, "cache"), EXANGELOS_TEAMS_CONFIG: join(scratch, "missing.json"),
-  EXANGELOS_TEAMS_CACHE: join(scratch, "missing-cache")
+  EXANGELOS_TEAMS_CACHE: join(scratch, "missing-cache"), EXAMPLE_TOKEN: "synthetic-secret-token"
 }
 const launch = Schema.decodeSync(ConnectorRuntime.Launch)({
   name: "teams", directory: installed, entry: { _tag: "Bundle", path: "dist/main.js" }, dev: false
@@ -81,7 +81,8 @@ const groupId = "33333333-3333-4333-8333-333333333333"
 const channel = "19:syntheticchannel@thread.tacv2"
 const chat = "19:syntheticchat@thread.v2"
 const label = "Synthetic channel"
-const excerpt = "Fixture message contents"
+const excerpt = `Review password and token rotation, ID 6f1d8b42-9c73-4a15-b0e6-2d8c7f4a1e93. "hello" and ${baseEnv.EXAMPLE_TOKEN}.`
+const safeExcerpt = excerpt.replace(baseEnv.EXAMPLE_TOKEN, "[redacted]")
 const cache = join(scratch, "custom directory", "cache")
 const deliver = (directory: string, subject: string, event: Event.ReportedEvent) => Effect.gen(function*() {
   const text = yield* deliverToAgent(directory, subject, event)
@@ -211,6 +212,7 @@ try {
       assert.equal(link.searchParams.get("parentMessageId"), id === reply ? root : first)
       assert(wake.includes(link.href))
       assert(!wake.includes(excerpt))
+      assert(!wake.includes("password") && !wake.includes("token") && !wake.includes("6f1d8b42"))
     }
     assert.deepEqual(seen.sort(), ["message.new", "message.reply"])
     const last = replay.at(-1)
@@ -230,9 +232,13 @@ try {
     for (const item of batch) {
       assert(item._tag === "Event")
       const preview = (item.event.payload as { preview: string }).preview
-      assert.equal(preview, excerpt + (item.event.type === "message.reply" ? " reply" : " top"))
-      assert((yield* deliver(scratch, subject, item.event)).includes(preview))
+      const expected = safeExcerpt + (item.event.type === "message.reply" ? " reply" : " top")
+      assert.equal(preview, expected)
+      const wake = yield* deliver(scratch, subject, item.event)
+      assert(wake.includes(`Untrusted message excerpt: ${JSON.stringify(preview)}`))
+      assert(!wake.includes("synthetic-secret-token"))
     }
+    assert.deepEqual(yield* take(c, conversation, previewCursor, 2), batch)
     yield* consent(c)
     yield* c.watch(request(conversation, previewCursor)).pipe(Stream.runDrain, Effect.flip)
   }))

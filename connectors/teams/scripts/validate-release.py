@@ -58,6 +58,7 @@ def extract(archive, directory):
         tar.extractall(directory)
 
 
+source_paths = ['connectors/teams', 'connectors/shared/excerpt.py']
 source, packer = revision(args.source), revision(args.packer or args.source)
 metadata = {'source': source, 'packer': packer, 'worktree': args.worktree}
 (evidence / 'revisions.json').write_text(json.dumps(metadata, indent=2))
@@ -70,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix='teams-release-build-') as temporary:
     shutil.rmtree(build / 'connectors/teams', ignore_errors=True)
     if args.worktree:
         names = subprocess.check_output(['git', 'ls-files', '-z', '--cached', '--others', '--exclude-standard',
-                                         '--', 'connectors/teams'], cwd=repo).decode().split('\0')
+                                         '--', *source_paths], cwd=repo).decode().split('\0')
         hashes = {}
         for name in sorted(set(filter(None, names))):
             path = repo / name
@@ -83,7 +84,10 @@ with tempfile.TemporaryDirectory(prefix='teams-release-build-') as temporary:
                 hashes[name] = hashlib.sha256(target.read_bytes()).hexdigest()
         (evidence / 'worktree-inputs.json').write_text(json.dumps(hashes, indent=2))
     else:
-        run('source-export', ['git', 'archive', source, 'connectors/teams', '-o', str(evidence / 'source.tar')], repo)
+        # Older Teams releases predate the shared renderer.
+        paths = subprocess.check_output(['git', 'ls-tree', '--name-only', source, '--', *source_paths],
+                                        cwd=repo, text=True).splitlines()
+        run('source-export', ['git', 'archive', source, *paths, '-o', str(evidence / 'source.tar')], repo)
         extract(evidence / 'source.tar', build)
         (evidence / 'source.tar').unlink()
     run('frozen-install', ['pnpm', 'install', '--frozen-lockfile'], build, 600)

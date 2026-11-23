@@ -4,7 +4,7 @@ From a committed checkout, run the installed Teams release checks with Bun, pnpm
 python3 connectors/teams/scripts/validate-release.py --source HEAD
 ```
 
-For an integration in progress, add `--worktree` to overlay tracked and nonignored Teams files from the checkout. The runner records their SHA-256 hashes. The packer defaults to the source revision. Use `--packer REV` to supply a different host and packer, and `--out DIR` for a fresh evidence directory outside the repository.
+For an integration in progress, add `--worktree` to overlay tracked and nonignored Teams files and the shared excerpt renderer from the checkout. The runner records their SHA-256 hashes. The packer defaults to the source revision. Use `--packer REV` to supply a different host and packer, and `--out DIR` for a fresh evidence directory outside the repository.
 
 The runner exports the host into a temporary directory, installs frozen dependencies, builds the release archive, verifies its checksum, manifest inventory and installed directory digest, and starts its bundle through the host stdio runtime. It supplies synthetic homes and LevelDB fixtures. A Python shim and FIFO check that startup, unconfigured requests and consent do not invoke Python or read the fixture before a configured subscription request.
 

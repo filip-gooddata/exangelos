@@ -1,11 +1,12 @@
 {
   "name": "slack",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "entry": {
     "_tag": "Bundle",
     "path": "dist/main.js"
   },
   "files": [
+    "dist/excerpt.py",
     "direct/source.py",
     "direct/setup.py",
     "direct/state_directory.py",

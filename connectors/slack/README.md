@@ -102,13 +102,30 @@ history, the receiving agent session, desktop alerts, and debug-level
 event payload logs. The private ledger retains committed excerpts for exact
 replay, including after previews are disabled.
 
-The connector uses only the selected message's plain text. It folds layout
-whitespace and includes up to 160 Unicode code points. It omits excerpts
-for unsupported message forms, bodies longer than 4,096 code points, and
-text with recognized credential, redaction, link, markup or unsafe control
-patterns. Screening covers the entire body before clipping. Ordinary prose
-can contain confidential information that pattern matching cannot recognize.
-Reaction events carry metadata only.
+An upgrade preserves the current choice. Existing enabled installations immediately
+share the broader range of visible text for new deliveries. Existing disabled
+or unconfigured installations keep previews off. Changing the setting does
+not rewrite previously committed events.
+
+The connector prefers visible block and attachment text to a notification
+fallback. Scoped app and bot messages can omit that fallback when their
+layout contains supported visible text. An absent or undefined fallback uses
+the same body marker as an empty string. Slack’s edit timestamp records edits
+to these messages. A layout change alone does not trigger an edit event.
+It reads section fields, headers, context text, rich-text runs,
+image titles, button labels and attachment titles and bodies. Labeled links
+contribute their labels. An address displayed as text can appear in the
+excerpt. Hidden link targets, image URLs and interactive values are excluded.
+Whitespace and control characters become single-line spacing. The excerpt
+is capped at 160 Unicode code points and quoted as untrusted data. Reaction
+events carry metadata only.
+
+Before clipping, exact occurrences of nonempty inherited environment values
+whose variable names contain TOKEN, KEY, SECRET, PASSWORD, AUTH or COOKIE
+(case-insensitive) become `[redacted]`. Overlapping matches are combined.
+Credential terminology, opaque identifiers and other visible content can
+appear. This does not identify every password, token or confidential detail
+in a message. Host log redaction operates separately.
 
 Cache access includes persisted data retained after logout or permission changes.
 The cache cannot establish current sign-in. Revoke access with

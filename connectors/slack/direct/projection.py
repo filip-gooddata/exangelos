@@ -3,6 +3,19 @@ import re
 import skip_v8
 field_v8=skip_v8.field_v8
 ABSENT_PROFILE = object()
+UNDEFINED_TEXT = object()
+# Project display layout only in the selected conversations.
+LAYOUT_OBJECTS = {
+    'block': {'title': 'textObject', 'type': 'layoutString', 'text': 'textObject', 'fields': 'textObjects', 'elements': 'textObjects'},
+    'textObject': {'type': 'layoutString', 'text': 'textOrObject', 'elements': 'richRuns'},
+    'richRun': {'type': 'layoutString', 'text': 'layoutString', 'url': 'layoutString', 'elements': 'richRuns'},
+    'attachment': {'title': 'layoutString', 'pretext': 'layoutString', 'text': 'layoutString',
+                   'blocks': 'blocks', 'fields': 'attachmentFields', 'mrkdwn_in': 'formatNames'},
+    'attachmentField': {'title': 'layoutString', 'value': 'layoutString'},
+}
+LAYOUT_LISTS = {'blocks': 'block', 'attachments': 'attachment', 'textObjects': 'textObject',
+                'attachmentFields': 'attachmentField', 'formatNames': 'layoutString', 'richRuns': 'richRun'}
+
 class Reader(skip_v8.Reader):
     def select(self,data):
         self.data=memoryview(data);self.pos=0;self.nodes=0;self.objects=0
@@ -13,10 +26,22 @@ class Reader(skip_v8.Reader):
         if self.pos!=len(self.data):raise ValueError('trailing')
         return value
     def name(self,tag,role):
+        if role in LAYOUT_LISTS and tag in (ord('I'),ord('U')):
+            n=self.uint();return str(n >> 1 if tag==ord('I') else n)
         if tag in (ord('I'),ord('U')):
-            n=self.uint();return str(n) if role in ('container','reactions','users') else None
+            n=self.uint();return str(n) if role in ('container','layoutContainer','reactions','users') else None
         if tag not in field_v8._ENCODINGS:raise ValueError('key_tag')
         span=self.string_span(tag)
+        if role in LAYOUT_LISTS:
+            if len(span)>8:return None
+            try:key=str(span,field_v8._ENCODINGS[tag])
+            except UnicodeError:return None
+            return key if re.fullmatch('[0-9]{1,3}',key) else None
+        if role=='layoutMessage':
+            for key in ('blocks','attachments','app_id','mrkdwn'):
+                if span==key.encode(field_v8._ENCODINGS[tag]):return key
+            role='message'
+        if role=='layoutContainer':role='container'
         allowed={
           'root':('messages','threads','bootData','selfTeamIds','channels','reactions','teams','users','members'),
           'bootData':('team_id','user_id','team_domain'),
@@ -29,7 +54,7 @@ class Reader(skip_v8.Reader):
           'reaction':('name','users','count'),
           'channel':('id','name','user','team','team_id','context_team_id','is_channel','is_group','is_im','is_mpim','is_private'),
           'container':('messages','replies','data'),
-        }.get(role,())
+        }.get(role,LAYOUT_OBJECTS.get(role,()))
         for k in allowed:
             if span==k.encode(field_v8._ENCODINGS[tag]):return k
         if role in ('messages','threads','channels','container','reactions','users','reactionStore','teams','accountUsers'):
@@ -44,6 +69,15 @@ class Reader(skip_v8.Reader):
             if (role in ('messages','threads','channels') and re.fullmatch(r'[CDG][A-Z0-9]{6,30}',s)) or (role=='container' and re.fullmatch(r'[0-9]{1,20}(\.[0-9]{1,10})?',s)) or (role in ('reactions','users') and s.isdigit()):return s
         return None
     def child(self,role,key):
+        if role in LAYOUT_LISTS:return LAYOUT_LISTS[role]
+        if role in LAYOUT_OBJECTS:return LAYOUT_OBJECTS[role][key]
+        if role=='messages' and key in self.layout_channels:return 'layoutContainer'
+        if role=='layoutContainer':return 'layoutContainer' if key in ('messages','replies','data') else 'layoutMessage'
+        if role=='layoutMessage':
+            if key in ('blocks','attachments'):return key
+            if key=='mrkdwn':return 'bool'
+            if key=='text':return 'fallbackText'
+            role='message'
         if role=='root':return {'reactions':'reactionStore','users':'accountUsers','members':'accountUsers'}.get(key,key)
         if role=='teams':return 'accountTeam'
         if role=='accountUsers':return 'accountUser'
@@ -72,6 +106,22 @@ class Reader(skip_v8.Reader):
             span=self.string_span(tag)
             try:return str(span,field_v8._ENCODINGS[tag])
             except UnicodeError:return None
+        if role=='textOrObject':role='textObject' if tag==ord('o') else 'layoutString'
+        if role=='layoutString':
+            if tag in field_v8._ENCODINGS:
+                span=self.string_span(tag)
+                try:return str(span,field_v8._ENCODINGS[tag])
+                except UnicodeError:pass
+            else:
+                self.pos=start;self.value(depth,'skip')
+            return None
+        if role in LAYOUT_LISTS and tag not in (ord('a'),ord('A')):
+            self.pos=start;self.value(depth,'skip');return None
+        if role in LAYOUT_OBJECTS and tag!=ord('o'):
+            self.pos=start;self.value(depth,'skip');return None
+        if role=='fallbackText':
+            if tag==ord('_'):return UNDEFINED_TEXT
+            role='string'
         if role=='subtype':
             if tag==ord('_'):return None
             if tag in field_v8._ENCODINGS:return str(self.string_span(tag),field_v8._ENCODINGS[tag])
@@ -95,11 +145,15 @@ class Reader(skip_v8.Reader):
                     if key in out:raise ValueError('duplicate')
                     out[key]=v
             if self.uint()!=count:raise ValueError('count')
+            if role=='layoutMessage' and out.get('text') is UNDEFINED_TEXT:
+                del out['text']
             if role=='accountUser' and out.get('profile') is ABSENT_PROFILE:
                 del out['profile']
             return out
         if tag in (ord('A'),ord('a')):
             self.objects+=1;length=self.uint()
+            if role in LAYOUT_LISTS and length>100:
+                self.objects-=1;self.pos=start;self.value(depth,'skip');return None
             if length>100000:raise ValueError('length')
             out={};count=0
             if tag==ord('A'):
@@ -114,13 +168,16 @@ class Reader(skip_v8.Reader):
                     if key in out:raise ValueError('duplicate')
                     out[key]=v
             if self.uint()!=count or self.uint()!=length:raise ValueError('count')
+            if role in LAYOUT_LISTS and len(out)!=length:return None
             if role=='accountUser' and out.get('profile') is ABSENT_PROFILE:
                 del out['profile']
             return out
         self.pos=start;self.value(depth,'skip');return None
 
-def project(data):
-    return Reader(data,field_v8.Limits(max_bytes=16*1024*1024,max_nodes=1000000)).select(data)
+def project(data, layout_channels=()):
+    reader=Reader(data,field_v8.Limits(max_bytes=16*1024*1024,max_nodes=1000000))
+    reader.layout_channels=frozenset(layout_channels)
+    return reader.select(data)
 
 def summary(value):
     counts=dict.fromkeys(('workspace_identity','owner_identity','conversations','message_containers','messages_with_identity','messages_with_body','replies','messages_with_reactions','reaction_entries','channel_contexts','reaction_store_entries','reaction_joins','reaction_rows','reaction_users','reaction_count_matches','hidden_stubs'),0)
