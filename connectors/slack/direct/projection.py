@@ -2,6 +2,7 @@
 import re
 import skip_v8
 field_v8=skip_v8.field_v8
+ABSENT_PROFILE = object()
 class Reader(skip_v8.Reader):
     def select(self,data):
         self.data=memoryview(data);self.pos=0;self.nodes=0;self.objects=0
@@ -66,6 +67,7 @@ class Reader(skip_v8.Reader):
     def read(self,role,depth):
         self.node(depth);start=self.pos;tag=self.tag()
         if role=='skip':self.pos=start;return self.value(depth,'skip')
+        if role=='profile' and tag in (ord('0'),ord('_')):return ABSENT_PROFILE
         if role=='profileString' and tag in field_v8._ENCODINGS:
             span=self.string_span(tag)
             try:return str(span,field_v8._ENCODINGS[tag])
@@ -93,6 +95,8 @@ class Reader(skip_v8.Reader):
                     if key in out:raise ValueError('duplicate')
                     out[key]=v
             if self.uint()!=count:raise ValueError('count')
+            if role=='accountUser' and out.get('profile') is ABSENT_PROFILE:
+                del out['profile']
             return out
         if tag in (ord('A'),ord('a')):
             self.objects+=1;length=self.uint()
@@ -110,6 +114,8 @@ class Reader(skip_v8.Reader):
                     if key in out:raise ValueError('duplicate')
                     out[key]=v
             if self.uint()!=count or self.uint()!=length:raise ValueError('count')
+            if role=='accountUser' and out.get('profile') is ABSENT_PROFILE:
+                del out['profile']
             return out
         self.pos=start;self.value(depth,'skip');return None
 

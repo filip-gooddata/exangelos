@@ -78,6 +78,12 @@ class DirectTests(unittest.TestCase):
         self.assertEqual(context['sender'], 'Fixture Peer')
         data['users'][peer]['team_id'] = 'T9999999'
         self.assertEqual(read()['sender'], peer)
+        data['members'] = {peer: dict(id=peer, team_id=SELECTION[0], profile=dict(display_name='Member Example'))}
+        for nullish in (None, b'_'):
+            data['users'][peer] = dict(id=peer, team_id=SELECTION[0], profile=nullish)
+            delivered = read()
+            self.assertEqual(delivered['memberSender'], 'Member Example')
+            self.assertEqual(delivered['memberPeer'], 'Member Example')
         del rows[TIME]['user']
         rows[TIME].update(bot_id='B0000001', username='Fixture Bot')
         self.assertEqual(read()['sender'], 'Fixture Bot')
@@ -99,6 +105,11 @@ class DirectTests(unittest.TestCase):
         for conflict in (dict(team='T9999999'), dict(id='U9999999'), dict(profile=dict(team='T9999999'))):
             with mock.patch.dict(state, users={identity: conflict}):
                 self.assertIsNone(name())
+
+    def test_optional_profile_strings_require_valid_framing(self):
+        for malformed in (b'c\x01a', b'c\xfe\x01a'):
+            with self.subTest(value=malformed), self.assertRaises(ValueError):
+                projected(dict(members={'U0000002': dict(profile=dict(display_name=malformed))}))
 
     def test_delivery_preview_policy_after_projection(self):
         data = fixture()

@@ -445,7 +445,7 @@ def exercise(installed, home):
     peer = 'U0000002'
     name = '🌊' * 80
     state['channels'][dm] = {'id': dm, 'is_im': True, 'user': peer}
-    del state['users'][peer]
+    state['users'][peer] = dict(id=peer, team=SELECTION[0], profile=None)
     state['members'] = {peer: dict(id=peer, team=SELECTION[0], profile=dict(display_name=name))}
     state['messages'][dm].clear()
     users = [f'U{i:07d}' for i in range(100)]
