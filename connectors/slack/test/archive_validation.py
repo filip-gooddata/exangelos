@@ -45,7 +45,9 @@ def inventory(root):
 class Wire:
     def __init__(self, installed, home, path=None):
         env = {'PATH': str(path) if path is not None else os.environ['PATH']}
-        env.update(FIXTURE_API_TOKEN='fictional-installed-secret', HOME=str(home), EXANGELOS_HOME=str(home / 'state'), XDG_DATA_HOME=str(home / 'xdg'),
+        env.update(FIXTURE_API_TOKEN='fictional-installed-secret', FIXTURE_BOUNDARY_TOKEN='*fictional-boundary*',
+                   FIXTURE_LABEL_SECRET='left-*alpha*-right', FIXTURE_PADDED_SECRET='left right',
+                   HOME=str(home), EXANGELOS_HOME=str(home / 'state'), XDG_DATA_HOME=str(home / 'xdg'),
                    XDG_CONFIG_HOME=str(home / 'config'), XDG_CACHE_HOME=str(home / 'cache'),
                    APPDATA=str(home / 'roaming'), LOCALAPPDATA=str(home / 'local'))
         self.p = subprocess.Popen([BUN, 'dist/main.js'], cwd=installed, env=env,
@@ -211,6 +213,25 @@ def app_posts():
         ('Fixture GitHub', dict(attachments=[attachment], blocks=[section('password removed')]), 'password removed Fixture pull request'),
         ('Fixture GitHub', dict(text='Build passed', attachments=[dict(attachment, fallback='secret removed')]), 'Fixture pull request'),
         ('Fixture Jira', dict(text='Status fictional-installed-secret ready'), 'Status [redacted] ready'),
+        ('Fixture Jira', dict(blocks=[section('*Ready* _for_ ~draft~ <https://example.invalid/42|*FIX-42*>')]),
+         'Ready for draft FIX-42'),
+        ('Fixture GitHub', dict(text='Check `*keep*` build_id_v2, 3 * 4 and https://example.invalid/a_b_c'),
+         'Check `*keep*` build_id_v2, 3 * 4 and https://example.invalid/a_b_c'),
+        ('Fixture Jira', dict(blocks=[dict(type='section', text=dict(type='plain_text', text='*Ready* _for_ ~draft~'))]),
+         '*Ready* _for_ ~draft~'),
+        ('Fixture GitHub', dict(blocks=[section('Before *fictional-boundary* after')]), 'Before [redacted] after'),
+        ('Fixture Jira', dict(blocks=[section('*fictional-installed-secret* ready')]), '[redacted] ready'),
+        ('Fixture Jira', dict(blocks=[section('Before fictional-*installed*-secret after')]), 'Before [redacted] after'),
+        ('Fixture Jira', dict(blocks=[section('left-<https://example.invalid|*alpha*>-right')]), '[redacted]'),
+        ('Fixture Jira', dict(blocks=[section('*Read https://example.invalid/a_b*')]), 'Read https://example.invalid/a_b'),
+        ('Fixture Jira', dict(blocks=[section('*https://example.invalid/a_b*.')]), 'https://example.invalid/a_b.'),
+        ('Fixture Jira', dict(blocks=[section('*see https://example.invalid/* then done*')]),
+         'see https://example.invalid/* then done'),
+        ('Fixture Jira', dict(blocks=[dict(type='section', fields=[
+            dict(type='plain_text', text='left '), dict(type='plain_text', text='right')])]), '[redacted]'),
+        ('Fixture Jira', dict(blocks=[section('*Read https://example.invalid/first*. Then see https://example.invalid/*')]),
+         'Read https://example.invalid/first. Then see https://example.invalid/*'),
+        ('Fixture Jira', dict(blocks=[section('*Ready*'), section('Ready')]), 'Ready'),
         ('Fixture Jira', dict(text='🌻' * 200), '🌻' * 160),
         ('Fixture Jira', dict(redacted=True, blocks=jira), None),
         ('Fixture GitHub', dict(deleted=True, attachments=[attachment]), None),
@@ -386,8 +407,8 @@ def exercise(installed, home):
 
     now = time.time_ns() // 1000
     new, new_reply = timestamp(now - 1), timestamp(now)
-    add(new)
     add(new_reply, TIME)
+    add(new)
     messages[new].update(text='new excerpt', subtype=b'_')
     messages[new_reply]['text'] = 'reply excerpt'
     messages[TIME].update(text='edited excerpt', user='U0000003')
@@ -401,7 +422,11 @@ def exercise(installed, home):
         'reaction.added': ('Reaction added (message author: "U0000003")', TIME, None),
         'reaction.removed': ('Reaction removed (message author: "U0000003")', TIME, None),
     }
-    check(sorted(item['event']['type'] for item in enabled) == sorted(expected), 'all enabled delivery kinds')
+    order = [(TIME, 'message.edited'), (TIME, 'reaction.added'), (TIME, 'reaction.removed'),
+             (new, 'message.new'), (new_reply, 'thread.reply')]
+    check([(i['event']['payload']['messageTs'], i['event']['type']) for i in enabled] == order,
+          'message-time order with stable edit and reaction transitions')
+    check(resume(conversation, 'disabled') == enabled, 'mixed batch replays in its committed order')
     for item in enabled:
         event = item['event']
         action, ts, preview = expected[event['type']]
@@ -432,9 +457,15 @@ def exercise(installed, home):
                             subtype='bot_message', _rxn_key=f'message-{ts}-{CHANNEL}')
         messages[ts].update(fields)
 
-    now = time.time_ns() // 1000
-    for index, (sender, fields, preview) in enumerate(cases):
-        ts = timestamp(now - len(cases) + index)
+    # Consecutive nanoseconds straddle an hour and collapse into ties under float conversion.
+    next_hour = (int(time.time()) // 3600 + 1) * 3600 * 10**6
+    ordered_ts = []
+    for index in range(len(cases)):
+        seconds, fraction = divmod(next_hour * 1000 + index - len(cases) // 2, 10**9)
+        ordered_ts.append(f'{seconds}.{fraction:09d}')
+    for index in reversed(range(len(cases))):
+        sender, fields, preview = cases[index]
+        ts = ordered_ts[index]
         add_app(ts, sender, fields)
         if index == 0:
             del messages[ts]['text']
@@ -442,7 +473,7 @@ def exercise(installed, home):
             messages[ts]['text'] = b'_'  # V8 undefined with a visible attachment
         expected_apps[ts] = (sender, preview)
     first_app_ts = min(expected_apps)
-    hidden_ts = timestamp(now)
+    hidden_ts = timestamp(next_hour + len(cases))
     add_app(hidden_ts, 'Fixture Jira', dict(cases[0][1], hidden=True))
     database(app, state, sequence=61)
     with Wire(installed, home) as wire:
@@ -451,12 +482,13 @@ def exercise(installed, home):
     del messages[hidden_ts]
     database(app, state, sequence=62)
     app_batch = resume(conversation, 'enabled')
-    check(len(app_batch) == len(cases), 'one delivery per visible app post')
+    check([item['event']['payload']['messageTs'] for item in app_batch] == ordered_ts,
+          'visible app posts delivered in exact cross-hour nanosecond order')
     for item in app_batch:
         event = item['event']
         ts = event['payload']['messageTs']
         sender, preview = expected_apps.pop(ts)
-        link = f'https://fixture.slack.com/archives/{CHANNEL}/p{ts.replace(".", "")}'
+        link = f'https://app.slack.com/client/{SELECTION[0]}/{CHANNEL}?message_ts={ts}'
         payload = dict(version=1, count=1, messageTs=ts, sender=sender,
                        conversationLabel='Slack #fixture', permalink=link)
         if preview is not None:

@@ -74,7 +74,9 @@ Edit and reaction summaries label the original message author and also give
 the UTC time at which the connector observed the change.
 The connector uses account-scoped names when available, falling back to a
 cached ID or “unknown author”. A timestamp outside the calendar range appears
-as the original Slack timestamp. Previously committed batches keep their
+as the original Slack timestamp. Within each new batch the connector orders events
+by the full numeric Slack message timestamp. Changes to one message keep their
+edit and reaction sequence. Previously committed batches keep their
 original summaries and payloads on replay. Exangelos 0.1.9 shows only the
 end notice when an event reaches a subscription cap (including `--once`).
 The event remains available through `exangelos events`. Showing the pending
@@ -114,7 +116,8 @@ the same body marker as an empty string. Slack’s edit timestamp records edits
 to these messages. A layout change alone does not trigger an edit event.
 It reads section fields, headers, context text, rich-text runs,
 image titles, button labels and attachment titles and bodies. Labeled links
-contribute their labels. An address displayed as text can appear in the
+contribute their labels. Slack emphasis markers are removed from formatted text.
+Code spans and plain-text fields retain their literal punctuation. An address displayed as text can appear in the
 excerpt. Hidden link targets, image URLs and interactive values are excluded.
 Whitespace and control characters become single-line spacing. The excerpt
 is capped at 160 Unicode code points and quoted as untrusted data. Reaction
@@ -246,3 +249,9 @@ while a newer snapshot is available. They also exercise Configure, Describe, sil
 filtering, polling cancellation and sanitized errors. Source tests replace the process
 service and exercise stdin and output handling. They do not prove actual acquisition
 or live event latency. Installed-archive checks are documented in [VALIDATION.md](VALIDATION.md).
+
+## Connector icon
+
+On macOS the connector reads the icon from the installed Slack app bundle without opening the app. It converts the icon in memory and serves a 128 × 128 PNG to the panel. If the icon is unavailable, the panel shows initials.
+
+The connector ships without vendor artwork. The Slack icon is a trademark of Slack. Displaying it from a local installation still carries trademark risk and does not imply endorsement.

@@ -64,6 +64,21 @@ class LedgerTests(unittest.TestCase):
                 self.assertEqual(list(package.iterdir()), [package / 'direct'])
                 self.assertFalse(external.exists())
 
+    def test_numeric_timestamp_ties_and_preexisting_order_replay(self):
+        cursor = self.call(snapshot(1, []))['cursor']
+        rows = [dict(message(i), messageTs=ts, sender=f'U000000{i}') for i, ts in enumerate(
+            ('1700000000.0000000003', '1700000000.1', '1700000000.0000000002', '1700000000.10'))]
+        batch = self.call(snapshot(2, rows), cursor)
+        ties = sorted((rows[1], rows[3]), key=lambda row: row['id'])
+        self.assertEqual([event['payload']['sender'] for event in batch['events']],
+                         [row['sender'] for row in (rows[2], rows[0], *ties)])
+
+        # A pre-upgrade edge may already be committed in a different order.
+        batch['events'].reverse()
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('UPDATE edges SET result=?', (ledger.packed(batch),))
+        self.assertEqual(self.call(snapshot(3, []), cursor), batch)
+
     def test_upgrade_same_generation_with_a_suppressed_legacy_label(self):
         old = snapshot(1, [dict(message(1), sender='synthetic unsafe name')])
         cursor = self.call(old)['cursor']

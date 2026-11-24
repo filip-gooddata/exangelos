@@ -43,3 +43,9 @@ The connector requires Python 3.9+ with SQLite, resource and fcntl on a compatib
 Private state is kept under `$EXANGELOS_HOME/connectors/teams`, or `$XDG_DATA_HOME/exangelos/connectors/teams` (default `~/.local/share/exangelos/connectors/teams`). It includes the scope bindings, SQLite history and committed replay batches. With previews enabled the replay batches can contain excerpts. Keep this directory private and outside the installed bundle. Ledger retention grows with subscriptions and events.
 
 See the [installed validation instructions](https://github.com/filip-gooddata/exangelos/blob/main/connectors/teams/scripts/README.md) for synthetic checks and the [decoder provenance](https://github.com/filip-gooddata/exangelos/blob/main/connectors/teams/validation/PROVENANCE.md) for format references.
+
+## Connector icon
+
+On macOS the connector reads the icon from the installed Microsoft Teams app bundle without opening the app. It looks for the current Teams app first, then classic Teams. It converts the icon in memory and serves a 128 × 128 PNG to the panel. If the icon is unavailable, the panel shows initials.
+
+The connector ships without vendor artwork. The Teams icon is a trademark of Microsoft. Displaying it from a local installation still carries trademark risk and does not imply endorsement.
