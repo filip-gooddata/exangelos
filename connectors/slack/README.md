@@ -77,7 +77,7 @@ cached ID or “unknown author”. A timestamp outside the calendar range appear
 as the original Slack timestamp. Within each new batch the connector orders events
 by the full numeric Slack message timestamp. Changes to one message keep their
 edit and reaction sequence. Previously committed batches keep their
-original summaries and payloads on replay. Exangelos 0.1.9 shows only the
+original event identities on replay. Exangelos 0.1.9 shows only the
 end notice when an event reaches a subscription cap (including `--once`).
 The event remains available through `exangelos events`. Showing the pending
 event line in that end notice requires the updated host wake renderer.
@@ -101,8 +101,9 @@ enabled, eligible events carry an optional `preview` in their payload and a
 quoted, single-line excerpt in their wake summary. Treat the excerpt and
 display names as untrusted Slack data. The excerpt can appear in event
 history, the receiving agent session, desktop alerts, and debug-level
-event payload logs. The private ledger retains committed excerpts for exact
-replay, including after previews are disabled.
+event payload logs. The private ledger retains committed excerpts for replay. Starting with 0.5.1, the connector omits excerpts from
+replayed payloads and summaries while previews are disabled. Previously delivered
+host history and agent sessions can still contain them.
 
 An upgrade preserves the current choice. Existing enabled installations immediately
 share the broader range of visible text for new deliveries. Existing disabled
@@ -182,12 +183,12 @@ Ship `direct/source.py`, `direct/ledger.py` and the vendored/runtime files along
 the compiled JS build alone does not bundle Python files.
 
 The first Watch snapshot establishes a silent baseline. Only the last event in a
-batch carries its cursor; an empty changed batch emits a cursor item. Event payloads
+batch carries its cursor; an empty changed batch emits a cursor item. Creation, edit and reaction payloads
 carry `version: 1`, `count: 1`, the exact Slack timestamp string (`messageTs`),
 a `conversationLabel` and a `permalink`. Replies include their parent timestamp
 in the link. When the workspace domain is unavailable, the link uses the workspace
 and conversation IDs. The optional `sender` identifies the message author, including
-on reaction events. Previously committed batches replay their original payload, including legacy count-only events.
+on reaction events. Legacy count-only events retain their original shape.
 Reconciliation owns stale/backwards snapshot handling and reaction coverage on both
 sides of a comparison. Missing messages do not imply deletion, and missing reaction
 coverage does not imply removal. Bounds are 500 messages per observed snapshot and 100 reactions per message.
@@ -270,9 +271,20 @@ conversation, message timestamp and optional thread parent must agree with
 the saved selection and the notification ID. The early event includes the
 saved label, message time and a reconstructed Slack link. Slack Desktop
 redacted author, text and launch URL in all sampled message notifications.
-Early events therefore omit sender and preview, including with previews
-enabled. Later cache enrichment is silent. Subsequent observed edits and
-reaction changes use the ordinary cache path and its preview settings.
+The fast path uses only the verified identity fields. Starting with 0.5.1,
+when the cache supplies a sender or an opted-in excerpt, the subscription
+gets a second wake labeled “Details for earlier message” or “Details for
+earlier thread reply”. It includes the Slack link. A channel subscription
+filtered to `message.new` receives message details under that same type.
+Reply details use `thread.reply`. The supplemental payload has `delivery:
+"details"`, `count: 0`, and `detailsFor` containing the original creation's
+dedupe key. Each delivery has its own stable dedupe key. Host event limits
+count deliveries, so an already-ended one-shot subscription cannot be woken again.
+
+Existing cursors need no reconfiguration. An early receipt issued by 0.5.0
+can get details if its pending marker survives until the upgraded cache scan.
+Once 0.5.0 has already reconciled the post, upgrading does not backfill it.
+Subsequent observed edits and reaction changes follow the ordinary cache path.
 
 In a prospective local observation, one matching conversation and timestamp
 appeared in the log 97.8–98.8 seconds before host receipt. That timing probe

@@ -64,6 +64,24 @@ class LedgerTests(unittest.TestCase):
                 self.assertEqual(list(package.iterdir()), [package / 'direct'])
                 self.assertFalse(external.exists())
 
+    def test_early_reply_waits_for_deliverable_context(self):
+        initial = self.call(snapshot(1, []))['cursor']
+        reply = message(1, reply=True)
+        del reply['sender']
+        notice = {field: reply[field] for field in ('id', 'reply', 'messageTs', 'permalink', 'conversationLabel')}
+        receipt = ledger.reconcile(dict(snapshot={'scope': token('scope')}, cursor=initial,
+                                        notification=notice, observedAt=1700000000000), self.path)
+        sparse = self.call(snapshot(2, [reply]), receipt['cursor'])
+        self.assertEqual(sparse['events'], [])
+        richer = self.call(snapshot(3, [dict(reply, preview='fixture')]), sparse['cursor'])
+        details, = richer['events']
+        self.assertEqual(details['type'], 'thread.reply')
+        self.assertEqual(details['payload']['detailsFor'], receipt['events'][0]['dedupeKey'])
+        self.assertEqual(details['payload']['count'], 0)
+        self.assertIn('Details for earlier thread reply', details['summary'])
+        self.assertEqual(self.call(snapshot(4, [dict(reply, preview='fixture')]), richer['cursor'])['events'], [])
+        self.assertEqual(self.call(snapshot(4, []), sparse['cursor']), richer)
+
     def test_numeric_timestamp_ties_and_preexisting_order_replay(self):
         cursor = self.call(snapshot(1, []))['cursor']
         rows = [dict(message(i), messageTs=ts, sender=f'U000000{i}') for i, ts in enumerate(

@@ -121,8 +121,8 @@ export const make = <R>(source: Source<R>) => Connector.make({
         return updates.pipe(Stream.flatMap((update) => Stream.paginate(undefined, () => Effect.gen(function*() {
           const state = yield* Ref.get(progress)
           yield* active
-          const result = update.kind === "cache" ? yield* reconcile(state.cursor, update.snapshot, startedAt)
-            : yield* reconcile(state.cursor, { scope: request.expectedScope }, undefined, update.notification)
+          const result = update.kind === "cache" ? yield* reconcile(state.cursor, update.snapshot, startedAt, undefined, configuration.includePreview)
+            : yield* reconcile(state.cursor, { scope: request.expectedScope }, undefined, update.notification, configuration.includePreview)
           yield* active
           const items = result.events.map((event, index) => events[event.type].item({
             occurredAt: DateTime.makeUnsafe(event.occurredAt), summary: event.summary ?? "Selected Slack conversation changed in a persisted snapshot",

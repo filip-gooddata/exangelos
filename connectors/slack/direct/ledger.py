@@ -80,13 +80,19 @@ def wake_summary(kind, payload, observed_at):
     quote = lambda value: json.dumps(value, ensure_ascii=False)
     author = quote(payload['sender']) if 'sender' in payload else 'unknown author'
     if kind in ('message.new', 'thread.reply'):
-        action = f'{ACTIONS[kind]} by {author}'
+        if payload.get('delivery') == 'details':
+            subject = 'thread reply' if kind == 'thread.reply' else 'message'
+            action = f'Details for earlier {subject} by {author}'
+        else:
+            action = f'{ACTIONS[kind]} by {author}'
         timing = f'message time {when}'
     else:
         action = f'{ACTIONS[kind]} (message author: {author})'
         seconds, millis = divmod(observed_at, 1000)
         timing = f"message time {when}, observed {utc_stamp(seconds, f'{millis:03d}')}"
     summary = f"{action} in {quote(payload['conversationLabel'])} ({timing})"
+    if payload.get('delivery') == 'details':
+        summary += ' | ' + payload['permalink']
     if 'preview' in payload:
         summary += ' | Untrusted message excerpt: ' + quote(payload['preview'])
     return summary
@@ -218,6 +224,11 @@ def reconcile(request, path=None):
             edge = db.execute('SELECT result FROM edges WHERE lineage=? AND source=?', (lineage, source)).fetchone()
             if edge:
                 result = json.loads(edge[0])
+                if request.get('includePreview') is False:
+                    for event in result['events']:
+                        payload = event.get('payload', {})
+                        if payload.pop('preview', None) is not None:
+                            event['summary'] = wake_summary(event['type'], payload, event['occurredAt'])
                 if request.get('retryObservation'):
                     successor = CURSOR.fullmatch(result['cursor'])
                     generation, = db.execute('SELECT generation FROM commits WHERE lineage=? AND id=?',
@@ -275,11 +286,18 @@ def reconcile(request, path=None):
             old, revision = (json.loads(row[0]), row[1]) if row else (None, 0)
             changes = []
             early = False
+            context = delivery[message['id']]
             if previous:
+                kind = 'thread.reply' if message['reply'] else 'message.new'
+                key = lineage, message['id']
+                if old is None or 'sender' not in old:
+                    early = db.execute('SELECT 1 FROM early WHERE lineage=? AND message=?', key).fetchone()
+                if early and any(field in context for field in ('sender', 'memberSender', 'preview')):
+                    changes.append((kind, 'details'))
+                    db.execute('DELETE FROM early WHERE lineage=? AND message=?', key)
                 if old is None:
-                    early = db.execute('DELETE FROM early WHERE lineage=? AND message=?', (lineage, message['id'])).rowcount
                     if not early and Decimal(message['messageTs']) >= start:
-                        changes.append(('thread.reply' if message['reply'] else 'message.new', 'created'))
+                        changes.append((kind, 'created'))
                 else:
                     require(old['reply'] == message['reply'])
                     if old['body'] != message['body']:
@@ -291,19 +309,21 @@ def reconcile(request, path=None):
                 identity = packed([lineage, snapshot['scope'], message['id'], revision, kind, transition])
                 payload = {field: message[field] for field in ('messageTs', 'conversationLabel', 'permalink', 'sender')
                            if field in message}
-                context = delivery[message['id']]
                 if 'memberSender' in context:
                     payload['sender'] = context['memberSender']
                 if 'memberPeer' in context:
                     payload['conversationLabel'] = 'Slack DM with ' + context['memberPeer']
                 if kind in ('message.new', 'thread.reply', 'message.edited') and 'preview' in context:
                     payload['preview'] = context['preview']
+                if transition == 'details':
+                    original = packed([lineage, snapshot['scope'], message['id'], 0, kind, 'created'])
+                    payload.update(delivery='details', detailsFor='slack:' + hashlib.sha256(original.encode()).hexdigest())
                 result['events'].append({'type': kind, 'occurredAt': observed_at, 'summary': wake_summary(kind, payload, observed_at),
                                          'dedupeKey': 'slack:' + hashlib.sha256(identity.encode()).hexdigest(),
-                                         'payload': dict(payload, version=1, count=1)})
-            revision += bool(changes or early)
+                                         'payload': dict(payload, version=1, count=0 if transition == 'details' else 1)})
+            revision += bool(changes or (old is None and early))
             require(revision < 9007199254740990)
-            if old != message:
+            if old != message or changes:
                 db.execute('INSERT INTO versions(lineage,message,commit_id,metadata,revision) VALUES (?,?,?,?,?)', (lineage, message['id'], commit, packed(message), revision))
         if source:
             db.execute('INSERT INTO edges VALUES (?,?,?)', (lineage, source, packed(result)))
