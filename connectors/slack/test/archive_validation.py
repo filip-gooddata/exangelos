@@ -155,6 +155,18 @@ def failed_watch(wire, selection, cursor=None):
           answer['exit']['_tag'] == 'Failure' and 'SourceFailed' in json.dumps(answer), 'watch refused')
 
 
+def without_previews(batch):
+    result = deepcopy(batch)
+    for item in result:
+        event = item['event']
+        preview = event['payload'].pop('preview', None)
+        if preview:
+            suffix = ' | Untrusted message excerpt: ' + json.dumps(preview, ensure_ascii=False)
+            check(event['summary'].endswith(suffix), 'preview summary suffix')
+            event['summary'] = event['summary'][:-len(suffix)]
+    return result
+
+
 def check_wake(event, handle, home, label, preview=None, *, once=False):
     ts = event['payload']['messageTs']
     seconds, fraction = ts.split('.')
@@ -164,6 +176,8 @@ def check_wake(event, handle, home, label, preview=None, *, once=False):
         observed = datetime.fromisoformat(event['occurredAt'].replace('Z', '+00:00'))
         timing += f', observed {observed:%Y-%m-%d %H:%M:%S}.{observed.microsecond // 1000:03d} UTC'
     summary = f'{label} ({timing})'
+    if event['payload'].get('delivery') == 'details':
+        summary += ' | ' + event['payload']['permalink']
     if preview is not None:
         summary += ' | Untrusted message excerpt: ' + json.dumps(preview, ensure_ascii=False)
     check(event['summary'] == summary, f"{event['type']} summary: {event['summary']!r}")
@@ -426,7 +440,7 @@ def exercise(installed, home):
              (new, 'message.new'), (new_reply, 'thread.reply')]
     check([(i['event']['payload']['messageTs'], i['event']['type']) for i in enabled] == order,
           'message-time order with stable edit and reaction transitions')
-    check(resume(conversation, 'disabled') == enabled, 'mixed batch replays in its committed order')
+    check(resume(conversation, 'disabled') == without_previews(enabled), 'mixed batch replays in its committed order')
     for item in enabled:
         event = item['event']
         action, ts, preview = expected[event['type']]
@@ -441,7 +455,7 @@ def exercise(installed, home):
         check(len(scoped) == 1 and scoped[0]['event']['type'] == 'thread.reply'
               and scoped[0]['event']['payload']['messageTs'] == new_reply
               and scoped[0]['event']['payload']['preview'] == 'reply excerpt', 'only selected reply excerpt delivered')
-    check(resume(conversation, 'disabled') == enabled, 'disabled configuration preserves the committed edge')
+    check(resume(conversation, 'disabled') == without_previews(enabled), 'disabled configuration preserves the committed edge')
     cursors[conversation] = enabled[-1]['cursor']
     messages[new]['text'] = 'disabled private text'
     database(app, state, sequence=60)
@@ -496,7 +510,7 @@ def exercise(installed, home):
         check(event['type'] == 'message.new' and event['payload'] == payload,
               f'installed app payload for {sender} at {ts}: {event["payload"]!r}')
         check_wake(event, conversation, home, f'New message by "{sender}" in "Slack #fixture"', preview)
-    check(not expected_apps and resume(conversation, 'disabled') == app_batch, 'immutable app delivery replay')
+    check(not expected_apps and resume(conversation, 'disabled') == without_previews(app_batch), 'immutable app delivery replay')
     cursors[conversation] = app_batch[-1]['cursor']
 
     ts = current_timestamp()
@@ -515,7 +529,7 @@ def exercise(installed, home):
           edited_layout[0]['event']['payload']['messageTs'] == first_app_ts, 'layout-only app edit identity')
     check_wake(edited_layout[0]['event'], conversation, home,
                'Message edited (message author: "Fixture Jira") in "Slack #fixture"', 'New heading')
-    check(resume(conversation, 'disabled') == edited_layout, 'layout-only edit replays its committed excerpt')
+    check(resume(conversation, 'disabled') == without_previews(edited_layout), 'layout-only edit replay honors current preview setting')
     with Wire(installed, home) as wire:
         wire.configure(config)
         dm_handle = describe(wire, dm)
@@ -569,7 +583,7 @@ def exercise(installed, home):
         item['event']['payload'] = {'count': 1}
     check(legacy_batch == prior, 'exact pre-context count-only replay with previews enabled')
     cursors[replies] = legacy_batch[-1]['cursor']
-    check(resume(replies) == scoped, 'committed successor replays before the legacy tip ends')
+    check(resume(replies) == without_previews(scoped), 'committed successor replays before the legacy tip ends')
     cursors[replies] = scoped[-1]['cursor']
     end = resume(replies)
     check(len(end) == 1 and end[0]['_tag'] == 'End' and 'Create a new subscription' in end[0]['reason'],
@@ -635,12 +649,12 @@ def notification_delivery(installed, home):
             stream.write(data)
 
     def message(ts, text):
-        state['messages'][CHANNEL][ts] = dict(ts=ts, text=text, type='message', _rxn_key=f'message-{ts}-{CHANNEL}')
+        state['messages'][CHANNEL][ts] = dict(ts=ts, text=text, type='message', user='U0000002', _rxn_key=f'message-{ts}-{CHANNEL}')
 
     with Wire(installed, home) as wire:
         wire.configure(allowed)
         handle = describe(wire, CHANNEL)
-        watch = wire.watch(handle)
+        watch = wire.watch(handle, event_types=['message.new'])
         saved = wire.chunk(watch)[0]['cursor']
         wire.receive(0.7, quiet=True)
         ts = stamp()
@@ -665,8 +679,13 @@ def notification_delivery(installed, home):
         check(wire.chunk(watch) == [early], 'early edge replays after restart')
         message(ts, 'edit during replay')
         database(root, state, sequence=25)
-        checkpoint, = wire.chunk(watch)
-        check(checkpoint['_tag'] == 'Cursor', 'first cache observation reconciled after replay')
+        details, = wire.chunk(watch)
+        event = details['event']
+        check(event['type'] == 'message.new' and event['payload']['delivery'] == 'details'
+              and event['payload']['count'] == 0 and event['payload']['detailsFor'] == early['event']['dedupeKey']
+              and event['dedupeKey'] != early['event']['dedupeKey'] and event['payload']['messageTs'] == ts,
+              'cache context linked to one original post after restart')
+        check_wake(event, handle, home, 'Details for earlier message by "U0000002" in "Slack conversation C0000001"', 'fuller cache text')
         first_edit, = wire.chunk(watch)
         check(first_edit['event']['type'] == 'message.edited' and first_edit['event']['payload']['preview'] == 'edit during replay',
               'first edit survives cache observation during replay')

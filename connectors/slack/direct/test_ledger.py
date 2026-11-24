@@ -64,6 +64,79 @@ class LedgerTests(unittest.TestCase):
                 self.assertEqual(list(package.iterdir()), [package / 'direct'])
                 self.assertFalse(external.exists())
 
+    def test_early_reply_waits_for_deliverable_context(self):
+        initial = self.call(snapshot(1, []))['cursor']
+        reply = message(1, reply=True)
+        del reply['sender']
+        notice = {field: reply[field] for field in ('id', 'reply', 'messageTs', 'permalink', 'conversationLabel')}
+        receipt = ledger.reconcile(dict(snapshot={'scope': token('scope')}, cursor=initial,
+                                        notification=notice, observedAt=1700000000000), self.path)
+        sparse = self.call(snapshot(2, [reply]), receipt['cursor'])
+        self.assertEqual(sparse['events'], [])
+        richer = self.call(snapshot(3, [dict(reply, preview='fixture')]), sparse['cursor'])
+        details, = richer['events']
+        self.assertEqual(details['type'], 'thread.reply')
+        self.assertEqual(details['payload']['detailsFor'], receipt['events'][0]['dedupeKey'])
+        self.assertEqual(details['payload']['count'], 0)
+        self.assertIn('Details for earlier thread reply', details['summary'])
+        self.assertEqual(self.call(snapshot(4, [dict(reply, preview='fixture')]), richer['cursor'])['events'], [])
+        self.assertEqual(self.call(snapshot(4, []), sparse['cursor']), richer)
+
+    def test_sender_and_original_excerpt_can_arrive_in_separate_snapshots(self):
+        cursor = self.call(snapshot(1, []))['cursor']
+        row = message(2)
+        notice = {field: row[field] for field in ('id', 'reply', 'messageTs', 'permalink', 'conversationLabel')}
+        early = ledger.reconcile(dict(snapshot={'scope': token('scope')}, cursor=cursor,
+                                      notification=notice, observedAt=1700000000000), self.path)
+        author = self.call(snapshot(2, [row]), early['cursor'])
+        unchanged = self.call(snapshot(3, [row]), author['cursor'])
+        self.assertEqual(unchanged['events'], [])
+        row['preview'] = 'fixture'
+        excerpt = self.call(snapshot(4, [row]), unchanged['cursor'])
+        first, second = author['events'][0], excerpt['events'][0]
+        self.assertNotIn('preview', first['payload'])
+        self.assertEqual(second['payload']['preview'], 'fixture')
+        self.assertEqual(first['payload']['detailsFor'], second['payload']['detailsFor'])
+        self.assertNotEqual(first['dedupeKey'], second['dedupeKey'])
+        self.assertEqual(self.call(snapshot(5, [row]), excerpt['cursor'])['events'], [])
+
+    def migrated_receipt(self):
+        cursor = self.call(snapshot(1, []))['cursor']
+        row = message(2, reply=True)
+        notice = {field: row[field] for field in ('id', 'reply', 'messageTs', 'permalink', 'conversationLabel')}
+        early = ledger.reconcile(dict(snapshot={'scope': token('scope')}, cursor=cursor,
+                                      notification=notice, observedAt=1700000000000), self.path)
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('CREATE TABLE early AS SELECT lineage,message FROM pending_details')
+            db.execute('DROP TABLE pending_details')
+            db.execute('PRAGMA user_version=5')
+        return row, early
+
+    def test_missing_migrated_receipt_rolls_back_and_preserves_cursor(self):
+        row, early = self.migrated_receipt()
+        with closing(sqlite3.connect(self.path)) as db, db:
+            edge = db.execute('SELECT lineage,source,result FROM edges').fetchone()
+            db.execute('DELETE FROM edges')
+        commits = self.count('commits')
+        with self.assertRaises(ledger.ObservationGap):
+            self.call(snapshot(2, [row]), early['cursor'])
+        self.assertEqual(self.count('commits'), commits)
+        self.assertEqual(self.count('edges'), 0)
+        self.assertEqual(self.count('early'), 1)
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('INSERT INTO edges(lineage,source,result) VALUES (?,?,?)', edge)
+        details, = self.call(snapshot(2, [row]), early['cursor'])['events']
+        self.assertEqual(details['payload']['detailsFor'], early['events'][0]['dedupeKey'])
+
+    def test_migrated_receipt_only_supplements_its_verified_kind(self):
+        row, early = self.migrated_receipt()
+        wrong = self.call(snapshot(2, [dict(row, reply=False)]), early['cursor'])
+        self.assertEqual(wrong['events'], [])
+        corrected = self.call(snapshot(3, [row]), wrong['cursor'])
+        details, = corrected['events']
+        self.assertEqual(details['type'], 'thread.reply')
+        self.assertEqual(details['payload']['detailsFor'], early['events'][0]['dedupeKey'])
+
     def test_numeric_timestamp_ties_and_preexisting_order_replay(self):
         cursor = self.call(snapshot(1, []))['cursor']
         rows = [dict(message(i), messageTs=ts, sender=f'U000000{i}') for i, ts in enumerate(
@@ -216,6 +289,7 @@ class LedgerTests(unittest.TestCase):
                                     'dedupeKey': 'slack:' + token('legacy')}])
         with closing(sqlite3.connect(self.path)) as db, db:
             db.execute('DROP TABLE watch_starts')
+            db.execute('DROP TABLE pending_details')
             db.execute('PRAGMA user_version=4')
             db.execute('UPDATE edges SET result=? WHERE lineage=? AND source=?',
                        (ledger.packed(frozen), lineage, source))

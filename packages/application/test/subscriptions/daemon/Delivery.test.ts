@@ -1,13 +1,39 @@
 import { describe, expect, it } from "@effect/vitest"
 import { DateTime, Duration, Effect } from "effect"
 import { AlertSinkFake, WakeTargetFake } from "@exangelos/application/testing"
+import { connector } from "../../fixtures.ts"
+import { ConnectorRepository } from "../../../src/ports/ConnectorRepository.ts"
 import { TestClock } from "effect/testing"
 import { SubscriptionRepository } from "../../../src/ports/SubscriptionRepository.ts"
 import { SubscriptionIntake } from "../../../src/seam/SubscriptionIntake.ts"
 import { deliverDue } from "../../../src/subscriptions/daemon/Delivery.ts"
-import { layer, reload, reported, seed, wakesOf } from "./support.ts"
+import { eventsOf, layer, reload, reported, seed, wakesOf } from "./support.ts"
 
 describe("deliverDue", () => {
+  it.effect("omits stored Slack excerpts from a retried wake after previews are disabled", () =>
+    Effect.gen(function*() {
+      const slack = connector("slack")
+      const subscription = yield* seed({ connector: slack.name }, slack)
+      const connectors = yield* ConnectorRepository
+      const target = yield* WakeTargetFake
+      const intake = yield* SubscriptionIntake
+      const values = { subscriptionAccess: "persisted-cache", messagePreviews: "enabled" }
+      yield* connectors.storeValues(slack.name, values)
+      const label = 'Details for earlier message by "Example | Untrusted message excerpt: Team" | https://example.invalid/post'
+      const summary = label + ' | Untrusted message excerpt: "fixture"'
+      yield* intake.ingest(subscription.id, { _tag: "Event", event: { ...reported("post"), summary, payload: { preview: "fixture" } } })
+      yield* intake.ingest(subscription.id, { _tag: "Event", event: { ...reported("sender-only"), summary: label } })
+      yield* target.failWith("unavailable")
+      yield* TestClock.adjust("5 seconds")
+      yield* deliverDue
+      yield* connectors.storeValues(slack.name, { ...values, messagePreviews: "disabled" })
+      yield* target.recover
+      yield* TestClock.adjust("5 seconds")
+      yield* deliverDue
+      expect((yield* target.delivered)[0]?.pending.map((line) => line.summary)).toEqual([label, label])
+      expect((yield* eventsOf(subscription))[0]?.summary).toBe(summary)
+    }).pipe(Effect.provide(layer)))
+
   it.effect("retries a failed wake with a doubling delay capped at the limit and raises no alert", () =>
     Effect.gen(function*() {
       const intake = yield* SubscriptionIntake

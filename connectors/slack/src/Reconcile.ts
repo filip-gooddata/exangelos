@@ -11,11 +11,17 @@ export class LegacyCursor extends Schema.TaggedError<LegacyCursor>()("LegacyCurs
 
 const EventType = Schema.Literals(["message.new", "thread.reply", "message.edited", "reaction.added", "reaction.removed"])
 export type EventType = typeof EventType.Type
-export const EventPayload = Schema.Struct({ version: Schema.Literal(1), count: Schema.Literal(1), ...MessageContext.fields })
+export const EventPayload = Schema.Union([
+  Schema.Struct({ version: Schema.Literal(1), count: Schema.Literal(1), ...MessageContext.fields }),
+  Schema.Struct({
+    version: Schema.Literal(1), count: Schema.Literal(0), delivery: Schema.Literal("details"),
+    detailsFor: Schema.String.check(Schema.isPattern(/^slack:[a-f0-9]{64}$/)), ...MessageContext.fields
+  })
+])
 const Result = Schema.Struct({
   retryObservation: Schema.optionalKey(Schema.Literal(true)),
   events: Schema.Array(Schema.Struct({ type: EventType, summary: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))), payload: Schema.optionalKey(EventPayload), occurredAt: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8640000000000000 })), dedupeKey: Schema.String.check(Schema.isMaxLength(512)) }))
-    .check(Schema.isMaxLength(100500)),
+    .check(Schema.isMaxLength(101000)),
   cursor: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
 })
 const gap = () => new ObservationGap({ reason: "Slack observation or cursor is incomplete, unsupported, or inconsistent" })
@@ -27,7 +33,7 @@ export const validateObservation = (input: unknown) => Effect.gen(function*() {
   return snapshot
 })
 
-export const reconcile = (cursor: string | undefined, input: unknown, startedAt?: number, notification?: typeof Notice.Type) => Effect.gen(function*() {
+export const reconcile = (cursor: string | undefined, input: unknown, startedAt?: number, notification?: typeof Notice.Type, includePreview?: boolean) => Effect.gen(function*() {
   const snapshot = notification === undefined ? yield* validateObservation(input) : input
   if (cursor !== undefined && cursor.length > 512) return yield* gap()
   const observedAt = yield* Clock.currentTimeMillis
@@ -36,7 +42,7 @@ export const reconcile = (cursor: string | undefined, input: unknown, startedAt?
     fileURLToPath(new URL("../direct/ledger.py", import.meta.url))
   ], {
     env: { PYTHONDONTWRITEBYTECODE: "1" }, extendEnv: true,
-    stdin: { stream: Stream.make(new TextEncoder().encode(JSON.stringify({ cursor, snapshot, observedAt, startedAt, notification, retryObservation: true }) + "\n")), endOnDone: true },
+    stdin: { stream: Stream.make(new TextEncoder().encode(JSON.stringify({ cursor, snapshot, observedAt, startedAt, notification, includePreview, retryObservation: true }) + "\n")), endOnDone: true },
     stderr: "ignore", forceKillAfter: "1 second"
   }))
   let bytes = 0
@@ -45,7 +51,7 @@ export const reconcile = (cursor: string | undefined, input: unknown, startedAt?
     child.stdout.pipe(Stream.runFoldEffect(() => "", (text, chunk) => Effect.try({
       try: () => {
         bytes += chunk.length
-        // Up to 100,500 events, each with bounded, JSON-escaped delivery context.
+        // Up to 101,000 events, each with bounded, JSON-escaped delivery context.
         if (bytes > 256000000) throw gap()
         return text + decoder.decode(chunk, { stream: true })
       }, catch: gap
