@@ -60,7 +60,8 @@ export class Watch extends Rpc.make("Watch", {
 }) {}
 
 export const IconAnswer = Schema.TaggedUnion({
-  Served: Connector.Icon.fields,
+  /** The media type is any string on the wire, so the daemon's own checks refuse an unsupported one with a reason. */
+  Served: { mediaType: Schema.String, data: Schema.String },
   None: {}
 })
 export type IconAnswer = typeof IconAnswer.Type

@@ -20,17 +20,20 @@ const isSvg = (bytes: Uint8Array) => {
 }
 
 /**
- * Checks a logo a connector served against its media type: a PNG must start with the PNG signature, an SVG
+ * Checks a logo a connector served: its media type must be PNG or SVG, a PNG must start with the PNG signature, an SVG
  * must be UTF-8 text whose root element is `<svg>`, and neither may exceed `maxIconBytes`. Fails with the reason.
  */
-export const checkIcon = (icon: Connector.Icon): Result.Result<Connector.Icon, string> => {
+export const checkIcon = (icon: { readonly mediaType: string; readonly data: string }): Result.Result<Connector.Icon, string> => {
+  if (icon.mediaType !== "image/png" && icon.mediaType !== "image/svg+xml") return Result.fail("its icon is not PNG or SVG")
   if (icon.data.length > Math.ceil(maxIconBytes / 3) * 4) return Result.fail(`its icon is over the ${maxIconBytes} byte limit`)
   const decoded = Base64.decode(icon.data)
   if (Result.isFailure(decoded)) return Result.fail("its icon is not base64")
   const bytes = decoded.success
   if (bytes.byteLength > maxIconBytes) return Result.fail(`its icon is ${bytes.byteLength} bytes, over the ${maxIconBytes} byte limit`)
   if (icon.mediaType === "image/png") {
-    return pngSignature.every((byte, index) => bytes[index] === byte) ? Result.succeed(icon) : Result.fail("its icon is not a PNG image")
+    return pngSignature.every((byte, index) => bytes[index] === byte)
+      ? Result.succeed({ mediaType: "image/png", data: icon.data })
+      : Result.fail("its icon is not a PNG image")
   }
-  return isSvg(bytes) ? Result.succeed(icon) : Result.fail("its icon is not an SVG image")
+  return isSvg(bytes) ? Result.succeed({ mediaType: "image/svg+xml", data: icon.data }) : Result.fail("its icon is not an SVG image")
 }

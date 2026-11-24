@@ -33,30 +33,52 @@ export class IconUnreadable extends Data.TaggedError("IconUnreadable")<{ readonl
 
 const mediaTypes: Record<string, Icon["mediaType"]> = { ".png": "image/png", ".svg": "image/svg+xml" }
 
-/** Reads an `.svg` or `.png` file (either case) as an icon; the path resolves against the connector's folder. */
-export const iconFile = (path: string): Effect.Effect<Icon, IconUnreadable> => {
+/** The largest icon the daemon relays; `iconFile` refuses a larger file before reading it. */
+export const maxIconBytes = 32 * 1024
+
+const readIconFile = async (path: string, inside?: string): Promise<Icon | string> => {
   const mediaType = mediaTypes[Path.extname(path).toLowerCase()]
-  if (mediaType === undefined) return Effect.fail(new IconUnreadable({ reason: `${path} is not an .svg or .png` }))
-  return Effect.tryPromise({
-    try: async () => ({ mediaType, bytes: new Uint8Array(await Fs.readFile(Path.resolve(path))) }),
-    catch: () => new IconUnreadable({ reason: `${path} cannot be read` })
-  })
+  if (mediaType === undefined) return `${path} is not an .svg or .png`
+  const real = await Fs.realpath(path)
+  if (inside !== undefined && !real.startsWith((await Fs.realpath(inside)) + Path.sep)) return `${path} leads outside the connector`
+  const stat = await Fs.stat(real)
+  if (!stat.isFile()) return `${path} is not a file`
+  if (stat.size > maxIconBytes) return `${path} is ${stat.size} bytes, over the ${maxIconBytes} byte limit`
+  return { mediaType, bytes: new Uint8Array(await Fs.readFile(real)) }
 }
 
+const iconAt = (path: string, inside?: string): Effect.Effect<Icon, IconUnreadable> =>
+  Effect.tryPromise({
+    try: () => readIconFile(Path.resolve(path), inside),
+    catch: () => new IconUnreadable({ reason: `${path} cannot be read` })
+  }).pipe(
+    Effect.flatMap((read) => typeof read === "string" ? Effect.fail(new IconUnreadable({ reason: read })) : Effect.succeed(read))
+  )
+
 /**
- * The file the manifest `icon` names, or none when the manifest names none. A connector's process runs in its
- * folder, so this reads `connector.json` from the working directory.
+ * Reads an `.svg` or `.png` file (either case) of at most `maxIconBytes` as an icon. A relative path resolves
+ * against the working directory, which is the connector's folder.
  */
-export const manifestIcon: Effect.Effect<Icon | undefined, IconUnreadable> = Effect.gen(function*() {
-  const manifest = yield* Effect.tryPromise({
-    try: async () => JSON.parse(await Fs.readFile("connector.json", "utf8")) as unknown,
-    catch: () => new IconUnreadable({ reason: "connector.json cannot be read" })
+export const iconFile = (path: string): Effect.Effect<Icon, IconUnreadable> => iconAt(path)
+
+/**
+ * The file the manifest `icon` in `directory` names, or none when the manifest names none. The file must stay
+ * inside the directory after links are resolved.
+ */
+export const manifestIconIn = (directory: string): Effect.Effect<Icon | undefined, IconUnreadable> =>
+  Effect.gen(function*() {
+    const manifest = yield* Effect.tryPromise({
+      try: async () => JSON.parse(await Fs.readFile(Path.join(directory, "connector.json"), "utf8")) as unknown,
+      catch: () => new IconUnreadable({ reason: "connector.json cannot be read" })
+    })
+    const declared = typeof manifest === "object" && manifest !== null ? (manifest as { icon?: unknown }).icon : undefined
+    if (declared === undefined) return undefined
+    if (typeof declared !== "string") return yield* new IconUnreadable({ reason: "the manifest icon is not a path" })
+    return yield* iconAt(Path.resolve(directory, declared), directory)
   })
-  const declared = typeof manifest === "object" && manifest !== null ? (manifest as { icon?: unknown }).icon : undefined
-  if (declared === undefined) return undefined
-  if (typeof declared !== "string") return yield* new IconUnreadable({ reason: "the manifest icon is not a path" })
-  return yield* iconFile(declared)
-})
+
+/** The default icon hook: the file the manifest `icon` names in the connector's folder, its working directory. */
+export const manifestIcon: Effect.Effect<Icon | undefined, IconUnreadable> = Effect.suspend(() => manifestIconIn(process.cwd()))
 
 export interface Handlers<P, R> {
   readonly configure: (values: Wire.ConfigurationValues) => Effect.Effect<void, ConfigurationRejected, R>
@@ -69,7 +91,7 @@ export interface Handlers<P, R> {
   >
   readonly watch: (request: WatchRequest<P>) => Stream.Stream<Event.WatchItem, ConnectorProtocol.WatchError, R>
   /**
-   * The connector's logo, or none. The daemon asks once each time the process starts. Defaults to
+   * The connector's logo, or none. The daemon asks once each time the process starts, right after the handshake, without waiting for Configure. Defaults to
    * `manifestIcon`; override it to find the logo at run time, such as in an installed app. A failure is
    * logged and serves no logo.
    */

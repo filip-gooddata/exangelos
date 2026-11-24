@@ -156,6 +156,22 @@ describe("connector supervision", () => {
       expect(yield* listedIcon).toBeUndefined()
     })))
 
+  it.effect("keeps the last logo when the next process does not answer in time", () =>
+    withConnectors(Effect.gen(function*() {
+      const icon: Connector.Icon = { mediaType: "image/svg+xml", data: "PHN2Zy8+" }
+      yield* runningWith(icon)
+      const runtime = yield* ConnectorRuntimeFake
+      yield* runtime.define(acme, { catalogue: catalogue(), icon: { _tag: "Hang" } })
+      yield* runtime.crash(acme, "segfault")
+      yield* settle
+      yield* TestClock.adjust("1 second")
+      yield* settle
+      expect(yield* connectorOf("acme")).toMatchObject({ process: "running" })
+      yield* TestClock.adjust("10 seconds")
+      yield* settle
+      expect(yield* listedIcon).toEqual(icon)
+    })))
+
   it.effect("marks a connector that keeps failing, alerts you and suspends its subscriptions after an hour", () =>
     withConnectors(Effect.gen(function*() {
       yield* running

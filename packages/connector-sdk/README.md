@@ -1,10 +1,10 @@
-# Template connector
+# Connector SDK
 
-The starting point `exangelos connector scaffold` copies: one event type, one parameter, a configuration with a secret field, and tests.
+`Connector.make` turns a catalogue and handlers into a connector, `Connector.serve` serves it over stdio, and `ConnectorTest.makeClient` drives it in memory. The `template` connector shows a complete one.
 
 ## Icon
 
-The daemon asks a running connector for its logo and relays what it serves to the panel. By default the SDK serves the file the manifest `icon` names, so this connector's `icon.svg` needs no code. Serve at most 32 KiB of PNG or SVG; the daemon refuses anything else.
+The daemon asks a running connector for its logo and relays what it serves to the panel. By default the SDK serves the file the manifest `icon` names, as the template's `"icon": "icon.svg"` does, with no code. That file must stay inside the connector folder after links are resolved. Serve at most 32 KiB (`Connector.maxIconBytes`) of PNG or SVG; the daemon refuses anything else.
 
 To find the logo at run time instead, give the handlers an `icon` hook:
 
@@ -17,7 +17,7 @@ interface Icon {
 }
 ```
 
-The daemon asks once each time the process starts, after the handshake and before Configure. Return `undefined` for no logo. A failure is logged to stderr and serves none, and the panel shows the connector's initials. `Connector.iconFile(path)` reads an `.svg` or `.png`; `Connector.manifestIcon` is the default.
+The daemon asks once each time the process starts, right after the handshake and while Configure may still run, so the hook must not depend on the configuration. Return `undefined` for no logo. A failure is logged to stderr and serves none, and the panel shows the connector's initials. `Connector.iconFile(path)` reads an `.svg` or `.png` of at most 32 KiB from anywhere; `Connector.manifestIcon` is the default.
 
 For example, to serve the icon of an app installed on macOS, falling back to the manifest icon when the app is missing:
 

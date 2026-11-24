@@ -63,11 +63,27 @@ describe("StdioConnectorRuntime", () => {
       expect(yield* connector.icon).toEqual(Option.some({ mediaType: "image/svg+xml", data: file.toString("base64") }))
     }).pipe(Effect.scoped, Effect.provide(runtime)))
 
-  it.live("reads a connector built before the Icon method as having no icon, and keeps it running", () =>
+  const iconWarnings = (fixture: string) =>
     Effect.gen(function*() {
-      const connector = yield* start(launch(`${import.meta.dirname}/fixture`, "legacy.ts"))
-      expect(yield* connector.icon).toEqual(Option.none())
+      const warnings: Array<unknown> = []
+      const capture = Logger.make(({ logLevel, message }) => {
+        if (logLevel === "Warn") warnings.push(message)
+      })
+      const connector = yield* start(launch(`${import.meta.dirname}/fixture`, fixture))
+      const icon = yield* connector.icon.pipe(Effect.provide(Logger.layer([capture])))
+      expect(icon).toEqual(Option.none())
       expect(yield* connector.configure({})).toEqual({ _tag: "Accepted" })
+      return warnings
+    })
+
+  it.live("reads a connector built before the Icon method as having no icon, quietly, and keeps it running", () =>
+    Effect.gen(function*() {
+      expect(yield* iconWarnings("legacy.ts")).toEqual([])
+    }).pipe(Effect.scoped, Effect.provide(runtime)))
+
+  it.live("warns about an icon answer that does not decode and keeps the connector running", () =>
+    Effect.gen(function*() {
+      expect(yield* iconWarnings("malformed.ts")).toEqual([["Connector template has no icon: its icon answer is malformed"]])
     }).pipe(Effect.scoped, Effect.provide(runtime)))
 
   it.live("configures the connector, then streams a watch to its end", () =>
@@ -156,6 +172,7 @@ describe("checkIcon", () => {
     ["HTML served as SVG", icon("image/svg+xml", "<html><svg/></html>"), "not an SVG image"],
     ["invalid UTF-8 served as SVG", icon("image/svg+xml", Buffer.from([0x3c, 0x73, 0x76, 0x67, 0x20, 0xff, 0x3e])), "not an SVG image"],
     ["SVG served as PNG", icon("image/png", svg), "not a PNG image"],
+    ["a GIF", { mediaType: "image/gif", data: "R0lGODlh" }, "not PNG or SVG"],
     ["data that is not base64", { mediaType: "image/png" as const, data: "%%%" }, "not base64"]
   ])("refuses %s", (_, served, reason) => {
     const checked = ConnectorIcon.checkIcon(served)

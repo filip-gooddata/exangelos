@@ -106,9 +106,14 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
             ? Effect.succeedSome(checked.success)
             : Effect.as(Effect.logWarning(`Connector ${connector} has no icon: ${checked.failure}`), Option.none())
         }),
-        // An older connector answers an unknown request with a defect.
+        // An older connector answers the unknown request with a defect; any other defect is an answer that did not decode.
         Effect.catchDefect((defect) =>
-          Effect.as(Effect.logDebug("connector serves no Icon method", Cause.die(defect)), Option.none())
+          Effect.as(
+            typeof defect === "string" && defect.startsWith("Unknown request tag")
+              ? Effect.logDebug("connector serves no Icon method")
+              : Effect.logWarning(`Connector ${connector} has no icon: its icon answer is malformed`),
+            Option.none()
+          )
         )
       ),
       watch: (request) =>
