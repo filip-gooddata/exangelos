@@ -238,7 +238,8 @@ def reconcile(request, path=None):
         commit = uuid.uuid4().hex
         result = {'events': [], 'cursor': f'4:{lineage}:{commit}'}
         db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)', (lineage, commit, snapshot['scope'], snapshot['generation'], snapshot['snapshot'], '2:' + digest))
-        for message in messages:
+        # snapshot_metadata supplies message-id order for equal numeric times.
+        for message in sorted(messages, key=lambda entry: Decimal(entry['messageTs'])):
             row = db.execute('SELECT metadata,revision FROM versions WHERE lineage=? AND message=? ORDER BY sequence DESC LIMIT 1', (lineage, message['id'])).fetchone()
             old, revision = (json.loads(row[0]), row[1]) if row else (None, 0)
             changes = []

@@ -209,6 +209,15 @@ class DirectTests(unittest.TestCase):
         msg['mrkdwn'] = False
         self.assertEqual(preview(), msg['text'])
 
+    def test_mrkdwn_literal_spans_and_decoded_credential_boundaries(self):
+        render = observation.render_mrkdwn
+        self.assertEqual(render('*go _now_*'), 'go now')
+        self.assertEqual(render('*https://example.invalid/a_b*'), 'https://example.invalid/a_b')
+        self.assertEqual(render('`<url|*literal*>` and ```~keep~```'), '`<url|*literal*>` and ```~keep~```')
+        self.assertEqual(render('a*b*c x_y_z 2 * 3 ~7 unmatched*'), 'a*b*c x_y_z 2 * 3 ~7 unmatched*')
+        with mock.patch.dict('os.environ', {'FIXTURE_TOKEN': '*a&b*'}):
+            self.assertEqual(render('before *a&amp;b* and _after_'), 'before [redacted] and after')
+
     def test_projected_user_and_channel_labels_fail_closed(self):
         data = fixture()
         author = 'U0000002'

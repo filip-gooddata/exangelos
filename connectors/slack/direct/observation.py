@@ -11,7 +11,7 @@ import unicodedata
 # Installed bundles carry the shared renderer in dist.
 connector_dir = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(connector_dir.parent / 'shared' if (connector_dir / 'package.json').is_file() else connector_dir / 'dist'))
-from excerpt import finish_excerpt
+from excerpt import finish_excerpt, mask_secrets
 
 
 TIMESTAMP = r'[0-9]{1,20}\.[0-9]{1,10}'
@@ -59,26 +59,64 @@ def safe_text(value):
     return value.isprintable() and not SENSITIVE.search(unicodedata.normalize('NFKC', value))
 
 
-# Slack angle-bracket entities separate a visible label from its target.
-SLACK_ENTITY = re.compile(r'<([^<>|]+)(?:\|([^<>]*))?>')
+# Protected spans stay literal while surrounding mrkdwn delimiters are paired.
+MRKDWN_TOKEN = re.compile(
+    r'(?P<code>```[\s\S]*?(?:```|\Z)|`[^`\n]*`)'
+    r'|(?P<entity><[^<>|]+(?:\|[^<>]*)?>)'
+    r'|(?P<url>https?://[^\s<>]+)|(?P<escaped>\\[*_~])|(?P<marker>[*_~])')
+
+
+def unescape_slack(text):
+    return text.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
+
+
+def render_mrkdwn(value):
+    parts = []
+    openings = {}
+    omit = []
+    length = 0
+    end = 0
+    for match in MRKDWN_TOKEN.finditer(value):
+        between = value[end:match.start()]
+        if '\n' in between:
+            openings.clear()
+        parts.append(unescape_slack(between))
+        length += len(parts[-1])
+        part = match[0]
+        end = match.end()
+        if match['entity']:
+            target, separator, caption = part[1:-1].partition('|')
+            if separator:
+                part = render_mrkdwn(caption)
+            elif target.startswith('!date^'):
+                part = ''
+            elif target.startswith(('mailto:', '!', '#', '@', 'https://', 'http://')):
+                part = unescape_slack(target.removeprefix('mailto:').removeprefix('!'))
+        elif match['url']:
+            # A bare URL can be the entire content of an emphasis span.
+            trailing = part[-1]
+            if trailing in openings and match.start() > 0 and value[match.start()-1] == trailing:
+                omit.extend((openings.pop(trailing), length + len(unescape_slack(part)) - 1))
+            part = unescape_slack(part)
+        elif match['marker']:
+            before = value[match.start()-1] if match.start() else ''
+            after = value[end:end+1]
+            if part in openings and before and not before.isspace() and not after.isalnum() and after != part:
+                omit.extend((openings.pop(part), length))
+            elif after and not after.isspace() and not before.isalnum() and before != part and after != part:
+                openings[part] = length
+        else:
+            part = unescape_slack(part)
+        parts.append(part)
+        length += len(part)
+    parts.append(unescape_slack(value[end:]))
+    return mask_secrets(''.join(parts), omit=omit)
 
 
 def display_text(value, mrkdwn=False):
     if not isinstance(value, str):
         return ''
-    if mrkdwn:
-        def label(match):
-            target, caption = match.groups()
-            if caption is not None:
-                return caption
-            if target.startswith('!date^'):
-                return ''
-            if target.startswith(('mailto:', '!', '#', '@', 'https://', 'http://')):
-                return target.removeprefix('mailto:').removeprefix('!')
-            return match[0]
-        value = SLACK_ENTITY.sub(label, value)
-        value = value.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
-    return value
+    return render_mrkdwn(mask_secrets(value)) if mrkdwn else value
 
 
 def layout_items(row, field):
@@ -161,7 +199,12 @@ def app_message(message):
 
 
 def visible_layout(message):
-    return ' '.join(part for part in (*block_text(message), *attachment_text(message)) if part.strip())
+    parts = []
+    for part in (*block_text(message), *attachment_text(message)):
+        part = part.strip()
+        if part and (not parts or part != parts[-1]):
+            parts.append(part)
+    return ' '.join(parts)
 
 
 def same_team(row, workspace):
