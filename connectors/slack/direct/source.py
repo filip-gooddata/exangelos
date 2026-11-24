@@ -132,6 +132,11 @@ def directory_identity(directory, binding=None, part='root', *, verified_legacy=
         os.close(fd)
 
 
+def directory_epoch(root, binding=None):
+    folder = root / 'https_app.slack.com_0.indexeddb.leveldb'
+    return {'root': directory_identity(root, binding), 'database': directory_identity(folder, binding, 'database')}
+
+
 def inventory(root, binding=None):
     entries = {}
     total_bytes = 0
@@ -139,7 +144,7 @@ def inventory(root, binding=None):
     for parent in (root, *root.parents):
         if parent.is_symlink():
             raise ValueError('symlink')
-    epoch = {'root': directory_identity(root, binding), 'database': directory_identity(folder, binding, 'database')}
+    epoch = directory_epoch(root, binding)
     for base in (folder, root / 'https_app.slack.com_0.indexeddb.blob'):
         pending = [base]
         while pending:

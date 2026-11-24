@@ -1,12 +1,12 @@
 # Slack connector
 
 Watches delayed, persisted Slack desktop snapshots for new messages, replies, edits,
-and reaction additions/removals in selected conversations and threads. The owner has
-accepted this delayed mode and waived the previous <=60-second requirement.
+and reaction additions/removals in selected conversations and threads. Optional
+notification-log access can deliver verified posts and replies earlier.
 
 Staleness is unbounded. Polling more often cannot reveal unpersisted changes.
-Intermediate messages, edits, replies and reaction toggles can be missed. Events
-describe differences between observed snapshots, not a complete history. Their
+Intermediate messages, edits, replies and reaction toggles can be missed. Cache events
+describe differences between observed snapshots. Their
 occurrence time is the observation time, not the original Slack action time.
 See the [persisted state contract](direct/redux-producer-report.md) and
 [evidence boundaries](direct/evidence.md).
@@ -208,8 +208,8 @@ each new Watch lineage. A previously unseen message or reply qualifies as an
 arrival when its Slack timestamp is at or after that start. Older rows entering
 the cache are remembered silently. A later poll can deliver several qualifying
 messages, including a message that only became visible after a newer one. This
-comparison assumes the local machine clock agrees with Slack. The first snapshot
-itself remains silent, and messages that never reach the cache cannot be reported.
+comparison assumes the local machine clock agrees with Slack. In cache-only mode the first snapshot
+remains silent, and delivery depends on the message reaching the cache.
 
 A cursor created before 0.3.0 can replay its already committed batches with
 their original payloads. Its ledger has no recorded Watch start. At the end of that history the connector ends the old Watch with a reason
@@ -255,3 +255,35 @@ or live event latency. Installed-archive checks are documented in [VALIDATION.md
 On macOS the connector reads the icon from the installed Slack app bundle without opening the app. It converts the icon in memory and serves a 128 × 128 PNG to the panel. If the icon is unavailable, the panel shows initials.
 
 The connector ships without vendor artwork. The Slack icon is a trademark of Slack. Displaying it from a local installation still carries trademark risk and does not imply endorsement.
+
+### Earlier delivery from Slack Desktop notifications
+
+With cache access configured, set `notificationLog=enabled` to also read new
+records in the selected profile's `logs/default/browser.log`. The selected
+cache folder must be named `IndexedDB`. Existing configurations keep their
+cache-only behavior on upgrade. Set `notificationLog=disabled` to switch back.
+The cache scan interval stays the same.
+
+A structured message notification can deliver a new post or thread reply
+before the post reaches the cache. Its workspace, receiving account,
+conversation, message timestamp and optional thread parent must agree with
+the saved selection and the notification ID. The early event includes the
+saved label, message time and a reconstructed Slack link. Slack Desktop
+redacted author, text and launch URL in all sampled message notifications.
+Early events therefore omit sender and preview, including with previews
+enabled. Later cache enrichment is silent. Subsequent observed edits and
+reaction changes use the ordinary cache path and its preview settings.
+
+In a prospective local observation, one matching conversation and timestamp
+appeared in the log 97.8–98.8 seconds before host receipt. That timing probe
+did not establish the workspace. A separate bounded schema check found 96
+message records matching a saved workspace and receiving account, of which
+34 also matched a saved conversation. Earlier retrospective observations
+matched five of 18 cached messages. Notification coverage and delivery
+latency vary with Slack settings and client behavior.
+
+The reader tails the active file in bounded chunks. Startup and excessive backlog establish an end-of-file baseline. After rotation
+or truncation, a bounded replacement is eligible only for posts newer than the
+active tail. A new subscription records its start before the readers race.
+Unread, unsupported, ambiguous or missing notifications therefore depend on
+the cache. Slack may retain neither source long enough to observe a change.

@@ -152,7 +152,7 @@ def legacy_context_matches(db, lineage, messages, old_digest):
     return rows != messages and hashlib.sha256(packed(rows).encode()).hexdigest() == old_digest
 
 
-def open_ledger(path, resume):
+def open_ledger(path, resume, *, check_integrity=True):
     require(not path.is_symlink())
     created = False
     if not path.exists():
@@ -178,7 +178,8 @@ def open_ledger(path, resume):
         else:
             version = db.execute('PRAGMA user_version').fetchone()[0]
             require(version in (4, 5))
-            require(db.execute('PRAGMA quick_check').fetchall() == [('ok',)])
+            if check_integrity:
+                require(db.execute('PRAGMA quick_check').fetchall() == [('ok',)])
             for table, columns in (('commits', 'lineage,id,scope,generation,snapshot,digest'),
                                    ('versions', 'sequence,lineage,message,commit_id,metadata,revision'),
                                    ('edges', 'lineage,source,result')):
@@ -186,6 +187,7 @@ def open_ledger(path, resume):
             if version == 4:
                 db.execute(FLOORS)
                 db.execute('PRAGMA user_version=5')
+        db.execute("CREATE TABLE IF NOT EXISTS early (lineage TEXT, message TEXT, PRIMARY KEY(lineage,message))")
         return db
     except BaseException:
         db.close()
@@ -202,8 +204,11 @@ def reconcile(request, path=None):
     require('cursor' not in request or isinstance(cursor, str))
     match = CURSOR.fullmatch(cursor) if isinstance(cursor, str) else None
     require(cursor is None or match is not None)
+    notice = request.get('notification')
+    require(notice is None or match is not None)
     baseline = snapshot_metadata(snapshot) if cursor is None else None
-    db = open_ledger(Path(path) if path is not None else ledger_path(), cursor is not None)
+    db = open_ledger(Path(path) if path is not None else ledger_path(), cursor is not None,
+                     check_integrity=notice is None)
     try:
         previous = None
         if match:
@@ -213,6 +218,12 @@ def reconcile(request, path=None):
             edge = db.execute('SELECT result FROM edges WHERE lineage=? AND source=?', (lineage, source)).fetchone()
             if edge:
                 result = json.loads(edge[0])
+                if request.get('retryObservation'):
+                    successor = CURSOR.fullmatch(result['cursor'])
+                    generation, = db.execute('SELECT generation FROM commits WHERE lineage=? AND id=?',
+                                              successor.groups()).fetchone()
+                    if notice is not None or int(snapshot['generation']) > int(generation):
+                        result['retryObservation'] = True
                 db.commit()
                 return result
             row = db.execute('SELECT millis FROM watch_starts WHERE lineage=?', (lineage,)).fetchone()
@@ -225,6 +236,26 @@ def reconcile(request, path=None):
             require(type(start_ms) is int and 0 <= start_ms <= observed_at)
             db.execute('INSERT INTO watch_starts VALUES (?,?)', (lineage, start_ms))
         start = Decimal(start_ms).scaleb(-3)
+        if notice is not None:
+            message = notice['id']
+            require(token(message) and type(notice['reply']) is bool)
+            known = db.execute('SELECT 1 FROM versions WHERE lineage=? AND message=? LIMIT 1', (lineage, message)).fetchone()
+            if (known or Decimal(notice['messageTs']) < start or
+                    not db.execute('INSERT OR IGNORE INTO early VALUES (?,?)', (lineage, message)).rowcount):
+                db.commit()
+                return {'events': [], 'cursor': cursor}
+            commit = uuid.uuid4().hex
+            kind = 'thread.reply' if notice['reply'] else 'message.new'
+            identity = packed([lineage, previous[0], message, 0, kind, 'created'])
+            payload = {field: notice[field] for field in ('messageTs', 'conversationLabel', 'permalink')}
+            event = dict(type=kind, occurredAt=observed_at, payload=dict(payload, version=1, count=1),
+                         summary=wake_summary(kind, payload, observed_at),
+                         dedupeKey='slack:' + hashlib.sha256(identity.encode()).hexdigest())
+            result = dict(events=[event], cursor=f'4:{lineage}:{commit}')
+            db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)', (lineage, commit, *previous))
+            db.execute('INSERT INTO edges VALUES (?,?,?)', (lineage, source, packed(result)))
+            db.commit()
+            return result
         messages, digest = baseline if baseline is not None else snapshot_metadata(snapshot)
         if previous:
             require(int(snapshot['generation']) >= int(previous[1]))
@@ -243,9 +274,11 @@ def reconcile(request, path=None):
             row = db.execute('SELECT metadata,revision FROM versions WHERE lineage=? AND message=? ORDER BY sequence DESC LIMIT 1', (lineage, message['id'])).fetchone()
             old, revision = (json.loads(row[0]), row[1]) if row else (None, 0)
             changes = []
+            early = False
             if previous:
                 if old is None:
-                    if Decimal(message['messageTs']) >= start:
+                    early = db.execute('DELETE FROM early WHERE lineage=? AND message=?', (lineage, message['id'])).rowcount
+                    if not early and Decimal(message['messageTs']) >= start:
                         changes.append(('thread.reply' if message['reply'] else 'message.new', 'created'))
                 else:
                     require(old['reply'] == message['reply'])
@@ -268,7 +301,7 @@ def reconcile(request, path=None):
                 result['events'].append({'type': kind, 'occurredAt': observed_at, 'summary': wake_summary(kind, payload, observed_at),
                                          'dedupeKey': 'slack:' + hashlib.sha256(identity.encode()).hexdigest(),
                                          'payload': dict(payload, version=1, count=1)})
-            revision += bool(changes)
+            revision += bool(changes or early)
             require(revision < 9007199254740990)
             if old != message:
                 db.execute('INSERT INTO versions(lineage,message,commit_id,metadata,revision) VALUES (?,?,?,?,?)', (lineage, message['id'], commit, packed(message), revision))
