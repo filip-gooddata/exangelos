@@ -1,12 +1,13 @@
 {
   "name": "teams",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "entry": {
     "_tag": "Bundle",
     "path": "dist/main.js"
   },
   "files": [
     "dist/excerpt.py",
+    "dist/local-app-icon.js",
     "runtime/bridge.py",
     "runtime/ledger.py",
     "validation/native_cache.py",

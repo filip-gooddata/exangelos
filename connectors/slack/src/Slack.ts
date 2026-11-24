@@ -1,4 +1,5 @@
 import { Clock, DateTime, Duration, Effect, Option, Ref, Schema, Stream } from "effect"
+import { localAppIcon } from "../../shared/localAppIcon.ts"
 import { Catalogue, Connector } from "@exangelos/connector-sdk"
 import { EventPayload, reconcile, type EventType } from "./Reconcile.ts"
 import { localSource, type Source } from "./Source.ts"
@@ -55,6 +56,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
       return { request, label }
     })
     return {
+      icon: Effect.promise(() => localAppIcon(["com.tinyspeck.slackmacgap"], Connector.maxIconBytes)),
       configure: (values) => Effect.gen(function*() {
         yield* Ref.set(configured, undefined)
         if (values.subscriptionAccess === "disabled") return

@@ -218,6 +218,9 @@ class DirectTests(unittest.TestCase):
         with mock.patch.dict('os.environ', {'FIXTURE_TOKEN': '*a&b*'}):
             self.assertEqual(render('before *a&amp;b* and _after_'), 'before [redacted] and after')
 
+        with mock.patch.dict('os.environ', {'FIXTURE_TOKEN': '|caption'}):
+            self.assertEqual(observation.display_text('<private-target|caption>', True), '[redacted]')
+
     def test_projected_user_and_channel_labels_fail_closed(self):
         data = fixture()
         author = 'U0000002'

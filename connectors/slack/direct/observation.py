@@ -116,7 +116,14 @@ def render_mrkdwn(value):
 def display_text(value, mrkdwn=False):
     if not isinstance(value, str):
         return ''
-    return render_mrkdwn(mask_secrets(value)) if mrkdwn else value
+    if not mrkdwn:
+        return value
+    masked = mask_secrets(value)
+    # A credential can include a link delimiter. Parsing its replacement
+    # could turn a hidden target into visible text.
+    if masked != value and '<' in value and any(value.count(c) != masked.count(c) for c in '<|>'):
+        return '[redacted]'
+    return render_mrkdwn(masked)
 
 
 def layout_items(row, field):

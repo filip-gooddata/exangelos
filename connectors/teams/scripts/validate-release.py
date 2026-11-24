@@ -58,7 +58,8 @@ def extract(archive, directory):
         tar.extractall(directory)
 
 
-source_paths = ['connectors/teams', 'connectors/shared/excerpt.py']
+source_paths = ['connectors/teams', 'connectors/shared/excerpt.py',
+                'connectors/shared/localAppIcon.ts', 'connectors/shared/local-app-icon.js']
 source, packer = revision(args.source), revision(args.packer or args.source)
 metadata = {'source': source, 'packer': packer, 'worktree': args.worktree}
 (evidence / 'revisions.json').write_text(json.dumps(metadata, indent=2))
