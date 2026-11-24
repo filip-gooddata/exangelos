@@ -1,0 +1,39 @@
+adapters/connector-runtime/src/Icon.ts
+  s_2aaffa53c193a0::t_93da8b9f2bdfc5 23,26-27,34-36,38
+adapters/connector-runtime/src/StdioConnectorRuntime.ts
+  s_2aaffa53c193a0::t_c3c46e6672cd2d 109,111-116
+adapters/connector-runtime/test/StdioConnectorRuntime.test.ts
+  s_2aaffa53c193a0::t_b8da6ce44860a4 66,68-74,76-86,175
+adapters/connector-runtime/test/fixture/malformed.ts
+  s_2aaffa53c193a0::t_3d41fb35c05f9d 1-36
+docs/spec.md
+  s_2aaffa53c193a0::t_f2ed02a3a69119 307
+packages/application/src/testing/ConnectorRuntimeFake.ts
+  s_2aaffa53c193a0::t_5f4bc5bf4d729f 39-40,131-134
+packages/application/test/connectors/supervision.test.ts
+  s_2aaffa53c193a0::t_f0c964f647a0f8 159-174
+packages/connector-sdk/README.md
+  s_2aaffa53c193a0::t_3e7fb1ac9d36bf 1,3,7,20
+packages/connector-sdk/src/Connector.ts
+  s_2aaffa53c193a0::t_80a5d2ede94093 36-39,41-47,50-57,59-60,62-77,79-81,94
+packages/connector-sdk/test/Connector.test.ts
+  s_2aaffa53c193a0::t_22ae720f2a6b7e 2-4,214-246
+packages/contracts/src/ConnectorProtocol.ts
+  s_2aaffa53c193a0::t_706d9ea20f9b42 63-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4bf5231fcce776fca17d36ce232e1959010380e6",
+  "prompts": {},
+  "sessions": {
+    "s_2aaffa53c193a0": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "24cc1731-ab76-4548-8dd8-2991b5b32b21",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
