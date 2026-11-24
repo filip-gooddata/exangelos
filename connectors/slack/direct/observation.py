@@ -70,7 +70,7 @@ def unescape_slack(text):
     return text.replace('&lt;', '<').replace('&gt;', '>').replace('&amp;', '&')
 
 
-def render_mrkdwn(value):
+def mrkdwn_spans(value):
     parts = []
     openings = {}
     omit = []
@@ -87,17 +87,18 @@ def render_mrkdwn(value):
         if match['entity']:
             target, separator, caption = part[1:-1].partition('|')
             if separator:
-                part = render_mrkdwn(caption)
+                part, markers = mrkdwn_spans(caption)
+                omit.extend(length + i for i in markers)
             elif target.startswith('!date^'):
                 part = ''
             elif target.startswith(('mailto:', '!', '#', '@', 'https://', 'http://')):
                 part = unescape_slack(target.removeprefix('mailto:').removeprefix('!'))
         elif match['url']:
-            # A bare URL can be the entire content of an emphasis span.
-            trailing = part[-1]
-            if trailing in openings and match.start() > 0 and value[match.start()-1] == trailing:
-                omit.extend((openings.pop(trailing), length + len(unescape_slack(part)) - 1))
             part = unescape_slack(part)
+            tail = len(part.rstrip('.,;:!?)]}'))
+            while tail and part[tail - 1] in openings:
+                omit.extend((openings.pop(part[tail - 1]), length + tail - 1))
+                tail -= 1
         elif match['marker']:
             before = value[match.start()-1] if match.start() else ''
             after = value[end:end+1]
@@ -110,20 +111,25 @@ def render_mrkdwn(value):
         parts.append(part)
         length += len(part)
     parts.append(unescape_slack(value[end:]))
-    return mask_secrets(''.join(parts), omit=omit)
+    return ''.join(parts), omit
 
 
-def display_text(value, mrkdwn=False):
+def display_spans(value, mrkdwn=False):
     if not isinstance(value, str):
-        return ''
+        return '', ()
     if not mrkdwn:
-        return value
+        return value, ()
     masked = mask_secrets(value)
     # A credential can include a link delimiter. Parsing its replacement
     # could turn a hidden target into visible text.
     if masked != value and '<' in value and any(value.count(c) != masked.count(c) for c in '<|>'):
-        return '[redacted]'
-    return render_mrkdwn(masked)
+        return '[redacted]', ()
+    return mrkdwn_spans(masked)
+
+
+def display_text(value, mrkdwn=False):
+    text, omit = display_spans(value, mrkdwn)
+    return mask_secrets(text, omit=omit)
 
 
 def layout_items(row, field):
@@ -134,8 +140,8 @@ def layout_items(row, field):
 
 def text_object(obj):
     if isinstance(obj, dict) and obj.get('type') in ('plain_text', 'mrkdwn'):
-        return display_text(obj.get('text'), obj['type'] == 'mrkdwn')
-    return ''
+        return display_spans(obj.get('text'), obj['type'] == 'mrkdwn')
+    return '', ()
 
 
 def rich_text(section):
@@ -158,7 +164,7 @@ def block_text(row):
         kind = block.get('type')
         if kind == 'rich_text':
             for section in layout_items(block, 'elements'):
-                yield rich_text(section)
+                yield rich_text(section), ()
         elif kind == 'section':
             yield text_object(block.get('text'))
             for field in layout_items(block, 'fields'):
@@ -181,10 +187,10 @@ def attachment_text(row):
         formats = attachment.get('mrkdwn_in')
         formats = formats.values() if isinstance(formats, dict) else ()
         for field in ('pretext', 'title', 'text'):
-            yield display_text(attachment.get(field), field in formats)
+            yield display_spans(attachment.get(field), field in formats)
         for entry in layout_items(attachment, 'fields'):
-            yield display_text(entry.get('title'))
-            yield display_text(entry.get('value'), 'fields' in formats)
+            yield display_spans(entry.get('title'))
+            yield display_spans(entry.get('value'), 'fields' in formats)
         yield from block_text(attachment)
 
 
@@ -207,11 +213,23 @@ def app_message(message):
 
 def visible_layout(message):
     parts = []
-    for part in (*block_text(message), *attachment_text(message)):
-        part = part.strip()
-        if part and (not parts or part != parts[-1]):
-            parts.append(part)
-    return ' '.join(parts)
+    omit = []
+    length = 0
+    last = None
+    for part, markers in (*block_text(message), *attachment_text(message)):
+        if not part.strip():
+            continue
+        prefix = ' ' if parts else ''
+        start = length + len(prefix)
+        parts.append(prefix + part)
+        length = start + len(part)
+        visible = mask_secrets(part, omit=markers).strip()
+        if visible == last:
+            omit.extend(range(start - len(prefix), length))
+        else:
+            omit.extend(start + i for i in markers)
+        last = visible
+    return mask_secrets(''.join(parts), omit=omit)
 
 
 def same_team(row, workspace):

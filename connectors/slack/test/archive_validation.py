@@ -46,6 +46,7 @@ class Wire:
     def __init__(self, installed, home, path=None):
         env = {'PATH': str(path) if path is not None else os.environ['PATH']}
         env.update(FIXTURE_API_TOKEN='fictional-installed-secret', FIXTURE_BOUNDARY_TOKEN='*fictional-boundary*',
+                   FIXTURE_LABEL_SECRET='left-*alpha*-right',
                    HOME=str(home), EXANGELOS_HOME=str(home / 'state'), XDG_DATA_HOME=str(home / 'xdg'),
                    XDG_CONFIG_HOME=str(home / 'config'), XDG_CACHE_HOME=str(home / 'cache'),
                    APPDATA=str(home / 'roaming'), LOCALAPPDATA=str(home / 'local'))
@@ -221,6 +222,9 @@ def app_posts():
         ('Fixture GitHub', dict(blocks=[section('Before *fictional-boundary* after')]), 'Before [redacted] after'),
         ('Fixture Jira', dict(blocks=[section('*fictional-installed-secret* ready')]), '[redacted] ready'),
         ('Fixture Jira', dict(blocks=[section('Before fictional-*installed*-secret after')]), 'Before [redacted] after'),
+        ('Fixture Jira', dict(blocks=[section('left-<https://example.invalid|*alpha*>-right')]), '[redacted]'),
+        ('Fixture Jira', dict(blocks=[section('*Read https://example.invalid/a_b*')]), 'Read https://example.invalid/a_b'),
+        ('Fixture Jira', dict(blocks=[section('*https://example.invalid/a_b*.')]), 'https://example.invalid/a_b.'),
         ('Fixture Jira', dict(blocks=[section('*Ready*'), section('Ready')]), 'Ready'),
         ('Fixture Jira', dict(text='🌻' * 200), '🌻' * 160),
         ('Fixture Jira', dict(redacted=True, blocks=jira), None),

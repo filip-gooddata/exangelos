@@ -2,6 +2,7 @@
 import json
 from pathlib import Path
 import plistlib
+import random
 import struct
 import subprocess
 import sys
@@ -14,10 +15,14 @@ def chunk(kind, data):
     return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
 
 
-def synthetic_icns():
+def synthetic_icns(noisy=False):
     row = bytes([0]) + bytes([255, 0, 0, 128]) * 128
+    rows = row * 128
+    if noisy:
+        rng = random.Random(73)
+        rows = b"".join(bytes([0]) + rng.randbytes(512) for _ in range(128))
     png = (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 128, 128, 8, 6, 0, 0, 0))
-           + chunk(b"IDAT", zlib.compress(row * 128)) + chunk(b"IEND", b""))
+           + chunk(b"IDAT", zlib.compress(rows)) + chunk(b"IEND", b""))
     return b"icns" + struct.pack(">I", 16 + len(png)) + b"ic07" + struct.pack(">I", 8 + len(png)) + png
 
 
@@ -41,7 +46,7 @@ class InstalledIconTest(unittest.TestCase):
         script = Path(__file__).with_name("local-app-icon.js").read_text() + """
 function run([root, ...ids]) {
   const visited = []
-  const encoded = installedIcon(ids, id => {
+  const encoded = installedIcon(ids, 32768, id => {
     visited.push(id)
     return $.NSURL.fileURLWithPath(root + "/" + id)
   })
@@ -64,6 +69,13 @@ function run([root, ...ids]) {
         self.assertEqual(self.render(modern, classic), expected)
         (self.bundle(modern, "Modern") / "Modern.icns").write_bytes(image)
         self.assertEqual(self.render(modern, classic), dict(expected, visited=[modern]))
+
+    def test_oversized_modern_falls_back_to_classic(self):
+        modern, classic = "com.microsoft.teams2", "com.microsoft.teams"
+        (self.bundle(modern, "Modern") / "Modern.icns").write_bytes(synthetic_icns(noisy=True))
+        (self.bundle(classic, "Classic") / "Classic.icns").write_bytes(synthetic_icns())
+        self.assertEqual(self.render(modern, classic),
+                         {"visited": [modern, classic], "width": 128, "height": 128, "alpha": 128})
 
     def test_missing_broken_and_escaping_resource(self):
         self.assertEqual(self.render("missing"), {"visited": ["missing"]})

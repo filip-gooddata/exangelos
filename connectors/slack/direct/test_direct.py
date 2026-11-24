@@ -210,7 +210,8 @@ class DirectTests(unittest.TestCase):
         self.assertEqual(preview(), msg['text'])
 
     def test_mrkdwn_literal_spans_and_decoded_credential_boundaries(self):
-        render = observation.render_mrkdwn
+        def render(value):
+            return observation.display_text(value, True)
         self.assertEqual(render('*go _now_*'), 'go now')
         self.assertEqual(render('*https://example.invalid/a_b*'), 'https://example.invalid/a_b')
         self.assertEqual(render('`<url|*literal*>` and ```~keep~```'), '`<url|*literal*>` and ```~keep~```')

@@ -8,7 +8,7 @@ export async function localAppIcon(bundleIds: ReadonlyArray<string>, maxBytes: n
   if (process.platform !== "darwin") return undefined
   try {
     const script = fileURLToPath(new URL("./local-app-icon.js", import.meta.url))
-    const { stdout } = await run("/usr/bin/osascript", ["-l", "JavaScript", script, ...bundleIds], {
+    const { stdout } = await run("/usr/bin/osascript", ["-l", "JavaScript", script, String(maxBytes), ...bundleIds], {
       maxBuffer: 4 * Math.ceil(maxBytes / 3) + 2,
       timeout: 3000
     })

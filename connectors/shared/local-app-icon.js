@@ -1,7 +1,7 @@
 // Launch Services locates the bundle. AppKit draws its icon into an explicit
 // pixel buffer so the result is independent of the current screen's scale.
 ObjC.import("AppKit")
-function installedIcon(ids, locate) {
+function installedIcon(ids, maxBytes, locate) {
   for (const id of ids) {
     try {
       const url = locate(id)
@@ -31,12 +31,13 @@ function installedIcon(ids, locate) {
         $.NSGraphicsContext.restoreGraphicsState
       }
       const png = bitmap.representationUsingTypeProperties($.NSBitmapImageFileTypePNG, $({}))
+      if (!png || png.isNil() || !png.length || png.length > maxBytes) continue
       return ObjC.unwrap(png.base64EncodedStringWithOptions(0))
     } catch (_) {}
   }
   return ""
 }
 
-function run(ids) {
-  return installedIcon(ids, id => $.NSWorkspace.sharedWorkspace.URLForApplicationWithBundleIdentifier(id))
+function run([maxBytes, ...ids]) {
+  return installedIcon(ids, Number(maxBytes), id => $.NSWorkspace.sharedWorkspace.URLForApplicationWithBundleIdentifier(id))
 }
