@@ -19,8 +19,10 @@ describe("deliverDue", () => {
       const intake = yield* SubscriptionIntake
       const values = { subscriptionAccess: "persisted-cache", messagePreviews: "enabled" }
       yield* connectors.storeValues(slack.name, values)
-      const summary = 'Details for earlier message | Untrusted message excerpt: "fixture"'
-      yield* intake.ingest(subscription.id, { _tag: "Event", event: { ...reported("post"), summary } })
+      const label = 'Details for earlier message by "Example | Untrusted message excerpt: Team" | https://example.invalid/post'
+      const summary = label + ' | Untrusted message excerpt: "fixture"'
+      yield* intake.ingest(subscription.id, { _tag: "Event", event: { ...reported("post"), summary, payload: { preview: "fixture" } } })
+      yield* intake.ingest(subscription.id, { _tag: "Event", event: { ...reported("sender-only"), summary: label } })
       yield* target.failWith("unavailable")
       yield* TestClock.adjust("5 seconds")
       yield* deliverDue
@@ -28,7 +30,7 @@ describe("deliverDue", () => {
       yield* target.recover
       yield* TestClock.adjust("5 seconds")
       yield* deliverDue
-      expect((yield* target.delivered)[0]?.pending[0]?.summary).toBe("Details for earlier message")
+      expect((yield* target.delivered)[0]?.pending.map((line) => line.summary)).toEqual([label, label])
       expect((yield* eventsOf(subscription))[0]?.summary).toBe(summary)
     }).pipe(Effect.provide(layer)))
 

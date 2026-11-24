@@ -180,10 +180,10 @@ def open_ledger(path, resume, *, check_integrity=True):
             for statement in SCHEMA:
                 db.execute(statement)
             db.execute(FLOORS)
-            db.execute('PRAGMA user_version=5')
+            version = 0
         else:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            require(version in (4, 5))
+            require(version in (4, 5, 6))
             if check_integrity:
                 require(db.execute('PRAGMA quick_check').fetchall() == [('ok',)])
             for table, columns in (('commits', 'lineage,id,scope,generation,snapshot,digest'),
@@ -192,8 +192,13 @@ def open_ledger(path, resume, *, check_integrity=True):
                 db.execute(f'SELECT {columns} FROM {table} LIMIT 0')
             if version == 4:
                 db.execute(FLOORS)
-                db.execute('PRAGMA user_version=5')
-        db.execute("CREATE TABLE IF NOT EXISTS early (lineage TEXT, message TEXT, PRIMARY KEY(lineage,message))")
+        if version < 6:
+            db.execute('CREATE TABLE pending_details (lineage TEXT, message TEXT, reply INTEGER, '
+                       'need_sender INTEGER, need_preview INTEGER, PRIMARY KEY(lineage,message))')
+            if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='early'").fetchone():
+                db.execute('INSERT INTO pending_details SELECT lineage,message,NULL,1,1 FROM early')
+                db.execute('DROP TABLE early')
+            db.execute('PRAGMA user_version=6')
         return db
     except BaseException:
         db.close()
@@ -247,12 +252,14 @@ def reconcile(request, path=None):
             require(type(start_ms) is int and 0 <= start_ms <= observed_at)
             db.execute('INSERT INTO watch_starts VALUES (?,?)', (lineage, start_ms))
         start = Decimal(start_ms).scaleb(-3)
+        previews = request.get('includePreview') is not False
         if notice is not None:
             message = notice['id']
             require(token(message) and type(notice['reply']) is bool)
             known = db.execute('SELECT 1 FROM versions WHERE lineage=? AND message=? LIMIT 1', (lineage, message)).fetchone()
             if (known or Decimal(notice['messageTs']) < start or
-                    not db.execute('INSERT OR IGNORE INTO early VALUES (?,?)', (lineage, message)).rowcount):
+                    not db.execute('INSERT OR IGNORE INTO pending_details VALUES (?,?,?,1,?)',
+                                   (lineage, message, notice['reply'], previews)).rowcount):
                 db.commit()
                 return {'events': [], 'cursor': cursor}
             commit = uuid.uuid4().hex
@@ -290,11 +297,22 @@ def reconcile(request, path=None):
             if previous:
                 kind = 'thread.reply' if message['reply'] else 'message.new'
                 key = lineage, message['id']
-                if old is None or 'sender' not in old:
-                    early = db.execute('SELECT 1 FROM early WHERE lineage=? AND message=?', key).fetchone()
-                if early and any(field in context for field in ('sender', 'memberSender', 'preview')):
-                    changes.append((kind, 'details'))
-                    db.execute('DELETE FROM early WHERE lineage=? AND message=?', key)
+                pending = db.execute('SELECT reply,need_sender,need_preview FROM pending_details '
+                                     'WHERE lineage=? AND message=?', key).fetchone()
+                early = pending is not None
+                if pending:
+                    reply, need_sender, need_preview = pending
+                    same_post = (reply is None or reply == message['reply']) and (old is None or old['body'] == message['body'])
+                    sender_ready = need_sender and ('sender' in context or 'memberSender' in context)
+                    preview_ready = need_preview and previews and 'preview' in context
+                    if same_post and (sender_ready or preview_ready):
+                        changes.append((kind, 'details'))
+                    remaining = (need_sender and not sender_ready, need_preview and previews and not preview_ready)
+                    if not same_post or not any(remaining):
+                        db.execute('DELETE FROM pending_details WHERE lineage=? AND message=?', key)
+                    elif remaining != (need_sender, need_preview):
+                        db.execute('UPDATE pending_details SET need_sender=?,need_preview=? '
+                                   'WHERE lineage=? AND message=?', (*remaining, *key))
                 if old is None:
                     if not early and Decimal(message['messageTs']) >= start:
                         changes.append((kind, 'created'))
@@ -313,10 +331,12 @@ def reconcile(request, path=None):
                     payload['sender'] = context['memberSender']
                 if 'memberPeer' in context:
                     payload['conversationLabel'] = 'Slack DM with ' + context['memberPeer']
-                if kind in ('message.new', 'thread.reply', 'message.edited') and 'preview' in context:
+                if previews and kind in ('message.new', 'thread.reply', 'message.edited') and 'preview' in context:
                     payload['preview'] = context['preview']
                 if transition == 'details':
                     original = packed([lineage, snapshot['scope'], message['id'], 0, kind, 'created'])
+                    if not preview_ready:
+                        payload.pop('preview', None)
                     payload.update(delivery='details', detailsFor='slack:' + hashlib.sha256(original.encode()).hexdigest())
                 result['events'].append({'type': kind, 'occurredAt': observed_at, 'summary': wake_summary(kind, payload, observed_at),
                                          'dedupeKey': 'slack:' + hashlib.sha256(identity.encode()).hexdigest(),

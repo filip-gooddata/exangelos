@@ -281,7 +281,10 @@ earlier thread reply”. It includes the Slack link. A channel subscription
 filtered to `message.new` receives message details under that same type.
 Reply details use `thread.reply`. The supplemental payload has `delivery:
 "details"`, `count: 0`, and `detailsFor` containing the original creation's
-dedupe key. Each delivery has its own stable dedupe key. Host event limits
+dedupe key. If sender and excerpt appear in separate snapshots of the original
+body, each newly available field can trigger a details wake. The connector stops
+tracking outstanding fields when the body changes. Each delivery has its own
+stable dedupe key. Host event limits
 count deliveries, so an already-ended one-shot subscription cannot be woken again.
 
 Existing cursors need no reconfiguration. An early receipt issued by 0.5.0
