@@ -3,9 +3,8 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import { layer as fileSystemLayer } from "@effect/platform-bun/BunFileSystem"
 import { describe, expect, it } from "@effect/vitest"
-import { ConfigProvider, Effect, Fiber, Layer, Option, type Scope, Stream } from "effect"
+import { ConfigProvider, Effect, Fiber, Layer, type Scope, Stream } from "effect"
 import { ConnectorDirectory } from "@exangelos/application"
-import { Ids } from "@exangelos/domain"
 import { Paths } from "@exangelos/paths"
 import { digestDirectory, layer } from "@exangelos/connector-directory"
 import { buildTemplate } from "./template.ts"
@@ -55,35 +54,6 @@ describe("ConnectorDirectory", () => {
         ])
         expect(connectors[1]?.entry).toEqual({ _tag: "Bundle", path: Path.join(root, "template", "dist", "main.js") })
         expect(broken._tag).toBe("ManifestInvalid")
-      })
-    ).pipe(Effect.scoped))
-
-  it.live("serves a connector's icon and lists one whose icon is refused without it", () =>
-    withDirectory((root) =>
-      Effect.gen(function*() {
-        yield* Effect.promise(() => buildTemplate(Path.join(root, "template")))
-        yield* writeConnector(Path.join(root, "github-pr"), "github-pr")
-        yield* writeConnector(Path.join(root, "jira"), "jira")
-        const withIcon = (name: string, icon: unknown) =>
-          Effect.promise(async () => {
-            const manifest = Path.join(root, name, "connector.json")
-            const json = JSON.parse(await Fs.readFile(manifest, "utf8")) as object
-            await Fs.writeFile(manifest, JSON.stringify({ ...json, icon }))
-          })
-        yield* withIcon("github-pr", "icon.png")
-        yield* withIcon("jira", null)
-        yield* Effect.promise(() => Fs.writeFile(Path.join(root, "github-pr", "icon.png"), "<svg/>"))
-        const directory = yield* ConnectorDirectory.ConnectorDirectory
-
-        const connectors = yield* directory.list
-        const template = yield* directory.icon(Ids.ConnectorName.make("template"))
-        const refused = yield* directory.icon(Ids.ConnectorName.make("github-pr"))
-        const notAPath = yield* directory.icon(Ids.ConnectorName.make("jira"))
-
-        expect(connectors.map((connector) => connector.name)).toEqual(["github-pr", "jira", "template"])
-        expect(Option.map(template, (icon) => icon.mediaType)).toEqual(Option.some("image/svg+xml"))
-        expect(refused).toEqual(Option.none())
-        expect(notAPath).toEqual(Option.none())
       })
     ).pipe(Effect.scoped))
 

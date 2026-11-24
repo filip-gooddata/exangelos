@@ -1,5 +1,5 @@
 import { Context, Schema } from "effect"
-import type { Effect, Scope, Stream } from "effect"
+import type { Effect, Option, Scope, Stream } from "effect"
 import { Catalogue, Connector, Event, Ids } from "@exangelos/domain"
 
 export const Entry = Schema.TaggedUnion({
@@ -70,6 +70,11 @@ export interface ConnectorProcess {
   readonly watch: (
     request: WatchRequest
   ) => Stream.Stream<Event.WatchItem, ConnectorCrashed | CredentialsRejected | SourceFailed>
+  /**
+   * The logo the connector serves, once it passes the size and type checks. None when it serves none, its
+   * logo fails the checks, or it predates the Icon method.
+   */
+  readonly icon: Effect.Effect<Option.Option<Connector.Icon>, ConnectorCrashed>
   readonly exited: Effect.Effect<ConnectorCrashed>
 }
 

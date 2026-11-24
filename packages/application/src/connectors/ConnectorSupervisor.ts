@@ -25,6 +25,9 @@ export const restartPolicy = {
 /** How long `ready` waits for a starting connector before calling it unavailable. */
 export const startTimeout = Duration.seconds(30)
 
+/** How long a started connector may take to serve its logo. */
+export const iconTimeout = Duration.seconds(10)
+
 export const backoff = (failures: number): Duration.Duration =>
   Duration.min(
     Duration.times(restartPolicy.firstDelay, 2 ** Math.max(0, failures - 1)),
@@ -61,6 +64,7 @@ export class ConnectorSupervisor extends Context.Service<ConnectorSupervisor, {
   readonly reconfigure: (name: Ids.ConnectorName) => Effect.Effect<Connector.Configuration>
   /** The running process of an available connector, waiting while it starts. */
   readonly ready: (name: Ids.ConnectorName) => Effect.Effect<ConnectorProcess, Refusal.ConnectorUnavailable>
+  /** The connector's status with the logo its latest process served, kept while it is down. */
   readonly status: (connector: Connector.Connector) => Connector.Status
   readonly watch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly unwatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
@@ -124,11 +128,15 @@ export const layerConnectorSupervisor: Layer.Layer<
   const refreshes = yield* Semaphore.make(1)
   const scope = yield* Effect.scope
   const observationFailures = new Map<Ids.SubscriptionId, { name: Ids.ConnectorName; category: Connector.ObservationCategory }>()
+  /** The logo each connector's latest process served. A new process replaces it; a removal drops it. */
+  const icons = new Map<Ids.ConnectorName, Connector.Icon>()
   const status = (connector: Connector.Connector): Connector.Status => {
+    const icon = icons.get(connector.name)
+    const shown: Connector.Status = icon === undefined ? connector : { ...connector, icon }
     const failures = Array.from(observationFailures.values()).filter((failure) => failure.name === connector.name)
-    if (failures.length === 0) return connector
+    if (failures.length === 0) return shown
     return {
-      ...connector,
+      ...shown,
       observation: { affectedWatches: failures.length, categories: [...new Set(failures.map((f) => f.category))].sort() }
     }
   }
@@ -362,7 +370,23 @@ export const layerConnectorSupervisor: Layer.Layer<
       return Option.some({ launch, digest: installed.digest })
     })
 
-  /** One process lifetime: start, Handshake, Configure, streams, until it exits. */
+  /**
+   * Asks a started process for its logo and keeps it. Serving none, or one the checks refuse, drops the
+   * kept logo; a process that fails to answer leaves it.
+   */
+  const fetchIcon = (name: Ids.ConnectorName, process: ConnectorProcess) =>
+    process.icon.pipe(
+      Effect.timeout(iconTimeout),
+      Effect.flatMap((served) =>
+        Effect.andThen(
+          Effect.sync(() => Option.isSome(served) ? icons.set(name, served.value) : icons.delete(name)),
+          signal
+        )
+      ),
+      Effect.catch((error) => Effect.logWarning(`Connector ${name} did not serve its icon; keeping the last one`, Cause.fail(error)))
+    )
+
+  /** One process lifetime: start, Handshake, Icon, Configure, streams, until it exits. */
   const attempt = (name: Ids.ConnectorName): Effect.Effect<Outcome> =>
     Effect.scoped(Effect.gen(function*() {
       const connector = yield* connectors.find(name)
@@ -388,6 +412,7 @@ export const layerConnectorSupervisor: Layer.Layer<
           closeStreams(name)
         ))
       yield* update(name, (p) => ({ ...p, catalogue: process.catalogue }))
+      yield* Effect.forkScoped(fetchIcon(name, process))
       const configured = yield* Effect.result(configureProcess(name, process))
       if (configured._tag === "Failure") return { _tag: "Crashed", reason: configured.failure.reason } as Outcome
       // Available only once configured. A failing connector stays unavailable until it has run for `stableAfter`.
@@ -591,6 +616,7 @@ export const layerConnectorSupervisor: Layer.Layer<
         })
         yield* connectors.remove(name, { ...change, detail: `${removedPrefix}${DateTime.formatIso(since)}; ${problem}` })
         yield* FiberMap.remove(timers, name)
+        icons.delete(name)
         yield* closeStreams(name)
         yield* intake.connectorRemoved(name, since, problem)
         yield* reportRemovedAfter(name, since, problem)

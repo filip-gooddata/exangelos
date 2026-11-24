@@ -1,4 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
+import * as Fs from "node:fs/promises"
+import * as Os from "node:os"
+import * as Path from "node:path"
 import { DateTime, Duration, Effect, Schema, Stream } from "effect"
 import { Catalogue, Connector, ConnectorTest } from "@exangelos/connector-sdk"
 
@@ -177,4 +180,67 @@ describe("Connector", () => {
       Catalogue.parameters({ main: "label", schema: Schema.Struct({ label: Schema.optionalKey(Schema.String) }) })
     ).toThrow('The main parameter "label" must be a required property of an object schema')
   })
+})
+
+describe("Connector icon", () => {
+  const withIcon = (icon: Effect.Effect<Connector.Icon | undefined, unknown>) =>
+    Connector.make({
+      events: [closed],
+      parameters: Catalogue.parameters({ main: "repo", schema: Schema.Struct({ repo: Schema.String }) }),
+      configuration: [],
+      handlers: Effect.succeed({
+        configure: () => Effect.void,
+        describe: (parameters) => Effect.succeed({ subject: parameters.repo, label: parameters.repo }),
+        watch: () => Stream.empty,
+        icon
+      })
+    })
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+
+  it.effect("serves the bytes a connector's own icon hook finds, base64-encoded", () =>
+    Effect.gen(function*() {
+      const client = yield* ConnectorTest.makeClient(withIcon(Effect.succeed({ mediaType: "image/png", bytes: png })))
+      expect(yield* client.Icon()).toEqual({ _tag: "Served", mediaType: "image/png", data: "iVBORw==" })
+    }).pipe(Effect.scoped))
+
+  it.effect("serves none when the hook finds none or fails", () =>
+    Effect.gen(function*() {
+      const none = yield* ConnectorTest.makeClient(withIcon(Effect.succeed(undefined)))
+      const failing = yield* ConnectorTest.makeClient(withIcon(Connector.iconFile("/no/such/app/icon.png")))
+      expect(yield* none.Icon()).toEqual({ _tag: "None" })
+      expect(yield* failing.Icon()).toEqual({ _tag: "None" })
+    }).pipe(Effect.scoped))
+})
+
+describe("manifestIconIn", () => {
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg"/>`
+
+  it.live("serves the manifest icon inside the connector and refuses one that leads outside it or is too large", () =>
+    Effect.gen(function*() {
+      const root = yield* Effect.acquireRelease(
+        Effect.promise(async () => Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "sdk-icon-")))),
+        (directory) => Effect.promise(() => Fs.rm(directory, { recursive: true, force: true }))
+      )
+      const connector = (name: string, icon: string) =>
+        Effect.promise(async () => {
+          await Fs.mkdir(Path.join(root, name))
+          await Fs.writeFile(Path.join(root, name, "connector.json"), JSON.stringify({ icon }))
+          return Path.join(root, name)
+        })
+      yield* Effect.promise(async () => {
+        await Fs.writeFile(Path.join(root, "outside.svg"), svg)
+      })
+      const inside = yield* connector("inside", "icon.svg")
+      yield* Effect.promise(() => Fs.writeFile(Path.join(inside, "icon.svg"), svg))
+      const parent = yield* connector("parent", "../outside.svg")
+      const linked = yield* connector("linked", "icon.svg")
+      yield* Effect.promise(() => Fs.symlink(Path.join(root, "outside.svg"), Path.join(linked, "icon.svg")))
+      const large = yield* connector("large", "icon.png")
+      yield* Effect.promise(() => Fs.writeFile(Path.join(large, "icon.png"), new Uint8Array(Connector.maxIconBytes + 1)))
+
+      expect((yield* Connector.manifestIconIn(inside))?.mediaType).toBe("image/svg+xml")
+      expect((yield* Effect.flip(Connector.manifestIconIn(parent))).reason).toContain("leads outside the connector")
+      expect((yield* Effect.flip(Connector.manifestIconIn(linked))).reason).toContain("leads outside the connector")
+      expect((yield* Effect.flip(Connector.manifestIconIn(large))).reason).toContain("over the 32768 byte limit")
+    }).pipe(Effect.scoped))
 })

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Deferred, Duration, Effect, Layer, Ref } from "effect"
 import { TestClock } from "effect/testing"
-import { devLink, enableConnector, importConnector, ConnectorAccess, setSettings } from "@exangelos/application"
+import { devLink, enableConnector, importConnector, listConnectors, ConnectorAccess, setSettings } from "@exangelos/application"
 import { AlertSinkFake, ConnectorFilesFake, ConnectorRuntimeFake, SubscriptionIntakeFake } from "@exangelos/application/testing"
-import { Settings } from "@exangelos/domain"
+import { type Connector, Settings } from "@exangelos/domain"
 import { SettingsStore } from "../../src/ports/SettingsStore.ts"
 import { activeSubscription, catalogue, installed, name, connectorOf, settle, tick, unavailableReports, withConnectors, withConnectorsOver, you } from "./harness.ts"
 
@@ -23,14 +23,18 @@ const openedWakeWindows = Effect.gen(function*() {
   return watches.map((request) => Duration.toSeconds(request.wakeWindow))
 })
 
-const running = Effect.gen(function*() {
-  yield* (yield* ConnectorRuntimeFake).define(acme, { catalogue: catalogue() })
+const runningWith = (icon?: Connector.Icon) => Effect.gen(function*() {
+  yield* (yield* ConnectorRuntimeFake).define(acme, { catalogue: catalogue(), ...(icon && { icon }) })
   const source = { _tag: "Directory", path: "/src/acme" } as const
   yield* (yield* ConnectorFilesFake).offer(source, installed("acme"))
   const imported = yield* importConnector(you, source)
   yield* enableConnector(you, acme, imported.digest)
   yield* settle
 })
+
+const running = runningWith()
+
+const listedIcon = Effect.map(listConnectors, (all) => all.find((connector) => connector.name === acme)?.icon)
 
 
 describe("connector supervision", () => {
@@ -131,6 +135,41 @@ describe("connector supervision", () => {
       expect(yield* runtime.openStreams(acme)).toBe(1)
       expect(yield* connectorOf("acme")).toMatchObject({ process: "running" })
       expect(yield* failingAlerts).toEqual([])
+    })))
+
+  it.effect("lists the logo the connector served, keeps it while the connector is down and takes the next process's answer", () =>
+    withConnectors(Effect.gen(function*() {
+      const icon: Connector.Icon = { mediaType: "image/svg+xml", data: "PHN2Zy8+" }
+      yield* runningWith(icon)
+      const runtime = yield* ConnectorRuntimeFake
+      expect(yield* listedIcon).toEqual(icon)
+
+      yield* runtime.define(acme, { catalogue: catalogue() })
+      yield* runtime.crash(acme, "segfault")
+      yield* settle
+      expect(yield* connectorOf("acme")).toMatchObject({ process: "restarting" })
+      expect(yield* listedIcon).toEqual(icon)
+
+      yield* TestClock.adjust("1 second")
+      yield* settle
+      expect(yield* connectorOf("acme")).toMatchObject({ process: "running" })
+      expect(yield* listedIcon).toBeUndefined()
+    })))
+
+  it.effect("keeps the last logo when the next process does not answer in time", () =>
+    withConnectors(Effect.gen(function*() {
+      const icon: Connector.Icon = { mediaType: "image/svg+xml", data: "PHN2Zy8+" }
+      yield* runningWith(icon)
+      const runtime = yield* ConnectorRuntimeFake
+      yield* runtime.define(acme, { catalogue: catalogue(), icon: { _tag: "Hang" } })
+      yield* runtime.crash(acme, "segfault")
+      yield* settle
+      yield* TestClock.adjust("1 second")
+      yield* settle
+      expect(yield* connectorOf("acme")).toMatchObject({ process: "running" })
+      yield* TestClock.adjust("10 seconds")
+      yield* settle
+      expect(yield* listedIcon).toEqual(icon)
     })))
 
   it.effect("marks a connector that keeps failing, alerts you and suspends its subscriptions after an hour", () =>

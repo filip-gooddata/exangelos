@@ -59,4 +59,19 @@ export class Watch extends Rpc.make("Watch", {
   stream: true
 }) {}
 
-export class ConnectorProtocol extends RpcGroup.make(Handshake, Configure, Describe, Watch) {}
+export const IconAnswer = Schema.TaggedUnion({
+  /** The media type is any string on the wire, so the daemon's own checks refuse an unsupported one with a reason. */
+  Served: { mediaType: Schema.String, data: Schema.String },
+  None: {}
+})
+export type IconAnswer = typeof IconAnswer.Type
+
+/**
+ * Asks a running connector for its logo. Connectors built before this method answer with a defect for an
+ * unknown request, which the daemon reads as no logo, so the protocol version stays 1.
+ */
+export class Icon extends Rpc.make("Icon", {
+  success: IconAnswer
+}) {}
+
+export class ConnectorProtocol extends RpcGroup.make(Handshake, Configure, Describe, Watch, Icon) {}
