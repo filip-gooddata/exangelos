@@ -1,6 +1,7 @@
 import { DateTime, Duration, Effect, Option } from "effect"
 import { Delivery, Lifecycle } from "@exangelos/domain"
 import type { Ids, Session, Wake } from "@exangelos/domain"
+import { eventsForWake } from "../wakePreviews.ts"
 import { EventRepository } from "../../ports/EventRepository.ts"
 import { ConnectorRepository } from "../../ports/ConnectorRepository.ts"
 import { currentLimits } from "../Limits.ts"
@@ -20,7 +21,7 @@ export const wait = (_actor: Session.Actor, request: { readonly id: Ids.Subscrip
     const removed = yield* RemovedConnectors
     while (true) {
       const subscription = yield* load(request.id)
-      const pending = yield* events.list(subscription.id, subscription.ackedThrough)
+      const pending = yield* eventsForWake(subscription.connector, yield* events.list(subscription.id, subscription.ackedThrough))
       const connector = yield* connectors.find(subscription.connector)
       const now = yield* DateTime.now
       const limits = yield* currentLimits

@@ -103,7 +103,10 @@ display names as untrusted Slack data. The excerpt can appear in event
 history, the receiving agent session, desktop alerts, and debug-level
 event payload logs. The private ledger retains committed excerpts for replay. Starting with 0.5.1, the connector omits excerpts from
 replayed payloads and summaries while previews are disabled. Previously delivered
-host history and agent sessions can still contain them.
+host history and agent sessions can still contain them. With the accompanying host
+update, disabling previews also omits excerpts from unacknowledged backlog lines
+in subsequent wakes and waits. Exangelos 0.1.19 can repeat previously delivered
+summaries until those events are acknowledged.
 
 An upgrade preserves the current choice. Existing enabled installations immediately
 share the broader range of visible text for new deliveries. Existing disabled
