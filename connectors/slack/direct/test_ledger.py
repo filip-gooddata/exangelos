@@ -100,6 +100,23 @@ class LedgerTests(unittest.TestCase):
         self.assertNotEqual(first['dedupeKey'], second['dedupeKey'])
         self.assertEqual(self.call(snapshot(5, [row]), excerpt['cursor'])['events'], [])
 
+    def test_migrated_receipt_only_supplements_its_verified_kind(self):
+        cursor = self.call(snapshot(1, []))['cursor']
+        row = message(2, reply=True)
+        notice = {field: row[field] for field in ('id', 'reply', 'messageTs', 'permalink', 'conversationLabel')}
+        early = ledger.reconcile(dict(snapshot={'scope': token('scope')}, cursor=cursor,
+                                      notification=notice, observedAt=1700000000000), self.path)
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('CREATE TABLE early AS SELECT lineage,message FROM pending_details')
+            db.execute('DROP TABLE pending_details')
+            db.execute('PRAGMA user_version=5')
+        wrong = self.call(snapshot(2, [dict(row, reply=False)]), early['cursor'])
+        self.assertEqual(wrong['events'], [])
+        corrected = self.call(snapshot(3, [row]), wrong['cursor'])
+        details, = corrected['events']
+        self.assertEqual(details['type'], 'thread.reply')
+        self.assertEqual(details['payload']['detailsFor'], early['events'][0]['dedupeKey'])
+
     def test_numeric_timestamp_ties_and_preexisting_order_replay(self):
         cursor = self.call(snapshot(1, []))['cursor']
         rows = [dict(message(i), messageTs=ts, sender=f'U000000{i}') for i, ts in enumerate(
