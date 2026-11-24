@@ -100,7 +100,7 @@ class LedgerTests(unittest.TestCase):
         self.assertNotEqual(first['dedupeKey'], second['dedupeKey'])
         self.assertEqual(self.call(snapshot(5, [row]), excerpt['cursor'])['events'], [])
 
-    def test_migrated_receipt_only_supplements_its_verified_kind(self):
+    def migrated_receipt(self):
         cursor = self.call(snapshot(1, []))['cursor']
         row = message(2, reply=True)
         notice = {field: row[field] for field in ('id', 'reply', 'messageTs', 'permalink', 'conversationLabel')}
@@ -110,6 +110,26 @@ class LedgerTests(unittest.TestCase):
             db.execute('CREATE TABLE early AS SELECT lineage,message FROM pending_details')
             db.execute('DROP TABLE pending_details')
             db.execute('PRAGMA user_version=5')
+        return row, early
+
+    def test_missing_migrated_receipt_rolls_back_and_preserves_cursor(self):
+        row, early = self.migrated_receipt()
+        with closing(sqlite3.connect(self.path)) as db, db:
+            edge = db.execute('SELECT lineage,source,result FROM edges').fetchone()
+            db.execute('DELETE FROM edges')
+        commits = self.count('commits')
+        with self.assertRaises(ledger.ObservationGap):
+            self.call(snapshot(2, [row]), early['cursor'])
+        self.assertEqual(self.count('commits'), commits)
+        self.assertEqual(self.count('edges'), 0)
+        self.assertEqual(self.count('early'), 1)
+        with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('INSERT INTO edges(lineage,source,result) VALUES (?,?,?)', edge)
+        details, = self.call(snapshot(2, [row]), early['cursor'])['events']
+        self.assertEqual(details['payload']['detailsFor'], early['events'][0]['dedupeKey'])
+
+    def test_migrated_receipt_only_supplements_its_verified_kind(self):
+        row, early = self.migrated_receipt()
         wrong = self.call(snapshot(2, [dict(row, reply=False)]), early['cursor'])
         self.assertEqual(wrong['events'], [])
         corrected = self.call(snapshot(3, [row]), wrong['cursor'])

@@ -59,6 +59,23 @@ def event_key(lineage, scope, message, revision, kind, transition):
     return 'slack:' + hashlib.sha256(identity.encode()).hexdigest()
 
 
+def legacy_receipt_is_reply(db, lineage, scope, message):
+    # 0.5.0 kept only the message id in its pending marker.
+    post = event_key(lineage, scope, message, 0, 'message.new', 'created')
+    reply = event_key(lineage, scope, message, 0, 'thread.reply', 'created')
+    candidates = db.execute('SELECT result FROM edges WHERE lineage=? AND '
+                            '(instr(result,?) > 0 OR instr(result,?) > 0)', (lineage, post, reply))
+    for result, in candidates:
+        events = json.loads(result)['events']
+        if len(events) == 1:
+            event = events[0]
+            if (event['dedupeKey'], event['type']) == (post, 'message.new'):
+                return False
+            if (event['dedupeKey'], event['type']) == (reply, 'thread.reply'):
+                return True
+    raise ObservationGap(ERROR)
+
+
 def ledger_path():
     path = state_directory() / 'ledger.sqlite3'
     installed = Path(__file__).resolve().parent.parent
@@ -307,14 +324,7 @@ def reconcile(request, path=None):
                 if pending:
                     reply, need_sender, need_preview = pending
                     if reply is None:
-                        # 0.5.0 kept only the message id in its pending marker.
-                        kinds = ('message.new', 'thread.reply')
-                        receipts = [event_key(lineage, snapshot['scope'], message['id'], 0, t, 'created') for t in kinds]
-                        stored = db.execute("SELECT json_extract(result,'$.events[0].dedupeKey') FROM edges "
-                                            "WHERE lineage=? AND json_extract(result,'$.events[0].dedupeKey') IN (?,?) "
-                                            "LIMIT 1", (lineage, *receipts)).fetchone()
-                        require(stored is not None)
-                        reply = stored[0] == receipts[1]
+                        reply = legacy_receipt_is_reply(db, lineage, snapshot['scope'], message['id'])
                         db.execute('UPDATE pending_details SET reply=? WHERE lineage=? AND message=?', (reply, *key))
                     if reply != message['reply']:
                         continue
