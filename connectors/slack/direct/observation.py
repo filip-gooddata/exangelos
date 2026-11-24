@@ -102,7 +102,7 @@ def mrkdwn_spans(value):
             tail = len(part.rstrip('.,;:!?)]}'))
             while tail and part[tail - 1] in openings:
                 # Prefer a closer in ordinary text over punctuation within a URL.
-                url_closers[part[tail - 1]] = length + tail - 1
+                url_closers.setdefault(part[tail - 1], length + tail - 1)
                 tail -= 1
         elif match['marker']:
             before = value[match.start()-1] if match.start() else ''

@@ -229,6 +229,8 @@ def app_posts():
          'see https://example.invalid/* then done'),
         ('Fixture Jira', dict(blocks=[dict(type='section', fields=[
             dict(type='plain_text', text='left '), dict(type='plain_text', text='right')])]), '[redacted]'),
+        ('Fixture Jira', dict(blocks=[section('*Read https://example.invalid/first*. Then see https://example.invalid/*')]),
+         'Read https://example.invalid/first. Then see https://example.invalid/*'),
         ('Fixture Jira', dict(blocks=[section('*Ready*'), section('Ready')]), 'Ready'),
         ('Fixture Jira', dict(text='🌻' * 200), '🌻' * 160),
         ('Fixture Jira', dict(redacted=True, blocks=jira), None),
