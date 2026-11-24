@@ -1,20 +1,20 @@
 connectors/shared/excerpt.py
   s_3aeaf1730e6d1e::t_e47127e7333153 9,21-26,31,33-38
-connectors/slack/direct/ledger.py
-  s_97bf2c59ccc7dd::t_088cd7183a4d9e 241-242
-connectors/slack/direct/observation.py
-  s_3aeaf1730e6d1e::t_b486ca2ad00ad9 14,62-113,119,202-208
-connectors/slack/direct/test_direct.py
-  s_3aeaf1730e6d1e::t_6b300def4fc7b9 212-220
 connectors/slack/direct/test_ledger.py
   s_3aeaf1730e6d1e::t_3c832174fd131f 67-81
+connectors/slack/direct/observation.py
+  s_3aeaf1730e6d1e::t_b486ca2ad00ad9 14,62-113,119,202-207
+connectors/slack/direct/ledger.py
+  s_97bf2c59ccc7dd::t_088cd7183a4d9e 241-242
+connectors/slack/direct/test_direct.py
+  s_3aeaf1730e6d1e::t_6b300def4fc7b9 212-220
 connectors/slack/test/archive_validation.py
   s_69735155799fe4::t_813b515abbdb79 48-49,215-224,401,415-419,450-458,466,475-476,481
 ---
 {
   "schema_version": "authorship/3.0.0",
   "git_ai_version": "1.7.5",
-  "base_commit_sha": "11ae0a55251744d41b19ff59e8f7a21b7b06f196",
+  "base_commit_sha": "5c73c82437e119f489462ea15f0e840ba7cb49ab",
   "prompts": {},
   "sessions": {
     "s_3aeaf1730e6d1e": {
