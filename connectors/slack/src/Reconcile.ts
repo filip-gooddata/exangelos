@@ -1,7 +1,7 @@
 import { fileURLToPath } from "node:url"
 import { Clock, Effect, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
-import { MessageContext, Snapshot } from "./Source.ts"
+import { MessageContext, Notice, Snapshot } from "./Source.ts"
 
 export class ObservationGap extends Schema.TaggedError<ObservationGap>()("ObservationGap", {
   reason: Schema.String
@@ -13,6 +13,7 @@ const EventType = Schema.Literals(["message.new", "thread.reply", "message.edite
 export type EventType = typeof EventType.Type
 export const EventPayload = Schema.Struct({ version: Schema.Literal(1), count: Schema.Literal(1), ...MessageContext.fields })
 const Result = Schema.Struct({
+  retryNotice: Schema.optionalKey(Schema.Literal(true)),
   events: Schema.Array(Schema.Struct({ type: EventType, summary: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))), payload: Schema.optionalKey(EventPayload), occurredAt: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8640000000000000 })), dedupeKey: Schema.String.check(Schema.isMaxLength(512)) }))
     .check(Schema.isMaxLength(100500)),
   cursor: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
@@ -26,8 +27,8 @@ export const validateObservation = (input: unknown) => Effect.gen(function*() {
   return snapshot
 })
 
-export const reconcile = (cursor: string | undefined, input: unknown, startedAt?: number) => Effect.gen(function*() {
-  const snapshot = yield* validateObservation(input)
+export const reconcile = (cursor: string | undefined, input: unknown, startedAt?: number, notification?: typeof Notice.Type) => Effect.gen(function*() {
+  const snapshot = notification === undefined ? yield* validateObservation(input) : input
   if (cursor !== undefined && cursor.length > 512) return yield* gap()
   const observedAt = yield* Clock.currentTimeMillis
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
@@ -35,7 +36,7 @@ export const reconcile = (cursor: string | undefined, input: unknown, startedAt?
     fileURLToPath(new URL("../direct/ledger.py", import.meta.url))
   ], {
     env: { PYTHONDONTWRITEBYTECODE: "1" }, extendEnv: true,
-    stdin: { stream: Stream.make(new TextEncoder().encode(JSON.stringify({ cursor, snapshot, observedAt, startedAt }) + "\n")), endOnDone: true },
+    stdin: { stream: Stream.make(new TextEncoder().encode(JSON.stringify({ cursor, snapshot, observedAt, startedAt, notification }) + "\n")), endOnDone: true },
     stderr: "ignore", forceKillAfter: "1 second"
   }))
   let bytes = 0

@@ -45,8 +45,11 @@ def exercise(root, old_cli, old_archive, new_cli, new_archive, members, previews
     env = dict(HOME=str(root), PATH=str(tools) + os.pathsep + os.environ['PATH'],
                EXANGELOS_HOME=str(root / 'state'), HTTPS_PROXY='http://127.0.0.1:9',
                HTTP_PROXY='http://127.0.0.1:9')
-    cache = root / 'cache'
-    cache.mkdir()
+    cache = root / 'profile/IndexedDB'
+    cache.mkdir(parents=True)
+    log = cache.parent / 'logs/default/browser.log'
+    log.parent.mkdir(parents=True)
+    log.touch()
     channel = 'D0000002'
     state = fixture()
     state['messages'][channel] = {}
@@ -93,6 +96,14 @@ def exercise(root, old_cli, old_archive, new_cli, new_archive, members, previews
         until(lambda: new_archive.name == f'slack-{version(cli)}.tar.gz')
         ts = f'{time.time_ns() // 1000:016d}'
         ts = ts[:-6] + '.' + ts[-6:]
+        team = state['selfTeamIds']['teamId']
+        notification = dict(teamId=team, userId=state['bootData']['user_id'], channel=channel, msg=ts,
+                            id=f'{team}|msg|{channel}|{ts}')
+        with log.open('a') as stream:
+            stream.write('[11/24/26, 12:00:00:000] info: Store: NEW_NOTIFICATION \n'
+                         + json.dumps(notification, indent=2) + '\n')
+        time.sleep(1.5)
+        assert not cli('events', watch['id']), 'upgrade did not opt in to notification log access'
         message = dict(type='message', ts=ts, text='Synthetic credential rotation', _rxn_key=f'message-{ts}-{channel}')
         if members:
             message.update(user=peer, subtype=b'_')

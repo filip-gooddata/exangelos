@@ -119,8 +119,8 @@ class Wire:
         check(answer['_tag'] == ('Accepted' if accepted else 'Rejected'), 'configure result')
         return answer
 
-    def watch(self, selection, cursor=None):
-        payload = dict(parameters={'selection': selection}, eventTypes=[])
+    def watch(self, selection, cursor=None, event_types=()):
+        payload = dict(parameters={'selection': selection}, eventTypes=list(event_types))
         if cursor is not None:
             payload['cursor'] = cursor
         return self.request('Watch', payload)
@@ -604,6 +604,105 @@ def exercise(installed, home):
                 renderedWakeChecks=len((home.parent / 'rendered-wakes.jsonl').read_text().splitlines()), legacyV1Replays=1, legacyPayloadReplays=1, preservedLegacyFiles=len(original))
 
 
+def notification_delivery(installed, home):
+    from test_direct import CHANNEL, SELECTION, fixture
+    from test_source import database
+
+    root = home / 'profile/IndexedDB'
+    root.mkdir(parents=True)
+    log = root.parent / 'logs/default/browser.log'
+    log.parent.mkdir(parents=True)
+    log.touch()
+    state = fixture()
+    database(root, state)
+    base = dict(subscriptionAccess='persisted-cache', cacheRoot=str(root), pollIntervalMs='1000')
+    allowed = dict(base, notificationLog='enabled', messagePreviews='enabled')
+
+    def stamp():
+        seconds, fraction = divmod(time.time_ns() // 1000, 1000000)
+        return f'{seconds}.{fraction:06d}'
+
+    def record(ts, **overrides):
+        team, owner, channel = SELECTION
+        data = dict(id=f'{team}|msg|{channel}|{ts}', teamId=team, userId=owner,
+                    channel=channel, msg=ts, authorName='[REDACTED]', body='synthetic notification')
+        data.update(overrides)
+        return ('[11/24/26, 12:00:00:000] info: Store: NEW_NOTIFICATION \n'
+                + json.dumps(data, indent=2) + '\n').encode()
+
+    def append(data):
+        with log.open('ab') as stream:
+            stream.write(data)
+
+    def message(ts, text):
+        state['messages'][CHANNEL][ts] = dict(ts=ts, text=text, type='message', _rxn_key=f'message-{ts}-{CHANNEL}')
+
+    with Wire(installed, home) as wire:
+        wire.configure(allowed)
+        handle = describe(wire, CHANNEL)
+        watch = wire.watch(handle)
+        saved = wire.chunk(watch)[0]['cursor']
+        wire.receive(0.7, quiet=True)
+        ts = stamp()
+        good = record(ts)
+        append(record(ts, userId='U9999999') + record(ts, teamId='T9999999')
+               + record(ts, channel='C9999999') + record(ts, thread_ts=ts) + good[:80])
+        wire.receive(0.7, quiet=True)
+        append(good[80:] + good)
+        early, = wire.chunk(watch)
+        payload = early['event']['payload']
+        check(early['event']['type'] == 'message.new' and payload['messageTs'] == ts
+              and 'sender' not in payload and 'preview' not in payload
+              and payload['permalink'].endswith(f'/{CHANNEL}?message_ts={ts}'), 'verified early identity')
+        check_wake(early['event'], handle, home, 'New message by unknown author in "Slack conversation ' + CHANNEL + '"')
+        wire.receive(0.7, quiet=True)
+
+    with Wire(installed, home) as wire:
+        wire.configure(allowed)
+        watch = wire.watch(handle, saved)
+        check(wire.chunk(watch) == [early], 'early edge replays after restart')
+        second = stamp()
+        message(ts, 'fuller cache text')
+        message(second, 'cache only')
+        database(root, state, sequence=30)
+        cached, = wire.chunk(watch)
+        check(cached['event']['type'] == 'message.new' and cached['event']['payload']['messageTs'] == second,
+              'same post suppressed and cache-only message delivered')
+        append(record(second))
+        wire.receive(0.8, quiet=True)
+        message(ts, 'actually edited')
+        database(root, state, sequence=50)
+        edited, = wire.chunk(watch)
+        check(edited['event']['type'] == 'message.edited' and edited['event']['payload']['preview'] == 'actually edited',
+              'cache edit delivered after enrichment')
+
+    with Wire(installed, home) as wire:
+        wire.configure(base)
+        watch = wire.watch(handle, edited['cursor'])
+        check(wire.chunk(watch)[0]['_tag'] == 'Cursor', 'cache-only resume')
+        append(record(stamp()))
+        wire.receive(1.3, quiet=True)
+
+    with Wire(installed, home) as wire:
+        wire.configure(allowed)
+        parent = next(iter(state['messages'][CHANNEL]))
+        handle = describe(wire, f'{CHANNEL}:{parent}', 'replies')
+        watch = wire.watch(handle, event_types=['thread.reply'])
+        wire.chunk(watch)
+        wire.receive(0.7, quiet=True)
+        log.rename(log.with_suffix('.old'))
+        ts = stamp()
+        prefix = f'{SELECTION[0]}|msg|{CHANNEL}|{ts}|'
+        other = '1600000000.000001'
+        append(record(ts) + record(ts, id=prefix + other, thread_ts=other))
+        wire.receive(0.7, quiet=True)
+        log.write_bytes(record(ts, id=prefix + parent, thread_ts=parent))
+        reply, = wire.chunk(watch)
+        check(reply['event']['type'] == 'thread.reply' and reply['event']['payload']['messageTs'] == ts
+              and reply['event']['payload']['permalink'].endswith('&thread_ts=' + parent),
+              'rotated and truncated log binds only the selected reply thread')
+
+
 def main():
     evidence = Path(sys.argv[1]).resolve()
     check(not evidence.is_relative_to(REPO), 'use a fresh evidence directory outside the worktree')
@@ -632,6 +731,8 @@ def main():
     before = inventory(installed)
     (evidence / 'inventory-before.json').write_text(json.dumps(before, indent=2))
     result = exercise(installed, evidence / 'synthetic-home')
+    notification_delivery(installed, evidence / "notification-home")
+    result["notificationDelivery"] = True
     after = inventory(installed)
     (evidence / 'inventory-after.json').write_text(json.dumps(after, indent=2))
     check(before == after and hashlib.sha256(archive.read_bytes()).hexdigest() == checksum, 'immutable release files')

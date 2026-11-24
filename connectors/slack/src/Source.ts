@@ -46,6 +46,25 @@ export const Snapshot = Schema.Struct({
   generation: Schema.String.check(Schema.isPattern(/^(0|[1-9][0-9]{0,19})$/)),
   snapshot: Token
 })
+export const Notice = Schema.Struct({
+  id: Token, reply: Schema.Boolean, messageTs: MessageContext.fields.messageTs,
+  conversationLabel: MessageContext.fields.conversationLabel, permalink: MessageContext.fields.permalink
+})
+
+export const notifications = (request: typeof Request.Type, label: string) =>
+  Stream.unwrap(Effect.gen(function*() {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    const child = yield* spawner.spawn(ChildProcess.make("python3", [
+      fileURLToPath(new URL("../direct/notifications.py", import.meta.url))
+    ], {
+      env: { PYTHONDONTWRITEBYTECODE: "1" }, extendEnv: true,
+      stdin: { stream: Stream.make(new TextEncoder().encode(JSON.stringify({ request, label }))), endOnDone: true },
+      stderr: "ignore", forceKillAfter: "1 second"
+    }))
+    return child.stdout.pipe(Stream.decodeText(), Stream.splitLines,
+      Stream.mapEffect((line) => Schema.decodeEffect(Schema.fromJsonString(Notice))(line)))
+  })).pipe(Stream.catch(() => Stream.empty))
+
 const snapshotReason = "Slack persisted snapshot is unavailable or unsupported"
 const setupReasons: Readonly<Record<number, string>> = {
   1: "Slack setup could not validate private state or a stable, supported persisted snapshot",

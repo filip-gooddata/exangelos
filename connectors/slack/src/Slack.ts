@@ -1,11 +1,11 @@
-import { Clock, DateTime, Duration, Effect, Option, Ref, Schema, Stream } from "effect"
+import { Clock, Deferred, DateTime, Duration, Effect, Option, Ref, Schema, Stream } from "effect"
 import { localAppIcon } from "../../shared/localAppIcon.ts"
 import { Catalogue, Connector } from "@exangelos/connector-sdk"
 import { EventPayload, reconcile, type EventType } from "./Reconcile.ts"
-import { localSource, type Source } from "./Source.ts"
+import { localSource, notifications, type Source } from "./Source.ts"
 
 const declare = (type: EventType) => Catalogue.event(type, {
-  description: "A change between delayed persisted Slack snapshots; intermediate changes may be missed",
+  description: "A selected Slack change observed locally; intermediate changes may be missed",
   payload: Schema.Union([EventPayload, Schema.Struct({ count: Schema.Literal(1) })])
 })
 const events = {
@@ -19,6 +19,8 @@ const retired = "This Slack selection is retired. Configure subscriptionAccess=p
 const pin = /^scope-[a-f0-9]{64}$/
 interface Configuration {
   readonly cacheRoot?: string
+  readonly revoked: Deferred.Deferred<void>
+  readonly notificationLog: boolean
   readonly includePreview: boolean
   readonly interval: Duration.Duration
 }
@@ -30,6 +32,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
   }) }),
   configuration: [
     Catalogue.choice("subscriptionAccess", { label: "Allow reading persisted Slack cache data and sharing conversation labels, message timestamps, links and available senders with the host, even after logout or access changes (sign-in unverified)", choices: ["persisted-cache", "disabled"], required: false }),
+    Catalogue.choice("notificationLog", { label: "Read new Slack Desktop notification records from the selected profile for early message timestamps and links", choices: ["disabled", "enabled"], required: false }),
     Catalogue.choice("messagePreviews", { label: "Share short visible excerpts, which may contain confidential text, from selected messages in new message, reply and edit events, including wakes, stored event history, desktop alerts and debug payload logs", choices: ["disabled", "enabled"], required: false }),
     Catalogue.text("cacheRoot", { label: "Optional absolute IndexedDB folder for a custom Slack installation", required: false }),
     Catalogue.text("subscriptionCacheRoot", { label: "Optional subscription cache folder override (takes precedence over cacheRoot)", required: false }),
@@ -58,7 +61,8 @@ export const make = <R>(source: Source<R>) => Connector.make({
     return {
       icon: Effect.promise(() => localAppIcon(["com.tinyspeck.slackmacgap"], Connector.maxIconBytes)),
       configure: (values) => Effect.gen(function*() {
-        yield* Ref.set(configured, undefined)
+        const previous = yield* Ref.getAndSet(configured, undefined)
+        if (previous) yield* Deferred.succeed(previous.revoked, undefined)
         if (values.subscriptionAccess === "disabled") return
         if (values.subscriptionAccess !== "persisted-cache") return yield* new Connector.ConfigurationRejected({ reason: authorize })
         const text = values.pollIntervalMs ?? "30000"
@@ -69,8 +73,11 @@ export const make = <R>(source: Source<R>) => Connector.make({
         if (values.messagePreviews !== undefined && !["disabled", "enabled"].includes(values.messagePreviews)) {
           return yield* new Connector.ConfigurationRejected({ reason: "messagePreviews must be enabled or disabled" })
         }
+        if (values.notificationLog !== undefined && !["enabled", "disabled"].includes(values.notificationLog)) {
+          return yield* new Connector.ConfigurationRejected({ reason: "notificationLog must be enabled or disabled" })
+        }
         const cacheRoot = values.subscriptionCacheRoot || values.cacheRoot
-        yield* Ref.set(configured, { includePreview: values.messagePreviews === "enabled", interval: Duration.millis(interval), ...(cacheRoot && { cacheRoot }) })
+        yield* Ref.set(configured, { revoked: yield* Deferred.make<void>(), notificationLog: values.notificationLog === "enabled", includePreview: values.messagePreviews === "enabled", interval: Duration.millis(interval), ...(cacheRoot && { cacheRoot }) })
       }),
       describe: ({ selection, scope }) => Effect.gen(function*() {
         const configuration = yield* Ref.get(configured)
@@ -80,39 +87,62 @@ export const make = <R>(source: Source<R>) => Connector.make({
         )
         return { subject: `slack:${request.expectedScope}`, label, parameters: { selection: `scope-${request.expectedScope}` } }
       }),
-      watch: ({ parameters, cursor }) => Stream.unwrap(Effect.gen(function*() {
+      watch: ({ parameters, cursor, eventTypes }) => Stream.unwrap(Effect.gen(function*() {
         const configuration = yield* Ref.get(configured)
         if (!configuration) return yield* new Connector.SourceFailed({ reason: authorize })
         if (!pin.test(parameters.selection) || parameters.scope !== undefined) return yield* new Connector.SourceFailed({ reason: retired })
-        const { request } = yield* resolve(configuration, parameters.selection).pipe(
+        const { request, label } = yield* resolve(configuration, parameters.selection).pipe(
           Effect.mapError((error) => new Connector.SourceFailed({ reason: error.reason, category: error._tag === "SourceUnavailable" ? error.category ?? "unavailable" : "scope-changed" }))
         )
-        return Stream.paginate({ cursor, first: true }, (state) => Effect.gen(function*() {
-          if (!state.first) yield* Effect.sleep(configuration.interval)
-          if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason })
-          const startedAt = state.cursor === undefined ? yield* Clock.currentTimeMillis : undefined
+        const active = Effect.gen(function*() {
+          if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason: authorize })
+        })
+        const startedAt = cursor === undefined ? yield* Clock.currentTimeMillis : undefined
+        const read = Effect.gen(function*() {
+          yield* active
           const snapshot = yield* source.read(configuration.includePreview ? { ...request, includePreview: true } : request)
-          if (snapshot.scope !== request.expectedScope) {
-            return yield* new Connector.SourceFailed({ reason, category: "scope-changed" })
-          }
-          if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason: authorize })
-          const result = yield* reconcile(state.cursor, snapshot, startedAt)
-          if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason: authorize })
+          if (snapshot.scope !== request.expectedScope) return yield* new Connector.SourceFailed({ reason, category: "scope-changed" })
+          return { kind: "cache", snapshot } as const
+        })
+        const cache = Stream.fromEffect(read).pipe(Stream.concat(
+          Stream.fromEffectRepeat(Effect.sleep(configuration.interval).pipe(Effect.andThen(read)))
+        ))
+        const selectedTypes: ReadonlyArray<string> = eventTypes
+        const accepts = (type: string) => !selectedTypes.length || selectedTypes.includes(type)
+        const useLog = configuration.notificationLog && (accepts("thread.reply") || (!request.selection.thread && accepts("message.new")))
+        // Real cache generations are positive. Reserve the lineage before starting
+        // either reader so a slow first snapshot cannot hold up a fresh notification.
+        const initialCursor = useLog && cursor === undefined ? (yield* reconcile(undefined, {
+          scope: request.expectedScope, complete: true, generation: "0", snapshot: "0".repeat(64), messages: []
+        }, startedAt).pipe(Effect.mapError(() => new Connector.SourceFailed({ reason, category: "invalid-data" })))).cursor : cursor
+        const updates = useLog ? Stream.merge(cache, notifications(request, label).pipe(
+          Stream.filter((notification) => accepts(notification.reply ? "thread.reply" : "message.new")),
+          Stream.map((notification) => ({ kind: "notice", notification } as const))
+        ), { haltStrategy: "left" }) : cache
+        const progress = yield* Ref.make({ cursor: initialCursor, first: true })
+        return updates.pipe(Stream.flatMap((update) => Stream.paginate(undefined, () => Effect.gen(function*() {
+          const state = yield* Ref.get(progress)
+          yield* active
+          const result = update.kind === "cache" ? yield* reconcile(state.cursor, update.snapshot, startedAt)
+            : yield* reconcile(state.cursor, { scope: request.expectedScope }, undefined, update.notification)
+          yield* active
           const items = result.events.map((event, index) => events[event.type].item({
             occurredAt: DateTime.makeUnsafe(event.occurredAt), summary: event.summary ?? "Selected Slack conversation changed in a persisted snapshot",
             payload: event.payload ?? { count: 1 }, dedupeKey: event.dedupeKey,
             ...(index === result.events.length - 1 ? { cursor: result.cursor } : {})
           }))
           if (items.length === 0 && (state.first || state.cursor !== result.cursor)) items.push(Connector.cursor(result.cursor))
-          return [items, Option.some({ cursor: result.cursor as string | undefined, first: false })] as const
-        }).pipe(
-          Effect.catchTag("LegacyCursor", () => Effect.succeed([[Connector.end(
+          yield* Ref.set(progress, { cursor: result.cursor, first: false })
+          return [items, result.retryNotice ? Option.some(undefined) : Option.none()] as const
+        }))),
+          Stream.interruptWhen(Deferred.await(configuration.revoked)),
+          Stream.catchTag("LegacyCursor", () => Stream.make(Connector.end(
             "This Slack cursor predates message freshness tracking. Create a new subscription for the same selection to establish a baseline."
-          )], Option.none()] as const)),
-          Effect.mapError((error) => error._tag === "SourceFailed" ? error : new Connector.SourceFailed({
+          ))),
+          Stream.mapError((error) => error._tag === "SourceFailed" ? error : new Connector.SourceFailed({
             reason, category: error._tag === "SourceUnavailable" ? error.category ?? "unavailable" : "invalid-data"
           }))
-        ))
+        )
       }))
     }
   })
