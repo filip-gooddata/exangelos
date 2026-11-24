@@ -9,7 +9,8 @@ const handlers = ConnectorProtocol.ConnectorProtocol.toLayer({
     Effect.succeed({ protocolVersion: ConnectorProtocol.version + 1, catalogue: Template.connector.catalogue }),
   Configure: () => Effect.die("unused"),
   Describe: () => Effect.die("unused"),
-  Watch: () => Stream.die("unused")
+  Watch: () => Stream.die("unused"),
+  Icon: () => Effect.die("unused")
 })
 
 Connector.serve({ layer: handlers }).pipe(Layer.provide(BunStdio.layer), Layer.launch, BunRuntime.runMain)

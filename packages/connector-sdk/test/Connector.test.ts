@@ -178,3 +178,33 @@ describe("Connector", () => {
     ).toThrow('The main parameter "label" must be a required property of an object schema')
   })
 })
+
+describe("Connector icon", () => {
+  const withIcon = (icon: Effect.Effect<Connector.Icon | undefined, unknown>) =>
+    Connector.make({
+      events: [closed],
+      parameters: Catalogue.parameters({ main: "repo", schema: Schema.Struct({ repo: Schema.String }) }),
+      configuration: [],
+      handlers: Effect.succeed({
+        configure: () => Effect.void,
+        describe: (parameters) => Effect.succeed({ subject: parameters.repo, label: parameters.repo }),
+        watch: () => Stream.empty,
+        icon
+      })
+    })
+  const png = new Uint8Array([0x89, 0x50, 0x4e, 0x47])
+
+  it.effect("serves the bytes a connector's own icon hook finds, base64-encoded", () =>
+    Effect.gen(function*() {
+      const client = yield* ConnectorTest.makeClient(withIcon(Effect.succeed({ mediaType: "image/png", bytes: png })))
+      expect(yield* client.Icon()).toEqual({ _tag: "Served", mediaType: "image/png", data: "iVBORw==" })
+    }).pipe(Effect.scoped))
+
+  it.effect("serves none when the hook finds none or fails", () =>
+    Effect.gen(function*() {
+      const none = yield* ConnectorTest.makeClient(withIcon(Effect.succeed(undefined)))
+      const failing = yield* ConnectorTest.makeClient(withIcon(Connector.iconFile("/no/such/app/icon.png")))
+      expect(yield* none.Icon()).toEqual({ _tag: "None" })
+      expect(yield* failing.Icon()).toEqual({ _tag: "None" })
+    }).pipe(Effect.scoped))
+})

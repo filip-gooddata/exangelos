@@ -1,12 +1,13 @@
 import { BunServices } from "@effect/platform-bun"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Exit, Fiber, Layer, Logger, References, Schema, Scope, Stream } from "effect"
+import { Effect, Exit, Fiber, Layer, Logger, Option, References, Schema, Scope, Stream } from "effect"
 import { ChildProcessSpawner } from "effect/process"
 import type { ChildProcessHandle } from "effect/process/ChildProcessSpawner"
 import { dirname } from "node:path"
 import { fileURLToPath } from "node:url"
 import { ConnectorRuntime } from "@exangelos/application"
-import { StdioConnectorRuntime } from "@exangelos/connector-runtime"
+import { ConnectorIcon, StdioConnectorRuntime } from "@exangelos/connector-runtime"
+import * as Fs from "node:fs/promises"
 import { Template } from "@exangelos/connector-template"
 
 const templateDirectory = dirname(dirname(fileURLToPath(import.meta.resolve("@exangelos/connector-template"))))
@@ -53,6 +54,20 @@ describe("StdioConnectorRuntime", () => {
     Effect.gen(function*() {
       const connector = yield* start(template)
       expect(connector.catalogue).toEqual(Template.connector.catalogue)
+    }).pipe(Effect.scoped, Effect.provide(runtime)))
+
+  it.live("relays the icon the manifest names, which the SDK serves by default", () =>
+    Effect.gen(function*() {
+      const connector = yield* start(template)
+      const file = yield* Effect.promise(() => Fs.readFile(`${templateDirectory}/icon.svg`))
+      expect(yield* connector.icon).toEqual(Option.some({ mediaType: "image/svg+xml", data: file.toString("base64") }))
+    }).pipe(Effect.scoped, Effect.provide(runtime)))
+
+  it.live("reads a connector built before the Icon method as having no icon, and keeps it running", () =>
+    Effect.gen(function*() {
+      const connector = yield* start(launch(`${import.meta.dirname}/fixture`, "legacy.ts"))
+      expect(yield* connector.icon).toEqual(Option.none())
+      expect(yield* connector.configure({})).toEqual({ _tag: "Accepted" })
     }).pipe(Effect.scoped, Effect.provide(runtime)))
 
   it.live("configures the connector, then streams a watch to its end", () =>
@@ -124,4 +139,26 @@ describe("StdioConnectorRuntime", () => {
       const error = yield* Effect.flip(start(launch(`${import.meta.dirname}/fixture`, "incompatible.ts")))
       expect(error).toMatchObject({ _tag: "IncompatibleProtocol", connector: "template", version: 2, supported: [1] })
     }).pipe(Effect.scoped, Effect.provide(runtime)))
+})
+
+describe("checkIcon", () => {
+  const svg = `<?xml version="1.0"?>\n<!-- mark --><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"/>`
+  const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13])
+  const icon = (mediaType: "image/svg+xml" | "image/png", bytes: Buffer | string) => ({ mediaType, data: Buffer.from(bytes).toString("base64") })
+
+  it("accepts an SVG and a PNG whose bytes match their media type", () => {
+    expect(ConnectorIcon.checkIcon(icon("image/svg+xml", svg))._tag).toBe("Success")
+    expect(ConnectorIcon.checkIcon(icon("image/png", png))._tag).toBe("Success")
+  })
+
+  it.each([
+    ["an oversized icon", icon("image/svg+xml", Buffer.alloc(ConnectorIcon.maxIconBytes + 1)), "byte limit"],
+    ["HTML served as SVG", icon("image/svg+xml", "<html><svg/></html>"), "not an SVG image"],
+    ["invalid UTF-8 served as SVG", icon("image/svg+xml", Buffer.from([0x3c, 0x73, 0x76, 0x67, 0x20, 0xff, 0x3e])), "not an SVG image"],
+    ["SVG served as PNG", icon("image/png", svg), "not a PNG image"],
+    ["data that is not base64", { mediaType: "image/png" as const, data: "%%%" }, "not base64"]
+  ])("refuses %s", (_, served, reason) => {
+    const checked = ConnectorIcon.checkIcon(served)
+    expect(checked._tag === "Failure" ? checked.failure : "").toContain(reason)
+  })
 })

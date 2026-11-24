@@ -1,5 +1,5 @@
-import { Cause, Context, Deferred, Effect, Layer, Queue, Ref, Stream } from "effect"
-import type { Catalogue, Event, Ids } from "@exangelos/domain"
+import { Cause, Context, Deferred, Effect, Layer, Option, Queue, Ref, Stream } from "effect"
+import type { Catalogue, Connector as Domain, Event, Ids } from "@exangelos/domain"
 import {
   CredentialsRejected,
   IncompatibleProtocol,
@@ -36,6 +36,8 @@ export interface Script {
    * missing main parameter is invalid.
    */
   readonly describe?: (parameters: Catalogue.Parameters) => DescribeAnswer
+  /** The logo each process serves; none when omitted. */
+  readonly icon?: Domain.Icon
 }
 
 interface Running {
@@ -126,6 +128,7 @@ export const layerConnectorRuntime: Layer.Layer<ConnectorRuntime | ConnectorRunt
             ),
           describe: (parameters) =>
             call(() => (connector.script.describe ?? describeByMain(connector.script.catalogue))(parameters)),
+          icon: call(() => Option.fromNullishOr(connector.script.icon)),
           watch: (request) =>
             Stream.unwrap(Effect.gen(function*() {
               if (yield* Deferred.isDone(running.exited)) {

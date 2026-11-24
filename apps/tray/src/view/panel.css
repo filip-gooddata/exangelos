@@ -667,8 +667,9 @@ select:focus-visible {
   color: var(--text-2);
 }
 
-.row-muted > .badge-connector,
-.row-closed > .badge-connector {
+/* Brand guidelines forbid altering a logo's transparency, so only initials dim; the label carries the state. */
+.row-muted > .badge-connector:not(.badge-logo),
+.row-closed > .badge-connector:not(.badge-logo) {
   opacity: 0.55;
 }
 

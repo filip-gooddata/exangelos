@@ -1,5 +1,5 @@
 import { resolve } from "node:path"
-import { Cause, Duration, Effect, Exit, Fiber, Layer, Scope, Stream } from "effect"
+import { Cause, Duration, Effect, Exit, Fiber, Layer, Option, Result, Scope, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { RpcClient } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc"
@@ -7,6 +7,7 @@ import { ConnectorRuntime } from "@exangelos/application"
 import { ConnectorProtocol } from "@exangelos/contracts"
 import { Redact, Secrets } from "@exangelos/logging"
 import { RpcStdio } from "@exangelos/rpc-stdio"
+import { checkIcon } from "./Icon.ts"
 
 export interface Command {
   readonly command: string
@@ -96,6 +97,20 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
       catalogue,
       configure: (values) => client.Configure({ values }).pipe(Effect.mapError(lost)),
       describe: (parameters) => client.Describe({ parameters }).pipe(Effect.mapError(lost)),
+      icon: client.Icon().pipe(
+        Effect.mapError(lost),
+        Effect.flatMap((answer) => {
+          if (answer._tag === "None") return Effect.succeedNone
+          const checked = checkIcon({ mediaType: answer.mediaType, data: answer.data })
+          return Result.isSuccess(checked)
+            ? Effect.succeedSome(checked.success)
+            : Effect.as(Effect.logWarning(`Connector ${connector} has no icon: ${checked.failure}`), Option.none())
+        }),
+        // An older connector answers an unknown request with a defect.
+        Effect.catchDefect((defect) =>
+          Effect.as(Effect.logDebug("connector serves no Icon method", Cause.die(defect)), Option.none())
+        )
+      ),
       watch: (request) =>
         client.Watch(request).pipe(Stream.mapError((error) => {
           switch (error._tag) {

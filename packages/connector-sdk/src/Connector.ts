@@ -1,4 +1,7 @@
+import * as Fs from "node:fs/promises"
+import * as Path from "node:path"
 import { Data, Duration, Effect, Layer, Logger, Schema, Stream } from "effect"
+import { Base64 } from "effect/encoding"
 import { type Rpc, type RpcGroup, RpcSerialization, RpcServer } from "effect/rpc"
 import { ConnectorProtocol } from "@exangelos/contracts"
 import { type Catalogue as Wire, type Event, type Ids, Limits } from "@exangelos/domain"
@@ -20,6 +23,41 @@ export interface WatchRequest<P> {
   readonly wakeWindow: Duration.Duration
 }
 
+/** A logo the connector serves: PNG or SVG bytes. The daemon refuses one over 32 KiB or whose bytes are not its type. */
+export interface Icon {
+  readonly mediaType: "image/png" | "image/svg+xml"
+  readonly bytes: Uint8Array
+}
+
+export class IconUnreadable extends Data.TaggedError("IconUnreadable")<{ readonly reason: string }> {}
+
+const mediaTypes: Record<string, Icon["mediaType"]> = { ".png": "image/png", ".svg": "image/svg+xml" }
+
+/** Reads an `.svg` or `.png` file (either case) as an icon; the path resolves against the connector's folder. */
+export const iconFile = (path: string): Effect.Effect<Icon, IconUnreadable> => {
+  const mediaType = mediaTypes[Path.extname(path).toLowerCase()]
+  if (mediaType === undefined) return Effect.fail(new IconUnreadable({ reason: `${path} is not an .svg or .png` }))
+  return Effect.tryPromise({
+    try: async () => ({ mediaType, bytes: new Uint8Array(await Fs.readFile(Path.resolve(path))) }),
+    catch: () => new IconUnreadable({ reason: `${path} cannot be read` })
+  })
+}
+
+/**
+ * The file the manifest `icon` names, or none when the manifest names none. A connector's process runs in its
+ * folder, so this reads `connector.json` from the working directory.
+ */
+export const manifestIcon: Effect.Effect<Icon | undefined, IconUnreadable> = Effect.gen(function*() {
+  const manifest = yield* Effect.tryPromise({
+    try: async () => JSON.parse(await Fs.readFile("connector.json", "utf8")) as unknown,
+    catch: () => new IconUnreadable({ reason: "connector.json cannot be read" })
+  })
+  const declared = typeof manifest === "object" && manifest !== null ? (manifest as { icon?: unknown }).icon : undefined
+  if (declared === undefined) return undefined
+  if (typeof declared !== "string") return yield* new IconUnreadable({ reason: "the manifest icon is not a path" })
+  return yield* iconFile(declared)
+})
+
 export interface Handlers<P, R> {
   readonly configure: (values: Wire.ConfigurationValues) => Effect.Effect<void, ConfigurationRejected, R>
   readonly describe: (
@@ -30,6 +68,12 @@ export interface Handlers<P, R> {
     R
   >
   readonly watch: (request: WatchRequest<P>) => Stream.Stream<Event.WatchItem, ConnectorProtocol.WatchError, R>
+  /**
+   * The connector's logo, or none. The daemon asks once each time the process starts. Defaults to
+   * `manifestIcon`; override it to find the logo at run time, such as in an installed app. A failure is
+   * logged and serves no logo.
+   */
+  readonly icon?: Effect.Effect<Icon | undefined, unknown, R>
 }
 
 export const end = (reason: string): Event.WatchItem => ({ _tag: "End", reason })
@@ -100,6 +144,17 @@ export const make = <Params extends Parameters<any>, R = never, E = never, RB = 
               )
             ),
             Effect.catchTag("ParametersInvalid", ({ reason }) => Effect.succeed({ _tag: "Invalid", reason } as const))
+          ),
+        Icon: () =>
+          (handlers.icon ?? manifestIcon).pipe(
+            Effect.map((icon): ConnectorProtocol.IconAnswer =>
+              icon === undefined
+                ? { _tag: "None" }
+                : { _tag: "Served", mediaType: icon.mediaType, data: Base64.encode(icon.bytes) }
+            ),
+            Effect.catchCause((cause) =>
+              Effect.as(Effect.logWarning("Serving no icon", cause), { _tag: "None" } as const)
+            )
           ),
         Watch: ({ parameters, eventTypes, cursor, wakeWindow }) =>
           decode(parameters).pipe(
