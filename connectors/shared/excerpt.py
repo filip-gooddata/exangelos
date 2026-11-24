@@ -36,4 +36,5 @@ def mask_secrets(text, *, omit=()):
 
 def finish_excerpt(text):
     text = mask_secrets(text)
-    return ' '.join(''.join(c if c.isprintable() else ' ' for c in text).split())[:160]
+    single_line = ' '.join(''.join(c if c.isprintable() else ' ' for c in text).split())
+    return (mask_secrets(single_line) if single_line != text else text)[:160]

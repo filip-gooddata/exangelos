@@ -74,11 +74,15 @@ def mrkdwn_spans(value):
     parts = []
     openings = {}
     omit = []
+    url_closers = {}
     length = 0
     end = 0
     for match in MRKDWN_TOKEN.finditer(value):
         between = value[end:match.start()]
         if '\n' in between:
+            for marker, closer in url_closers.items():
+                omit.extend((openings[marker], closer))
+            url_closers.clear()
             openings.clear()
         parts.append(unescape_slack(between))
         length += len(parts[-1])
@@ -97,19 +101,25 @@ def mrkdwn_spans(value):
             part = unescape_slack(part)
             tail = len(part.rstrip('.,;:!?)]}'))
             while tail and part[tail - 1] in openings:
-                omit.extend((openings.pop(part[tail - 1]), length + tail - 1))
+                # Prefer a closer in ordinary text over punctuation within a URL.
+                url_closers[part[tail - 1]] = length + tail - 1
                 tail -= 1
         elif match['marker']:
             before = value[match.start()-1] if match.start() else ''
             after = value[end:end+1]
             if part in openings and before and not before.isspace() and not after.isalnum() and after != part:
                 omit.extend((openings.pop(part), length))
+                url_closers.pop(part, None)
             elif after and not after.isspace() and not before.isalnum() and before != part and after != part:
+                if part in url_closers:
+                    omit.extend((openings[part], url_closers.pop(part)))
                 openings[part] = length
         else:
             part = unescape_slack(part)
         parts.append(part)
         length += len(part)
+    for marker, closer in url_closers.items():
+        omit.extend((openings[marker], closer))
     parts.append(unescape_slack(value[end:]))
     return ''.join(parts), omit
 
