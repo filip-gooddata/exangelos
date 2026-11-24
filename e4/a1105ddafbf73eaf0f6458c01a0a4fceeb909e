@@ -1,0 +1,21 @@
+connectors/slack/direct/ledger.py
+  s_eae420d4cbe880::t_823f9c19683ce3 62-78,327
+connectors/slack/direct/test_ledger.py
+  s_eae420d4cbe880::t_1eeff71a0d0ea5 103,113-132
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e4a1105ddafbf73eaf0f6458c01a0a4fceeb909e",
+  "prompts": {},
+  "sessions": {
+    "s_eae420d4cbe880": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a20e2c-6596-7512-a5dc-13f9f0e5bed3",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
