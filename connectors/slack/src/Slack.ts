@@ -40,7 +40,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
   ],
   handlers: Effect.gen(function*() {
     const configured = yield* Ref.make<Configuration | undefined>(undefined)
-    const resolve = (configuration: Configuration, subject: string, scope?: string) => Effect.gen(function*() {
+    const resolve = (configuration: Configuration, subject: string, scope?: string, pinOnly = false) => Effect.gen(function*() {
       if (subject === "selected") return yield* new Connector.ParametersInvalid({ reason: retired })
       if (scope !== undefined && (pin.test(subject) || (scope !== "conversation" && scope !== "replies"))) {
         return yield* new Connector.ParametersInvalid({ reason: "Use scope=conversation or scope=replies with a Slack message reference" })
@@ -49,7 +49,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
         return yield* new Connector.ParametersInvalid({ reason: "Use a Slack conversation ID or message reference" })
       }
       const { label, ...request } = yield* source.setup({
-        subscriptionAccess: "persisted-cache", subject,
+        subscriptionAccess: "persisted-cache", subject, ...(pinOnly && { pinOnly: "true" }),
         ...(scope !== undefined && { scope }), ...(configuration.cacheRoot && { cacheRoot: configuration.cacheRoot })
       })
       if (pin.test(subject) && subject !== `scope-${request.expectedScope}`) {
@@ -91,7 +91,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
         const configuration = yield* Ref.get(configured)
         if (!configuration) return yield* new Connector.SourceFailed({ reason: authorize })
         if (!pin.test(parameters.selection) || parameters.scope !== undefined) return yield* new Connector.SourceFailed({ reason: retired })
-        const { request, label } = yield* resolve(configuration, parameters.selection).pipe(
+        const { request, label } = yield* resolve(configuration, parameters.selection, undefined, configuration.notificationLog).pipe(
           Effect.mapError((error) => new Connector.SourceFailed({ reason: error.reason, category: error._tag === "SourceUnavailable" ? error.category ?? "unavailable" : "scope-changed" }))
         )
         const active = Effect.gen(function*() {
@@ -110,8 +110,6 @@ export const make = <R>(source: Source<R>) => Connector.make({
         const selectedTypes: ReadonlyArray<string> = eventTypes
         const accepts = (type: string) => !selectedTypes.length || selectedTypes.includes(type)
         const useLog = configuration.notificationLog && (accepts("thread.reply") || (!request.selection.thread && accepts("message.new")))
-        // Real cache generations are positive. Reserve the lineage before starting
-        // either reader so a slow first snapshot cannot hold up a fresh notification.
         const initialCursor = useLog && cursor === undefined ? (yield* reconcile(undefined, {
           scope: request.expectedScope, complete: true, generation: "0", snapshot: "0".repeat(64), messages: []
         }, startedAt).pipe(Effect.mapError(() => new Connector.SourceFailed({ reason, category: "invalid-data" })))).cursor : cursor
@@ -133,7 +131,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
           }))
           if (items.length === 0 && (state.first || state.cursor !== result.cursor)) items.push(Connector.cursor(result.cursor))
           yield* Ref.set(progress, { cursor: result.cursor, first: false })
-          return [items, result.retryNotice ? Option.some(undefined) : Option.none()] as const
+          return [items, result.retryObservation ? Option.some(undefined) : Option.none()] as const
         }))),
           Stream.interruptWhen(Deferred.await(configuration.revoked)),
           Stream.catchTag("LegacyCursor", () => Stream.make(Connector.end(

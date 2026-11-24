@@ -235,7 +235,7 @@ def read_json(path):
     return json.loads(raw, object_pairs_hook=source.unique_object)
 
 
-def reopen(directory, roots, handle):
+def reopen(directory, roots, handle, *, pin_only=False):
     path = directory / ('scope-' + handle + '.json')
     try:
         saved = read_json(path)
@@ -258,13 +258,19 @@ def reopen(directory, roots, handle):
     else:
         raise SetupRejected(24)
     try:
-        if source.inventory(root, binding)[1] != epoch:
+        if source.directory_epoch(root, binding) != epoch:
             raise SetupRejected(24)
     except source.PinnedScopeChanged:
         raise SetupRejected(24) from None
     request = dict(saved['request'], root=str(root))
     label = saved['label']
-    validate(request)
+    def verify():
+        require(source.scope_token(bytes.fromhex(request['key']), request['selection'],
+                                   source.directory_epoch(root, request.get('volumeIdentity'))) == handle)
+        if not pin_only:
+            validate(request)
+
+    verify()
     if binding is None and sys.platform == 'darwin':
         # Add proof only while both original directory identities still match.
         # The historical device numbers remain inputs to the scope token.
@@ -280,7 +286,7 @@ def reopen(directory, roots, handle):
             raise SetupRejected(24) from None
         if aliases:
             request['volumeIdentity'] = dict(kind='legacy', **aliases)
-            validate(request)
+            verify()
             # The volume-keyed alias keeps equivalent raw references on this subject.
             portable = {part: [pair[0], *epoch[part][1:]] for part, pair in aliases.items()}
             try:
@@ -324,19 +330,21 @@ def setup(values):
     subject = values.get('subject')
     scope = values.get('scope')
     custom = values.get('cacheRoot', '')
-    if (set(values) - {'subscriptionAccess', 'cacheRoot', 'subject', 'scope'}
+    if (set(values) - {'subscriptionAccess', 'cacheRoot', 'subject', 'scope', 'pinOnly'}
             or not isinstance(subject, str) or not 1 <= len(subject) <= 4096
             or ('scope' in values and scope not in ('conversation', 'replies'))
             or not isinstance(custom, str) or len(custom) > 4096):
         raise SetupRejected(20)
     handle = re.fullmatch(r'scope-([a-f0-9]{64})', subject)
     target = None if handle else parse_subject(subject)
+    if 'pinOnly' in values and (values['pinOnly'] != 'true' or not handle):
+        raise SetupRejected(20)
     if (handle and scope) or (target and not target.timestamp and scope == 'replies'):
         raise SetupRejected(20)
     roots = locations(custom)
     directory = private_directory()
     if handle:
-        request, label = reopen(directory, roots, handle[1])
+        request, label = reopen(directory, roots, handle[1], pin_only='pinOnly' in values)
     else:
         with locked(directory):
             try:

@@ -13,7 +13,7 @@ const EventType = Schema.Literals(["message.new", "thread.reply", "message.edite
 export type EventType = typeof EventType.Type
 export const EventPayload = Schema.Struct({ version: Schema.Literal(1), count: Schema.Literal(1), ...MessageContext.fields })
 const Result = Schema.Struct({
-  retryNotice: Schema.optionalKey(Schema.Literal(true)),
+  retryObservation: Schema.optionalKey(Schema.Literal(true)),
   events: Schema.Array(Schema.Struct({ type: EventType, summary: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))), payload: Schema.optionalKey(EventPayload), occurredAt: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8640000000000000 })), dedupeKey: Schema.String.check(Schema.isMaxLength(512)) }))
     .check(Schema.isMaxLength(100500)),
   cursor: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))
@@ -36,7 +36,7 @@ export const reconcile = (cursor: string | undefined, input: unknown, startedAt?
     fileURLToPath(new URL("../direct/ledger.py", import.meta.url))
   ], {
     env: { PYTHONDONTWRITEBYTECODE: "1" }, extendEnv: true,
-    stdin: { stream: Stream.make(new TextEncoder().encode(JSON.stringify({ cursor, snapshot, observedAt, startedAt, notification }) + "\n")), endOnDone: true },
+    stdin: { stream: Stream.make(new TextEncoder().encode(JSON.stringify({ cursor, snapshot, observedAt, startedAt, notification, retryObservation: true }) + "\n")), endOnDone: true },
     stderr: "ignore", forceKillAfter: "1 second"
   }))
   let bytes = 0

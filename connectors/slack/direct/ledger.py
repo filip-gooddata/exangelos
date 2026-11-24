@@ -218,8 +218,12 @@ def reconcile(request, path=None):
             edge = db.execute('SELECT result FROM edges WHERE lineage=? AND source=?', (lineage, source)).fetchone()
             if edge:
                 result = json.loads(edge[0])
-                if notice is not None:
-                    result['retryNotice'] = True
+                if request.get('retryObservation'):
+                    successor = CURSOR.fullmatch(result['cursor'])
+                    generation, = db.execute('SELECT generation FROM commits WHERE lineage=? AND id=?',
+                                              successor.groups()).fetchone()
+                    if notice is not None or int(snapshot['generation']) > int(generation):
+                        result['retryObservation'] = True
                 db.commit()
                 return result
             row = db.execute('SELECT millis FROM watch_starts WHERE lineage=?', (lineage,)).fetchone()

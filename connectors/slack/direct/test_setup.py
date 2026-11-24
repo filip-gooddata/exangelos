@@ -296,6 +296,12 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(raw, self.resolve('scope-' + original['expectedScope']))
             self.assertEqual(raw['volumeIdentity']['kind'], 'legacy')
 
+    def test_notification_watch_reopens_pin_without_cache_acquisition(self):
+        handle = 'scope-' + self.resolve(CHANNEL)['expectedScope']
+        with mock.patch.object(source, 'inventory', side_effect=AssertionError('cache scan')), \
+                mock.patch.object(source, 'acquire', side_effect=AssertionError('cache read')):
+            self.assertEqual(self.resolve(handle, pinOnly='true')['expectedScope'], handle[6:])
+
     def test_equivalent_root_spelling_reopens_same_pin(self):
         original = self.resolve(REPLY)
         for suffix in ('/', '/.', '/../cache'):

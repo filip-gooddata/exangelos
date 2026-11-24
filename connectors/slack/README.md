@@ -208,8 +208,8 @@ each new Watch lineage. A previously unseen message or reply qualifies as an
 arrival when its Slack timestamp is at or after that start. Older rows entering
 the cache are remembered silently. A later poll can deliver several qualifying
 messages, including a message that only became visible after a newer one. This
-comparison assumes the local machine clock agrees with Slack. The first snapshot
-itself remains silent, and messages that never reach the cache cannot be reported.
+comparison assumes the local machine clock agrees with Slack. In cache-only mode the first snapshot
+remains silent, and delivery depends on the message reaching the cache.
 
 A cursor created before 0.3.0 can replay its already committed batches with
 their original payloads. Its ledger has no recorded Watch start. At the end of that history the connector ends the old Watch with a reason

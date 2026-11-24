@@ -20,7 +20,7 @@ it.effect("real Python ledger replays the committed batch before considering a c
   const initial = yield* reconcile(undefined, snapshot([message(1)], "1"))
   const first = yield* reconcile(initial.cursor, snapshot([message(1), message(3, true)]))
   const newer = snapshot([message(1), message(2), message(3, true)], "3")
-  expect(yield* reconcile(initial.cursor, newer)).toEqual(first)
+  expect(yield* reconcile(initial.cursor, newer)).toEqual({ ...first, retryObservation: true })
   const next = yield* reconcile(first.cursor, newer)
   expect(next.events.map((event) => event.type)).toEqual(["message.new"])
   expect(next.events[0]?.dedupeKey).not.toBe(first.events[0]?.dedupeKey)

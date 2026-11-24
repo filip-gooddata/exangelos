@@ -36,17 +36,13 @@ def project(record, request, label, floor):
             or record.get('thread_ts') != thread or (thread and (not STAMP.fullmatch(thread) or thread >= ts))
             or (selected.get('thread') and selected['thread'] != thread)):
         return
-    # Display fields in the observed format are redacted. The userId is the recipient.
     return dict(id=observation.token(bytes.fromhex(request['key']), 'message', team, account, channel, ts),
                 reply=bool(thread), messageTs=ts, conversationLabel=label,
                 permalink=observation.message_permalink(None, team, channel, ts, thread))
 
 
 def pinned(request, root):
-    database = root / 'https_app.slack.com_0.indexeddb.leveldb'
-    binding = request.get('volumeIdentity')
-    epoch = dict(root=source.directory_identity(root, binding),
-                 database=source.directory_identity(database, binding, 'database'))
+    epoch = source.directory_epoch(root, request.get('volumeIdentity'))
     return source.scope_token(bytes.fromhex(request['key']), request['selection'], epoch) == request['expectedScope']
 
 
@@ -82,6 +78,7 @@ def follow(request, label):
     if thread:
         label = label.removesuffix(f' · replies to {thread}')
     identity = None
+    established = False
     offset = 0
     anchor = b''
     partial = b''
@@ -97,8 +94,8 @@ def follow(request, label):
                     return
                 current = info.st_dev, info.st_ino
                 if current != identity or offset > info.st_size or (anchor and boundary(fd, offset) != anchor):
-                    # Only an established tail may read a small replacement file from its beginning.
-                    offset = info.st_size if identity is None else 0
+                    offset = 0 if established else info.st_size
+                    established = True
                     identity, partial, record = current, b'', None
                 if info.st_size - offset > 4 * LIMIT:
                     offset, partial, record = info.st_size, b'', None

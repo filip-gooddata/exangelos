@@ -657,12 +657,20 @@ def notification_delivery(installed, home):
         check_wake(early['event'], handle, home, 'New message by unknown author in "Slack conversation ' + CHANNEL + '"')
         wire.receive(0.7, quiet=True)
 
+    message(ts, 'fuller cache text')
+    database(root, state, sequence=20)
     with Wire(installed, home) as wire:
         wire.configure(allowed)
         watch = wire.watch(handle, saved)
         check(wire.chunk(watch) == [early], 'early edge replays after restart')
+        message(ts, 'edit during replay')
+        database(root, state, sequence=25)
+        checkpoint, = wire.chunk(watch)
+        check(checkpoint['_tag'] == 'Cursor', 'first cache observation reconciled after replay')
+        first_edit, = wire.chunk(watch)
+        check(first_edit['event']['type'] == 'message.edited' and first_edit['event']['payload']['preview'] == 'edit during replay',
+              'first edit survives cache observation during replay')
         second = stamp()
-        message(ts, 'fuller cache text')
         message(second, 'cache only')
         database(root, state, sequence=30)
         cached, = wire.chunk(watch)
@@ -691,10 +699,15 @@ def notification_delivery(installed, home):
         wire.chunk(watch)
         wire.receive(0.7, quiet=True)
         log.rename(log.with_suffix('.old'))
+        wire.receive(1.1, quiet=True)
         ts = stamp()
         prefix = f'{SELECTION[0]}|msg|{CHANNEL}|{ts}|'
         other = '1600000000.000001'
-        append(record(ts) + record(ts, id=prefix + other, thread_ts=other))
+        append(record(ts) + record(ts, id=prefix + other, thread_ts=other) + record(ts, id=prefix + parent, thread_ts=parent))
+        rotated, = wire.chunk(watch)
+        check(rotated['event']['payload']['messageTs'] == ts, 'fresh reply from replacement after missing path')
+        ts = stamp()
+        prefix = f'{SELECTION[0]}|msg|{CHANNEL}|{ts}|'
         wire.receive(0.7, quiet=True)
         log.write_bytes(record(ts, id=prefix + parent, thread_ts=parent))
         reply, = wire.chunk(watch)
