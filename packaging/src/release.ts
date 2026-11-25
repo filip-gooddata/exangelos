@@ -25,6 +25,7 @@ export interface ReleaseBuild {
   readonly officialConnectorsDirectory: string
   readonly releaseDirectory: string
   readonly targets?: ReadonlyArray<Target>
+  readonly signingIdentity?: string | undefined
 }
 
 export interface Release {
@@ -43,7 +44,8 @@ export const buildRelease = (build: ReleaseBuild) =>
       releaseUrl: build.releaseUrl,
       officialConnectors,
       targets: build.targets ?? targets,
-      outDirectory: build.releaseDirectory
+      outDirectory: build.releaseDirectory,
+      signingIdentity: build.signingIdentity
     })
     return yield* Effect.sync((): Release => {
       const connectorArchives = officialConnectors.map((connector) => {

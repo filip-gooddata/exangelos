@@ -4,6 +4,7 @@ import { join } from "node:path"
 import { beforeAll, describe, expect, it } from "@effect/vitest"
 import { digestDirectory } from "@exangelos/connector-directory"
 import { officialConnectorsFileName, readOfficialConnectors } from "../src/connector-archives.ts"
+import { codesignArguments, entitlementsFile } from "../src/binaries.ts"
 import { buildRelease, defaultBuildScript, officialConnectorDirectories, type Release } from "../src/release.ts"
 import { hostTarget, readChecksums } from "../src/release-files.ts"
 import { extractTarGz, listTarGz } from "../src/tar.ts"
@@ -112,5 +113,23 @@ describe("official release for this machine (contract test with the real CLI bui
     for (const connector of release.officialConnectors) {
       expect(bytes.includes(connector.digest), connector.name).toBe(true)
     }
+  })
+})
+
+describe("macOS signature", () => {
+  it("signs ad hoc without an identity and with the hardened runtime, a timestamp and the JIT entitlement with one", () => {
+    expect(codesignArguments("bin", undefined)).toEqual(["--sign", "-", "--force", "bin"])
+    expect(codesignArguments("bin", "Developer ID Application: Example (TEAM)")).toEqual([
+      "--sign",
+      "Developer ID Application: Example (TEAM)",
+      "--force",
+      "--options",
+      "runtime",
+      "--timestamp",
+      "--entitlements",
+      entitlementsFile,
+      "bin"
+    ])
+    expect(readFileSync(entitlementsFile, "utf8")).toContain("<key>com.apple.security.cs.allow-jit</key>")
   })
 })

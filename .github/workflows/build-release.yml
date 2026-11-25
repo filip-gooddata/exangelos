@@ -1,9 +1,13 @@
 # Builds every release file for one version and uploads them as the artifact `release`. It publishes nothing:
 # release.yml publishes the artifact, release-check.yml only builds it.
 #
-# The macOS job builds the connector archives and the four binaries. Each Linux job takes the binary for its
-# architecture from those archives and bundles it into the tray app's .deb, because Tauri cannot cross-compile. The last
-# job adds the .deb files to SHA256SUMS.
+# The first macOS job builds the connector archives and the four binaries. Each tray job takes the binary for its
+# platform from those archives and bundles it into the tray app: a .deb on Linux, where Tauri cannot cross-compile, and a
+# disk image with Exangelos.app on macOS. The last job adds the tray packages to SHA256SUMS.
+#
+# With `sign`, the macOS jobs run in the `release` environment, whose secrets hold the Developer ID certificate. They
+# import it into a keychain of their own, sign the darwin binaries and the app with it, check the signatures and delete
+# the keychain. Without `sign`, as on pull requests, the binaries get ad-hoc signatures and the app none.
 name: Build release files
 
 on:
@@ -13,6 +17,11 @@ on:
         description: The version without the leading v, such as 0.1.2
         required: true
         type: string
+      sign:
+        description: Sign the macOS binaries and app with the Developer ID from the release environment
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -23,6 +32,7 @@ env:
 jobs:
   binaries:
     runs-on: macos-15
+    environment: ${{ inputs.sign && 'release' || '' }}
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v6
@@ -36,7 +46,16 @@ jobs:
           bun-version: 1.4.2
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+      - name: Import the Developer ID certificate
+        if: inputs.sign
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: .github/scripts/import-signing-certificate.sh "$RUNNER_TEMP/signing.keychain-db"
       - name: Build official connector archives and the four binaries
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ inputs.sign && secrets.APPLE_SIGNING_IDENTITY || '' }}
         run: pnpm --filter @exangelos/packaging run build:release --version "$VERSION" --release-url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
       - name: Check the release files
         working-directory: packaging/dist/release
@@ -44,6 +63,16 @@ jobs:
           shasum -a 256 -c SHA256SUMS
           ./binaries/darwin-arm64/exangelos --version | grep -qx "exangelos $VERSION"
           test -f "exangelos-$VERSION-darwin-arm64.tar.gz"
+      - name: Check the Developer ID signatures of the darwin binaries
+        if: inputs.sign
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: |
+          for arch in arm64 x64; do
+            mkdir -p "$RUNNER_TEMP/darwin-$arch"
+            tar -xzf "packaging/dist/release/exangelos-$VERSION-darwin-$arch.tar.gz" -C "$RUNNER_TEMP/darwin-$arch"
+            .github/scripts/verify-macos-signature.sh "$APPLE_SIGNING_IDENTITY" "$RUNNER_TEMP/darwin-$arch/exangelos"
+          done
       - name: Render the Homebrew formula and cask
         run: pnpm --filter @exangelos/packaging run render:homebrew --version "$VERSION" --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
       - uses: actions/upload-artifact@v4
@@ -53,6 +82,89 @@ jobs:
             packaging/dist/release/*.tar.gz
             packaging/dist/release/official-connectors.json
             packaging/dist/release/SHA256SUMS
+          if-no-files-found: error
+      - name: Delete the signing keychain
+        if: always() && inputs.sign
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+
+  tray-macos:
+    needs: binaries
+    strategy:
+      matrix:
+        include:
+          - arch: arm64
+            triple: aarch64-apple-darwin
+          - arch: x64
+            triple: x86_64-apple-darwin
+    runs-on: macos-15
+    environment: ${{ inputs.sign && 'release' || '' }}
+    env:
+      DMG: Exangelos_${{ inputs.version }}_${{ matrix.arch == 'arm64' && 'aarch64' || 'x64' }}.dmg
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 12.10.1
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.triple }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/tray/src-tauri
+          key: ${{ matrix.triple }}
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-binaries
+          path: release-binaries
+      - name: Put the release binary in place as the sidecar
+        run: |
+          mkdir -p unpacked apps/tray/src-tauri/binaries
+          tar -xzf "release-binaries/exangelos-$VERSION-darwin-${{ matrix.arch }}.tar.gz" -C unpacked
+          mv unpacked/exangelos "apps/tray/src-tauri/binaries/exangelos-${{ matrix.triple }}"
+      - name: Import the Developer ID certificate
+        if: inputs.sign
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+        run: .github/scripts/import-signing-certificate.sh "$RUNNER_TEMP/signing.keychain-db"
+      - name: Bundle the tray app
+        working-directory: apps/tray
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ inputs.sign && secrets.APPLE_SIGNING_IDENTITY || '' }}
+          ENTITLEMENTS: ${{ github.workspace }}/packaging/macos/entitlements.plist
+        run: |
+          if [ -z "$APPLE_SIGNING_IDENTITY" ]; then unset APPLE_SIGNING_IDENTITY; fi
+          node -e 'console.log(JSON.stringify({ version: process.env.VERSION, build: { beforeBuildCommand: "pnpm run build:web" }, bundle: { externalBin: ["binaries/exangelos"], macOS: { entitlements: process.env.ENTITLEMENTS } } }))' > src-tauri/tauri.release.conf.json
+          pnpm tauri build --ci --target ${{ matrix.triple }} --bundles app,dmg --config src-tauri/tauri.release.conf.json
+          cp src-tauri/target/${{ matrix.triple }}/release/bundle/dmg/*.dmg "$GITHUB_WORKSPACE/$DMG"
+      - name: Check the disk image
+        env:
+          APPLE_SIGNING_IDENTITY: ${{ inputs.sign && secrets.APPLE_SIGNING_IDENTITY || '' }}
+        run: |
+          hdiutil attach -nobrowse -readonly -mountpoint "$RUNNER_TEMP/image" "$DMG"
+          app="$RUNNER_TEMP/image/Exangelos.app"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Contents/Info.plist")" = "$VERSION"
+          test -x "$app/Contents/MacOS/exangelos-tray"
+          if [ "${{ matrix.arch }}" = arm64 ]; then
+            "$app/Contents/MacOS/exangelos" --version | grep -qx "exangelos $VERSION"
+          fi
+          if [ -n "$APPLE_SIGNING_IDENTITY" ]; then
+            .github/scripts/verify-macos-signature.sh "$APPLE_SIGNING_IDENTITY" "$app" "$app/Contents/MacOS/exangelos"
+          fi
+          hdiutil detach "$RUNNER_TEMP/image"
+      - name: Delete the signing keychain
+        if: always() && inputs.sign
+        run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-tray-macos-${{ matrix.arch }}
+          path: ${{ env.DMG }}
           if-no-files-found: error
 
   tray-linux:
@@ -121,7 +233,7 @@ jobs:
           if-no-files-found: error
 
   checksums:
-    needs: tray-linux
+    needs: [tray-linux, tray-macos]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -133,10 +245,11 @@ jobs:
         working-directory: release
         run: |
           sha256sum -c SHA256SUMS
-          { cat SHA256SUMS; sha256sum exangelos-tray-*.deb; } | LC_ALL=C sort -k2 > SHA256SUMS.new
+          { cat SHA256SUMS; sha256sum exangelos-tray-*.deb Exangelos_*.dmg; } | LC_ALL=C sort -k2 > SHA256SUMS.new
           mv SHA256SUMS.new SHA256SUMS
           sha256sum -c SHA256SUMS
           grep -c 'exangelos-tray-.*\.deb$' SHA256SUMS | grep -qx 2
+          grep -c 'Exangelos_.*\.dmg$' SHA256SUMS | grep -qx 2
           ls -l
       - uses: actions/upload-artifact@v4
         with:

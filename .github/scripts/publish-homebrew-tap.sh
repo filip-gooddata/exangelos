@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
-# Pushes a rendered Homebrew formula to the tap repository as Formula/exangelos.rb, committing only when it changed.
+# Pushes the rendered Homebrew formula and cask to the tap repository as Formula/exangelos.rb and Casks/exangelos-app.rb,
+# committing only when they changed. A cask without checksums, rendered for a release without the macOS disk images,
+# stays out of the tap.
 #
-# Usage: publish-homebrew-tap.sh <formula file> <version>
+# Usage: publish-homebrew-tap.sh <rendered tap directory> <version>
 # Environment: HOMEBREW_TAP_DEPLOY_KEY, the private half of the tap's write deploy key.
 #              TAP_REPOSITORY, owner/name of the tap (default filip-gooddata/homebrew-exangelos).
 #              DRY_RUN=true runs `git push --dry-run` instead of pushing.
 set -euo pipefail
 
-formula=$(realpath "$1")
+rendered=$(realpath "$1")
 version=$2
 tap=${TAP_REPOSITORY:-filip-gooddata/homebrew-exangelos}
-test -s "$formula"
+test -s "$rendered/Formula/exangelos.rb"
 test -n "${HOMEBREW_TAP_DEPLOY_KEY:-}" || { echo "HOMEBREW_TAP_DEPLOY_KEY is not set" >&2; exit 1; }
 
 work=$(mktemp -d)
@@ -31,10 +33,17 @@ if [ -f Formula/exangelos.rb ]; then
     exit 0
   fi
 fi
-cp "$formula" Formula/exangelos.rb
+cp "$rendered/Formula/exangelos.rb" Formula/exangelos.rb
 git add Formula/exangelos.rb
+if grep -q 'sha256 :no_check' "$rendered/Casks/exangelos-app.rb"; then
+  echo "The release has no macOS disk images; leaving the cask out"
+else
+  mkdir -p Casks
+  cp "$rendered/Casks/exangelos-app.rb" Casks/exangelos-app.rb
+  git add Casks/exangelos-app.rb
+fi
 if git diff --cached --quiet; then
-  echo "Formula/exangelos.rb is unchanged; nothing to push"
+  echo "The formula and the cask are unchanged; nothing to push"
   exit 0
 fi
 git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
