@@ -21,7 +21,7 @@ So a PR watch can already live for weeks if the agent resumes it on each Expired
 
 **A. Per-subscription lifetime.** Add an optional `lifetime` to the subscription (`packages/domain/src/Subscription.ts:30-46`) and a `--lifetime <duration>` flag on `subscribe` and `update`. Create, update and resume use `subscription.lifetime ?? limits.lifetime`. A new limit, `limits.maxLifetime`, caps the requested value.
 
-- Pros: the agent opts in per watch, at the place where it knows the watch is a PR. Other watches keep 7 days. The change stays in the domain, the CLI and the contracts; connectors are untouched. Old stored subscriptions decode unchanged because the field is optional.
+- Pros: the agent opts in per watch, at the place where it knows the watch is a PR. Other watches keep 7 days. The change stays in the domain, the application use cases, the CLI and the contracts; connectors are untouched. Old stored subscriptions decode unchanged because the field is optional.
 - Cons: one new stored field, one new flag on two commands carried through the subscribe and update requests and use cases, one new limit.
 
 **B. Per-connector lifetime in the manifest.** Add an optional `lifetime` to `connector.json` (`packages/contracts/src/Manifest.ts:22-33`). The application uses it in place of `limits.lifetime` for that connector's subscriptions, capped by `limits.maxLifetime`.
