@@ -344,7 +344,8 @@ def reconcile(request, path=None):
                         db.execute('DELETE FROM pending_details WHERE lineage=? AND message=?', key)
                 if old is not None:
                     require(old['reply'] == message['reply'])
-                    if old['body'] != message['body'] and (not arrival or context.get('edited') is True):
+                    hydration = arrival and old['body'] == snapshot.get('emptyBody') and not context.get('edited')
+                    if old['body'] != message['body'] and not hydration:
                         changes.append(('message.edited', message['body']))
                     if old['reactionsComplete'] and message['reactionsComplete']:
                         changes.extend(('reaction.added', r) for r in message['reactions'] if r not in old['reactions'])
@@ -387,6 +388,19 @@ def pending_status(cursor, path):
     db = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
     try:
         require(db.execute('SELECT 1 FROM commits WHERE lineage=? AND id=?', match.groups()).fetchone())
+        version, = db.execute('PRAGMA user_version').fetchone()
+        require(version in (4, 5, 6, 7))
+        if version < 6:
+            if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='early'").fetchone():
+                return []
+            count, = db.execute('SELECT COUNT(*) FROM early WHERE lineage=?', (match[1],)).fetchone()
+            return [dict(delivery='legacy details', fieldsRecorded=False, messages=count)] if count else []
+        if version == 6:
+            rows = db.execute('SELECT need_sender,need_preview,COUNT(*) FROM pending_details '
+                              'WHERE lineage=? GROUP BY 1,2', (match[1],))
+            return [dict(delivery='legacy details', awaiting=[
+                field for field, missing in (('author', sender), ('opted-in excerpt', preview)) if missing
+            ], permalinkRecorded=False, messages=count) for sender, preview, count in rows]
         rows = db.execute('SELECT receipted,need_sender,need_preview,need_permalink,COUNT(*) '
                           'FROM pending_details WHERE lineage=? GROUP BY 1,2,3,4', (match[1],))
         return [dict(delivery='legacy details' if receipt else 'arrival', awaiting=[

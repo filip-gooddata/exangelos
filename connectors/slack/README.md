@@ -272,6 +272,8 @@ With cache access configured, `notificationLog=enabled` also tails the selected
 profile's `logs/default/browser.log`. The cache folder must be named `IndexedDB`.
 A matching workspace, account, conversation, message timestamp and thread parent
 let the connector record the arrival privately and check the cache immediately.
+A new notification-enabled watch first returns its startup cursor. The daemon
+saves that cursor and reopens the watch before the connector accepts hints.
 Slack Desktop redacted the author, body and launch URL in sampled log records.
 A notice or incomplete cache row consumes no host event, wake, backlog slot or
 one-shot allowance. Pending markers survive restarts and log rotation. The
@@ -289,7 +291,8 @@ exangelos --json show "$subscription" | jq -er '.subscription.cursor' |
 ```
 
 An empty array means there are no recorded outstanding obligations on that
-lineage. For pending arrivals, keep Slack Desktop online with access to the
+lineage. Before the first upgraded reconciliation, legacy reports identify fields
+the older ledger did not record. For pending arrivals, keep Slack Desktop online with access to the
 selected conversation. Desktop may never persist an eligible excerpt, author,
 or workspace domain, and a sleeping machine cannot deliver a wake. The reader
 starts at the active log's end and skips excessive backlog. Messages missed by

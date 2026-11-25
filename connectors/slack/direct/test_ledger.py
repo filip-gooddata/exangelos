@@ -95,6 +95,14 @@ class LedgerTests(unittest.TestCase):
                             created['cursor'], includePreview=True)
         self.assertEqual([e['type'] for e in changed['events']], ['message.edited', 'reaction.added'])
 
+    def test_body_edit_without_slack_edit_timestamp_while_arrival_pending(self):
+        cursor = self.call(snapshot(1, []))['cursor']
+        first = message(2, body='first text')
+        del first['sender']
+        pending = self.call(snapshot(2, [first]), cursor)
+        ready = self.call(snapshot(3, [message(2, body='second text')]), pending['cursor'])
+        self.assertEqual([event['type'] for event in ready['events']], ['message.new', 'message.edited'])
+
     def test_pending_status_follows_subscription_and_preview_choice(self):
         cursor = self.call(snapshot(1, []))['cursor']
         row = message(1)
@@ -182,6 +190,8 @@ class LedgerTests(unittest.TestCase):
 
     def test_v6_pending_receipt_gets_one_actionable_details_event(self):
         row, early = self.migrated_receipt(6)
+        self.assertEqual(ledger.pending_status(early['cursor'], self.path),
+                         [dict(delivery='legacy details', awaiting=['author', 'opted-in excerpt'], permalinkRecorded=False, messages=1)])
         snap = snapshot(2, [row])
         partial = self.call(snap, early['cursor'], includePreview=True)
         self.assertEqual(partial['events'], [])
@@ -197,6 +207,8 @@ class LedgerTests(unittest.TestCase):
 
     def test_missing_migrated_receipt_rolls_back_and_preserves_cursor(self):
         row, early = self.migrated_receipt()
+        self.assertEqual(ledger.pending_status(early['cursor'], self.path),
+                         [dict(delivery='legacy details', fieldsRecorded=False, messages=1)])
         with closing(sqlite3.connect(self.path)) as db, db:
             edge = db.execute('SELECT lineage,source,result FROM edges').fetchone()
             db.execute('DELETE FROM edges')

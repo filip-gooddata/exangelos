@@ -89,6 +89,7 @@ def acquire(request):
     messages.sort(key=lambda message: message['id'])
     marker_rows = [{k: v for k, v in message.items() if k not in ('preview', 'memberSender', 'memberPeer', 'edited')} for message in messages]
     return {'scope': scope, 'complete': True, 'messages': messages, 'generation': str(generation),
+            'emptyBody': observation.token(key, 'body', '', None),
             'snapshot': observation.token(key, 'selected-snapshot-v1', scope, marker_rows)}
 
 

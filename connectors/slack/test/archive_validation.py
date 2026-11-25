@@ -666,6 +666,12 @@ def notification_delivery(installed, home):
         wire.configure(allowed)
         handle = describe(wire, CHANNEL)
         watch = wire.watch(handle, event_types=['message.new'])
+        checkpoint = wire.chunk(watch)[0]['cursor']
+        check(wire.receive()['exit']['_tag'] == 'Success', 'checkpoint-only watch before daemon cursor intake')
+        append(record(stamp()))
+        time.sleep(0.7)
+        check(pending() == 0, 'no receipt accepted before the host reopens the checkpoint')
+        watch = wire.watch(handle, checkpoint, event_types=['message.new'])
         saved = wire.chunk(watch)[0]['cursor']
         wire.receive(0.7, quiet=True)
         ts = stamp()
@@ -719,6 +725,9 @@ def notification_delivery(installed, home):
         parent = next(iter(state['messages'][CHANNEL]))
         handle = describe(wire, f'{CHANNEL}:{parent}', 'replies')
         watch = wire.watch(handle, event_types=['thread.reply'])
+        checkpoint = wire.chunk(watch)[0]['cursor']
+        check(wire.receive()['exit']['_tag'] == 'Success', 'reply checkpoint')
+        watch = wire.watch(handle, checkpoint, event_types=['thread.reply'])
         wire.chunk(watch)
         wire.receive(0.7, quiet=True)
         log.rename(log.with_suffix('.old'))

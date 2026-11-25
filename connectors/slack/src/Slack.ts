@@ -112,14 +112,18 @@ export const make = <R>(source: Source<R>) => Connector.make({
         const accepts = (type: string) => !selectedTypes.length || selectedTypes.includes(type)
         const arrivals = ["message.new", "thread.reply"].filter(accepts)
         const useLog = configuration.notificationLog && (accepts("thread.reply") || (!request.selection.thread && accepts("message.new")))
-        const initialCursor = useLog && cursor === undefined ? (yield* reconcile(undefined, {
-          scope: request.expectedScope, complete: true, generation: "0", snapshot: "0".repeat(64), messages: []
-        }, startedAt).pipe(Effect.mapError(() => new Connector.SourceFailed({ reason, category: "invalid-data" })))).cursor : cursor
+        if (useLog && cursor === undefined) {
+          // The daemon reopens a finished Watch with its durably ingested cursor.
+          const checkpoint = yield* reconcile(undefined, {
+            scope: request.expectedScope, complete: true, generation: "0", snapshot: "0".repeat(64), messages: []
+          }, startedAt).pipe(Effect.mapError(() => new Connector.SourceFailed({ reason, category: "invalid-data" })))
+          return Stream.make(Connector.cursor(checkpoint.cursor))
+        }
         const updates = useLog ? Stream.merge(cache, notifications(request, label).pipe(
           Stream.filter((notification) => accepts(notification.reply ? "thread.reply" : "message.new")),
           Stream.map((notification) => ({ kind: "notice", notification } as const))
         ), { haltStrategy: "left" }) : cache
-        const progress = yield* Ref.make({ cursor: initialCursor, first: true })
+        const progress = yield* Ref.make({ cursor, first: true })
         return updates.pipe(Stream.flatMap((update) => Stream.paginate(false, (refresh) => Effect.gen(function*() {
           const state = yield* Ref.get(progress)
           yield* active
