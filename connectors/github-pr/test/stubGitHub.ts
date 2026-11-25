@@ -71,8 +71,32 @@ const commentNode = (c: CommentFields) => ({
   author: { login: c.login }
 })
 
+type ThreadCommentFields = { readonly id: string; readonly login: string; readonly createdAt: string }
+
+const threadCommentNode = (c: ThreadCommentFields) => ({
+  id: c.id,
+  body: `note ${c.id}`,
+  createdAt: c.createdAt,
+  publishedAt: c.createdAt,
+  state: "SUBMITTED",
+  url: `https://github.com/acme/api/pull/7#discussion_${c.id}`,
+  author: { login: c.login }
+})
+
+export interface ThreadFields {
+  readonly id: string
+  readonly comments: ReadonlyArray<ThreadCommentFields>
+  readonly olderReplies?: string
+}
+
 export interface PullRequestFields {
   readonly state?: "OPEN" | "CLOSED" | "MERGED"
+  readonly isDraft?: boolean
+  readonly threads?: ReadonlyArray<ThreadFields>
+  readonly olderThreads?: string
+  readonly requested?: ReadonlyArray<string>
+  readonly requests?: ReadonlyArray<RequestFields>
+  readonly olderTimeline?: string
   readonly head?: string
   readonly mergeable?: "MERGEABLE" | "CONFLICTING" | "UNKNOWN"
   readonly reviewDecision?: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null
@@ -82,6 +106,29 @@ export interface PullRequestFields {
   readonly checks?: ReadonlyArray<{ readonly id: string; readonly name: string; readonly conclusion: string | null }>
 }
 
+type RequestFields = { readonly id: string; readonly login: string; readonly createdAt: string }
+
+const requestNode = (r: RequestFields) => ({
+  __typename: "ReviewRequestedEvent",
+  id: r.id,
+  createdAt: r.createdAt,
+  requestedReviewer: { __typename: "User", login: r.login }
+})
+
+export const timelinePage = (requests: ReadonlyArray<RequestFields>, older: string | null) =>
+  ok({ repository: { pullRequest: { timelineItems: page(requests.map(requestNode), older) } } })
+
+const threadNode = (t: ThreadFields) => ({
+  id: t.id,
+  isResolved: false,
+  path: "src/retry.ts",
+  opener: { nodes: t.comments.slice(0, 1).map(threadCommentNode) },
+  replies: page(t.comments.map(threadCommentNode), t.olderReplies ?? null)
+})
+
+export const threadsPage = (threads: ReadonlyArray<ThreadFields>, older: string | null) =>
+  ok({ repository: { pullRequest: { reviewThreads: page(threads.map(threadNode), older) } } })
+
 export const pullRequest = (fields: PullRequestFields = {}): Answer =>
   ok({
     repository: {
@@ -89,21 +136,26 @@ export const pullRequest = (fields: PullRequestFields = {}): Answer =>
         url: "https://github.com/acme/api/pull/7",
         title: "Add retries",
         state: fields.state ?? "OPEN",
-        isDraft: false,
+        isDraft: fields.isDraft ?? false,
         mergedAt: fields.state === "MERGED" ? "2026-11-12T12:00:00Z" : null,
         closedAt: fields.state === undefined || fields.state === "OPEN" ? null : "2026-11-12T12:00:00Z",
+        author: { login: "olga" },
         headRefOid: fields.head ?? "a".repeat(40),
         baseRefName: "main",
         baseRefOid: "b".repeat(40),
         mergeable: fields.mergeable ?? "MERGEABLE",
+        mergeStateStatus: "BLOCKED",
         reviewDecision: fields.reviewDecision === undefined ? "REVIEW_REQUIRED" : fields.reviewDecision,
         baseRef: {
           refUpdateRule: { requiredStatusCheckContexts: ["build"] },
           branchProtectionRule: null
         },
+        reviewRequests: { nodes: (fields.requested ?? []).map((login) => ({ requestedReviewer: { __typename: "User", login } })) },
+        reviewerReviews: { nodes: [] },
         reviews: page([]),
         comments: page((fields.comments ?? []).map(commentNode), fields.olderComments ?? null),
-        reviewThreads: page([]),
+        reviewThreads: page((fields.threads ?? []).map(threadNode), fields.olderThreads ?? null),
+        timelineItems: page((fields.requests ?? []).map(requestNode), fields.olderTimeline ?? null),
         commits: {
           nodes: [{
             commit: {
@@ -131,6 +183,9 @@ export const pullRequest = (fields: PullRequestFields = {}): Answer =>
 
 export const commentsPage = (comments: ReadonlyArray<CommentFields>, older: string | null, headers?: Record<string, string>) =>
   ok({ repository: { pullRequest: { comments: page(comments.map(commentNode), older) } } }, headers)
+
+export const threadReplies = (comments: ReadonlyArray<ThreadCommentFields>, older: string | null) =>
+  ok({ node: { comments: page(comments.map(threadCommentNode), older) } })
 
 export const viewer = ok({ viewer: { login: "octocat" } })
 

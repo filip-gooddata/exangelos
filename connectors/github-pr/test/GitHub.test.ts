@@ -10,7 +10,7 @@ const connection = (host = "github.com"): GitHub.Connection => ({ host, token: R
 const fetch = (answers: ReadonlyArray<Stub.Answer>, host?: string) =>
   Effect.gen(function*() {
     const stub = yield* Stub.make(answers)
-    const result = yield* GitHub.GitHub.use((github) => github.pullRequest(connection(host), ref, undefined)).pipe(
+    const result = yield* GitHub.GitHub.use((github) => github.pullRequest(connection(host), ref, undefined, null)).pipe(
       Effect.result,
       Effect.provide(Layer.provide(GitHub.layer, stub.layer))
     )
@@ -33,7 +33,7 @@ describe("GitHub", () => {
         checks: [{ name: "build", outcome: "failed", required: true }]
       })
       expect(sent.map((s) => [s.url, s.authorization, s.variables])).toEqual([
-        ["https://github.acme.dev/api/graphql", "Bearer ghp_stubbed", { owner: "acme", repo: "api", number: 7 }]
+        ["https://github.acme.dev/api/graphql", "Bearer ghp_stubbed", { owner: "acme", repo: "api", number: 7, reviewer: null }]
       ])
     }))
 
@@ -66,8 +66,13 @@ describe("GitHub", () => {
         Stub.secondaryLimit,
         ...[11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((n) => Stub.commentsPage([at(n)], older(n)))
       ])
-      const since: GitHub.Since = { reviews: null, comments: "2026-11-12T00:00:00Z", threads: null }
-      const fiber = yield* GitHub.GitHub.use((github) => github.pullRequest(connection(), ref, since)).pipe(
+      const since: GitHub.Since = {
+        reviews: null,
+        comments: "2026-11-12T00:00:00Z",
+        threads: null,
+        timeline: null
+      }
+      const fiber = yield* GitHub.GitHub.use((github) => github.pullRequest(connection(), ref, since, null)).pipe(
         Effect.provide(Layer.provide(GitHub.layer, stub.layer)),
         Effect.forkChild
       )
@@ -86,5 +91,80 @@ describe("GitHub", () => {
         "before-12",
         ...[11, 10, 9, 8, 7, 6, 5, 4, 3, 2].map((n) => `before-${n}`)
       ])
+    }))
+
+  it.effect("reads every page of a thread's replies", () =>
+    Effect.gen(function*() {
+      const c = (id: string, minute: number) => ({ id, login: "ana", createdAt: `2026-11-12T10:${String(minute).padStart(2, "0")}:00Z` })
+      const stub = yield* Stub.make([
+        Stub.pullRequest({ threads: [{ id: "T_1", comments: [c("R_9", 9)], olderReplies: "before-9" }] }),
+        Stub.threadReplies([c("R_5", 5), c("R_8", 8)], "before-5"),
+        Stub.threadReplies([c("R_1", 1), c("R_4", 4)], null)
+      ])
+      const since: GitHub.Since = {
+        reviews: null,
+        comments: null,
+        threads: null,
+        timeline: null
+      }
+      const { snapshot } = yield* GitHub.GitHub.use((github) => github.pullRequest(connection(), ref, since, null)).pipe(
+        Effect.provide(Layer.provide(GitHub.layer, stub.layer))
+      )
+
+      expect(snapshot.threads[0]?.replies.map((r) => r.id)).toEqual(["R_1", "R_4", "R_5", "R_8"])
+      expect((yield* stub.sent).map((s) => s.variables.before)).toEqual([undefined, "before-9", "before-5"])
+    }))
+
+  it.effect("reads every page of threads on the first poll, so threads open at launch can be reported", () =>
+    Effect.gen(function*() {
+      const c = (id: string) => ({ id, login: "ana", createdAt: "2026-11-12T10:00:00Z" })
+      const stub = yield* Stub.make([
+        Stub.pullRequest({ threads: [{ id: "T_2", comments: [c("C_2")] }], olderThreads: "before-T_2" }),
+        Stub.threadsPage([{ id: "T_1", comments: [c("C_1")] }], null)
+      ])
+      const { snapshot } = yield* GitHub.GitHub.use((github) => github.pullRequest(connection(), ref, undefined, null)).pipe(
+        Effect.provide(Layer.provide(GitHub.layer, stub.layer))
+      )
+
+      expect(snapshot.threads.map((t) => t.id)).toEqual(["T_1", "T_2"])
+      expect((yield* stub.sent).map((s) => s.variables.threads)).toEqual([undefined, "before-T_2"])
+    }))
+
+  it.effect("reads older reply pages even when they start before the last reply seen, for replies published late", () =>
+    Effect.gen(function*() {
+      const c = (id: string) => ({ id, login: "ana", createdAt: "2026-11-12T10:05:00Z" })
+      const stub = yield* Stub.make([
+        Stub.pullRequest({ threads: [{ id: "T_1", comments: [c("R_1"), c("R_2")], olderReplies: "before-R_1" }] }),
+        Stub.threadReplies([{ id: "R_0", login: "bo", createdAt: "2026-11-12T10:00:00Z" }], null)
+      ])
+      const since: GitHub.Since = {
+        reviews: null,
+        comments: null,
+        threads: null,
+        timeline: null
+      }
+      yield* GitHub.GitHub.use((github) => github.pullRequest(connection(), ref, since, null)).pipe(
+        Effect.provide(Layer.provide(GitHub.layer, stub.layer))
+      )
+
+      expect(yield* stub.sent).toHaveLength(2)
+    }))
+
+  it.effect("reads the timeline back to the request outstanding for a reviewer it starts watching for", () =>
+    Effect.gen(function*() {
+      const stub = yield* Stub.make([
+        Stub.pullRequest({
+          requested: ["vera"],
+          requests: [{ id: "Q_2", login: "bo", createdAt: "2026-11-12T10:00:00Z" }],
+          olderTimeline: "before-Q_2"
+        }),
+        Stub.timelinePage([{ id: "Q_1", login: "vera", createdAt: "2026-11-11T10:00:00Z" }], "before-Q_1")
+      ])
+      const { snapshot } = yield* GitHub.GitHub.use((github) =>
+        github.pullRequest(connection(), ref, undefined, { login: "vera", findRequest: true })
+      ).pipe(Effect.provide(Layer.provide(GitHub.layer, stub.layer)))
+
+      expect(snapshot.reviewRequests.map((r) => r.id)).toEqual(["Q_1", "Q_2"])
+      expect((yield* stub.sent).map((s) => s.variables.timeline)).toEqual([undefined, "before-Q_2"])
     }))
 })

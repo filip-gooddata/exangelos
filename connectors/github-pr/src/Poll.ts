@@ -11,6 +11,7 @@ import {
   type Unauthorized,
   type Unavailable
 } from "./GitHub.ts"
+import * as Login from "./Login.ts"
 import type { PullRequestRef } from "./PullRequestRef.ts"
 
 export const interval = Duration.minutes(1)
@@ -29,7 +30,12 @@ export interface Polled {
 }
 
 const since = (memory: Memory | undefined): Since | undefined =>
-  memory === undefined ? undefined : { reviews: memory.reviews.at, comments: memory.comments.at, threads: memory.threads.at }
+  memory === undefined ? undefined : {
+    reviews: memory.reviews.at,
+    comments: memory.comments.at,
+    threads: memory.threads.at,
+    timeline: memory.timeline.at
+  }
 
 const nextDelay = (quota: Option.Option<Quota>, now: number) =>
   Option.match(quota, {
@@ -47,12 +53,18 @@ export const watch = (
   Stream.unwrap(Effect.gen(function*() {
     const github = yield* GitHub
 
+    const reviewerQuery = (memory: Memory | undefined) =>
+      filters.reviewer === null ? null : {
+        login: filters.reviewer,
+        findRequest: memory?.reviewer == null || !Login.same(memory.reviewer.login, filters.reviewer)
+      }
+
     const fetch = (
       memory: Memory | undefined,
       failures: number,
       refusals: number
     ): Effect.Effect<Fetched, Unauthorized | NotFound | Unavailable> =>
-      github.pullRequest(connection, ref, since(memory)).pipe(
+      github.pullRequest(connection, ref, since(memory), reviewerQuery(memory)).pipe(
         Effect.catchTags({
           RateLimited: ({ retryAfter }) =>
             Effect.sleep(limitBackoff(refusals, retryAfter)).pipe(Effect.andThen(fetch(memory, failures, refusals + 1))),

@@ -15,21 +15,27 @@ const client = (answers: ReadonlyArray<Stub.Answer>) =>
   })
 
 describe("github-pr connector", () => {
-  it.effect("hands over a catalogue of the nine event types", () =>
+  it.effect("hands over a catalogue of its event types", () =>
     Effect.gen(function*() {
       const { client: connector } = yield* client([])
       const { catalogue } = yield* connector.Handshake()
 
       expect(catalogue.eventTypes.map((e) => e.type)).toEqual([
         "head.changed",
+        "draft.changed",
         "base.changed",
         "conflict.detected",
         "checks.failed",
         "checks.passed",
+        "check.passed",
         "review.submitted",
         "review.thread",
+        "review.reply",
         "comment.added",
-        "merge.ready"
+        "merge.ready",
+        "reviewer.submitted",
+        "review.rerequested",
+        "author.activity"
       ])
       expect(catalogue.parameters.main).toBe("pullRequest")
       expect(catalogue.configuration.map((f) => [f._tag, f.key])).toEqual([["Secret", "token"], ["Text", "host"]])
@@ -48,6 +54,37 @@ describe("github-pr connector", () => {
       expect(yield* connector.Describe({ parameters: { pullRequest: "acme/api" } })).toMatchObject({ _tag: "Invalid" })
       expect(yield* connector.Describe({ parameters: { pullRequest: "acme/api#7", ignoreAuthors: ["(bot"] } }))
         .toMatchObject({ _tag: "Invalid" })
+      for (const wrong of [{ reviewStates: "PENDING" }, { baseHead: "main" }, { reviewer: "not a login" }]) {
+        expect(yield* connector.Describe({ parameters: { pullRequest: "acme/api#7", ...wrong } })).toMatchObject({ _tag: "Invalid" })
+      }
+    }).pipe(Effect.scoped))
+
+  it.effect("takes list and flag parameters as the strings a command line gives, and keeps the subject", () =>
+    Effect.gen(function*() {
+      const { client: connector } = yield* client([])
+
+      expect(
+        yield* connector.Describe({
+          parameters: {
+            pullRequest: "acme/api#7",
+            ignoreIds: `["https://github.com/acme/api/pull/7#discussion_r1", "IC_2"]`,
+            readyWait: "[Rr]eview",
+            reviewStates: "approved",
+            baseHead: "CURRENT",
+            reportExistingThreads: "true"
+          }
+        })
+      ).toMatchObject({
+        _tag: "Described",
+        subject: "acme/api#7",
+        parameters: {
+          ignoreIds: ["https://github.com/acme/api/pull/7#discussion_r1", "IC_2"],
+          readyWait: ["[Rr]eview"],
+          reviewStates: ["APPROVED"],
+          baseHead: "current",
+          reportExistingThreads: true
+        }
+      })
     }).pipe(Effect.scoped))
 
   it.effect("rejects a token GitHub refuses, without repeating the token", () =>
