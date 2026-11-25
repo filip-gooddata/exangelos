@@ -1,6 +1,8 @@
 import { BunServices } from "@effect/platform-bun"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Schedule } from "effect"
+import { Effect, Layer, Option, Schedule } from "effect"
+import { ChildProcessSpawner } from "effect/process"
+import type { ChildProcessHandle } from "effect/process/ChildProcessSpawner"
 import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { configureConnector, devLink, layerConnectors, ConnectorAccess } from "@exangelos/application"
@@ -21,9 +23,25 @@ import { activeSubscription, installed, known, name, connectorOf, you } from "./
 
 const templateDirectory = fileURLToPath(new URL("../../../../connectors/template", import.meta.url))
 
+const spawned: Array<ChildProcessHandle> = []
+
+const recordingSpawner = Layer.effect(
+  ChildProcessSpawner.ChildProcessSpawner,
+  Effect.gen(function*() {
+    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
+    return ChildProcessSpawner.ChildProcessSpawner.of({
+      ...spawner,
+      spawn: (command) => Effect.tap(spawner.spawn(command), (handle) => Effect.sync(() => spawned.push(handle)))
+    })
+  })
+).pipe(Layer.provide(BunServices.layer))
+
 const runtime = StdioConnectorRuntime.layer({
-  commandFor: (launch) => ({ command: "bun", args: [resolve(launch.directory, launch.entry.path)], env: {} })
-}).pipe(Layer.provide(BunServices.layer))
+  commandFor: (launch) => ({ command: "bun", args: [resolve(launch.directory, launch.entry.path)], env: {} }),
+  pingInterval: "100 millis",
+  pingTimeout: "500 millis",
+  stopTimeout: "500 millis"
+}).pipe(Layer.provide(recordingSpawner))
 
 const layer = layerConnectors.pipe(Layer.provideMerge(Layer.mergeAll(
   layerRepositories,
@@ -68,4 +86,29 @@ describe("connector supervision over the real runtime", () => {
         { _tag: "End", reason: "Emitted 4 ticks; wake window 5000 ms" }
       ])
     }).pipe(Effect.provide(layer)), 30_000)
+
+  it.live("replaces a connector whose connection is lost while its process still runs", () =>
+    Effect.gen(function*() {
+      yield* (yield* ConnectorFilesFake).put({
+        ...installed("template", "sha256-template", templateDirectory),
+        entry: { _tag: "Bundle", path: "src/main.ts" }
+      })
+      yield* devLink(you, templateDirectory)
+      yield* until(connectorOf("template"), (connector) => connector.catalogue !== undefined)
+      yield* configureConnector(you, template, { token: "secret" })
+      yield* until(connectorOf("template"), (connector) => connector.process === "running")
+      const frozen = spawned.at(-1)!
+      yield* Effect.addFinalizer(() => Effect.ignore(frozen.kill({ killSignal: "SIGKILL" })))
+
+      // A stopped process keeps its pipes open but answers no ping, like a stalled one.
+      yield* frozen.kill({ killSignal: "SIGSTOP" })
+      yield* until(connectorOf("template"), (connector) => connector.process !== "running")
+
+      yield* until(connectorOf("template"), (connector) => connector.process === "running")
+      expect(spawned.at(-1)).not.toBe(frozen)
+      expect(yield* frozen.isRunning).toBe(false)
+      const access = yield* ConnectorAccess.ConnectorAccess
+      const described = yield* access.describe(you, template, { parameters: { ticks: 1 }, main: Option.none() })
+      expect(described).toBeDefined()
+    }).pipe(Effect.scoped, Effect.provide(layer)), 30_000)
 })
