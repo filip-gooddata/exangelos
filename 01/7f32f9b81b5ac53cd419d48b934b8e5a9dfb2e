@@ -1,0 +1,21 @@
+.github/workflows/build-release.yml
+  s_ce961e453dfe29::t_d88bda1d66f14a 239-240,244
+connectors/file-watch/test/FileWatch.test.ts
+  s_ce961e453dfe29::t_094d9d550b9d21 3,102-136,139-162,164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "017f32f9b81b5ac53cd419d48b934b8e5a9dfb2e",
+  "prompts": {},
+  "sessions": {
+    "s_ce961e453dfe29": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3c3ae6e-ab9d-4a15-ad3f-81c8c0493434",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
