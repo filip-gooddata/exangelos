@@ -66,7 +66,13 @@ describe("GitHub", () => {
         Stub.secondaryLimit,
         ...[11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1].map((n) => Stub.commentsPage([at(n)], older(n)))
       ])
-      const since: GitHub.Since = { reviews: null, comments: "2026-11-12T00:00:00Z", threads: null }
+      const since: GitHub.Since = {
+        reviews: null,
+        comments: "2026-11-12T00:00:00Z",
+        threads: null,
+        replies: null,
+        requests: null
+      }
       const fiber = yield* GitHub.GitHub.use((github) => github.pullRequest(connection(), ref, since)).pipe(
         Effect.provide(Layer.provide(GitHub.layer, stub.layer)),
         Effect.forkChild
@@ -86,5 +92,22 @@ describe("GitHub", () => {
         "before-12",
         ...[11, 10, 9, 8, 7, 6, 5, 4, 3, 2].map((n) => `before-${n}`)
       ])
+    }))
+
+  it.effect("reads older replies of a thread until it reaches the last reply seen", () =>
+    Effect.gen(function*() {
+      const c = (id: string, minute: number) => ({ id, login: "ana", createdAt: `2026-11-12T10:${String(minute).padStart(2, "0")}:00Z` })
+      const stub = yield* Stub.make([
+        Stub.pullRequest({ threads: [{ id: "T_1", comments: [c("R_9", 9)], olderReplies: "before-9" }] }),
+        Stub.threadReplies([c("R_5", 5), c("R_8", 8)], "before-5"),
+        Stub.threadReplies([c("R_1", 1), c("R_4", 4)], null)
+      ])
+      const since: GitHub.Since = { reviews: null, comments: null, threads: null, replies: "2026-11-12T10:03:00Z", requests: null }
+      const { snapshot } = yield* GitHub.GitHub.use((github) => github.pullRequest(connection(), ref, since)).pipe(
+        Effect.provide(Layer.provide(GitHub.layer, stub.layer))
+      )
+
+      expect(snapshot.threads[0]?.replies.map((r) => r.id)).toEqual(["R_1", "R_4", "R_5", "R_8"])
+      expect((yield* stub.sent).map((s) => s.variables.before)).toEqual([undefined, "before-9", "before-5"])
     }))
 })

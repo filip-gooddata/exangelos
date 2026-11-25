@@ -5,15 +5,19 @@ export interface Snapshot {
   readonly isDraft: boolean
   readonly mergedAt: string | null
   readonly closedAt: string | null
+  readonly author: string
   readonly head: string
   readonly base: { readonly name: string; readonly oid: string }
   readonly mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN"
+  readonly mergeStateStatus: string
   readonly reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null
   readonly checks: ReadonlyArray<Check>
   readonly requiredChecks: ReadonlyArray<string>
   readonly reviews: ReadonlyArray<Review>
   readonly comments: ReadonlyArray<Comment>
   readonly threads: ReadonlyArray<Thread>
+  readonly requestedReviewers: ReadonlyArray<string>
+  readonly reviewRequests: ReadonlyArray<ReviewRequest>
 }
 
 export type CheckOutcome = "pending" | "passed" | "failed" | "cancelled"
@@ -35,6 +39,7 @@ export interface Review {
   readonly body: string
   readonly submittedAt: string
   readonly url: string
+  readonly commit: string | null
 }
 
 export interface Comment {
@@ -45,12 +50,22 @@ export interface Comment {
   readonly url: string
 }
 
+/** A review thread. `author`, `body`, `createdAt` and `url` belong to its opening comment. */
 export interface Thread {
   readonly id: string
   readonly isResolved: boolean
   readonly path: string
+  readonly openerId: string
   readonly author: string
   readonly body: string
   readonly createdAt: string
   readonly url: string
+  readonly replies: ReadonlyArray<Comment>
+}
+
+/** A ReviewRequestedEvent from the timeline. `reviewer` is null when a team was asked. */
+export interface ReviewRequest {
+  readonly id: string
+  readonly reviewer: string | null
+  readonly createdAt: string
 }

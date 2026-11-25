@@ -28,6 +28,8 @@ export interface Since {
   readonly reviews: string | null
   readonly comments: string | null
   readonly threads: string | null
+  readonly replies: string | null
+  readonly requests: string | null
 }
 
 export const endpoint = (host: string) =>
@@ -42,7 +44,8 @@ const ReviewNode = Schema.Struct({
   body: Schema.String,
   submittedAt: Schema.NullOr(Schema.String),
   url: Schema.String,
-  author: Login
+  author: Login,
+  commit: Schema.NullOr(Schema.Struct({ oid: Schema.String }))
 })
 const CommentNode = Schema.Struct({
   id: Schema.String,
@@ -51,13 +54,27 @@ const CommentNode = Schema.Struct({
   url: Schema.String,
   author: Login
 })
+const ThreadCommentNode = Schema.Struct({
+  id: Schema.String,
+  body: Schema.String,
+  createdAt: Schema.String,
+  publishedAt: Schema.NullOr(Schema.String),
+  state: Schema.String,
+  url: Schema.String,
+  author: Login
+})
 const ThreadNode = Schema.Struct({
   id: Schema.String,
   isResolved: Schema.Boolean,
   path: Schema.String,
-  comments: Schema.Struct({
-    nodes: Schema.Array(Schema.Struct({ body: Schema.String, createdAt: Schema.String, url: Schema.String, author: Login }))
-  })
+  opener: Schema.Struct({ nodes: Schema.Array(ThreadCommentNode) }),
+  replies: Schema.Struct({ pageInfo: Backward, nodes: Schema.Array(ThreadCommentNode) })
+})
+const Reviewer = Schema.NullOr(Schema.Struct({ __typename: Schema.String, login: Schema.optionalKey(Schema.String) }))
+const RequestNode = Schema.Struct({
+  id: Schema.optionalKey(Schema.String),
+  createdAt: Schema.optionalKey(Schema.String),
+  requestedReviewer: Schema.optionalKey(Reviewer)
 })
 const ContextNode = Schema.Union([
   Schema.Struct({
@@ -96,6 +113,7 @@ const Connections = {
   reviews: Schema.optionalKey(backward(ReviewNode)),
   comments: Schema.optionalKey(backward(CommentNode)),
   reviewThreads: Schema.optionalKey(backward(ThreadNode)),
+  timelineItems: Schema.optionalKey(backward(RequestNode)),
   commits: Schema.optionalKey(Commits)
 }
 
@@ -106,10 +124,12 @@ const PullRequestNode = Schema.Struct({
   isDraft: Schema.Boolean,
   mergedAt: Schema.NullOr(Schema.String),
   closedAt: Schema.NullOr(Schema.String),
+  author: Login,
   headRefOid: Schema.String,
   baseRefName: Schema.String,
   baseRefOid: Schema.String,
   mergeable: Schema.Literals(["MERGEABLE", "CONFLICTING", "UNKNOWN"]),
+  mergeStateStatus: Schema.String,
   reviewDecision: Schema.NullOr(Schema.Literals(["APPROVED", "CHANGES_REQUESTED", "REVIEW_REQUIRED"])),
   baseRef: Schema.NullOr(Schema.Struct({
     refUpdateRule: Schema.NullOr(Schema.Struct({ requiredStatusCheckContexts: Schema.NullOr(Schema.Array(Schema.String)) })),
@@ -117,6 +137,7 @@ const PullRequestNode = Schema.Struct({
       Schema.Struct({ requiredStatusCheckContexts: Schema.NullOr(Schema.Array(Schema.String)) })
     )
   })),
+  reviewRequests: Schema.Struct({ nodes: Schema.Array(Schema.Struct({ requestedReviewer: Reviewer })) }),
   ...Connections
 })
 
@@ -134,6 +155,9 @@ const PullRequestData = Schema.Struct({
 const ConnectionsNode = Schema.Struct(Connections)
 const PagesData = Schema.Struct({
   repository: Schema.NullOr(Schema.Struct({ pullRequest: Schema.NullOr(ConnectionsNode) }))
+})
+const ThreadRepliesData = Schema.Struct({
+  node: Schema.NullOr(Schema.Struct({ comments: Schema.optionalKey(backward(ThreadCommentNode)) }))
 })
 const Viewer = Schema.Struct({ viewer: Schema.Struct({ login: Schema.String }) })
 
@@ -191,10 +215,16 @@ const toCheck = (node: typeof ContextNode.Type): Check =>
 
 const author = (login: typeof Login.Type) => login?.login ?? "ghost"
 
+type ThreadComment = typeof ThreadCommentNode.Type
+
+/** When a review comment became visible: a comment written in a pending review shows when the review is submitted. */
+const shownAt = (c: ThreadComment) => c.publishedAt ?? c.createdAt
+
 type Nodes = {
   reviews: Array<typeof ReviewNode.Type>
   comments: Array<typeof CommentNode.Type>
   threads: Array<typeof ThreadNode.Type>
+  requests: Array<typeof RequestNode.Type>
   checks: Array<typeof ContextNode.Type>
 }
 
@@ -275,6 +305,12 @@ export const layer = Layer.effect(
     const viewer = (connection: Connection) =>
       post(connection, Viewer, Query.viewer, {}).pipe(Effect.map(({ data }) => data.viewer.login))
 
+    const retrying = <A>(request: Effect.Effect<A, GitHubError>) =>
+      request.pipe(
+        Effect.catchTag("RateLimited", ({ retryAfter }) => Effect.sleep(retryAfter).pipe(Effect.andThen(request))),
+        Effect.catchTag("RateLimited", ({ retryAfter }) => Effect.sleep(retryAfter).pipe(Effect.andThen(request)))
+      )
+
     const pullRequest = (connection: Connection, ref: PullRequestRef, since: Since | undefined) =>
       Effect.gen(function*() {
         const variables = { owner: ref.owner, repo: ref.repo, number: ref.number }
@@ -283,10 +319,17 @@ export const layer = Layer.effect(
         const pr = first.data.repository?.pullRequest
         if (pr == null) return yield* notFound
 
-        const nodes: Nodes = { reviews: [], comments: [], threads: [], checks: [] }
+        const nodes: Nodes = { reviews: [], comments: [], threads: [], requests: [], checks: [] }
         let quota = first.quota
+        const waitForQuota = Effect.gen(function*() {
+          if (Option.isSome(quota) && quota.value.remaining === 0) {
+            const now = yield* Clock.currentTimeMillis
+            yield* Effect.sleep(Duration.millis(Math.max(quota.value.resetAt - now, 0)))
+          }
+        })
+        const reached = (mark: string | null, oldest: string | null) => mark !== null && oldest !== null && oldest < mark
         const older = <N>(
-          key: "reviews" | "comments" | "threads",
+          key: "reviews" | "comments" | "requests",
           page: { readonly pageInfo: typeof Backward.Type; readonly nodes: ReadonlyArray<N> } | undefined,
           into: Array<N>,
           at: (node: N) => string | null,
@@ -294,10 +337,11 @@ export const layer = Layer.effect(
         ) => {
           if (page === undefined) return
           into.unshift(...page.nodes)
-          const mark = since?.[key] ?? null
           const oldest = page.nodes[0] === undefined ? null : at(page.nodes[0])
-          const reachedMark = mark !== null && oldest !== null && oldest < mark
-          if (since !== undefined && page.pageInfo.hasPreviousPage && page.pageInfo.startCursor && !reachedMark) {
+          if (
+            since !== undefined && page.pageInfo.hasPreviousPage && page.pageInfo.startCursor &&
+            !reached(since[key], oldest)
+          ) {
             pending[key] = page.pageInfo.startCursor
           }
         }
@@ -306,7 +350,13 @@ export const layer = Layer.effect(
           const pending: Partial<Record<Query.Connection, string>> = {}
           older("reviews", connections.reviews, nodes.reviews, (n) => n.submittedAt, pending)
           older("comments", connections.comments, nodes.comments, (n) => n.createdAt, pending)
-          older("threads", connections.reviewThreads, nodes.threads, (n) => n.comments.nodes[0]?.createdAt ?? null, pending)
+          older("requests", connections.timelineItems, nodes.requests, (n) => n.createdAt ?? null, pending)
+          // A reply can arrive on any thread, however old, so every page of threads is read.
+          const threads = connections.reviewThreads
+          if (threads !== undefined) {
+            nodes.threads.unshift(...threads.nodes)
+            if (threads.pageInfo.hasPreviousPage && threads.pageInfo.startCursor) pending.threads = threads.pageInfo.startCursor
+          }
           const contexts = connections.commits?.nodes[0]?.commit.statusCheckRollup?.contexts
           if (contexts !== undefined) {
             nodes.checks.push(...contexts.nodes)
@@ -317,15 +367,10 @@ export const layer = Layer.effect(
 
         let next = collect(pr)
         while (Object.keys(next).length > 0) {
-          if (Option.isSome(quota) && quota.value.remaining === 0) {
-            const now = yield* Clock.currentTimeMillis
-            yield* Effect.sleep(Duration.millis(Math.max(quota.value.resetAt - now, 0)))
-          }
+          yield* waitForQuota
           const connections = Object.keys(next) as Array<Query.Connection>
-          const request = post(connection, PagesData, Query.morePages(connections), { ...variables, ...next })
-          const more = yield* request.pipe(
-            Effect.catchTag("RateLimited", ({ retryAfter }) => Effect.sleep(retryAfter).pipe(Effect.andThen(request))),
-            Effect.catchTag("RateLimited", ({ retryAfter }) => Effect.sleep(retryAfter).pipe(Effect.andThen(request)))
+          const more = yield* retrying(
+            post(connection, PagesData, Query.morePages(connections), { ...variables, ...next })
           )
           quota = Option.orElse(more.quota, () => quota)
           const again = more.data.repository?.pullRequest
@@ -333,10 +378,38 @@ export const layer = Layer.effect(
           next = collect(again)
         }
 
+        const replies = new Map<string, Array<ThreadComment>>()
+        for (const thread of nodes.threads) {
+          const into = [...thread.replies.nodes]
+          let page = thread.replies.pageInfo
+          while (
+            since !== undefined && page.hasPreviousPage && page.startCursor &&
+            !reached(since.replies, into[0] === undefined ? null : shownAt(into[0]))
+          ) {
+            yield* waitForQuota
+            const more = yield* retrying(
+              post(connection, ThreadRepliesData, Query.threadReplies, { id: thread.id, before: page.startCursor })
+            )
+            quota = Option.orElse(more.quota, () => quota)
+            const comments = more.data.node?.comments
+            if (comments === undefined) break
+            into.unshift(...comments.nodes)
+            page = comments.pageInfo
+          }
+          replies.set(thread.id, into)
+        }
+
         const rules = [
           ...(pr.baseRef?.refUpdateRule?.requiredStatusCheckContexts ?? []),
           ...(pr.baseRef?.branchProtectionRule?.requiredStatusCheckContexts ?? [])
         ]
+        const toComment = (n: ThreadComment) => ({
+          id: n.id,
+          author: author(n.author),
+          body: n.body,
+          createdAt: shownAt(n),
+          url: n.url
+        })
         const snapshot: Snapshot = {
           url: pr.url,
           title: pr.title,
@@ -344,20 +417,23 @@ export const layer = Layer.effect(
           isDraft: pr.isDraft,
           mergedAt: pr.mergedAt,
           closedAt: pr.closedAt,
+          author: author(pr.author),
           head: pr.headRefOid,
           base: { name: pr.baseRefName, oid: pr.baseRefOid },
           mergeable: pr.mergeable,
+          mergeStateStatus: pr.mergeStateStatus,
           reviewDecision: pr.reviewDecision,
           checks: nodes.checks.map(toCheck),
           requiredChecks: [...new Set(rules)],
           reviews: nodes.reviews.flatMap((n) =>
-            n.submittedAt === null ? [] : [{
+            n.submittedAt === null || n.state === "PENDING" ? [] : [{
               id: n.id,
               author: author(n.author),
               state: n.state,
               body: n.body,
               submittedAt: n.submittedAt,
-              url: n.url
+              url: n.url,
+              commit: n.commit?.oid ?? null
             }]
           ),
           comments: nodes.comments.map((n) => ({
@@ -368,17 +444,36 @@ export const layer = Layer.effect(
             url: n.url
           })),
           threads: nodes.threads.flatMap((n) => {
-            const opening = n.comments.nodes[0]
-            return opening === undefined ? [] : [{
+            const opening = n.opener.nodes[0]
+            if (opening === undefined || opening.state === "PENDING") return []
+            const seen = new Set<string>([opening.id])
+            const later = (replies.get(n.id) ?? []).filter((c) => {
+              if (seen.has(c.id) || c.state === "PENDING") return false
+              seen.add(c.id)
+              return true
+            })
+            return [{
               id: n.id,
               isResolved: n.isResolved,
               path: n.path,
+              openerId: opening.id,
               author: author(opening.author),
               body: opening.body,
-              createdAt: opening.createdAt,
-              url: opening.url
+              createdAt: shownAt(opening),
+              url: opening.url,
+              replies: later.map(toComment)
             }]
-          })
+          }),
+          requestedReviewers: pr.reviewRequests.nodes.flatMap((n) =>
+            n.requestedReviewer?.login === undefined ? [] : [n.requestedReviewer.login]
+          ),
+          reviewRequests: nodes.requests.flatMap((n) =>
+            n.id === undefined || n.createdAt === undefined ? [] : [{
+              id: n.id,
+              reviewer: n.requestedReviewer?.login ?? null,
+              createdAt: n.createdAt
+            }]
+          )
         }
         return { snapshot, quota }
       })

@@ -29,7 +29,13 @@ export interface Polled {
 }
 
 const since = (memory: Memory | undefined): Since | undefined =>
-  memory === undefined ? undefined : { reviews: memory.reviews.at, comments: memory.comments.at, threads: memory.threads.at }
+  memory === undefined ? undefined : {
+    reviews: memory.reviews.at,
+    comments: memory.comments.at,
+    threads: memory.threads.at,
+    replies: memory.replies.at,
+    requests: memory.requests.at
+  }
 
 const nextDelay = (quota: Option.Option<Quota>, now: number) =>
   Option.match(quota, {
