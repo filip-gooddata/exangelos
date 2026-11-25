@@ -1,0 +1,51 @@
+README.md
+  s_0b4af42e2538a4::t_f0d9ebb87a3557 8-19
+apps/cli/build.ts
+  s_141444718f1f91::t_94cdeb357bcadf 30,34-35
+apps/cli/e2e/binary.test.ts
+  s_141444718f1f91::t_05daff3345b5a5 467-486
+apps/cli/src/Build.ts
+  s_141444718f1f91::t_9d357c7ec76713 18-21
+apps/cli/src/commands/Root.ts
+  s_141444718f1f91::t_354408f3728934 8,40
+apps/cli/src/commands/Skill.ts
+  s_141444718f1f91::t_7ce8616e58e064 1-141
+packaging/src/homebrew.ts
+  s_141444718f1f91::t_530b105a991ded 48-55
+packaging/test/homebrew.test.ts
+  s_141444718f1f91::t_412ab3240027ee 30
+skills/exangelos/SKILL.md
+  s_38969d375a251d::t_1b3b17486a85f7 1-90
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c54b8b17a5a91d69a122e0c614c63fb13a42fa46",
+  "prompts": {},
+  "sessions": {
+    "s_0b4af42e2538a4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "07a5eef4-b204-4320-8fbe-4c079ff3744a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_141444718f1f91": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e216c8fa-700c-4273-a8ae-3af07587c3d0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_38969d375a251d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f4dbe12-110d-4459-8dfa-c637bb8ffeb4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
