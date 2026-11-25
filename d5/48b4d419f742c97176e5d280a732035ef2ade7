@@ -1,0 +1,27 @@
+adapters/daemon-client/src/DaemonServer.ts
+  s_d0845ce68b2554::t_de3539128d7996 14-16,22-24
+apps/cli/src/commands/Agent.ts
+  s_d0845ce68b2554::t_b7ed6ea75ffa29 227
+apps/cli/src/commands/Output.ts
+  s_d0845ce68b2554::t_63f8e319510bba 147,149-155
+apps/cli/src/commands/Reconnect.ts
+  s_d0845ce68b2554::t_f27368e9bea659 1,4,17-18,20-21,23-26,29-47,49-50
+apps/cli/test/wait.test.ts
+  s_d0845ce68b2554::t_fbb0aa0f143ecb 52-65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d548b4d419f742c97176e5d280a732035ef2ade7",
+  "prompts": {},
+  "sessions": {
+    "s_d0845ce68b2554": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "548261b5-4b42-4b58-9ce3-ed05a8a27238",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
