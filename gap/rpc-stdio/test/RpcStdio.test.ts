@@ -3,13 +3,14 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Fiber, FileSystem, Queue, Sink, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
 import { TestClock } from "effect/testing"
-import { RpcClient } from "effect/rpc"
+import { RpcClient, RpcSerialization } from "effect/rpc"
 import { RpcStdio } from "@exangelos/rpc-stdio"
 import { EchoRpcs } from "./fixture/EchoRpcs.ts"
 
-const decoder = new TextDecoder()
-
-const count = (chunk: Uint8Array, tag: string) => decoder.decode(chunk).split(`"_tag":"${tag}"`).length - 1
+const frames = (tag: string) => {
+  const parser = RpcSerialization.ndjson.makeUnsafe()
+  return (chunk: Uint8Array) => (parser.decode(chunk) as Array<{ readonly _tag: string }>).filter((frame) => frame._tag === tag).length
+}
 
 const signal = (queue: Queue.Queue<void>, times: number) => Queue.offerAll(queue, Array.from({ length: times }, () => undefined))
 
@@ -21,10 +22,12 @@ const spawnFixture = (gate?: string) =>
     })
     const pings = yield* Queue.unbounded<void>()
     const pongs = yield* Queue.unbounded<void>()
+    const pingFrames = frames("Ping")
+    const pongFrames = frames("Pong")
     const child = ChildProcessSpawner.makeHandle({
       ...spawned,
-      stdin: Sink.mapInputEffect(spawned.stdin, (chunk: Uint8Array) => Effect.as(signal(pings, count(chunk, "Ping")), chunk)),
-      stdout: Stream.tap(spawned.stdout, (chunk) => signal(pongs, count(chunk, "Pong")))
+      stdin: Sink.mapInputEffect(spawned.stdin, (chunk: Uint8Array) => Effect.as(signal(pings, pingFrames(chunk)), chunk)),
+      stdout: Stream.tap(spawned.stdout, (chunk) => signal(pongs, pongFrames(chunk)))
     })
     return { child, pings, pongs }
   })
