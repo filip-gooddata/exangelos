@@ -1,8 +1,8 @@
 import { Paths } from "@exangelos/paths"
 import { BunSocketServer } from "@effect/platform-bun"
-import { Effect, Layer, Schema } from "effect"
+import { Cause, Effect, Layer, Schema } from "effect"
 import { RpcSerialization, RpcServer } from "effect/rpc"
-import { SocketServer } from "effect/socket"
+import { Socket, SocketServer } from "effect/socket"
 import { chmod, mkdir, mkdtemp, rename, rm } from "node:fs/promises"
 import { dirname } from "node:path"
 import { held } from "./Lock.ts"
@@ -10,6 +10,22 @@ import { held } from "./Lock.ts"
 export class DaemonAlreadyRunning extends Schema.TaggedError<DaemonAlreadyRunning>()("DaemonAlreadyRunning", {
   path: Schema.String
 }) {}
+
+/** A client that exits mid-call (a killed `exangelos wait`) breaks its connection: routine, so logged at debug, not as an unhandled error. */
+const toleratingDisconnects = (server: SocketServer.SocketServer["Service"]): SocketServer.SocketServer["Service"] => ({
+  ...server,
+  run: (handler) =>
+    server.run((socket) =>
+      handler(socket).pipe(
+        Effect.catchIf(
+          (error): error is typeof error & Socket.SocketError =>
+            Socket.isSocketError(error) &&
+            (error.reason._tag === "SocketReadError" || error.reason._tag === "SocketWriteError"),
+          (error) => Effect.logDebug("client connection broke", Cause.fail(error))
+        )
+      )
+    )
+})
 
 const listen = (path: string) =>
   Effect.gen(function*() {
@@ -27,7 +43,7 @@ const listen = (path: string) =>
       Effect.promise(() => rename(socket, path)),
       () => Effect.promise(() => rm(path, { force: true }))
     )
-    return yield* RpcServer.makeProtocolSocketServer.pipe(Effect.provideService(SocketServer.SocketServer, server))
+    return yield* RpcServer.makeProtocolSocketServer.pipe(Effect.provideService(SocketServer.SocketServer, toleratingDisconnects(server)))
   }).pipe(Effect.provide(RpcSerialization.layerNdjson))
 
 /** Serves RPC over the unix socket at `path`, replacing a stale socket file and refusing to start beside a live daemon. */
