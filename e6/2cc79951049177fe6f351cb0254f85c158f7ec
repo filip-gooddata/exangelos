@@ -3,11 +3,11 @@ connectors/slack/README.md
 connectors/slack/direct/ledger.py
   s_572e2c49a9a228::t_fb7d8822850a10 396-397
 packages/application/src/subscriptions/daemon/Delivery.ts
-  s_572e2c49a9a228::t_73d8b6e35d01c4 4,109
+  s_572e2c49a9a228::t_73d8b6e35d01c4 4,109,119
 packages/application/src/subscriptions/eventPreviews.ts
   s_572e2c49a9a228::t_656477543033f8 5-6,14-16,18
 packages/application/src/subscriptions/useCases/read.ts
-  s_572e2c49a9a228::t_a0313804704755 7,23,35
+  s_572e2c49a9a228::t_a0313804704755 7,8,23,35,37,49
 packages/application/src/subscriptions/useCases/wait.ts
   s_572e2c49a9a228::t_7135862fe08d10 4,24
 ---
