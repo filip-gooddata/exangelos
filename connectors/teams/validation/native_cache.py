@@ -156,8 +156,7 @@ def mapped_identity(key, node, chat):
         except Refusal:
             return None
     check(type(node) is dict and node.get('conversationId', chat) == chat)
-    check(numeric == identifier(node.get('id')))
-    return numeric
+    return numeric if numeric == identifier(node.get('id')) else None
 
 
 def messages(records, chat, root_filter=None, lookup=None):

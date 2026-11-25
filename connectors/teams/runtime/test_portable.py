@@ -99,6 +99,7 @@ class PortableTests(unittest.TestCase):
         record['messageMap'] = {
             'root-key': message(dedupeKey='root-key', conversationId=CHANNEL),
             'unbound': message('102', dedupeKey='other', conversationId=CHANNEL),
+            '999': message('102', conversationId=CHANNEL),
         }
         def install():
             data = view([record])
@@ -113,7 +114,9 @@ class PortableTests(unittest.TestCase):
         install()
         link = 'https://teams.microsoft.com/l/message/'+CHANNEL+'/'
         pin = self.call(selection=link+'100', scope='replies')['scope']
+        self.assertEqual(pin, self.call(selection=link+'100?parentMessageId=100', scope='replies')['scope'])
         self.call(selection=link+'102', scope='replies', code=22)
+        self.call(selection=link+'999', scope='replies', code=22)
         def poll(now, cursor=None):
             snap = self.call('configured-snapshot', scope=pin, includeMessagePreview=False)
             request = {'snapshot':snap, 'observedAt':now}
@@ -131,7 +134,7 @@ class PortableTests(unittest.TestCase):
         self.assertIn('/101?', event['payload']['permalink'])
         self.assertEqual(poll(1795165200125, baseline['cursor']), changed)
         self.assertEqual(poll(1795165200125, changed['cursor'])['events'], [])
-        del record['messageMap']['root-key']
+        record['messageMap']['998'] = record['messageMap'].pop('root-key')
         install()
         self.call('configured-snapshot', scope=pin, includeMessagePreview=False, code=24)
         self.call(selection=link+'101', scope='replies', code=28)
