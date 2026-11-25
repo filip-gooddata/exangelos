@@ -10,6 +10,8 @@ import unittest
 from unittest.mock import patch
 
 import bridge as b
+import ledger
+from test_serialization import key, val
 from test_bridge import CHAT, CHANNEL, TENANT, USER, chain, message, view
 from test_current_store import batch, edit, log
 
@@ -91,6 +93,48 @@ class PortableTests(unittest.TestCase):
         reply, = self.call('configured-snapshot',**args)['messages']
         self.assertIn('/101?',reply['permalink'])
         self.assertEqual(pin,self.call(selection=link.replace('/100?','/101?'),scope='replies')['scope'])
+
+    def test_compound_chain_with_dedupe_keys_and_malformed_peer_resumes(self):
+        record = chain(CHANNEL)
+        record['messageMap'] = {
+            'root-key': message(dedupeKey='root-key', conversationId=CHANNEL),
+            'unbound': message('102', dedupeKey='other', conversationId=CHANNEL),
+        }
+        def install():
+            data = view([record])
+            del data[b'\0\1\1\1' + key('0')]
+            path = key('conversationId')[1:] + key('replyChainId')[1:]
+            data[b'\0\1\0\0\x32\1\1'] = b'\0\0\2\2' + path
+            prefix = b'\0\1\1\1\4\2'
+            data[prefix + key(CHANNEL) + key('100')] = val(record)
+            data[prefix + key(CHAT) + key('100')] = b'\1\xff\x11\1'
+            self.install(data)
+
+        install()
+        link = 'https://teams.microsoft.com/l/message/'+CHANNEL+'/'
+        pin = self.call(selection=link+'100', scope='replies')['scope']
+        self.call(selection=link+'102', scope='replies', code=22)
+        def poll(now, cursor=None):
+            snap = self.call('configured-snapshot', scope=pin, includeMessagePreview=False)
+            request = {'snapshot':snap, 'observedAt':now}
+            if cursor is not None:
+                request['cursor'] = cursor
+            return ledger.reconcile(request, self.root/'ledger.sqlite3')
+
+        baseline = poll(1795165200122)
+        self.assertEqual(baseline['events'], [])
+        record['messageMap']['reply-key'] = message('101', dedupeKey='reply-key', conversationId=CHANNEL)
+        install()
+        changed = poll(1795165200124, baseline['cursor'])
+        event, = changed['events']
+        self.assertEqual(event['type'], 'message.reply')
+        self.assertIn('/101?', event['payload']['permalink'])
+        self.assertEqual(poll(1795165200125, baseline['cursor']), changed)
+        self.assertEqual(poll(1795165200125, changed['cursor'])['events'], [])
+        del record['messageMap']['root-key']
+        install()
+        self.call('configured-snapshot', scope=pin, includeMessagePreview=False, code=24)
+        self.call(selection=link+'101', scope='replies', code=28)
 
     def test_numeric_message_ids_and_deleted_text_in_native_cache(self):
         root, reply = 1700000000000.0, 1700000000001.0
