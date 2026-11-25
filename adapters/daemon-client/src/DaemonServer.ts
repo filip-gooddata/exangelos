@@ -11,17 +11,17 @@ export class DaemonAlreadyRunning extends Schema.TaggedError<DaemonAlreadyRunnin
   path: Schema.String
 }) {}
 
-/** A client that exits mid-call (a killed `exangelos wait`) breaks its connection: routine, so logged at debug, not as an unhandled error. */
+const isDisconnect = (error: unknown): boolean =>
+  Socket.isSocketError(error) && (error.reason._tag === "SocketReadError" || error.reason._tag === "SocketWriteError")
+
 const toleratingDisconnects = (server: SocketServer.SocketServer["Service"]): SocketServer.SocketServer["Service"] => ({
   ...server,
   run: (handler) =>
     server.run((socket) =>
       handler(socket).pipe(
-        Effect.catchIf(
-          (error): error is typeof error & Socket.SocketError =>
-            Socket.isSocketError(error) &&
-            (error.reason._tag === "SocketReadError" || error.reason._tag === "SocketWriteError"),
-          (error) => Effect.logDebug("client connection broke", Cause.fail(error))
+        Effect.catchCauseIf(
+          (cause) => isDisconnect(Cause.squash(cause)),
+          (cause) => Effect.logDebug("client connection broke", cause)
         )
       )
     )

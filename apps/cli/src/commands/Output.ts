@@ -144,9 +144,15 @@ export const respond = <A, I, E extends Failure, R>(
         },
         onFailure: (failure) => {
           const message = failureMessage(failure, options.subscription)
+          const exitCode = options.exitCode?.(failure)
           return Effect.andThen(
-            json ? Console.log(JSON.stringify(failureJson(failure, message))) : Console.error(message),
-            Effect.fail(new CommandFailed({ tag: failure._tag, exitCode: options.exitCode?.(failure) }))
+            json
+              ? Effect.andThen(
+                Console.log(JSON.stringify(failureJson(failure, message))),
+                exitCode === undefined ? Effect.void : Console.error(message)
+              )
+              : Console.error(message),
+            Effect.fail(new CommandFailed({ tag: failure._tag, exitCode }))
           )
         }
       })

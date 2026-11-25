@@ -224,7 +224,7 @@ const ack = Command.make(
 const wait = Command.make("wait", { subscription: subscriptionArgument }, ({ subscription }) =>
   Effect.gen(function*() {
     const client = yield* Connection
-    const work = Effect.flatMap(Input.subscriptionId(subscription), (id) => Reconnect.persist(client.Wait({ id })))
+    const work = Effect.flatMap(Input.subscriptionId(subscription), (id) => Reconnect.persist(client.Wait({ id }), client.ServiceStatus()))
     yield* respond(work, {
       schema: DaemonContract.Wait.successSchema,
       text: WakeText.render,
@@ -238,7 +238,6 @@ const wait = Command.make("wait", { subscription: subscriptionArgument }, ({ sub
     )
   )
 
-/** `wait` exit codes besides 0, 1 and 130; the description of the command and the exangelos skill document them. */
 const waitExitCodes: Partial<Record<string, number>> = { SubscriptionNotFound: 3, DaemonUnreachable: 4 }
 
 const stateChange = <E extends Failure>(

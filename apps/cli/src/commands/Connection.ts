@@ -12,10 +12,6 @@ export type Lazy = {
 
 export class Connection extends Context.Service<Connection, Lazy>()("@exangelos/cli/Connection") {}
 
-/**
- * A daemon that shuts down mid-call answers with an interruption. Left as is, the CLI would exit 130 with no output,
- * as if a signal had stopped it; an interruption of this process itself is not catchable and still exits 130.
- */
 const daemonStopped = new RpcClientError.RpcClientError({
   reason: new RpcClientError.RpcClientDefect({ message: "the daemon stopped before it answered", cause: undefined })
 })

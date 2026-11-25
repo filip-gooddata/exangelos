@@ -15,7 +15,6 @@ const exitCode = (exit: Exit.Exit<unknown, unknown>) => {
   return code
 }
 
-/** Runs `wait` against a daemon whose Wait never answers, then stops that daemon while the call is in flight. */
 const waitThroughStop = (path: string, options: { readonly patience?: Duration.Duration; readonly restart: boolean }) =>
   Effect.gen(function*() {
     const first = yield* Scope.make()
@@ -48,6 +47,20 @@ describe("wait across a daemon restart", () => {
     const result = await waitThroughStop(`${directory}/gone.sock`, { restart: false, patience: Duration.seconds(1) })
     expect(result.stdout).toBe("")
     expect(result.stderr).toMatch(/^The Exangelos daemon has not answered for 1s \(.+\), so this gave up\. Run `exangelos service status` to check it, then retry\.$/)
+    expect(exitCode(result.exit)).toBe(4)
+  }, 20_000)
+
+  it("gives up on a daemon that accepts connections but never answers, with --json on stdout and one line on stderr", async () => {
+    const path = `${directory}/hung.sock`
+    const result = await Effect.gen(function*() {
+      yield* Layer.build(daemonServer(path, { Wait: () => Effect.interrupt, ServiceStatus: () => Effect.never }))
+      return yield* Effect.promise(() =>
+        run(["wait", "sub_7f3k", "--json"], { socket: { path, serve: false }, patience: Duration.seconds(1) })
+      )
+    }).pipe(Effect.scoped, Effect.runPromise)
+    expect(JSON.parse(result.stdout).error._tag).toBe("DaemonUnreachable")
+    expect(result.stderr.split("\n")).toHaveLength(1)
+    expect(result.stderr).toMatch(/^The Exangelos daemon has not answered for 1s/)
     expect(exitCode(result.exit)).toBe(4)
   }, 20_000)
 })
