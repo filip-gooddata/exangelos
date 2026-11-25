@@ -1,0 +1,73 @@
+connectors/github-pr/README.md
+  s_5c051164407b8a::t_4575edf0fc21be 14-20,22,24,26-29,36,41,44,47-49,53-78,81-156
+connectors/github-pr/connector.json
+  s_a2806d77c1af45::t_bb13bfaf950555 3
+connectors/github-pr/src/Cursor.ts
+  s_5c051164407b8a::t_8307a91c9afe91 2,4,6,13-28,31-43,45,50-54
+connectors/github-pr/src/Diff.ts
+  s_5c051164407b8a::t_efb78430454a4c 2,26-35,42-51,54-65,104-110,116,118-121,132-147,150-183,223-225,236-264,267-268,281,292-388,405-418,422,425,452-458
+connectors/github-pr/src/Events.ts
+  s_5c051164407b8a::t_de68fba1902f45 4,8,18,21-28,30-51,58-60,63,66,68-71
+connectors/github-pr/src/GitHub.ts
+  s_5c051164407b8a::t_cbc83ecc6d5395 31-32,47-48,57-65,70-77,116,127,132,140,159-161,218-222,227,308-313,322,324-330,332,341-344,353-359,370,372-373,381-401,406-412,420,424,429,435-436,447-455,459,462-464,466-476
+connectors/github-pr/src/GithubPr.ts
+  s_5c051164407b8a::t_8bb56d5baec7b5 14,19,22,24-27,30-32,38-55,61-80,84,92-106,110-130,132,150,155,158,160-163,194,196
+connectors/github-pr/src/Poll.ts
+  s_027ac68ca596eb::t_2a865f54fbac49 32-38
+connectors/github-pr/src/Query.ts
+  s_7e3c949200d30c::t_6155022cc56879 3,11-12,15-24,37,40-41,46,50,56,58,71-82
+connectors/github-pr/src/Snapshot.ts
+  s_5c051164407b8a::t_b3053136907994 8,12,19-20,42,53,58,63-70
+connectors/github-pr/test/Cursor.test.ts
+  s_5c051164407b8a::t_12360fdf4bb2e4 1-42
+connectors/github-pr/test/Diff.test.ts
+  s_5c051164407b8a::t_c061ec00f7cce5 8,101,149-284
+connectors/github-pr/test/GitHub.test.ts
+  s_5c051164407b8a::t_fd05b143004e41 69-75,96-112
+connectors/github-pr/test/GithubPr.test.ts
+  s_5c051164407b8a::t_874a1258476b51 18,25,30,33,35-38,57-87
+connectors/github-pr/test/fixtures.ts
+  s_5c051164407b8a::t_838b8a50c743c3 1,12,16,23-24,39,42,45-46,57-63,67,71-79,82-83
+connectors/github-pr/test/stubGitHub.ts
+  s_5c051164407b8a::t_8801fa52819a8d 74-91,94-95,112,115,120,126,129-136,165-167
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da1b60384eeb6de4fa9f68fabfbeebfec1da2e96",
+  "prompts": {},
+  "sessions": {
+    "s_027ac68ca596eb": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "93d93336-9ec4-4cb5-8d55-3a636f8de60c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_5c051164407b8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "571fc072-5a8d-4311-b737-58d00daf9d3b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_7e3c949200d30c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "b73e541e-1e2d-43c3-9bec-c2ca9f81bdf6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_a2806d77c1af45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "76bcc883-6ca5-4144-beaf-5792e63cd9fd",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
