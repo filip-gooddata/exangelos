@@ -1,0 +1,19 @@
+connectors/file-watch/test/FileWatch.test.ts
+  s_ce961e453dfe29::t_bf99309282a738 113,116,118,120-132,146,164-166,179
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2b6869430abf99de732ee0cd807682c3ca40d87e",
+  "prompts": {},
+  "sessions": {
+    "s_ce961e453dfe29": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3c3ae6e-ab9d-4a15-ad3f-81c8c0493434",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
