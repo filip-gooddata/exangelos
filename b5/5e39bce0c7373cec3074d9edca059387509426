@@ -1,0 +1,21 @@
+packages/application/src/testing/ConnectorRuntimeFake.ts
+  s_27b248d3935c6d::t_ab2baf53597eec 67-68,213-214
+packages/application/test/connectors/supervision.test.ts
+  s_27b248d3935c6d::t_5621bd5630ad10 155,157-164
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b55e39bce0c7373cec3074d9edca059387509426",
+  "prompts": {},
+  "sessions": {
+    "s_27b248d3935c6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5f2e284c-325b-46cd-a694-f73bcb74b18f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
