@@ -3,10 +3,12 @@ import { describe, expect, it } from "@effect/vitest"
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import { Ids } from "@exangelos/domain"
 import { DaemonServer } from "@exangelos/daemon-client"
+import { TauriIpcSocket } from "@exangelos/rpc-tauri-ipc"
 import { Effect, Layer, Option, Result, Schedule } from "effect"
 import { RpcServer } from "effect/rpc"
 import { Socket } from "effect/socket"
 import { mkdtempSync, rmSync } from "node:fs"
+import * as Net from "node:net"
 import { DaemonClient, Host, Panel } from "../src/index.ts"
 import { connector, subscription } from "./fixtures.ts"
 
@@ -63,6 +65,51 @@ const withHome = <A, E, R>(use: (socketPath: string) => Effect.Effect<A, E, R>) 
     (home) => Effect.sync(() => rmSync(home, { recursive: true, force: true }))
   )
 
+// The tray host's relay over a real unix socket; the daemon end of the first
+// connection closes once the first request reaches it.
+const relayDroppingFirst = (path: string): TauriIpcSocket.TauriIpc => {
+  const open = new Map<number, Net.Socket>()
+  let next = 1
+  return {
+    makeChannel: (onMessage) => onMessage,
+    invoke: (command, args, options) => {
+      const { connection, events } = (args ?? {}) as { connection?: number; events?: (message: unknown) => void }
+      switch (command) {
+        case "relay_open":
+          return new Promise((resolve, reject) => {
+            const id = next++
+            const socket = Net.createConnection(path, () => {
+              open.set(id, socket)
+              resolve(id)
+            })
+            socket.on("data", (bytes: Buffer) => events?.(Uint8Array.from(bytes).buffer))
+            const closed = () => open.delete(id) && events?.({ type: "closed" })
+            socket.on("end", closed)
+            socket.on("close", closed)
+            socket.on("error", (error) => open.has(id) ? undefined : reject(error))
+          })
+        case "relay_write": {
+          const id = Number(options?.headers?.["exangelos-relay-connection"])
+          const socket = open.get(id)
+          if (socket === undefined) return Promise.reject(`unknown connection ${id}`)
+          return new Promise<void>((resolve, reject) =>
+            socket.write(args as Uint8Array, (error) => {
+              if (error) return reject(String(error))
+              if (id === 1) socket.end()
+              resolve()
+            })
+          )
+        }
+        case "relay_close":
+          open.get(connection!)?.destroy()
+          open.delete(connection!)
+          return Promise.resolve()
+      }
+      return Promise.reject(command)
+    }
+  }
+}
+
 describe("daemon client over a unix socket", () => {
   it.live("loads subscriptions and connectors and calls as you", () =>
     withHome((path) =>
@@ -78,6 +125,22 @@ describe("daemon client over a unix socket", () => {
       }).pipe(Effect.provide(client(path).pipe(Layer.provideMerge(daemon(path)))))
     ))
 
+  it.live("retries the calls of a connection the daemon closes", () =>
+    withHome((path) =>
+      Effect.gen(function*() {
+        const loaded = yield* DaemonClient.snapshot
+        expect(Result.getOrThrow(loaded.subscriptions)).toHaveLength(2)
+        expect(Result.getOrThrow(loaded.details)).toHaveLength(2)
+        expect(Result.getOrThrow(loaded.titles)).toHaveLength(1)
+        expect(Result.getOrThrow(loaded.connectors)).toHaveLength(1)
+        expect(Result.getOrThrow(loaded.status).version).toBe("you")
+      }).pipe(Effect.provide(
+        DaemonClient.layer.pipe(
+          Layer.provide(TauriIpcSocket.layer(relayDroppingFirst(path))),
+          Layer.provideMerge(daemon(path))
+        )
+      ))
+    ))
   it.live("fails as not running without a daemon and loads once one starts", () =>
     withHome((path) =>
       Effect.gen(function*() {
