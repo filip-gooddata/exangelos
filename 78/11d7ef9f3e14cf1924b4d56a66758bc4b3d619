@@ -1,0 +1,29 @@
+apps/cli/src/commands/Reconnect.ts
+  s_d0845ce68b2554::t_b953156ec62770 30-39,41-45,47
+apps/cli/test/wait.test.ts
+  s_01b71b7463fc0a::t_271be22d157167 53-76
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7811d7ef9f3e14cf1924b4d56a66758bc4b3d619",
+  "prompts": {},
+  "sessions": {
+    "s_01b71b7463fc0a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "05680509-5554-4bb0-b0f5-29789295585a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_d0845ce68b2554": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "548261b5-4b42-4b58-9ce3-ed05a8a27238",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
