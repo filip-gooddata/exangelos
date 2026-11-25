@@ -1,0 +1,35 @@
+adapters/connector-import/src/ConnectorImportLive.ts
+  s_329ddbb145e26a::t_87752bc0c786ec 98,103-110
+adapters/connector-import/test/ConnectorImport.test.ts
+  s_329ddbb145e26a::t_78198408c1cfbf 146-165
+connectors/teams/README.md
+  s_329ddbb145e26a::t_3febbc95af0870 43
+connectors/teams/connector.json
+  s_329ddbb145e26a::t_044c635d802b25 3,13
+connectors/teams/runtime/bridge.py
+  s_329ddbb145e26a::t_44b54643522645 19,91
+connectors/teams/runtime/ledger.py
+  s_329ddbb145e26a::t_b33755b925aa69 17-19,50
+connectors/teams/runtime/state_directory.py
+  s_329ddbb145e26a::t_45cfd9ac00a3f9 1-16
+connectors/teams/runtime/test_ledger.py
+  s_329ddbb145e26a::t_fca567d987fd48 36,284,286
+connectors/teams/runtime/test_portable.py
+  s_329ddbb145e26a::t_6b987b66f4c931 61-83,203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "15fcc02b367877a93373ba2ec279504c1097b993",
+  "prompts": {},
+  "sessions": {
+    "s_329ddbb145e26a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a214ee-00da-7df3-aa0a-ea68c92984c2",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
