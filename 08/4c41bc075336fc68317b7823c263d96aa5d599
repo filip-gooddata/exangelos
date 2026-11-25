@@ -1,0 +1,23 @@
+adapters/connector-runtime/test/StdioConnectorRuntime.test.ts
+  s_934f7636e560c5::t_0c2cd4d2d754a1 52
+gap/rpc-stdio/test/RpcStdio.test.ts
+  s_934f7636e560c5::t_a741378ac878ab 3-5,10-16,19,22-33,35-41,46,59,61,63-68,72,74-81
+gap/rpc-stdio/test/fixture/server.ts
+  s_934f7636e560c5::t_b913f69a623b82 2-3,14-18,26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "084c41bc075336fc68317b7823c263d96aa5d599",
+  "prompts": {},
+  "sessions": {
+    "s_934f7636e560c5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01c174ed-c6ab-4cab-ac9b-3f94b0edfa66",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
