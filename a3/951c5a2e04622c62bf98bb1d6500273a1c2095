@@ -1,0 +1,21 @@
+connectors/jira/src/JiraConnector.ts
+  s_9181abf6877dc4::t_caf84ea19430b2 124,130-138
+connectors/jira/test/connector.test.ts
+  s_9181abf6877dc4::t_ee4aeeee53dea5 298-325
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a3951c5a2e04622c62bf98bb1d6500273a1c2095",
+  "prompts": {},
+  "sessions": {
+    "s_9181abf6877dc4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21297-e3bb-72b1-84a9-4efc2b0f89c1",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
