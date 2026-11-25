@@ -1,0 +1,31 @@
+.github/scripts/claim-version.sh
+  s_ce961e453dfe29::t_fd961a9c498ba8 8-10,41-54
+.github/scripts/publish-homebrew-tap.sh
+  s_ce961e453dfe29::t_7976a0fc586a67 27-30
+.github/scripts/publish-release.sh
+  s_ce961e453dfe29::t_36f4027d202a4d 3-4,28-43,49-50
+adapters/connector-import/src/index.ts
+  s_ce961e453dfe29::t_dbed856690c416 2
+connectors/file-watch/test/FileWatch.test.ts
+  s_ce961e453dfe29::t_70c00e70fd8a09 3-4,80,83-98,100-128
+packaging/src/connector-archives.ts
+  s_ce961e453dfe29::t_7a07fd78141955 5,97
+packaging/test/workflow.test.ts
+  s_ce961e453dfe29::t_27a9542f293a16 72
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "23d871ce58d0032b4cd93377097f22de291a32e8",
+  "prompts": {},
+  "sessions": {
+    "s_ce961e453dfe29": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3c3ae6e-ab9d-4a15-ad3f-81c8c0493434",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
