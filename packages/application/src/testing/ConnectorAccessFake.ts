@@ -53,7 +53,8 @@ export const layerConnectorAccess: Layer.Layer<ConnectorAccess | ConnectorAccess
         Ref.update(watched, (all) => all.includes(subscription) ? all : [...all, subscription]),
       unwatch: (subscription) => Ref.update(watched, (all) => all.filter((id) => id !== subscription)),
       rewatch: (subscription) => Ref.update(rewatched, (all) => [...all, subscription]),
-      observation: (subscription) => Effect.map(Ref.get(observations), (all) => Option.fromUndefinedOr(all.get(subscription)))
+      observation: (subscription) => Effect.map(Ref.get(observations), (all) => Option.fromUndefinedOr(all.get(subscription))),
+      reading: (subscription) => Effect.map(Ref.get(observations), (all) => !all.has(subscription))
     }),
     Layer.succeed(ConnectorAccessFake, {
       define: (connector, script) => Ref.update(connectors, (all) => new Map(all).set(connector, script)),

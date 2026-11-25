@@ -51,4 +51,6 @@ export class ConnectorAccess extends Context.Service<ConnectorAccess, {
    * failure until an item arrives again or the stream stops. None while it is healthy or unwatched.
    */
   readonly observation: (subscription: Ids.SubscriptionId) => Effect.Effect<Option.Option<Connector.ObservationFailure>>
+  /** Whether the subscription's open Watch stream delivered an item with no failure since: proof it reads again. */
+  readonly reading: (subscription: Ids.SubscriptionId) => Effect.Effect<boolean>
 }>()("@exangelos/application/ConnectorAccess") {}

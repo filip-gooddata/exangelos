@@ -11,7 +11,7 @@ import { DeliveryFailed, WakeTarget } from "../../ports/WakeTarget.ts"
 import { currentLimits } from "../Limits.ts"
 import type { SubscriptionLocks } from "../Locks.ts"
 import { logAnnotations } from "../Transitions.ts"
-import { withSubscription } from "./Intake.ts"
+import { followRecovery, withSubscription } from "./Intake.ts"
 import { RemovedConnectors } from "../RemovedConnectors.ts"
 import { ConnectorAccess } from "../../seam/ConnectorAccess.ts"
 
@@ -87,8 +87,7 @@ const decide = (
         return send(Option.map(failure, (f) => Delivery.content(subscription, { _tag: "Failing", ...f }, pending)))
       }
       case "recovered": {
-        const failure = yield* (yield* ConnectorAccess).observation(subscription.id)
-        if (Option.isSome(failure)) return drop
+        if (!(yield* (yield* ConnectorAccess).reading(subscription.id))) return drop
         return send(Option.some(Delivery.content(subscription, { _tag: "Recovered" }, pending)))
       }
       default:
@@ -143,6 +142,9 @@ const settle = (wake: Wake.Wake) =>
     }))
 
 const attempt = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
+  Effect.andThen(attemptOnce(listed, now, limits), followRecovery(listed.subscription))
+
+const attemptOnce = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
   Effect.gen(function*() {
     const claimed = yield* claim(listed, now, limits)
     if (Option.isNone(claimed)) return

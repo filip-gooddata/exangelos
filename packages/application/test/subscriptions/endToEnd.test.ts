@@ -101,7 +101,7 @@ describe("a subscription end to end", () => {
       expect(quiet?.observation).toBeUndefined()
     }).pipe(Effect.provide(layer)))
 
-  it.effect("a failing wake waits for queued events and does not repeat an outage it already reported", () =>
+  it.effect("failing and recovered wakes wait for queued events and an outage is not reported twice", () =>
     Effect.gen(function*() {
       yield* (yield* ConnectorRepository).store(connector("github-pr"))
       const access = yield* ConnectorAccessFake
@@ -138,10 +138,19 @@ describe("a subscription end to end", () => {
       expect(yield* whys).toEqual(["Events", "Failing"])
 
       yield* TestClock.adjust("2 hours")
-      yield* fail({ ...failure, since: yield* DateTime.now })
+      const afterRestart = { ...failure, since: yield* DateTime.now }
+      yield* fail(afterRestart)
       yield* TestClock.adjust("6 minutes")
-      yield* fail({ ...failure, since: yield* DateTime.now })
+      yield* fail(afterRestart)
       yield* deliverDue
       expect(yield* whys).toEqual(["Events", "Failing"])
+
+      expect(yield* intake.ingest(subscription.id, { _tag: "Event", event: reported("ci-2") })).toBe("continue")
+      yield* access.observe(subscription.id, undefined)
+      yield* intake.observationRecovered(subscription.id)
+      yield* TestClock.adjust("5 seconds")
+      yield* deliverDue
+      yield* deliverDue
+      expect(yield* whys).toEqual(["Events", "Failing", "Events", "Recovered"])
     }).pipe(Effect.provide(layer)))
 })

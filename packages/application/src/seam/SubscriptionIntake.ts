@@ -35,8 +35,8 @@ export class SubscriptionIntake extends Context.Service<SubscriptionIntake, {
   readonly observationFailing: (subscription: Ids.SubscriptionId, failure: Connector.ObservationFailure) => Effect.Effect<void>
   /**
    * The subscription's Watch stream delivered an item after failing, or for the first time since it
-   * opened. Sends the one recovered wake when the session was told of the failure, drops a failing
-   * wake not yet delivered, and does nothing otherwise, so a repeat stores nothing new.
+   * opened. Drops a failing wake not yet sent and follows `followRecovery`, so a repeat stores
+   * nothing new.
    */
   readonly observationRecovered: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
 }>()("@exangelos/application/SubscriptionIntake") {}

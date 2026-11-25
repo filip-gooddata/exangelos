@@ -17,7 +17,6 @@ export const list = (actor: Session.Actor, request: { readonly all: boolean }) =
     const visible = request.all || actor._tag === "You"
       ? subscriptions
       : subscriptions.filter((subscription) => Subscribe.isOwn(subscription, actor.session))
-    // A list leaves out the failure's reason, the connector's free text; show carries it.
     return yield* Effect.forEach(visible, (subscription) =>
       Effect.map(observationOf(subscription), (failure): Subscription.Listed =>
         Option.match(failure, {

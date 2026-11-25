@@ -193,7 +193,9 @@ const poll = (watched: Watched, state: PollState) => {
       const next = encodeCursor(after)
       const items = events.map((event) => toItem(event))
       return {
-        items: next === cursor ? items : [...items, Connector.cursor(next)],
+        items: next === cursor && state.wait !== undefined && state.outage === undefined
+          ? items
+          : [...items, Connector.cursor(next)],
         next: { ...reached, cursor: next, wait: defaultPollInterval, ended: false }
       }
     }),
