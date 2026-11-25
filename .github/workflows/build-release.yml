@@ -235,13 +235,13 @@ jobs:
       # build's files without failing. Check what arrived and download once more after a wait when something is missing.
       - name: Check that every build's files arrived
         id: arrived
-        working-directory: release
         run: |
-          if [ -f SHA256SUMS ] && [ "$(ls exangelos-tray-*.deb | wc -l)" = 2 ] && [ "$(ls Exangelos_*.dmg | wc -l)" = 2 ]; then
+          if [ -f release/SHA256SUMS ] && [ "$(ls release/exangelos-tray-*.deb | wc -l)" = 2 ] &&
+            [ "$(ls release/Exangelos_*.dmg | wc -l)" = 2 ]; then
             echo "complete=true" >> "$GITHUB_OUTPUT"
           else
             echo "Some build's files are missing:"
-            ls -l
+            ls -l release || true
             echo "complete=false" >> "$GITHUB_OUTPUT"
           fi
       - name: Wait for the artifact listing to catch up
