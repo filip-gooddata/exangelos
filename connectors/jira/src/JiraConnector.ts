@@ -121,15 +121,21 @@ export const connector = Connector.make({
                   : `Could not check the JQL query with Jira. ${refusal(site, error)}`
               })
             yield* client.checkJql({ site, jql: target.jql }).pipe(
-              // A 401 through the gateway names a missing scope only while the gateway still accepts the token.
+              // A 401 through the gateway names a missing scope only once the same gateway accepts the token again.
               Effect.catchTag("CredentialRejected", (rejected) =>
                 site.api === site.url || rejected.status !== 401
                   ? Effect.fail(invalid(rejected))
                   : client.resolveRoute(site).pipe(
                     Effect.matchEffect({
-                      onFailure: () => Effect.fail(invalid(rejected)),
-                      onSuccess: () =>
-                        Effect.fail(new Connector.ParametersInvalid({ reason: missingScopeReason(rejected.status) }))
+                      onFailure: (error) => Effect.fail(invalid(error)),
+                      onSuccess: (route) =>
+                        Effect.fail(
+                          new Connector.ParametersInvalid({
+                            reason: route.api === site.api
+                              ? missingScopeReason(rejected.status)
+                              : "Could not check the JQL query with Jira: the token now takes a different route than at configure. Configure the jira connector again."
+                          })
+                        )
                     })
                   )),
               Effect.mapError((error) => error instanceof Connector.ParametersInvalid ? error : invalid(error))

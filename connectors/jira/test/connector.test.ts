@@ -295,6 +295,34 @@ describe("Jira connector", () => {
       expect(JSON.stringify(described)).not.toContain("scope")
     }).pipe(Effect.scoped))
 
+  it.effect.each([
+    {
+      recheck: "is rate limited",
+      answer: (call: StubCall): StubAnswer | undefined =>
+        call.path === `${gateway}/rest/api/3/serverInfo` ? { status: 429 } : undefined,
+      reason: "rate limiting"
+    },
+    {
+      recheck: "now passes on the site",
+      answer: (call: StubCall): StubAnswer | undefined =>
+        call.path === "/rest/api/3/myself" ? { status: 200, body: { accountId: "id-dev" } } : undefined,
+      reason: "different route"
+    }
+  ])("makes no credential or scope claim at subscribe when the recheck $recheck", ({ answer, reason }) =>
+    Effect.gen(function*() {
+      let refused = false
+      const client = yield* jira((call) => {
+        if (!refused) return scoped(call)
+        if (call.path === `${gateway}/rest/api/3/search/jql`) return { status: 401 }
+        return answer(call) ?? scoped(call)
+      })
+      expect(yield* client.Configure({ values })).toEqual({ _tag: "Accepted" })
+      refused = true
+      const described = yield* client.Describe({ parameters: { target: "project = DEMO", kind: "jql" } })
+      expect(described).toMatchObject({ _tag: "Invalid", reason: expect.stringContaining(reason) })
+      expect(JSON.stringify(described)).not.toMatch(/scope|rejected the email/)
+    }).pipe(Effect.scoped))
+
   it.effect("keeps a JQL watch whose cloud id lookup answers 400 a source failure, not an ended query", () =>
     Effect.gen(function*() {
       let lookupFails = false
