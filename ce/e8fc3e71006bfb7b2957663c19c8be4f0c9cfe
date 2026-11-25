@@ -1,0 +1,51 @@
+adapters/daemon-client/src/DaemonServer.ts
+  s_871a5d2c084e58::t_ac7e62b301f8e0 3,5,14-29,46
+apps/cli/src/commands/Agent.ts
+  s_7f7ba5dd5c9e28::t_95c57965fdc1fd 9,227,232-233,235-242
+apps/cli/src/commands/Connection.ts
+  s_d0845ce68b2554::t_51622ef0d8c076 1-2,15-22,41
+apps/cli/src/commands/Output.ts
+  s_d0845ce68b2554::t_24bb96e465f386 1,14,25-29,50,65-66,133,149
+apps/cli/src/commands/Reconnect.ts
+  s_7f7ba5dd5c9e28::t_f2d37f1113848e 1-53
+apps/cli/test/harness.ts
+  s_871a5d2c084e58::t_9402fe9116ffd7 3,13,103,106,160,207
+apps/cli/test/wait.test.ts
+  s_871a5d2c084e58::t_07886f16d949ee 1-53
+docs/spec.md
+  s_d0845ce68b2554::t_ebd8c4ffef1a7f 382
+skills/exangelos/SKILL.md
+  s_d0845ce68b2554::t_4a76f266a0d8ff 65
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cee8fc3e71006bfb7b2957663c19c8be4f0c9cfe",
+  "prompts": {},
+  "sessions": {
+    "s_7f7ba5dd5c9e28": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21322-975f-7d81-9fb1-995178bdebfe",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_871a5d2c084e58": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "2452f670-b843-4240-bd8c-ec45d96065c6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_d0845ce68b2554": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "548261b5-4b42-4b58-9ce3-ed05a8a27238",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
