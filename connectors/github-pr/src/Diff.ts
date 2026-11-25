@@ -25,10 +25,14 @@ export interface Memory {
   readonly comments: Mark
   readonly threads: Mark
   /**
-   * The newest reply seen in each thread that has replies. A thread not listed had none, unless `since` is set: then
-   * it came from a v1 cursor, and replies newer than `since` are new.
+   * The ids of the replies seen in each thread that has replies. Every reply is read on every poll, and a reply drafted
+   * in a pending review can show up behind newer ones, so ids, not times, tell new replies apart. A thread not listed
+   * had none, unless `since` is set: then the memory came from a v1 cursor, and replies newer than `since` are new.
    */
-  readonly replies: { readonly since: string | null; readonly threads: Readonly<Record<string, Mark>> }
+  readonly replies: {
+    readonly since: string | null
+    readonly threads: Readonly<Record<string, ReadonlyArray<string>>>
+  }
   /** Review requests and draft changes from the timeline. */
   readonly timeline: Mark
   /** Whether the pull request was a draft at the last poll; null until a poll has seen it. */
@@ -254,15 +258,16 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     readonly thread: Thread
     readonly comment: Comment
   }
-  const replyMarks: Record<string, Mark> = {}
+  const seenReplies: Record<string, ReadonlyArray<string>> = {}
   const newReplies: Array<Reply> = []
   for (const thread of snapshot.threads) {
-    const seen = previous === undefined
-      ? undefined
-      : previous.replies.threads[thread.id] ?? { at: previous.replies.since, ids: [] }
-    const found = fresh<Comment>(seen, thread.replies, (c) => c.createdAt)
-    newReplies.push(...found.items.map((comment) => ({ id: comment.id, thread, comment })))
-    if (found.mark.at !== null) replyMarks[thread.id] = found.mark
+    const seen = previous?.replies.threads[thread.id]
+    const since = previous?.replies.since ?? null
+    const isNewReply = (comment: Comment) =>
+      previous !== undefined &&
+      (seen !== undefined ? !seen.includes(comment.id) : since === null || comment.createdAt > since)
+    newReplies.push(...thread.replies.filter(isNewReply).map((comment) => ({ id: comment.id, thread, comment })))
+    if (thread.replies.length > 0) seenReplies[thread.id] = thread.replies.map((c) => c.id)
   }
   const replies = { items: newReplies.sort((x, y) => x.comment.createdAt.localeCompare(y.comment.createdAt)) }
   for (const { comment, thread } of replies.items) {
@@ -483,7 +488,7 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
       reviews: reviews.mark,
       comments: comments.mark,
       threads: threads.mark,
-      replies: { since: null, threads: replyMarks },
+      replies: { since: null, threads: seenReplies },
       timeline: timeline.mark,
       draft: snapshot.isDraft,
       checkPassed: [...checkPassed],

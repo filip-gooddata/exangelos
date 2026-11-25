@@ -222,6 +222,20 @@ describe("step", () => {
       .toEqual(["review.reply/p1"])
   })
 
+  it("reports a reply that showed up behind a newer one on a later poll, and each reply once", () => {
+    const t = (replies: ReadonlyArray<ReturnType<typeof reply>>) => thread("t1", "ana", "2026-11-12T09:00:00Z", false, replies)
+    const r0 = reply("r0", "bo", "2026-11-12T09:30:00Z")
+    const a = reply("pa", "bo", "2026-11-12T10:02:00Z")
+    const b = reply("pb", "olga", "2026-11-12T10:03:00Z")
+
+    const polls = [snapshot({ threads: [t([r0])] }), snapshot({ threads: [t([r0, b])] }), snapshot({ threads: [t([r0, a, b])] })]
+    expect(polls.map((_, i) => poll(polls.slice(0, i + 1)).events.map((e) => e.dedupeKey))).toEqual([
+      [],
+      ["review.reply/pb"],
+      ["review.reply/pa"]
+    ])
+  })
+
   it("keeps a reply that lands on an earlier thread page while a later page is read", () => {
     const a = thread("ta", "ana", "2026-11-12T09:00:00Z")
     const b = thread("tb", "ana", "2026-11-12T09:01:00Z")

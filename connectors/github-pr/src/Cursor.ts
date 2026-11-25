@@ -20,7 +20,10 @@ const V1 = Schema.Struct({ v: Schema.Literal(1), ...Common })
 const V2 = Schema.Struct({
   v: Schema.Literal(2),
   ...Common,
-  replies: Schema.Struct({ since: Schema.NullOr(Schema.String), threads: Schema.Record(Schema.String, MarkSchema) }),
+  replies: Schema.Struct({
+    since: Schema.NullOr(Schema.String),
+    threads: Schema.Record(Schema.String, Schema.Array(Schema.String))
+  }),
   timeline: MarkSchema,
   draft: Schema.NullOr(Schema.Boolean),
   checkPassed: Schema.Array(Schema.String),

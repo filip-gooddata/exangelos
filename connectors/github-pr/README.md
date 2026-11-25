@@ -88,7 +88,7 @@ A reply can arrive on any thread, so every poll reads every page of review threa
 
 ## Cursor
 
-The cursor is JSON with `v: 2`. It holds the head, the base branch and oid, which failures, passes, passed checks, conflict and readiness were already reported for that head, the draft state and how often it changed, the pinned base, the reviewer's latest review time, for reviews, comments, threads and timeline events (review requests and draft changes) the newest time seen plus the ids seen at that instant, and the same per thread for replies. Per-thread reply marks keep a reply that lands on one thread page while the connector reads another.
+The cursor is JSON with `v: 2`. It holds the head, the base branch and oid, which failures, passes, passed checks, conflict and readiness were already reported for that head, the draft state and how often it changed, the pinned base, the reviewer's latest review time, for reviews, comments, threads and timeline events (review requests and draft changes) the newest time seen plus the ids seen at that instant, and per thread the ids of the replies seen. Replies are told apart by id, not time, because a reply drafted in a pending review can show up behind newer ones. The ids make the cursor grow with the conversation, by roughly 30 bytes per reply.
 
 A `v: 1` cursor carries over. Replies and timeline events start from the newest review, comment or thread it recorded, so replies made since its last poll are reported. The draft state, pinned base and reviewer start from the next poll, which reports no change. A cursor of an unknown version starts a new baseline.
 
