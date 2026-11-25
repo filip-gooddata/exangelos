@@ -45,6 +45,14 @@ ${binaryResource(release, "linux-x64", "      ")}    end
     bin.install_symlink "exangelos" => "xng"
   end
 
+  def caveats
+    <<~EOS
+      To teach Claude Code and Codex to use Exangelos, run:
+        exangelos skill install
+      Rerun it after each upgrade to update the skill.
+    EOS
+  end
+
   service do
     name macos: "exangelos.daemon", linux: "exangelos.daemon"
     run [opt_bin/"exangelos", "daemon"]

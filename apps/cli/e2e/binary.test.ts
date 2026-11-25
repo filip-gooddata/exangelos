@@ -464,6 +464,26 @@ describe("the exangelos binary", () => {
     expect(run(exangelos, "connector", "scaffold", "template-feed").status).toBe(1)
   })
 
+  it("installs, updates and removes the agent skill for Claude Code and Codex without touching a foreign one", async () => {
+    const claude = join(root, "user", ".claude", "skills", "exangelos")
+    const codex = join(root, "user", ".agents", "skills", "exangelos")
+    const source = await readFile(join(repo, "skills", "exangelos", "SKILL.md"), "utf8")
+
+    expect(run(exangelos, "skill", "install").status).toBe(0)
+    for (const directory of [claude, codex]) {
+      expect(await readFile(join(directory, "SKILL.md"), "utf8")).toContain(source.trimEnd())
+    }
+    const again = run(exangelos, "--json", "skill", "install")
+    expect(JSON.parse(again.stdout).map((outcome: { status: string }) => outcome.status)).toEqual(["unchanged", "unchanged"])
+
+    await writeFile(join(codex, "SKILL.md"), "---\nname: exangelos\n---\nmine\n")
+    expect(run(exangelos, "skill", "install", "--codex").status).toBe(1)
+    expect(run(exangelos, "skill", "uninstall").status).toBe(1)
+    expect(await readFile(join(codex, "SKILL.md"), "utf8")).toBe("---\nname: exangelos\n---\nmine\n")
+    await expect(lstat(claude)).rejects.toThrow()
+    await rm(codex, { recursive: true })
+  })
+
   it("cross-compiles for Linux x64 into an ELF executable", async () => {
     const linux = join(root, "bin", "exangelos-linux-x64")
     build("apps/cli/build.ts", "--target=bun-linux-x64", "--outfile", linux)

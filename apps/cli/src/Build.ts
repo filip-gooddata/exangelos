@@ -15,3 +15,7 @@ declare const EXANGELOS_CONNECTOR_TEMPLATE: Readonly<Record<string, string>> | u
 export const connectorTemplate: Readonly<Record<string, string>> | undefined = typeof EXANGELOS_CONNECTOR_TEMPLATE === "object"
   ? EXANGELOS_CONNECTOR_TEMPLATE
   : undefined
+
+declare const EXANGELOS_SKILL: string | undefined
+
+export const skill: string | undefined = typeof EXANGELOS_SKILL === "string" ? EXANGELOS_SKILL : undefined

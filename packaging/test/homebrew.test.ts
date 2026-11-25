@@ -27,6 +27,7 @@ describe("Homebrew definitions", () => {
     expect(formula).toContain(`name macos: "exangelos.daemon", linux: "exangelos.daemon"`)
     expect(formula).toContain(`bin.install_symlink "exangelos" => "xng"`)
     expect(formula).toContain(`homepage "https://github.com/filip-gooddata/exangelos"`)
+    expect(formula).toContain("exangelos skill install")
     expect(formula).toContain(`assert_equal "exangelos #{version}", shell_output("#{bin}/xng --version").strip`)
   })
 
