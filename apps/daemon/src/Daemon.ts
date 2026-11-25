@@ -85,7 +85,13 @@ export const platformChoices = (options: Service.ServiceManager.Options): Choice
   serviceManager: serviceManager(options),
   secretStore: SecretStores.layer(options.platform),
   wakeTarget: WakeTargets.layer(),
-  sessionTitles: WakeTargets.SessionTitles.layer()
+  sessionTitles: Layer.unwrap(
+    Effect.gen(function*() {
+      const paths = yield* Paths.Paths
+      const path = yield* Path.Path
+      return WakeTargets.SessionTitles.layer({ file: path.join(paths.stateDir, "session-titles.json") })
+    })
+  )
 })
 
 const database = Layer.unwrap(

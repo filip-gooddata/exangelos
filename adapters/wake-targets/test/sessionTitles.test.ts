@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Duration, Effect, Option } from "effect"
+import { Duration, Effect, Fiber, Option, Ref } from "effect"
 import { TestClock } from "effect/testing"
 import type { Session } from "@exangelos/domain"
 import { SessionTitles, T3 } from "../src/index.ts"
-import { exited, fakeBin, recordingSpawner } from "./fixtures.ts"
+import { type Answer, exited, fakeBin, recordingSpawner } from "./fixtures.ts"
 
 const shown = (title: string) => JSON.stringify({ thread: { threadId: "thread-1", title, archived: false }, messages: [] })
 const thread: Session.Target = { harness: "t3", sessionId: "thread-1" }
@@ -93,5 +93,43 @@ describe("session titles", () => {
       yield* lookup([thread])
       expect(yield* titles([thread])).toEqual([{ ...thread, title: "Tray" }])
       expect(yield* spawned).toHaveLength(1)
+    })))
+
+  it.effect("keeps the last found title when a refresh times out, and across a restart", () =>
+    Effect.scoped(Effect.gen(function*() {
+      let answer: Answer = { exitCode: 0, stdout: shown("Tray") }
+      const runner = yield* recordingSpawner(() => answer)
+      const saved = yield* Ref.make<ReadonlyArray<Session.SessionTitle>>([])
+      const memory: SessionTitles.Memory = { load: Ref.get(saved), save: (all) => Ref.set(saved, all).pipe(Effect.as(true)) }
+      const start = SessionTitles.make({ lookup: () => fakeBin, memory }).pipe(Effect.provide(runner.layer))
+      const service = yield* start
+      yield* service.lookup([thread])
+      answer = { exitCode: 0, hangs: true }
+      yield* TestClock.adjust("11 minutes")
+      const refresh = yield* Effect.forkChild(service.lookup([thread]))
+      yield* TestClock.adjust("15 seconds")
+      expect(yield* Fiber.join(refresh)).toEqual([{ ...thread, title: "Tray" }])
+      expect(yield* service.titles([thread])).toEqual([{ ...thread, title: "Tray" }])
+      expect(yield* runner.spawned).toHaveLength(2)
+      const restarted = yield* start
+      expect(yield* restarted.titles([thread])).toEqual([{ ...thread, title: "Tray" }])
+    })))
+
+  it.effect("saves a title again after a failed save, even when it hasn't changed", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const runner = yield* recordingSpawner({ exitCode: 0, stdout: shown("Tray") })
+      const saved = yield* Ref.make<ReadonlyArray<Session.SessionTitle>>([])
+      const writable = yield* Ref.make(false)
+      const memory: SessionTitles.Memory = {
+        load: Ref.get(saved),
+        save: (all) => Effect.flatMap(Ref.get(writable), (ok) => ok ? Ref.set(saved, all).pipe(Effect.as(true)) : Effect.succeed(false))
+      }
+      const service = yield* SessionTitles.make({ lookup: () => fakeBin, memory }).pipe(Effect.provide(runner.layer))
+      yield* service.lookup([thread])
+      expect(yield* Ref.get(saved)).toEqual([])
+      yield* Ref.set(writable, true)
+      yield* TestClock.adjust("11 minutes")
+      yield* service.lookup([thread])
+      expect(yield* Ref.get(saved)).toEqual([{ ...thread, title: "Tray" }])
     })))
 })
