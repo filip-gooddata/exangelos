@@ -72,10 +72,15 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
     const connector = launch.name
     const startFailed = (reason: string) => new ConnectorRuntime.ConnectorStartFailed({ connector, reason })
     const crashed = (reason: string) => new ConnectorRuntime.ConnectorCrashed({ connector, reason })
-    const lost = (error: RpcClientError.RpcClientError) => crashed(`Lost the connector's connection: ${describeLoss(error)}`)
-    // Completed when the transport ends for good, whether or not a call was in flight; a call that fails on its own
-    // (an answer that does not decode) leaves the transport, and so the process, running.
+    // Completed when the transport ends for good, whether or not a call was in flight, and when the connector writes a
+    // frame that does not decode: that fails every call in flight on this side but leaves the connector's handlers for
+    // them running, with no request left to cancel them, so only replacing the process ends them.
     const connectionLost = yield* Deferred.make<ConnectorRuntime.ConnectorCrashed>()
+    const lost = (error: RpcClientError.RpcClientError) => {
+      const crash = crashed(`Lost the connector's connection: ${describeLoss(error)}`)
+      if (error.reason._tag === "RpcClientDefect") Deferred.doneUnsafe(connectionLost, Effect.succeed(crash))
+      return crash
+    }
     let silence: string | undefined
     const hooks = RpcClient.ConnectionHooks.of({
       onConnect: Effect.void,
@@ -156,11 +161,7 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
         client.Watch(request).pipe(Stream.mapError((error) => {
           switch (error._tag) {
             case "RpcClientError":
-              // A frame that does not decode fails the calls in flight but leaves the connection up: the watch
-              // fails like an observation and the supervisor retries it on the same process.
-              return error.reason._tag === "RpcClientDefect"
-                ? new ConnectorRuntime.SourceFailed({ connector, reason: error.message, category: "invalid-data" })
-                : lost(error)
+              return lost(error)
             case "CredentialsRejected":
               return new ConnectorRuntime.CredentialsRejected({ connector, reason: error.reason })
             case "SourceFailed":

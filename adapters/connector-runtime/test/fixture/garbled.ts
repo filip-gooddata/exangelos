@@ -5,30 +5,19 @@ import { writeSync } from "node:fs"
 import { ConnectorProtocol } from "@exangelos/contracts"
 import { Template } from "@exangelos/connector-template"
 
-/**
- * Writes one line that is not JSON before its first Configure answer, and another during its first Watch, which
- * then stays open; it answers everything else normally.
- */
-let configured = 0
-let watched = 0
+/** Writes one line that is not JSON during a Watch, which then stays open. */
 setInterval(() => {}, 1 << 30)
 
 const handlers = ConnectorProtocol.ConnectorProtocol.toLayer({
   Handshake: () => Effect.succeed({ protocolVersion: ConnectorProtocol.version, catalogue: Template.connector.catalogue }),
-  Configure: () =>
-    Effect.sync(() => {
-      if (configured++ === 0) writeSync(1, "not json\n")
-      return { _tag: "Accepted" } as const
-    }),
+  Configure: () => Effect.succeed({ _tag: "Accepted" } as const),
   Describe: () => Effect.die("unused"),
   Icon: () => Effect.succeed({ _tag: "None" } as const),
   Watch: () =>
-    watched++ === 0
-      ? Stream.concat(
-        Stream.make({ _tag: "Cursor" as const, cursor: "1" }),
-        Stream.fromEffect(Effect.sync(() => writeSync(1, "not json\n"))).pipe(Stream.drain, Stream.concat(Stream.never))
-      )
-      : Stream.make({ _tag: "Cursor" as const, cursor: "2" }, { _tag: "End" as const, reason: "done" })
+    Stream.concat(
+      Stream.make({ _tag: "Cursor" as const, cursor: "1" }),
+      Stream.fromEffect(Effect.sync(() => writeSync(1, "not json\n"))).pipe(Stream.drain, Stream.concat(Stream.never))
+    )
 })
 
 RpcServer.layer(ConnectorProtocol.ConnectorProtocol).pipe(
