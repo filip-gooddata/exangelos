@@ -1,0 +1,19 @@
+packages/application/test/subscriptions/daemon/Daemon.test.ts
+  s_f4d67bcc708e53::t_b765d22a38685b 2,8,45
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f7d204a89e85ec1d5df6425d0433af4599a3e3aa",
+  "prompts": {},
+  "sessions": {
+    "s_f4d67bcc708e53": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "f377b6d5-db55-4a57-b65c-9081bd6cb74e",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
