@@ -1,4 +1,4 @@
-import { Cause, Context, Deferred, Effect, Layer, Option, Queue, Ref, Stream } from "effect"
+import { Cause, Context, Deferred, Duration, Effect, Layer, Option, Queue, Ref, Stream } from "effect"
 import type { Catalogue, Connector as Domain, Event, Ids } from "@exangelos/domain"
 import {
   CredentialsRejected,
@@ -28,6 +28,7 @@ export interface Script {
   readonly start?:
     | { readonly _tag: "Fail"; readonly reason: string }
     | { readonly _tag: "Hang" }
+    | { readonly _tag: "Slow"; readonly duration: Duration.Input }
     | { readonly _tag: "Incompatible"; readonly version: number; readonly supported: ReadonlyArray<number> }
   /** Accepts every configuration when omitted. */
   readonly configure?: (values: Catalogue.ConfigurationValues) => ConfigureAnswer
@@ -174,6 +175,7 @@ export const layerConnectorRuntime: Layer.Layer<ConnectorRuntime | ConnectorRunt
             return yield* new ConnectorStartFailed({ connector: launch.name, reason: start.reason })
           }
           if (start?._tag === "Hang") return yield* Effect.never
+          if (start?._tag === "Slow") yield* Effect.sleep(start.duration)
           if (start?._tag === "Incompatible") {
             return yield* new IncompatibleProtocol({
               connector: launch.name,
