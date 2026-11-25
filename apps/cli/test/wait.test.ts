@@ -50,6 +50,30 @@ describe("wait across a daemon restart", () => {
     expect(exitCode(result.exit)).toBe(4)
   }, 20_000)
 
+  it("gives up at the deadline even when the daemon would answer just after it", async () => {
+    const path = `${directory}/late.sock`
+    let probes = 0
+    const started = Date.now()
+    const result = await Effect.gen(function*() {
+      yield* Layer.build(
+        daemonServer(path, {
+          Wait: () => Effect.interrupt,
+          ServiceStatus: () =>
+            Effect.suspend(() =>
+              ++probes === 1
+                ? Effect.never
+                : Effect.succeed({ version: "0.1.0", startMethod: "foreground" as const })
+            )
+        })
+      )
+      return yield* Effect.promise(() =>
+        run(["wait", "sub_7f3k"], { socket: { path, serve: false }, patience: Duration.seconds(1) })
+      )
+    }).pipe(Effect.scoped, Effect.runPromise)
+    expect(exitCode(result.exit)).toBe(4)
+    expect(Date.now() - started).toBeLessThan(3_000)
+  }, 20_000)
+
   it("gives up on a daemon that accepts connections but never answers, with --json on stdout and one line on stderr", async () => {
     const path = `${directory}/hung.sock`
     const result = await Effect.gen(function*() {

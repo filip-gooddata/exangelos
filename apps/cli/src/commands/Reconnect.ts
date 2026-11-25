@@ -27,20 +27,24 @@ export const persist = <A, E, R, R2>(
   Effect.gen(function*() {
     const patience = yield* Patience
     const recovered = (lost: RpcClientError.RpcClientError) =>
-      Effect.logDebug("daemon connection lost, waiting for it to answer").pipe(
-        Effect.annotateLogs({ reason: lost.message }),
-        Effect.andThen(
-          alive.pipe(
-            Effect.timeout(Duration.min(Duration.seconds(10), patience)),
-            Effect.retryOrElse(
-              Schedule.min([Schedule.exponential("250 millis"), Schedule.spaced("5 seconds")]).pipe(
-                Schedule.upTo({ duration: patience })
-              ),
-              (error) => Effect.fail(new DaemonUnreachable({ waited: Duration.format(patience), reason: reasonOf(error) }))
+      Effect.suspend(() => {
+        let reason = lost.message
+        return Effect.logDebug("daemon connection lost, waiting for it to answer").pipe(
+          Effect.annotateLogs({ reason }),
+          Effect.andThen(Effect.sleep("250 millis")),
+          Effect.andThen(
+            alive.pipe(
+              Effect.timeout("10 seconds"),
+              Effect.tapError((error) => Effect.sync(() => (reason = reasonOf(error)))),
+              Effect.retry(Schedule.min([Schedule.exponential("250 millis"), Schedule.spaced("5 seconds")]))
             )
-          )
+          ),
+          Effect.timeoutOrElse({
+            duration: patience,
+            orElse: () => Effect.fail(new DaemonUnreachable({ waited: Duration.format(patience), reason }))
+          })
         )
-      )
+      })
     const attempt: Effect.Effect<A, Exclude<E, RpcClientError.RpcClientError> | DaemonUnreachable, R | R2> = call.pipe(
       Effect.catchIf(
         isConnectionError as (error: E) => error is E & RpcClientError.RpcClientError,
