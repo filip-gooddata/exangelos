@@ -1,9 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Layer, Schema, Stream } from "effect"
+import { Effect, Fiber, Layer, Schema, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import { readFileSync } from "node:fs"
 import { Manifest } from "@exangelos/contracts"
 import { ConnectorTest } from "@exangelos/connector-sdk"
 import { connector } from "../src/JiraConnector.ts"
+import { failureLimit } from "../src/Watch.ts"
 import { comment, history, jiraWith, page } from "./stubJira.ts"
 import type { StubAnswer, StubCall } from "./stubJira.ts"
 
@@ -281,6 +283,35 @@ describe("Jira connector", () => {
       expect(searches.every((call) => call.path.startsWith(gateway))).toBe(true)
     }).pipe(Effect.scoped)
   })
+
+  it.effect("calls a token the gateway no longer accepts rejected at subscribe, not short of a scope", () =>
+    Effect.gen(function*() {
+      let revoked = false
+      const client = yield* jira((call) => revoked && call.path.startsWith(gateway) ? { status: 401 } : scoped(call))
+      expect(yield* client.Configure({ values })).toEqual({ _tag: "Accepted" })
+      revoked = true
+      const described = yield* client.Describe({ parameters: { target: "project = DEMO", kind: "jql" } })
+      expect(described).toMatchObject({ _tag: "Invalid", reason: expect.stringContaining("rejected the email and API token") })
+      expect(JSON.stringify(described)).not.toContain("scope")
+    }).pipe(Effect.scoped))
+
+  it.effect("keeps a JQL watch whose cloud id lookup answers 400 a source failure, not an ended query", () =>
+    Effect.gen(function*() {
+      let lookupFails = false
+      const client = yield* jira((call) =>
+        lookupFails && call.path === "/_edge/tenant_info" ? { status: 400 } : scoped(call)
+      )
+      expect(yield* client.Configure({ values })).toEqual({ _tag: "Accepted" })
+      lookupFails = true
+      const watching = yield* client.Watch({ parameters: { target: "project = DEMO", kind: "jql" }, eventTypes: [] }).pipe(
+        Stream.runCollect,
+        Effect.flip,
+        Effect.forkChild
+      )
+      yield* TestClock.adjust(`${60 * failureLimit} seconds`)
+      const failure = yield* Fiber.join(watching)
+      expect(failure).toMatchObject({ _tag: "SourceFailed", reason: expect.stringContaining("cloud id (HTTP 400)") })
+    }).pipe(Effect.scoped))
 
   it.effect("names a missing scope when the gateway refuses the JQL check at subscribe", () =>
     Effect.gen(function*() {

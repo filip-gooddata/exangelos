@@ -45,7 +45,6 @@ const githubRefusal = (repo: string, error: GitHubError): string => {
 const refusal = (site: JiraSite, error: JiraError): string => {
   switch (error._tag) {
     case "CredentialRejected":
-      if (site.api !== site.url && error.status === 401) return missingScopeReason(error.status)
       return `Jira rejected the email and API token (HTTP ${error.status}). Check both, and that the token is not revoked.`
     case "UnsupportedSite":
       return error.reason
@@ -115,14 +114,25 @@ export const connector = Connector.make({
             )
           }
           if (target.kind === "jql" && site !== undefined) {
+            const invalid = (error: JiraError) =>
+              new Connector.ParametersInvalid({
+                reason: error._tag === "HttpFailure" && error.status === 400
+                  ? "Jira refused the JQL query. Check its syntax and the fields it names."
+                  : `Could not check the JQL query with Jira. ${refusal(site, error)}`
+              })
             yield* client.checkJql({ site, jql: target.jql }).pipe(
-              Effect.mapError((error) =>
-                new Connector.ParametersInvalid({
-                  reason: error._tag === "HttpFailure" && error.status === 400
-                    ? "Jira refused the JQL query. Check its syntax and the fields it names."
-                    : `Could not check the JQL query with Jira. ${refusal(site, error)}`
-                })
-              )
+              // A 401 through the gateway names a missing scope only while the gateway still accepts the token.
+              Effect.catchTag("CredentialRejected", (rejected) =>
+                site.api === site.url || rejected.status !== 401
+                  ? Effect.fail(invalid(rejected))
+                  : client.resolveRoute(site).pipe(
+                    Effect.matchEffect({
+                      onFailure: () => Effect.fail(invalid(rejected)),
+                      onSuccess: () =>
+                        Effect.fail(new Connector.ParametersInvalid({ reason: missingScopeReason(rejected.status) }))
+                    })
+                  )),
+              Effect.mapError((error) => error instanceof Connector.ParametersInvalid ? error : invalid(error))
             )
           }
           return {
