@@ -1,0 +1,21 @@
+adapters/wake-targets/src/SessionTitles.ts
+  s_9ec9e4ea804660::t_8fed53fbc3ee99 24-25,52,55-58,129,132,134-145
+adapters/wake-targets/test/sessionTitles.test.ts
+  s_9ec9e4ea804660::t_724c8f884211fa 103,117-134
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "71e9df2affae8d77f1ed8c2cf535a19e285389fe",
+  "prompts": {},
+  "sessions": {
+    "s_9ec9e4ea804660": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2135f-34c2-7212-8606-a33cfd99c629",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
