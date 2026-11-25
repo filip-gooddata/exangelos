@@ -22,6 +22,8 @@ export const snapshot = (overrides: Partial<Snapshot> = {}): Snapshot => ({
   threads: [],
   requestedReviewers: [],
   reviewRequests: [],
+  draftEvents: [],
+  reviewerFirstReviewAt: null,
   ...overrides
 })
 
@@ -30,6 +32,7 @@ export const check = (name: string, outcome: Check["outcome"], overrides: Partia
   kind: "run",
   name,
   outcome,
+  succeeded: outcome === "passed",
   required: false,
   url: `https://github.com/acme/api/runs/${name}`,
   completedAt: outcome === "pending" ? null : "2026-11-12T10:05:00Z",

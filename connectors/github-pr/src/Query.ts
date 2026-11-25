@@ -19,9 +19,15 @@ const threads = `reviewThreads(last: 100, before: $threads) {
   }
 }`
 
-const requests = `timelineItems(last: 50, before: $requests, itemTypes: [REVIEW_REQUESTED_EVENT]) {
+const timeline = `timelineItems(last: 50, before: $timeline,
+  itemTypes: [REVIEW_REQUESTED_EVENT, READY_FOR_REVIEW_EVENT, CONVERT_TO_DRAFT_EVENT]) {
   pageInfo { hasPreviousPage startCursor }
-  nodes { ... on ReviewRequestedEvent { id createdAt requestedReviewer { __typename ... on User { login } } } }
+  nodes {
+    __typename
+    ... on ReviewRequestedEvent { id createdAt requestedReviewer { __typename ... on User { login } } }
+    ... on ReadyForReviewEvent { id createdAt }
+    ... on ConvertToDraftEvent { id createdAt }
+  }
 }`
 
 const checks = `commits(last: 1) { nodes { commit { statusCheckRollup { contexts(first: 100, after: $checks) {
@@ -34,7 +40,7 @@ const checks = `commits(last: 1) { nodes { commit { statusCheckRollup { contexts
 } } } } }`
 
 export const pullRequest = `query PullRequest($owner: String!, $repo: String!, $number: Int!,
-  $reviews: String, $comments: String, $threads: String, $requests: String, $checks: String) {
+  $reviews: String, $comments: String, $threads: String, $timeline: String, $checks: String, $reviewer: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       url title state isDraft mergedAt closedAt author { login }
@@ -44,18 +50,21 @@ export const pullRequest = `query PullRequest($owner: String!, $repo: String!, $
         branchProtectionRule { requiredStatusCheckContexts }
       }
       reviewRequests(first: 100) { nodes { requestedReviewer { __typename ... on User { login } } } }
+      reviewerReviews: reviews(author: $reviewer, first: 1, states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]) {
+        nodes { submittedAt }
+      }
       ${reviews}
       ${comments}
       ${threads}
-      ${requests}
+      ${timeline}
       ${checks}
     }
   }
 }`
 
-export type Connection = "reviews" | "comments" | "threads" | "requests" | "checks"
+export type Connection = "reviews" | "comments" | "threads" | "timeline" | "checks"
 
-const selections: Record<Connection, string> = { reviews, comments, threads, requests, checks }
+const selections: Record<Connection, string> = { reviews, comments, threads, timeline, checks }
 
 export const morePages = (connections: ReadonlyArray<Connection>) =>
   `query PullRequestPages($owner: String!, $repo: String!, $number: Int!${

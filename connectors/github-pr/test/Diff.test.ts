@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Diff, type Snapshot } from "../src/index.ts"
+import * as Cursor from "../src/Cursor.ts"
 
 const { noFilters, step } = Diff
 type Filters = Diff.Filters
@@ -147,18 +148,26 @@ describe("step", () => {
     expect(poll([snapshot()]).end).toBeNull()
   })
 
-  it("reports every draft change after the first poll, ready to draft included", () => {
-    const draft = snapshot({ isDraft: true })
-    const ready = snapshot({ isDraft: false })
+  it("reports every draft change from the timeline after the first poll, ready to draft included", () => {
+    const flip = (id: string, toDraft: boolean, minute: number) => ({ id, toDraft, createdAt: `2026-11-12T11:0${minute}:00Z` })
+    const draft = snapshot({ isDraft: true, draftEvents: [flip("e0", true, 0)] })
+    const ready = snapshot({ isDraft: false, draftEvents: [flip("e0", true, 0), flip("e1", false, 1), flip("e2", true, 2), flip("e3", false, 3)] })
 
     expect(keys([draft])).toEqual([])
-    const flips = [draft, ready, draft, ready].map((s, i, all) => poll(all.slice(0, i + 1)).events.map((e) => e.dedupeKey))
-    expect(flips).toEqual([
-      [],
-      [`draft.changed/${head}/draft-ready/1`],
-      [`draft.changed/${head}/ready-draft/2`],
-      [`draft.changed/${head}/draft-ready/3`]
+    expect(keys([draft, ready])).toEqual([
+      `draft.changed/${head}/draft-ready/2026-11-12T11:01:00Z`,
+      `draft.changed/${head}/ready-draft/2026-11-12T11:02:00Z`,
+      `draft.changed/${head}/draft-ready/2026-11-12T11:03:00Z`
     ])
+    expect(keys([draft, ready, ready])).toEqual([])
+  })
+
+  it("falls back to the draft state when the timeline shows no change, and reports it on the closing poll", () => {
+    const merged = snapshot({ isDraft: false, state: "MERGED", mergedAt: now })
+    const last = poll([snapshot({ isDraft: true }), merged])
+
+    expect(last.events.map((e) => e.dedupeKey)).toEqual([`draft.changed/${head}/draft-ready/${now}`])
+    expect(last.end).toBe("merged")
   })
 
   it("reports replies in any thread, resolved too, but not the opening comment or ignored ones", () => {
@@ -195,6 +204,27 @@ describe("step", () => {
     expect(keys([snapshot(), later], filters)).toEqual(["comment.added/c2"])
   })
 
+  it("mutes a thread added to ignoreIds by an update, after a rewatch from the stored cursor", () => {
+    const open = thread("t1", "ana", "2026-11-12T09:00:00Z")
+    const answered = { ...open, replies: [reply("p1", "bo", "2026-11-12T11:00:00Z")] }
+    const stored = Cursor.encode(step(undefined, snapshot({ threads: [open] }), noFilters, now).memory)
+    const muted = { ...noFilters, ignoreIds: ["discussion_rt1"] }
+
+    expect(step(Cursor.decode(stored), snapshot({ threads: [answered] }), muted, now).events).toEqual([])
+    expect(step(Cursor.decode(stored), snapshot({ threads: [answered] }), noFilters, now).events.map((e) => e.dedupeKey))
+      .toEqual(["review.reply/p1"])
+  })
+
+  it("keeps a reply that lands on an earlier thread page while a later page is read", () => {
+    const a = thread("ta", "ana", "2026-11-12T09:00:00Z")
+    const b = thread("tb", "ana", "2026-11-12T09:01:00Z")
+    const late = { ...b, replies: [reply("pb", "bo", "2026-11-12T10:02:00Z")] }
+    const caught = { ...a, replies: [reply("pa", "bo", "2026-11-12T10:01:00Z")] }
+
+    expect(keys([snapshot({ threads: [a, b] }), snapshot({ threads: [a, late] }), snapshot({ threads: [caught, late] })]))
+      .toEqual(["review.reply/pa"])
+  })
+
   it("reports the unresolved threads on the first poll when asked", () => {
     const busy = snapshot({ threads: [thread("t1", "ana", "2026-11-12T09:00:00Z"), thread("t2", "bo", "2026-11-12T09:00:00Z", true)] })
 
@@ -217,6 +247,12 @@ describe("step", () => {
 
   it("reports a DIRTY merge state as a conflict", () => {
     expect(keys([snapshot({ mergeStateStatus: "DIRTY" })])).toEqual([`conflict.detected/${head}/${baseOid}`])
+  })
+
+  it("does not count a skipped or neutral check as passed for check.passed", () => {
+    const skipped = snapshot({ checks: [check("deploy-preview", "passed", { succeeded: false })] })
+
+    expect(keys([skipped], { ...noFilters, checkPass: [/^deploy/] })).toEqual([`checks.passed/${head}`])
   })
 
   it("reports each matching check that passed once per head, from the first poll", () => {
@@ -259,6 +295,26 @@ describe("step", () => {
       expect(events.map((e) => e.dedupeKey)).toEqual(["review.submitted/r1", "reviewer.submitted/r1"])
       expect(events[1]?.payload).toMatchObject({ state: "COMMENTED", reviewId: "r1", commit: head })
       expect(keys([snapshot(), later])).toEqual(["review.submitted/r1"])
+    })
+
+    it("reports a request to review again even when the reviewer answers it before the next poll", () => {
+      const reviewed = snapshot({ reviews: [review("r1", "vera", "2026-11-12T10:00:00Z")] })
+      const answered = snapshot({
+        reviews: [review("r1", "vera", "2026-11-12T10:00:00Z"), review("r2", "vera", "2026-11-12T10:02:00Z", "APPROVED")],
+        reviewRequests: [request("q1", "vera", "2026-11-12T10:01:00Z")]
+      })
+
+      const events = poll([reviewed, answered], filters).events
+      expect(events.filter((e) => e.type !== "review.submitted").map((e) => e.dedupeKey))
+        .toEqual(["review.rerequested/q1", "reviewer.submitted/r2"])
+      expect(events.find((e) => e.type === "review.rerequested")?.payload).toMatchObject({ reviewedAt: "2026-11-12T10:00:00Z" })
+    })
+
+    it("on its first poll, finds an earlier review beyond the fetched pages and an outstanding request", () => {
+      const asked = snapshot({ requestedReviewers: ["vera"], reviewerFirstReviewAt: "2026-11-01T10:00:00Z" })
+
+      expect(keys([asked], filters)).toEqual(["review.rerequested/vera/outstanding"])
+      expect(keys([asked, asked], filters)).toEqual([])
     })
 
     it("reports a request to review again only after an earlier review", () => {

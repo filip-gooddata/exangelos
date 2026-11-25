@@ -31,7 +31,7 @@ describe("cursor", () => {
       reply("p1", "bo", "2026-11-12T10:30:00Z")
     ])]
 
-    expect(memory).toMatchObject({ replies: { at: "2026-11-12T10:00:00Z" }, draft: null })
+    expect(memory).toMatchObject({ replies: { since: "2026-11-12T10:00:00Z", threads: {} }, draft: null })
     const events = step(memory, snapshot({ isDraft: true, threads }), noFilters, "2026-11-12T12:00:00Z").events
     expect(events.map((e) => e.dedupeKey)).toEqual(["review.reply/p1"])
   })

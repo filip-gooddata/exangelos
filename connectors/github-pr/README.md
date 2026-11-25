@@ -19,7 +19,7 @@ Watches one GitHub pull request and reports what changes on it. The main paramet
 - `baseHead`: a base commit SHA (7 to 40 hex digits), or `current` for the base the first poll sees.
 - `reportExistingThreads`: `true` reports the threads that are unresolved at the first poll. Default: `false`.
 
-List parameters take a JSON array. On the command line, where every value is a string, give one value as it is (`readyWait=review`) or several as a JSON array in quotes (`ignoreIds='["IC_1","IC_2"]'`). `reportExistingThreads` takes `true` or `false`.
+List parameters take a JSON array. On the command line, where every value is a string, give one value as it is (`readyWait='[Rr]eview'`) or several as a JSON array in quotes (`ignoreIds='["IC_1","IC_2"]'`). A string that is a JSON array of strings is read as a list; any other string is one value. `reportExistingThreads` takes `true` or `false`.
 
 None of these parameters change the subject, so `exangelos update` can change them on a running subscription. `update` replaces the whole parameter set, so give every parameter you want to keep:
 
@@ -33,7 +33,7 @@ exangelos update SUBSCRIPTION pullRequest=owner/repo#7 reviewStates='["APPROVED"
 | Event | Dedupe key |
 | --- | --- |
 | `head.changed` | `head.changed/<head>` |
-| `draft.changed` | `draft.changed/<head>/<from>-<to>/<change number>` |
+| `draft.changed` | `draft.changed/<head>/<from>-<to>/<time of the change>` |
 | `base.changed` | `base.changed/<branch>/<base oid>` |
 | `conflict.detected` | `conflict.detected/<head>/<base oid>` |
 | `checks.failed` | `checks.failed/<head>/<check id>` |
@@ -52,10 +52,10 @@ The watch ends when the pull request is merged or closed, and gives that as the 
 
 The first poll reports the current state: a conflict, failed checks, passed checks and readiness. It reports none of the history before it: no earlier reviews, comments, threads, replies or draft changes.
 
-- `draft.changed` reports every change after the first poll, ready to draft included, with `from` and `to` set to `draft` or `ready`.
+- `draft.changed` reports every change after the first poll, ready to draft included, with `from` and `to` set to `draft` or `ready`. It reads the changes from the pull request's timeline, so a change and its reversal between two polls are both reported, and so is a change seen on the poll that finds the pull request merged or closed. When the timeline lists no change but the state differs, it reports the state.
 - `base.changed` without `baseHead` reports every move of the base branch. For a pull request into a busy trunk that is noise: leave `base.changed` out of `--types`. With `baseHead`, it reports a base that differs from the pinned one, once per base commit, and on the first poll too. With `current`, the pin is the base the first poll saw, kept in the cursor. Changing `baseHead` through `update` pins again.
 - `conflict.detected` fires when `mergeable` is `CONFLICTING` or `mergeStateStatus` is `DIRTY`.
-- `check.passed` fires once per matching check per head when it passes, on the first poll too. Ignored checks never fire it.
+- `check.passed` fires once per matching check per head when it concludes `SUCCESS`, on the first poll too. A neutral or skipped check does not fire it, though `checks.passed` counts it as passed. Ignored checks never fire it.
 - `review.reply` fires for each new comment after the first in any thread, resolved or not. Review comments count from when their review was submitted.
 
 ### Reviewer mode
@@ -63,7 +63,7 @@ The first poll reports the current state: a conflict, failed checks, passed chec
 `reviewer=LOGIN` turns on three events that need to know who the reviewer is:
 
 - `reviewer.submitted`: LOGIN submitted a review in any state, `COMMENTED` included. The payload has `state`, `reviewId`, `submittedAt` and `commit`.
-- `review.rerequested`: LOGIN was asked to review again after a review of theirs. It reads review-request events from the timeline, so a request made and answered between two polls is not lost. A request LOGIN has already answered with a later review is not reported. On the first poll it fires when LOGIN is a requested reviewer and has reviewed before.
+- `review.rerequested`: LOGIN was asked to review again after a review of theirs. It reads review-request events from the timeline, so a request made and answered between two polls is still reported. On the first poll it fires when LOGIN is a requested reviewer and has reviewed before; the first review is looked up by author, however many reviews came after it.
 - `author.activity`: the pull request's author commented, opened a review thread or replied in one, resolved threads included.
 
 Without `reviewer` these events never fire. The parameter only adds them; it does not mute anything. Choose what reviewer mode hears with `--types`, usually `head.changed,reviewer.submitted,review.rerequested,author.activity`. The merged or closed end applies in every mode.
@@ -78,9 +78,9 @@ A reply can arrive on any thread, so every poll reads every page of review threa
 
 ## Cursor
 
-The cursor is JSON with `v: 2`. It holds the head, the base branch and oid, which failures, passes, passed checks, conflict and readiness were already reported for that head, the draft state and how often it changed, the pinned base, the reviewer's latest review time, and for reviews, comments, threads, replies and review requests the newest time seen plus the ids seen at that instant.
+The cursor is JSON with `v: 2`. It holds the head, the base branch and oid, which failures, passes, passed checks, conflict and readiness were already reported for that head, the draft state and how often it changed, the pinned base, the reviewer's latest review time, for reviews, comments, threads and timeline events (review requests and draft changes) the newest time seen plus the ids seen at that instant, and the same per thread for replies. Per-thread reply marks keep a reply that lands on one thread page while the connector reads another.
 
-A `v: 1` cursor carries over. Replies and review requests start from the newest review, comment or thread it recorded, so replies made since its last poll are reported. The draft state, pinned base and reviewer start from the next poll, which reports no change. A cursor of an unknown version starts a new baseline.
+A `v: 1` cursor carries over. Replies and timeline events start from the newest review, comment or thread it recorded, so replies made since its last poll are reported. The draft state, pinned base and reviewer start from the next poll, which reports no change. A cursor of an unknown version starts a new baseline.
 
 ## Long-lived watches
 
@@ -121,6 +121,10 @@ Resume  exangelos resume SUBSCRIPTION
 | `--ready-wait RE` (default `review`) | `readyWait` (default none, case-sensitive: write `[Rr]eview`) |
 | `--wake-on-check-pass RE` | `wakeOnCheckPass` and `check.passed` in `--types` |
 | `--bot RE` | No equivalent. The author is in every payload; `ignoreAuthors` mutes |
+| `--head SHA` | No equivalent. The head at the first poll is the baseline, and `head.changed` reports each move after it |
+| `--cutoff ISO` | No equivalent. The cursor keeps what was seen across restarts; nothing before the first poll is reported |
+| `--repo-dir DIR` | Not needed. The connector reads the GitHub API with its configured token and `host` |
+| `--no-notify` | No equivalent. The daemon shows its own desktop alerts; a subscription has no switch for them |
 | `--wake-thread ID` | `--target HARNESS:SESSION` |
 | `--wake-cmd` | No equivalent |
 | `--interval`, `--max-fail` | No equivalent. Polls run once a minute |

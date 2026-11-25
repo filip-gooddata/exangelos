@@ -1,5 +1,5 @@
 import type { Emitted } from "./Events.ts"
-import type { Check, Comment, Review, ReviewRequest, Snapshot, Thread } from "./Snapshot.ts"
+import type { Check, Comment, DraftEvent, Review, ReviewRequest, Snapshot, Thread } from "./Snapshot.ts"
 
 export type { Emitted, EventType } from "./Events.ts"
 
@@ -23,15 +23,20 @@ export interface Memory {
   readonly reviews: Mark
   readonly comments: Mark
   readonly threads: Mark
-  readonly replies: Mark
-  readonly requests: Mark
-  /** The draft state seen last and how many times it changed; null until a poll has seen it. */
-  readonly draft: { readonly isDraft: boolean; readonly changes: number } | null
+  /**
+   * The newest reply seen in each thread that has replies. A thread not listed had none, unless `since` is set: then
+   * it came from a v1 cursor, and replies newer than `since` are new.
+   */
+  readonly replies: { readonly since: string | null; readonly threads: Readonly<Record<string, Mark>> }
+  /** Review requests and draft changes from the timeline. */
+  readonly timeline: Mark
+  /** Whether the pull request was a draft at the last poll; null until a poll has seen it. */
+  readonly draft: boolean | null
   /** Names of checks already reported by `check.passed` for this head. */
   readonly checkPassed: ReadonlyArray<string>
   /** The base oid `base.changed` compares against, and the `baseHead` parameter it came from. */
   readonly pin: { readonly param: string; readonly oid: string } | null
-  /** The reviewer of reviewer mode and the time of their latest submitted review. */
+  /** The reviewer of reviewer mode and the time of their first submitted review. */
   readonly reviewer: { readonly login: string; readonly reviewedAt: string | null } | null
 }
 
@@ -130,19 +135,38 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     })
   }
 
+  const fresh = <A extends { readonly id: string }>(
+    mark: Mark | undefined,
+    items: ReadonlyArray<A>,
+    at: (a: A) => string
+  ): { readonly items: ReadonlyArray<A>; readonly mark: Mark } => {
+    if (mark === undefined) return { items: [], mark: advance({ at: null, ids: [] }, items, at) }
+    return { items: items.filter((item) => isNew(mark, item.id, at(item))), mark: advance(mark, items, at) }
+  }
+
+  const timeline = fresh<ReviewRequest | DraftEvent>(
+    previous?.timeline,
+    [...snapshot.reviewRequests, ...snapshot.draftEvents].sort((x, y) => x.createdAt.localeCompare(y.createdAt)),
+    (item) => item.createdAt
+  )
   const draftBefore = previous?.draft ?? null
-  let draft = { isDraft: snapshot.isDraft, changes: draftBefore?.changes ?? 0 }
-  if (draftBefore !== null && draftBefore.isDraft !== snapshot.isDraft) {
-    draft = { isDraft: snapshot.isDraft, changes: draftBefore.changes + 1 }
-    const from = draftState(draftBefore.isDraft)
-    const to = draftState(snapshot.isDraft)
-    if (snapshot.state === "OPEN") {
+  if (draftBefore !== null) {
+    const flips = timeline.items.filter((item): item is DraftEvent => "toDraft" in item)
+    const changes = flips.length > 0
+      ? flips.map((flip) => ({ toDraft: flip.toDraft, at: flip.createdAt }))
+      : draftBefore !== snapshot.isDraft
+      ? [{ toDraft: snapshot.isDraft, at: now }]
+      : []
+    for (const change of changes) {
+      const from = draftState(!change.toDraft)
+      const to = draftState(change.toDraft)
       emit({
         type: "draft.changed",
-        summary: snapshot.isDraft ? "Turned back into a draft" : "Ready for review",
+        occurredAt: change.at,
+        summary: change.toDraft ? "Turned back into a draft" : "Ready for review",
         payload: { head, from, to },
         link: snapshot.url,
-        dedupeKey: `draft.changed/${head}/${from}-${to}/${draft.changes}`
+        dedupeKey: `draft.changed/${head}/${from}-${to}/${change.at}`
       })
     }
   }
@@ -210,15 +234,6 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
   const visible = (author: string, body: string | null) =>
     !matchesAny(filters.authors, author) && (body === null || !matchesAny(filters.comments, body))
 
-  const fresh = <A extends { readonly id: string }>(
-    mark: Mark | undefined,
-    items: ReadonlyArray<A>,
-    at: (a: A) => string
-  ): { readonly items: ReadonlyArray<A>; readonly mark: Mark } => {
-    if (mark === undefined) return { items: [], mark: advance({ at: null, ids: [] }, items, at) }
-    return { items: items.filter((item) => isNew(mark, item.id, at(item))), mark: advance(mark, items, at) }
-  }
-
   const threads = fresh<Thread>(previous?.threads, snapshot.threads, (t) => t.createdAt)
   const announced = previous === undefined && filters.existingThreads ? snapshot.threads : threads.items
   for (const thread of announced) {
@@ -238,11 +253,17 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     readonly thread: Thread
     readonly comment: Comment
   }
-  const replies = fresh<Reply>(
-    previous?.replies,
-    snapshot.threads.flatMap((thread) => thread.replies.map((comment) => ({ id: comment.id, thread, comment }))),
-    (r) => r.comment.createdAt
-  )
+  const replyMarks: Record<string, Mark> = {}
+  const newReplies: Array<Reply> = []
+  for (const thread of snapshot.threads) {
+    const seen = previous === undefined
+      ? undefined
+      : previous.replies.threads[thread.id] ?? { at: previous.replies.since, ids: [] }
+    const found = fresh<Comment>(seen, thread.replies, (c) => c.createdAt)
+    newReplies.push(...found.items.map((comment) => ({ id: comment.id, thread, comment })))
+    if (found.mark.at !== null) replyMarks[thread.id] = found.mark
+  }
+  const replies = { items: newReplies.sort((x, y) => x.comment.createdAt.localeCompare(y.comment.createdAt)) }
   for (const { comment, thread } of replies.items) {
     if (threadMuted(thread) || muted(comment.id, comment.url) || !visible(comment.author, comment.body)) continue
     emit({
@@ -289,7 +310,6 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     })
   }
 
-  const requests = fresh<ReviewRequest>(previous?.requests, snapshot.reviewRequests, (r) => r.createdAt)
   let reviewer: Memory["reviewer"] = null
   if (filters.reviewer !== null) {
     const login = filters.reviewer
@@ -297,10 +317,36 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     const before = previous?.reviewer !== undefined && previous.reviewer !== null && same(previous.reviewer.login)
       ? previous.reviewer
       : null
-    const latest = (times: ReadonlyArray<string | null>) =>
-      times.reduce<string | null>((max, t) => t !== null && (max === null || t > max) ? t : max, null)
-    const reviewedAt = latest([before?.reviewedAt ?? null, ...snapshot.reviews.filter((r) => same(r.author)).map((r) => r.submittedAt)])
+    const earliest = (times: ReadonlyArray<string | null>) =>
+      times.reduce<string | null>((min, t) => t !== null && (min === null || t < min) ? t : min, null)
+    const mine = snapshot.reviews.filter((r) => same(r.author))
+    const reviewedAt = earliest([before?.reviewedAt ?? null, snapshot.reviewerFirstReviewAt, ...mine.map((r) => r.submittedAt)])
     reviewer = { login, reviewedAt }
+
+    const rerequested = (id: string, at: string) => {
+      const answered = mine.filter((r) => r.submittedAt < at).map((r) => r.submittedAt).sort().at(-1) ?? reviewedAt!
+      emit({
+        type: "review.rerequested",
+        occurredAt: at,
+        summary: `${login} was asked to review again`,
+        payload: { reviewer: login, requestId: id, requestedAt: at, reviewedAt: answered },
+        link: snapshot.url,
+        dedupeKey: `review.rerequested/${id}`
+      })
+    }
+    if (before === null) {
+      const asked = snapshot.reviewRequests.filter((r) => same(r.reviewer)).at(-1)
+      const outstanding = snapshot.requestedReviewers.some(same)
+      if (outstanding && reviewedAt !== null) {
+        if (asked === undefined) rerequested(`${login}/outstanding`, now)
+        else if (reviewedAt < asked.createdAt) rerequested(asked.id, asked.createdAt)
+      }
+    } else {
+      for (const item of timeline.items) {
+        if (!("reviewer" in item) || !same(item.reviewer)) continue
+        if (reviewedAt !== null && reviewedAt < item.createdAt) rerequested(item.id, item.createdAt)
+      }
+    }
 
     for (const review of reviews.items) {
       if (!same(review.author) || muted(review.id, review.url)) continue
@@ -317,22 +363,6 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
         },
         link: review.url,
         dedupeKey: `reviewer.submitted/${review.id}`
-      })
-    }
-
-    const asked = snapshot.reviewRequests.filter((r) => same(r.reviewer))
-    const candidates = before === null
-      ? (snapshot.requestedReviewers.some(same) ? asked.slice(-1) : [])
-      : requests.items.filter((r) => same(r.reviewer))
-    for (const request of candidates) {
-      if (reviewedAt === null || reviewedAt >= request.createdAt) continue
-      emit({
-        type: "review.rerequested",
-        occurredAt: request.createdAt,
-        summary: `${login} was asked to review again`,
-        payload: { reviewer: login, requestId: request.id, requestedAt: request.createdAt, reviewedAt },
-        link: snapshot.url,
-        dedupeKey: `review.rerequested/${request.id}`
       })
     }
 
@@ -404,7 +434,7 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
 
   const checkPassed = new Set(sameHead ? previous.checkPassed : [])
   for (const check of checks) {
-    if (check.outcome !== "passed" || !matchesAny(filters.checkPass, check.name) || checkPassed.has(check.name)) continue
+    if (!check.succeeded || !matchesAny(filters.checkPass, check.name) || checkPassed.has(check.name)) continue
     checkPassed.add(check.name)
     emit({
       type: "check.passed",
@@ -450,9 +480,9 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
       reviews: reviews.mark,
       comments: comments.mark,
       threads: threads.mark,
-      replies: replies.mark,
-      requests: requests.mark,
-      draft,
+      replies: { since: null, threads: replyMarks },
+      timeline: timeline.mark,
+      draft: snapshot.isDraft,
       checkPassed: [...checkPassed],
       pin,
       reviewer

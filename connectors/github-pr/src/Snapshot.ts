@@ -18,6 +18,9 @@ export interface Snapshot {
   readonly threads: ReadonlyArray<Thread>
   readonly requestedReviewers: ReadonlyArray<string>
   readonly reviewRequests: ReadonlyArray<ReviewRequest>
+  readonly draftEvents: ReadonlyArray<DraftEvent>
+  /** When the watched reviewer first submitted a review here; null without a reviewer or a review. */
+  readonly reviewerFirstReviewAt: string | null
 }
 
 export type CheckOutcome = "pending" | "passed" | "failed" | "cancelled"
@@ -27,6 +30,8 @@ export interface Check {
   readonly kind: "run" | "status"
   readonly name: string
   readonly outcome: CheckOutcome
+  /** Concluded SUCCESS; `outcome` also counts NEUTRAL and SKIPPED as passed. */
+  readonly succeeded: boolean
   readonly required: boolean
   readonly url: string | null
   readonly completedAt: string | null
@@ -67,5 +72,12 @@ export interface Thread {
 export interface ReviewRequest {
   readonly id: string
   readonly reviewer: string | null
+  readonly createdAt: string
+}
+
+/** A ConvertToDraftEvent (`toDraft`) or ReadyForReviewEvent from the timeline. */
+export interface DraftEvent {
+  readonly id: string
+  readonly toDraft: boolean
   readonly createdAt: string
 }

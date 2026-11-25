@@ -93,6 +93,7 @@ export interface PullRequestFields {
   readonly state?: "OPEN" | "CLOSED" | "MERGED"
   readonly isDraft?: boolean
   readonly threads?: ReadonlyArray<ThreadFields>
+  readonly olderThreads?: string
   readonly head?: string
   readonly mergeable?: "MERGEABLE" | "CONFLICTING" | "UNKNOWN"
   readonly reviewDecision?: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null
@@ -101,6 +102,17 @@ export interface PullRequestFields {
   readonly headers?: Record<string, string>
   readonly checks?: ReadonlyArray<{ readonly id: string; readonly name: string; readonly conclusion: string | null }>
 }
+
+const threadNode = (t: ThreadFields) => ({
+  id: t.id,
+  isResolved: false,
+  path: "src/retry.ts",
+  opener: { nodes: t.comments.slice(0, 1).map(threadCommentNode) },
+  replies: page(t.comments.map(threadCommentNode), t.olderReplies ?? null)
+})
+
+export const threadsPage = (threads: ReadonlyArray<ThreadFields>, older: string | null) =>
+  ok({ repository: { pullRequest: { reviewThreads: page(threads.map(threadNode), older) } } })
 
 export const pullRequest = (fields: PullRequestFields = {}): Answer =>
   ok({
@@ -124,15 +136,10 @@ export const pullRequest = (fields: PullRequestFields = {}): Answer =>
           branchProtectionRule: null
         },
         reviewRequests: { nodes: [] },
+        reviewerReviews: { nodes: [] },
         reviews: page([]),
         comments: page((fields.comments ?? []).map(commentNode), fields.olderComments ?? null),
-        reviewThreads: page((fields.threads ?? []).map((t) => ({
-          id: t.id,
-          isResolved: false,
-          path: "src/retry.ts",
-          opener: { nodes: t.comments.slice(0, 1).map(threadCommentNode) },
-          replies: page(t.comments.map(threadCommentNode), t.olderReplies ?? null)
-        }))),
+        reviewThreads: page((fields.threads ?? []).map(threadNode), fields.olderThreads ?? null),
         timelineItems: page([]),
         commits: {
           nodes: [{

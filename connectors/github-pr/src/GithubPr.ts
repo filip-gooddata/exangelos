@@ -61,15 +61,18 @@ type Parameters = typeof parameters.schema.Type
 const list = (value: ReadonlyArray<string> | string | undefined, field: string) => {
   if (value === undefined) return Effect.succeed<ReadonlyArray<string>>([])
   if (typeof value !== "string") return Effect.succeed(value)
-  if (!value.trim().startsWith("[")) return Effect.succeed([value])
-  return Effect.try({
-    try: () => {
-      const parsed: unknown = JSON.parse(value)
-      if (!Array.isArray(parsed) || !parsed.every((item) => typeof item === "string")) throw new Error()
-      return parsed as ReadonlyArray<string>
-    },
-    catch: () => `${field} is not a JSON array of strings: ${value}`
-  })
+  return Effect.succeed(jsonList(value) ?? [value])
+}
+
+/** A JSON array of strings, or undefined for anything else, such as a regular expression that starts with `[`. */
+const jsonList = (value: string): ReadonlyArray<string> | undefined => {
+  if (!value.trim().startsWith("[")) return undefined
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return Array.isArray(parsed) && parsed.every((item) => typeof item === "string") ? parsed : undefined
+  } catch {
+    return undefined
+  }
 }
 
 const ReviewStates = ["APPROVED", "CHANGES_REQUESTED", "COMMENTED", "DISMISSED"]

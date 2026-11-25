@@ -33,8 +33,9 @@ const since = (memory: Memory | undefined): Since | undefined =>
     reviews: memory.reviews.at,
     comments: memory.comments.at,
     threads: memory.threads.at,
-    replies: memory.replies.at,
-    requests: memory.requests.at
+    replies: Object.fromEntries(Object.entries(memory.replies.threads).map(([id, mark]) => [id, mark.at])),
+    repliesSince: memory.replies.since,
+    timeline: memory.timeline.at
   }
 
 const nextDelay = (quota: Option.Option<Quota>, now: number) =>
@@ -58,7 +59,7 @@ export const watch = (
       failures: number,
       refusals: number
     ): Effect.Effect<Fetched, Unauthorized | NotFound | Unavailable> =>
-      github.pullRequest(connection, ref, since(memory)).pipe(
+      github.pullRequest(connection, ref, since(memory), filters.reviewer).pipe(
         Effect.catchTags({
           RateLimited: ({ retryAfter }) =>
             Effect.sleep(limitBackoff(refusals, retryAfter)).pipe(Effect.andThen(fetch(memory, failures, refusals + 1))),

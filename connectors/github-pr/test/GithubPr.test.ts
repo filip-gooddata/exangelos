@@ -68,7 +68,7 @@ describe("github-pr connector", () => {
           parameters: {
             pullRequest: "acme/api#7",
             ignoreIds: `["https://github.com/acme/api/pull/7#discussion_r1", "IC_2"]`,
-            readyWait: "review",
+            readyWait: "[Rr]eview",
             reviewStates: "approved",
             baseHead: "CURRENT",
             reportExistingThreads: "true"
@@ -79,7 +79,7 @@ describe("github-pr connector", () => {
         subject: "acme/api#7",
         parameters: {
           ignoreIds: ["https://github.com/acme/api/pull/7#discussion_r1", "IC_2"],
-          readyWait: ["review"],
+          readyWait: ["[Rr]eview"],
           reviewStates: ["APPROVED"],
           baseHead: "current",
           reportExistingThreads: true

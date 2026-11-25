@@ -20,9 +20,9 @@ const V1 = Schema.Struct({ v: Schema.Literal(1), ...Common })
 const V2 = Schema.Struct({
   v: Schema.Literal(2),
   ...Common,
-  replies: MarkSchema,
-  requests: MarkSchema,
-  draft: Schema.NullOr(Schema.Struct({ isDraft: Schema.Boolean, changes: Schema.Int })),
+  replies: Schema.Struct({ since: Schema.NullOr(Schema.String), threads: Schema.Record(Schema.String, MarkSchema) }),
+  timeline: MarkSchema,
+  draft: Schema.NullOr(Schema.Boolean),
   checkPassed: Schema.Array(Schema.String),
   pin: Schema.NullOr(Schema.Struct({ param: Schema.String, oid: Schema.String })),
   reviewer: Schema.NullOr(Schema.Struct({ login: Schema.String, reviewedAt: Schema.NullOr(Schema.String) }))
@@ -32,14 +32,23 @@ const Encoded = Schema.fromJsonString(V2)
 const Any = Schema.fromJsonString(Schema.Union([V2, V1]))
 
 /**
- * A v1 cursor never saw replies or review requests. Their marks start at the newest activity v1 recorded, which is
- * no later than its last poll, so replies and requests made since then are still reported; earlier ones may be too,
- * and their dedupe keys keep them from repeating.
+ * A v1 cursor never saw replies or the timeline. Both start at the newest activity v1 recorded, which is no later
+ * than its last poll, so replies made since then are still reported; earlier ones may be too, and their dedupe keys
+ * keep them from repeating. Draft state, pin and reviewer start from the next poll.
  */
 const fromV1 = ({ v: _, ...memory }: typeof V1.Type): Memory => {
   const times = [memory.reviews.at, memory.comments.at, memory.threads.at].filter((t): t is string => t !== null)
-  const since: Mark = { at: times.length === 0 ? null : times.reduce((a, b) => (a > b ? a : b)), ids: [] }
-  return { ...memory, replies: since, requests: since, draft: null, checkPassed: [], pin: null, reviewer: null }
+  const since = times.length === 0 ? null : times.reduce((a, b) => (a > b ? a : b))
+  const timeline: Mark = { at: since, ids: [] }
+  return {
+    ...memory,
+    replies: { since, threads: {} },
+    timeline,
+    draft: null,
+    checkPassed: [],
+    pin: null,
+    reviewer: null
+  }
 }
 
 export const encode = (memory: Memory): string => Schema.encodeSync(Encoded)({ v: 2, ...memory })
