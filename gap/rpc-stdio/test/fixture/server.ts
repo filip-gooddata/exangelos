@@ -1,5 +1,6 @@
 import { BunRuntime, BunServices } from "@effect/platform-bun"
-import { Duration, Effect, Layer, Stream } from "effect"
+import { Effect, Layer, Schedule, Stream } from "effect"
+import { existsSync } from "node:fs"
 import { RpcSerialization, RpcServer } from "effect/rpc"
 import { EchoRpcs } from "./EchoRpcs.ts"
 
@@ -10,7 +11,11 @@ const handlers = EchoRpcs.toLayer({
   Stall: () => Effect.never
 })
 
-const startupDelay = Duration.millis(Number(process.argv[2] ?? 0))
+const gate = process.argv[2]
+
+const awaitGate = gate === undefined
+  ? Effect.void
+  : Effect.sync(() => existsSync(gate)).pipe(Effect.repeat({ until: (open) => open, schedule: Schedule.spaced("10 millis") }))
 
 RpcServer.layer(EchoRpcs).pipe(
   Layer.provide(handlers),
@@ -18,6 +23,6 @@ RpcServer.layer(EchoRpcs).pipe(
   Layer.provide(RpcSerialization.layerNdjson),
   Layer.provide(BunServices.layer),
   Layer.launch,
-  Effect.delay(startupDelay),
+  (launch) => Effect.andThen(awaitGate, launch),
   BunRuntime.runMain
 )

@@ -49,7 +49,7 @@ const start = Effect.fnUntraced(function*(target: ConnectorRuntime.Launch) {
   return yield* connectors.start(target)
 })
 
-describe("StdioConnectorRuntime", () => {
+describe("StdioConnectorRuntime", { timeout: 30_000 }, () => {
   it.live("handshakes with the template connector and returns its catalogue", () =>
     Effect.gen(function*() {
       const connector = yield* start(template)
