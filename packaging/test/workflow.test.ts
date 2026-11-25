@@ -99,6 +99,9 @@ describe("release workflow", () => {
     expect(jobs.binaries.steps.map((step) => step.run).join("\n")).toContain(
       ".github/scripts/check-no-developer-id.sh packaging/dist/release/*.tar.gz packaging/dist/release/binaries"
     )
+    expect(jobs.binaries.steps.map((step) => step.run).join("\n")).toContain(
+      ".github/scripts/check-no-developer-id.sh --adhoc packaging/dist/release/binaries/darwin-*/exangelos"
+    )
     const tray = jobs["tray-macos"]!
     expect(JSON.stringify(tray)).not.toContain("externalBin")
     expect(JSON.stringify(tray)).not.toContain("release-binaries")

@@ -57,7 +57,9 @@ jobs:
           ./binaries/darwin-arm64/exangelos --version | grep -qx "exangelos $VERSION"
           test -f "exangelos-$VERSION-darwin-arm64.tar.gz"
       - name: Check that no binary or connector archive carries a signing identity
-        run: .github/scripts/check-no-developer-id.sh packaging/dist/release/*.tar.gz packaging/dist/release/binaries
+        run: |
+          .github/scripts/check-no-developer-id.sh packaging/dist/release/*.tar.gz packaging/dist/release/binaries
+          .github/scripts/check-no-developer-id.sh --adhoc packaging/dist/release/binaries/darwin-*/exangelos
       - name: Render the Homebrew formula and cask
         run: pnpm --filter @exangelos/packaging run render:homebrew --version "$VERSION" --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/v$VERSION"
       - uses: actions/upload-artifact@v4
