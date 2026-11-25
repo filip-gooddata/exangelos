@@ -86,8 +86,11 @@ const decide = (
         const failure = yield* (yield* ConnectorAccess).observation(subscription.id)
         return send(Option.map(failure, (f) => Delivery.content(subscription, { _tag: "Failing", ...f }, pending)))
       }
-      case "recovered":
+      case "recovered": {
+        const failure = yield* (yield* ConnectorAccess).observation(subscription.id)
+        if (Option.isSome(failure)) return drop
         return send(Option.some(Delivery.content(subscription, { _tag: "Recovered" }, pending)))
+      }
       default:
         return send(Delivery.waitContent(subscription, pending, Option.none()))
     }

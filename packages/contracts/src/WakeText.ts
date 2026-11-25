@@ -83,6 +83,7 @@ export const render = (content: Wake.WakeContent): string => {
         `${content.connector} has failed to read it since ${DateTime.formatIso(why.since)} (${why.category}): ${why.reason}`,
         "The daemon keeps retrying and sends one more wake when it recovers."
       )
+      if (through !== undefined) lines.push(...eventLines())
       commands = through === undefined ? [] : [read, ...ack]
       break
     case "Recovered":

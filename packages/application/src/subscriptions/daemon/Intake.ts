@@ -194,39 +194,47 @@ const connectorRemoved = (connector: Ids.ConnectorName, since: DateTime.Utc, pro
     }
   }).pipe(Effect.annotateLogs("connector", connector))
 
-const lastFailingWake = (wakes: ReadonlyArray<Wake.Wake>) =>
-  Option.map(Arr.findLast(wakes, (wake) => wake.reason === "failing"), (wake) => wake.createdAt)
+/** The latest failing wake, or recovered wake the session got or may still get. */
+const latestObservationWake = (wakes: ReadonlyArray<Wake.Wake>) =>
+  Arr.findLast(wakes, (wake) =>
+    wake.reason === "failing" || (wake.reason === "recovered" && wake.state !== "dropped" && wake.state !== "replaced"))
 
+const isUnresolvedFailing = (wake: Wake.Wake): boolean =>
+  wake.reason === "failing" && wake.state !== "dropped" && wake.state !== "replaced"
+
+/** Waits while another wake is queued, so a failing wake never replaces pending events; the next failure tries again. */
 const observationFailing = (id: Ids.SubscriptionId, failure: Connector.ObservationFailure) =>
   withSubscription(id, (subscription) =>
     Effect.gen(function*() {
       const wakes = yield* WakeRepository
-      const now = yield* DateTime.now
-      const why = Lifecycle.failingWake(subscription, failure, lastFailingWake(yield* wakes.list(subscription.id)), now)
+      if (Option.exists(yield* wakes.findUndelivered(subscription.id), (wake) => wake.reason !== "failing")) return
+      const all = yield* wakes.list(subscription.id)
+      const history: Lifecycle.FailingHistory = {
+        unresolved: Option.exists(latestObservationWake(all), isUnresolvedFailing),
+        lastFailingWake: Option.map(Arr.findLast(all, (wake) => wake.reason === "failing"), (wake) => wake.createdAt)
+      }
+      const why = Lifecycle.failingWake(subscription, failure, history, yield* DateTime.now)
       if (Option.isNone(why)) return
       yield* requestWake(subscription, why.value)
       yield* Effect.logInfo("failing wake requested").pipe(Effect.annotateLogs("category", failure.category))
     }).pipe(Effect.annotateLogs(logAnnotations(subscription))))
 
 /**
- * Follows the subscription's latest failing or recovered wake: a delivered failing wake owes one
- * recovered wake, an undelivered one has nothing left to say and is dropped.
+ * Follows the subscription's latest failing wake: one being sent or delivered owes one recovered
+ * wake, one still waiting has nothing left to say and is dropped.
  */
 const observationRecovered = (id: Ids.SubscriptionId) =>
   withSubscription(id, (subscription) =>
     Effect.gen(function*() {
       const wakes = yield* WakeRepository
-      const latest = Arr.findLast(
-        yield* wakes.list(subscription.id),
-        (wake) => wake.reason === "failing" || wake.reason === "recovered"
-      )
-      if (Option.isNone(latest) || latest.value.reason !== "failing") return
-      if (Delivery.isUndelivered(latest.value)) {
+      const latest = Option.filter(latestObservationWake(yield* wakes.list(subscription.id)), isUnresolvedFailing)
+      if (Option.isNone(latest)) return
+      if (latest.value.state === "waiting") {
         yield* wakes.update({ ...latest.value, state: "dropped" })
         yield* Effect.logDebug("failing wake dropped").pipe(Effect.annotateLogs("wake", latest.value.id))
         return
       }
-      if (latest.value.state !== "delivered" || subscription.state._tag !== "Active") return
+      if (subscription.state._tag !== "Active") return
       yield* requestWake(subscription, { _tag: "Recovered" })
       yield* Effect.logInfo("recovered wake requested")
     }).pipe(Effect.annotateLogs(logAnnotations(subscription))))

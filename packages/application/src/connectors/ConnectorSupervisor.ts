@@ -34,6 +34,9 @@ export const observationReasonLimit = 300
 const bounded = (text: string): string =>
   text.length <= observationReasonLimit ? text : `${text.slice(0, observationReasonLimit - 1)}…`
 
+/** What show and wakes carry instead of a failure reason that could not be checked for secrets. */
+export const withheldReason = "withheld: the connector's secrets could not be read to redact it"
+
 export const backoff = (failures: number): Duration.Duration =>
   Duration.min(
     Duration.times(restartPolicy.firstDelay, 2 ** Math.max(0, failures - 1)),
@@ -254,6 +257,23 @@ export const layerConnectorSupervisor: Layer.Layer<
   const scrub = (text: string, present: ReadonlyArray<readonly [string, Redacted.Redacted<string>]>) =>
     redact(text, present.map(([, value]) => Redacted.value(value)))
 
+  /**
+   * The failure reason scrubbed of every stored secret and bounded, or `withheldReason` when any
+   * secret cannot be read, since the running process may hold that secret.
+   */
+  const observationReason = (name: Ids.ConnectorName, catalogue: Catalogue.Catalogue, text: string) =>
+    Effect.map(
+      Effect.option(Effect.forEach(
+        catalogue.configuration.filter((field) => field._tag === "Secret"),
+        (field) => secrets.get(name, field.key)
+      )),
+      (found) =>
+        Option.match(found, {
+          onNone: () => withheldReason,
+          onSome: (values) => bounded(redact(text, values.flatMap((value) => Option.isSome(value) ? [Redacted.value(value.value)] : [])))
+        })
+    )
+
   /** Counts Configure calls per connector, so a stream's late rejection cannot undo a newer configuration. */
   const generations = yield* Ref.make<ReadonlyMap<Ids.ConnectorName, number>>(new Map())
   const generation = (name: Ids.ConnectorName) => Effect.map(Ref.get(generations), (all) => all.get(name) ?? 0)
@@ -304,8 +324,13 @@ export const layerConnectorSupervisor: Layer.Layer<
     Effect.gen(function*() {
       const configured = yield* generation(name)
       let failures = 0
-      // A failing wake may be owed a recovery from before this stream opened, even across a daemon restart.
       let recoveryOwed = true
+      const recover = Effect.suspend(() => {
+        observationFailures.delete(id)
+        if (!recoveryOwed) return Effect.void
+        recoveryOwed = false
+        return intake.observationRecovered(id)
+      })
       while (true) {
         const found = yield* subscriptions.find(id)
         if (Option.isNone(found) || found.value.state._tag !== "Active") return
@@ -315,7 +340,10 @@ export const layerConnectorSupervisor: Layer.Layer<
         yield* recordWakeWindow(id, undefined)
         const { wakeWindow } = yield* limits
         yield* recordWakeWindow(id, wakeWindow)
-        const result = yield* process.watch({
+        const stable = recoveryOwed
+          ? Effect.andThen(Effect.sleep(restartPolicy.stableAfter), Effect.uninterruptible(recover))
+          : Effect.void
+        const watching = process.watch({
           parameters: subscription.parameters,
           eventTypes: subscription.eventTypes ?? process.catalogue.eventTypes.map((spec) => spec.type),
           ...(subscription.cursor === undefined ? {} : { cursor: subscription.cursor }),
@@ -326,12 +354,8 @@ export const layerConnectorSupervisor: Layer.Layer<
             Effect.map(
               Effect.uninterruptible(Effect.gen(function*() {
                 const verdict = yield* intake.ingest(id, item)
-                observationFailures.delete(id)
                 failures = 0
-                if (recoveryOwed) {
-                  recoveryOwed = false
-                  yield* intake.observationRecovered(id)
-                }
+                yield* recover
                 return verdict
               })),
               (verdict) => {
@@ -342,6 +366,7 @@ export const layerConnectorSupervisor: Layer.Layer<
           ),
           Effect.result
         )
+        const result = yield* Effect.race(watching, Effect.andThen(stable, Effect.never))
         if (stop) return
         if (result._tag === "Failure") {
           const error = result.failure
@@ -357,9 +382,8 @@ export const layerConnectorSupervisor: Layer.Layer<
           const since = previous?.since ?? now
           const reason = previous?.raw === error.reason
             ? previous.reason
-            : bounded(scrub(error.reason, (yield* configurationOf(name, process.catalogue)).present))
+            : yield* observationReason(name, process.catalogue, error.reason)
           observationFailures.set(id, { name, category, reason, since, raw: error.reason })
-          // The reason is the connector's free text and can hold source content, so the log keeps to safe facts.
           if (previous?.category !== category) {
             yield* Effect.logWarning("watch observation failed").pipe(
               Effect.annotateLogs({

@@ -99,7 +99,7 @@ export const hasSomethingToSayWhen = (wake: Wake, subscription: Subscription, av
     case "failing":
       return subscription.state._tag === "Active" && available
     case "recovered":
-      return subscription.state._tag === "Active"
+      return subscription.state._tag === "Active" && available
     case "ended":
     case "cancelled":
       return true

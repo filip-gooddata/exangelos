@@ -119,7 +119,7 @@ describe("connector supervision", () => {
       }))
     }))
 
-  it.effect("reports a failing stream's outage to the intake, bounded, and its recovery on the next item", () =>
+  it.effect("reports a failing stream's outage to the intake, bounded, and its recovery once a reopened stream holds", () =>
     withConnectors(Effect.gen(function*() {
       yield* running
       const runtime = yield* ConnectorRuntimeFake
@@ -146,7 +146,8 @@ describe("connector supervision", () => {
 
       yield* TestClock.adjust("2 seconds")
       yield* settle
-      yield* runtime.emit(acme, { _tag: "Cursor", cursor: "c1" })
+      expect((yield* intake.observations).at(-1)?.failure).toBeDefined()
+      yield* TestClock.adjust("1 minute")
       yield* settle
       expect((yield* intake.observations).at(-1)).toEqual({ subscription: one })
       expect(yield* access.observation(one)).toEqual(Option.none())

@@ -199,22 +199,27 @@ export const failingBeforeWake = Duration.minutes(5)
 /** The least time between two failing wakes of one subscription, so a flapping source cannot wake on every cycle. */
 export const failingWakeCooldown = Duration.hours(1)
 
+/** What the subscription's stored wakes say about its failing wakes. */
+export interface FailingHistory {
+  /** A failing wake was sent or queued and no recovered wake has followed it, even before a daemon restart. */
+  readonly unresolved: boolean
+  readonly lastFailingWake: Option.Option<DateTime.Utc>
+}
+
 /**
- * The failing wake an active subscription owes: once per failure that has lasted `failingBeforeWake`,
- * and not within `failingWakeCooldown` of the previous one.
+ * The failing wake an active subscription owes: once its source has failed for `failingBeforeWake`,
+ * not while an earlier failing wake is unresolved, and not within `failingWakeCooldown` of the last one.
  */
 export const failingWake = (
   subscription: Subscription,
   failure: ObservationFailure,
-  lastFailingWake: Option.Option<DateTime.Utc>,
+  history: FailingHistory,
   now: DateTime.Utc
 ): Option.Option<Why> => {
-  if (subscription.state._tag !== "Active") return Option.none()
+  if (subscription.state._tag !== "Active" || history.unresolved) return Option.none()
   if (DateTime.isLessThan(now, DateTime.addDuration(failure.since, failingBeforeWake))) return Option.none()
-  if (
-    Option.exists(lastFailingWake, (woken) =>
-      DateTime.isGreaterThanOrEqualTo(woken, failure.since) ||
-      DateTime.isLessThan(now, DateTime.addDuration(woken, failingWakeCooldown)))
-  ) return Option.none()
+  if (Option.exists(history.lastFailingWake, (woken) => DateTime.isLessThan(now, DateTime.addDuration(woken, failingWakeCooldown)))) {
+    return Option.none()
+  }
   return Option.some({ _tag: "Failing", ...failure } as const)
 }

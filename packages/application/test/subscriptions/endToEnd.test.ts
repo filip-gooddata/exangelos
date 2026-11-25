@@ -100,4 +100,48 @@ describe("a subscription end to end", () => {
       const [quiet] = yield* list(actor, { all: false })
       expect(quiet?.observation).toBeUndefined()
     }).pipe(Effect.provide(layer)))
+
+  it.effect("a failing wake waits for queued events and does not repeat an outage it already reported", () =>
+    Effect.gen(function*() {
+      yield* (yield* ConnectorRepository).store(connector("github-pr"))
+      const access = yield* ConnectorAccessFake
+      yield* access.define(prs, {
+        catalogue,
+        describe: (parameters: Catalogue.Parameters) =>
+          Effect.succeed({ catalogue, parameters, subject: "pr 7", label: "PR" })
+      })
+      const subscription = yield* subscribe({ _tag: "Session", session: own }, {
+        connector: prs,
+        parameters: { pr: 7 },
+        intent: "Merge once CI is green",
+        target: { _tag: "Caller" },
+        similarOk: []
+      }, [own])
+      const intake = yield* SubscriptionIntake
+      const target = yield* WakeTargetFake
+      const whys = Effect.map(target.delivered, (all) => all.map((content) => content.why._tag))
+      const fail = (failure: Connector.ObservationFailure) =>
+        Effect.gen(function*() {
+          yield* access.observe(subscription.id, failure)
+          yield* intake.observationFailing(subscription.id, failure)
+        })
+      const failure: Connector.ObservationFailure = { category: "unavailable", reason: "socket closed", since: yield* DateTime.now }
+
+      yield* TestClock.adjust("6 minutes")
+      expect(yield* intake.ingest(subscription.id, { _tag: "Event", event: reported("ci") })).toBe("continue")
+      yield* fail(failure)
+      yield* TestClock.adjust("5 seconds")
+      yield* deliverDue
+      expect(yield* whys).toEqual(["Events"])
+      yield* fail(failure)
+      yield* deliverDue
+      expect(yield* whys).toEqual(["Events", "Failing"])
+
+      yield* TestClock.adjust("2 hours")
+      yield* fail({ ...failure, since: yield* DateTime.now })
+      yield* TestClock.adjust("6 minutes")
+      yield* fail({ ...failure, since: yield* DateTime.now })
+      yield* deliverDue
+      expect(yield* whys).toEqual(["Events", "Failing"])
+    }).pipe(Effect.provide(layer)))
 })
