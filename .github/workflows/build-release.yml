@@ -231,6 +231,28 @@ jobs:
           pattern: release-*
           path: release
           merge-multiple: true
+      # The artifact listing can lag behind an upload that finished seconds before; the download then misses that
+      # build's files without failing. Check what arrived and download once more after a wait when something is missing.
+      - name: Check that every build's files arrived
+        id: arrived
+        working-directory: release
+        run: |
+          if [ -f SHA256SUMS ] && [ "$(ls exangelos-tray-*.deb | wc -l)" = 2 ] && [ "$(ls Exangelos_*.dmg | wc -l)" = 2 ]; then
+            echo "complete=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Some build's files are missing:"
+            ls -l
+            echo "complete=false" >> "$GITHUB_OUTPUT"
+          fi
+      - name: Wait for the artifact listing to catch up
+        if: steps.arrived.outputs.complete != 'true'
+        run: sleep 60
+      - if: steps.arrived.outputs.complete != 'true'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release
+          merge-multiple: true
       - name: Add the tray packages to SHA256SUMS
         working-directory: release
         run: |
