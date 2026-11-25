@@ -1,0 +1,23 @@
+connectors/shared/localAppIcon.ts
+  s_dacedc02aa9fe9::t_1eb3b26c677789 13-14
+connectors/slack/connector.json
+  s_dacedc02aa9fe9::t_6c5ab360bc19e3 3
+connectors/teams/connector.json
+  s_dacedc02aa9fe9::t_40a22b59adc933 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d9f5fea4d8d6b08ff1340a7633fb665513f11834",
+  "prompts": {},
+  "sessions": {
+    "s_dacedc02aa9fe9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0e022ea3-f622-4989-b655-adfaa0bcc3a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
