@@ -379,7 +379,7 @@ Agent and person commands (daemon service contract):
 | `exangelos show <sub>` | one subscription with intent, events, wakes and changes |
 | `exangelos events <sub>` | stored events with payloads and links |
 | `exangelos ack <sub> --through N` | acknowledge through event N |
-| `exangelos wait <sub>` | block until there is something to say; print the wake text |
+| `exangelos wait <sub>` | block until there is something to say; print the wake text. Keeps waiting across a daemon restart; exits 3 when the subscription is gone and 4 when the daemon stays away for 5 minutes |
 | `exangelos pause <sub>`, `resume <sub>`, `cancel <sub>` | change state |
 | `exangelos retarget <sub>` | set a new wake target with `--target`, or make it pull-only with `--pull-only` |
 

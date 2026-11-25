@@ -6,6 +6,7 @@ import * as Text from "../render/Text.ts"
 import { Connection } from "./Connection.ts"
 import * as Input from "./Input.ts"
 import { type Failure, respond } from "./Output.ts"
+import * as Reconnect from "./Reconnect.ts"
 
 const subscriptionArgument = Argument.String("subscription").pipe(
   Argument.withDescription("The subscription id, for example sub_7f3k")
@@ -223,14 +224,21 @@ const ack = Command.make(
 const wait = Command.make("wait", { subscription: subscriptionArgument }, ({ subscription }) =>
   Effect.gen(function*() {
     const client = yield* Connection
-    const work = Effect.flatMap(Input.subscriptionId(subscription), (id) => client.Wait({ id }))
+    const work = Effect.flatMap(Input.subscriptionId(subscription), (id) => Reconnect.persist(client.Wait({ id }), client.ServiceStatus()))
     yield* respond(work, {
       schema: DaemonContract.Wait.successSchema,
       text: WakeText.render,
       json: (content, wake) => ({ text: WakeText.render(content), wake }),
-      subscription
+      subscription,
+      exitCode: (failure) => waitExitCodes[failure._tag]
     })
-  })).pipe(Command.withDescription("Block until there is something to say, then print the wake text"))
+  })).pipe(
+    Command.withDescription(
+      "Block until there is something to say, then print the wake text. Keeps waiting across daemon restarts. Exit codes: 0 a wake was printed, 3 the subscription is gone, 4 the daemon did not come back within 5 minutes, 130 stopped by SIGINT or SIGTERM, 1 any other failure"
+    )
+  )
+
+const waitExitCodes: Partial<Record<string, number>> = { SubscriptionNotFound: 3, DaemonUnreachable: 4 }
 
 const stateChange = <E extends Failure>(
   name: "pause" | "resume" | "cancel",

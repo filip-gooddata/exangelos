@@ -62,7 +62,7 @@ exangelos subscribe jira KEY githubRepo=owner/repo sha=SHA \
 
 ## Wake
 
-A wake lists the new events with their numbers and ends with the commands to read and acknowledge them. To block on one subscription instead of waiting for the message, run `exangelos wait <sub>`; it prints the wake text.
+A wake lists the new events with their numbers and ends with the commands to read and acknowledge them. To block on one subscription instead of waiting for the message, run `exangelos wait <sub>`; it prints the wake text. It keeps waiting across a daemon restart or upgrade. Exit codes: 0 printed a wake; 3 the subscription is gone; 4 the daemon did not come back within 5 minutes; 130 something stopped it with SIGINT or SIGTERM; 1 any other failure. Codes other than 0 and 130 come with one line on stderr.
 
 1. `exangelos events <sub>` prints payloads and links. Quote head, base and event time with every claim.
 2. Handle the events.

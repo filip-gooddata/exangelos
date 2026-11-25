@@ -1,4 +1,4 @@
-import { Console, Data, Effect, Schema } from "effect"
+import { Console, Data, Effect, Runtime, Schema } from "effect"
 import { Flag, GlobalFlag } from "effect/cli"
 import type { RpcClientError } from "effect/rpc"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
@@ -11,6 +11,7 @@ import {
   similarSubscriptionsMessage
 } from "../render/Messages.ts"
 import { InputInvalid } from "./Input.ts"
+import { DaemonUnreachable } from "./Reconnect.ts"
 
 const command = WakeText.command
 
@@ -21,7 +22,11 @@ export const Json = GlobalFlag.Setting("json")({
   )
 })
 
-export class CommandFailed extends Data.TaggedError("CommandFailed")<{ readonly tag: string }> {}
+export class CommandFailed extends Data.TaggedError("CommandFailed")<{ readonly tag: string; readonly exitCode?: number | undefined }> {
+  override get [Runtime.errorExitCode](): number {
+    return this.exitCode ?? 1
+  }
+}
 
 const ContractError = Schema.Union([
   DaemonContract.ConnectorNotFound,
@@ -42,6 +47,7 @@ const ContractError = Schema.Union([
   DaemonContract.ConfigurationInvalid,
   DaemonContract.ConfigurationRejected,
   DaemonClient.DaemonNotRunning,
+  DaemonUnreachable,
   InputInvalid
 ])
 type ContractError = typeof ContractError.Type
@@ -56,6 +62,8 @@ export const failureMessage = (failure: Failure, subscription?: string): string 
       return connectionFailedMessage(failure.message)
     case "DaemonNotRunning":
       return noDaemonMessage(failure.reason)
+    case "DaemonUnreachable":
+      return `The Exangelos daemon has not answered for ${failure.waited} (${failure.reason}), so this gave up. Run \`${command} service status\` to check it, then retry.`
     case "InputInvalid":
       return failure.message
     case "ConnectorNotFound":
@@ -122,6 +130,7 @@ export const respond = <A, I, E extends Failure, R>(
     readonly text: (value: A) => string
     readonly json?: (value: A, encoded: unknown) => unknown
     readonly subscription?: string
+    readonly exitCode?: (failure: E) => number | undefined
   }
 ): Effect.Effect<void, CommandFailed, R | GlobalFlag.Setting.Identifier<"json">> =>
   Effect.gen(function*() {
@@ -135,9 +144,15 @@ export const respond = <A, I, E extends Failure, R>(
         },
         onFailure: (failure) => {
           const message = failureMessage(failure, options.subscription)
+          const exitCode = options.exitCode?.(failure)
           return Effect.andThen(
-            json ? Console.log(JSON.stringify(failureJson(failure, message))) : Console.error(message),
-            Effect.fail(new CommandFailed({ tag: failure._tag }))
+            json
+              ? Effect.andThen(
+                Console.log(JSON.stringify(failureJson(failure, message))),
+                exitCode === undefined ? Effect.void : Console.error(message)
+              )
+              : Console.error(message),
+            Effect.fail(new CommandFailed({ tag: failure._tag, exitCode }))
           )
         }
       })
