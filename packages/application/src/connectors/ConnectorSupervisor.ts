@@ -1,4 +1,4 @@
-import { Cause, Context, DateTime, Deferred, Duration, Effect, FiberMap, Layer, Option, Redacted, Ref, Semaphore, Stream } from "effect"
+import { Cause, Context, DateTime, Deferred, Duration, Effect, Fiber, FiberMap, Layer, Option, Redacted, Ref, Semaphore, Stream } from "effect"
 import { Catalogue, Ids, Connector, ConnectorRules, Refusal, Settings } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
 import { ConnectorDirectory } from "../ports/ConnectorDirectory.ts"
@@ -567,15 +567,14 @@ export const layerConnectorSupervisor: Layer.Layer<
 
   /**
    * Still starting: trusted, not failing, and either without a catalogue yet or not running yet. A
-   * rejected configuration counts as settled, except while a run just begun has yet to send it again:
-   * that rejection came from an earlier process, maybe of an earlier version.
+   * rejected configuration counts as settled only with no run under way: a run sends it again, and
+   * the rejection may have come from an earlier process, maybe of an earlier version.
    */
   const starting = (connector: Connector.Connector, supervised: boolean) =>
     connector.trust !== "inert" &&
     connector.process !== "failing" &&
     (connector.catalogue === undefined ||
-      (connector.process !== "running" &&
-        (connector.configuration._tag !== "Rejected" || (supervised && connector.process === "stopped"))))
+      (connector.process !== "running" && (connector.configuration._tag !== "Rejected" || supervised)))
 
   const ready = (name: Ids.ConnectorName) =>
     Effect.gen(function*() {
@@ -587,11 +586,16 @@ export const layerConnectorSupervisor: Layer.Layer<
         }
         const running = (yield* Ref.get(processes)).get(name)
         if (ConnectorRules.isAvailable(connector.value) && running !== undefined) return running
-        if (!starting(connector.value, yield* FiberMap.has(runs, name))) {
+        const run = Option.filter(yield* FiberMap.get(runs, name), (fiber) => fiber.pollUnsafe() === undefined)
+        if (!starting(connector.value, Option.isSome(run))) {
           const reason = Option.getOrElse(ConnectorRules.problem(connector.value), () => "it is not running")
           return yield* new Refusal.ConnectorUnavailable({ connector: name, problem: reason })
         }
-        yield* Deferred.await(wake)
+        // A run can end without changing the record, so its end is looked at again too.
+        yield* Option.match(run, {
+          onNone: () => Deferred.await(wake),
+          onSome: (fiber) => Effect.raceFirst(Deferred.await(wake), Effect.asVoid(Fiber.await(fiber)))
+        })
       }
     }).pipe(
       Effect.timeoutOption(startTimeout),
