@@ -39,20 +39,24 @@ const snapshot: IssueSnapshot = {
         body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Looks good" }] }] }
       }
     ]
-  }
+  },
+  values: {}
 }
 
 const seenUpTo100: IssueCursor = {
-  v: 1,
+  v: 2,
   target: "issue",
   issueId: "10042",
   changelog: { consumed: 1, recent: ["100"], lastCreated: "2026-11-12T10:00:00.000Z", atLast: ["100"] },
-  comments: { consumed: 1, recent: ["200"], lastCreated: "2026-11-12T10:00:00.000Z", atLast: ["200"] }
+  comments: { consumed: 1, recent: ["200"], lastCreated: "2026-11-12T10:00:00.000Z", atLast: ["200"] },
+  github: null,
+  githubFailure: null,
+  githubFailures: 0
 }
 
 describe("diffIssue", () => {
   it("emits nothing on the first poll and positions the cursor at the end", () => {
-    const poll = diffIssue({ siteUrl, previous: undefined, snapshot })
+    const poll = diffIssue({ siteUrl, previous: undefined, snapshot, observedAt: at(9) })
     expect(poll.events).toEqual([])
     expect(poll.cursor.changelog).toEqual({
       consumed: 3,
@@ -68,8 +72,64 @@ describe("diffIssue", () => {
     })
   })
 
+  it("reports only the fields the fields option names, by id or by name", () => {
+    const relabelled = {
+      ...snapshot,
+      changelog: {
+        start: 0,
+        items: [
+          ...histories,
+          { id: "103", created: at(4), author: mia, items: [{ ...change("fixVersions", null, "1.2"), field: "Fix Version" }] }
+        ]
+      }
+    }
+    const types = (fields: ReadonlyArray<string> | undefined) =>
+      diffIssue({ siteUrl, previous: seenUpTo100, snapshot: relabelled, fields, observedAt: at(9) }).events
+        .filter((event) => event.type === "field.changed")
+        .map((event) => event.dedupeKey)
+    expect(types(undefined)).toEqual(["10042:history:102:1", "10042:history:103:0"])
+    expect(types(["resolution", "fixversions"])).toEqual(["10042:history:103:0"])
+    expect(types(["fix version"])).toEqual(["10042:history:103:0"])
+  })
+
+  it("reports a watched field whose value changed without a changelog item, once", () => {
+    const watched = { ...snapshot, values: { votes: "1", fixVersions: "[\"1.1\"]", labels: "[\"a, b\"]" } }
+    const baseline = diffIssue({ siteUrl, previous: seenUpTo100, snapshot: watched, observedAt: at(9) })
+    expect(baseline.cursor.values).toEqual(watched.values)
+    const voted = {
+      ...watched,
+      changelog: {
+        start: 0,
+        items: [...histories, { id: "103", created: at(4), author: mia, items: [change("fixVersions", "1.1", "1.2")] }]
+      },
+      values: { votes: "null", fixVersions: "[\"1.2\"]", labels: "[\"a\",\"b\"]" }
+    }
+    const poll = diffIssue({ siteUrl, previous: baseline.cursor, snapshot: voted, observedAt: at(9) })
+    expect(poll.events.filter((event) => event.type === "field.changed").map((event) => [event.dedupeKey, event.summary]))
+      .toEqual([
+        ["10042:history:103:0", "DEMO-7: fixVersions 1.1 → 1.2 by Mia"],
+        ["10042:value:1:votes", "DEMO-7: votes 1 → (none)"],
+        ["10042:value:2:labels", "DEMO-7: labels a, b → a, b"]
+      ])
+    expect(diffIssue({ siteUrl, previous: poll.cursor, snapshot: voted, observedAt: at(9) }).events).toEqual([])
+
+    const unwatched = diffIssue({ siteUrl, previous: poll.cursor, snapshot: { ...voted, values: {} }, observedAt: at(9) })
+    const rewatched = diffIssue({
+      siteUrl,
+      previous: unwatched.cursor,
+      snapshot: { ...voted, values: { votes: "3" } },
+      observedAt: at(9)
+    })
+    expect(unwatched.cursor.valueChanges).toBe(2)
+
+    const unsorted = { ...poll.cursor, values: { ...poll.cursor.values, custom: "{\"z\":1,\"a\":2}" } }
+    const resorted = { ...voted, values: { ...voted.values, custom: "{\"a\":2,\"z\":1}" } }
+    expect(diffIssue({ siteUrl, previous: unsorted, snapshot: resorted, observedAt: at(9) }).events).toEqual([])
+    expect(rewatched.events.map((event) => event.dedupeKey)).toEqual([])
+  })
+
   it("maps each change and comment to its event type, oldest first", () => {
-    const poll = diffIssue({ siteUrl, previous: seenUpTo100, snapshot })
+    const poll = diffIssue({ siteUrl, previous: seenUpTo100, snapshot, observedAt: at(9) })
     expect(poll.events.map((event) => [event.type, event.dedupeKey])).toEqual([
       ["status.changed", "10042:history:101:0"],
       ["comment.added", "10042:comment:201"],
@@ -84,12 +144,12 @@ describe("diffIssue", () => {
   })
 
   it("emits nothing when the issue has not changed since the cursor", () => {
-    const first = diffIssue({ siteUrl, previous: seenUpTo100, snapshot })
-    const again = diffIssue({ siteUrl, previous: first.cursor, snapshot })
+    const first = diffIssue({ siteUrl, previous: seenUpTo100, snapshot, observedAt: at(9) })
+    const again = diffIssue({ siteUrl, previous: first.cursor, snapshot, observedAt: at(9) })
     expect(again.events).toEqual([])
     expect(again.cursor).toEqual(first.cursor)
 
-    const otherIssue = diffIssue({ siteUrl, previous: { ...seenUpTo100, issueId: "99" }, snapshot })
+    const otherIssue = diffIssue({ siteUrl, previous: { ...seenUpTo100, issueId: "99" }, snapshot, observedAt: at(9) })
     expect(otherIssue.events).toEqual([])
   })
 
@@ -99,17 +159,17 @@ describe("diffIssue", () => {
       changelog: { start: 0, items: [] },
       comments: { start: 0, items: [{ id: "202", created: at(0), author: mia, body: null }] }
     }
-    const poll = diffIssue({ siteUrl, previous: seenUpTo100, snapshot: deletedAnchor })
-    expect(poll.events.map((event) => event.dedupeKey)).toEqual(["10042:comment:202"])
+    const poll = diffIssue({ siteUrl, previous: seenUpTo100, snapshot: deletedAnchor, observedAt: at(9) })
+    expect(poll.events.map((event) => event.dedupeKey)).toEqual(["10042:comment:202", "10042:comments-deleted:200:1:1"])
   })
 
   it("tells seen from unseen comments sharing a time after the remembered ones are deleted", () => {
     const sameTime = Array.from({ length: 51 }, (_, index) => ({ id: String(300 + index), created: at(4), author: mia, body: null }))
     const withComments = (items: typeof sameTime) => ({ ...snapshot, comments: { start: 0, items } })
-    const baseline = diffIssue({ siteUrl, previous: undefined, snapshot: withComments(sameTime) })
+    const baseline = diffIssue({ siteUrl, previous: undefined, snapshot: withComments(sameTime), observedAt: at(9) })
     const survivors = [sameTime[0]!, { id: "999", created: at(4), author: mia, body: null }]
-    const poll = diffIssue({ siteUrl, previous: baseline.cursor, snapshot: withComments(survivors) })
-    expect(poll.events.map((event) => event.dedupeKey)).toEqual(["10042:comment:999"])
+    const poll = diffIssue({ siteUrl, previous: baseline.cursor, snapshot: withComments(survivors), observedAt: at(9) })
+    expect(poll.events.map((event) => event.dedupeKey)).toEqual(["10042:comment:999", "10042:comments-deleted:350:51:2"])
   })
 })
 

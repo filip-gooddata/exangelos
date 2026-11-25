@@ -1,8 +1,11 @@
 import { Effect, Option, Redacted, Ref, Stream } from "effect"
 import { Catalogue, Connector } from "@exangelos/connector-sdk"
 import * as Events from "./Events.ts"
+import { GitHub } from "./GitHub.ts"
+import type { GitHubError } from "./GitHub.ts"
 import { JiraClient } from "./JiraClient.ts"
 import type { JiraError } from "./JiraError.ts"
+import { normaliseOptions, parseOptions } from "./Options.ts"
 import { makeSite } from "./Site.ts"
 import type { JiraSite } from "./Site.ts"
 import { label, normalise, Parameters, parseTarget, subject } from "./Target.ts"
@@ -13,8 +16,30 @@ const parameters = Catalogue.parameters({ main: "target", schema: Parameters })
 const configuration = [
   Catalogue.text("site", { label: "Jira Cloud site URL, such as https://acme.atlassian.net", secretDestination: true }),
   Catalogue.text("email", { label: "Atlassian account email" }),
-  Catalogue.secret("token", { label: "API token" })
+  Catalogue.secret("token", { label: "API token" }),
+  Catalogue.secret("githubToken", {
+    label: "GitHub token that can read the repositories in githubRepo (only for GitHub signals)",
+    required: false
+  })
 ]
+
+interface Configured {
+  readonly site: JiraSite
+  readonly githubToken: Redacted.Redacted<string> | undefined
+}
+
+const githubRefusal = (repo: string, error: GitHubError): string => {
+  switch (error._tag) {
+    case "GitHubRejected":
+      return `GitHub rejected githubToken (HTTP ${error.status}). Configure the jira connector with a token that can read ${repo}.`
+    case "GitHubNotFound":
+      return `GitHub has no ${repo}, or that commit, or githubToken cannot read it.`
+    case "GitHubRateLimited":
+      return "GitHub is rate limiting githubToken. Try again later."
+    case "GitHubFailure":
+      return `Could not check ${repo} with GitHub: ${error.reason}`
+  }
+}
 
 const refusal = (site: JiraSite, error: JiraError): string => {
   switch (error._tag) {
@@ -41,7 +66,8 @@ export const connector = Connector.make({
   configuration,
   handlers: Effect.gen(function*() {
     const client = yield* JiraClient
-    const configured = yield* Ref.make(Option.none<JiraSite>())
+    const github = yield* GitHub
+    const configured = yield* Ref.make(Option.none<Configured>())
     return {
       configure: (values) =>
         makeSite({ url: values.site ?? "", email: values.email ?? "", token: Redacted.make(values.token ?? "") }).pipe(
@@ -49,7 +75,17 @@ export const connector = Connector.make({
           Effect.flatMap((site) =>
             client.checkSite(site).pipe(
               Effect.mapError((error) => new Connector.ConfigurationRejected({ reason: refusal(site, error) })),
-              Effect.flatMap((routed) => Ref.set(configured, Option.some(routed)))
+              Effect.flatMap((routed) =>
+                Ref.set(
+                  configured,
+                  Option.some({
+                    site: routed,
+                    githubToken: values.githubToken === undefined || values.githubToken === ""
+                      ? undefined
+                      : Redacted.make(values.githubToken)
+                  })
+                )
+              )
             )
           )
         ),
@@ -58,7 +94,24 @@ export const connector = Connector.make({
           const target = yield* parseTarget(input).pipe(
             Effect.mapError(({ reason }) => new Connector.ParametersInvalid({ reason }))
           )
-          const site = Option.getOrUndefined(yield* Ref.get(configured))
+          const options = yield* parseOptions(input, target).pipe(
+            Effect.mapError(({ reason }) => new Connector.ParametersInvalid({ reason }))
+          )
+          const current = Option.getOrUndefined(yield* Ref.get(configured))
+          const site = current?.site
+          const signals = options.github
+          if (signals !== undefined && current !== undefined) {
+            const token = current.githubToken
+            if (token === undefined) {
+              return yield* new Connector.ParametersInvalid({
+                reason: "githubRepo needs a GitHub token: configure the jira connector with githubToken."
+              })
+            }
+            yield* github.checkRepository(token, signals.repo).pipe(
+              Effect.andThen(signals.sha === undefined ? Effect.void : github.checkCommit(token, signals.repo, signals.sha)),
+              Effect.mapError((error) => new Connector.ParametersInvalid({ reason: githubRefusal(signals.repo, error) }))
+            )
+          }
           if (target.kind === "jql" && site !== undefined) {
             yield* client.checkJql({ site, jql: target.jql }).pipe(
               Effect.mapError((error) =>
@@ -70,18 +123,25 @@ export const connector = Connector.make({
               )
             )
           }
-          return { subject: subject(target), label: label(target), parameters: normalise(target) }
+          return {
+            subject: subject(target),
+            label: label(target),
+            parameters: { ...normalise(target), ...normaliseOptions(input, options) }
+          }
         }),
       watch: ({ cursor, parameters: input }) =>
         Stream.unwrap(Effect.gen(function*() {
-          const site = yield* Ref.get(configured).pipe(
+          const { githubToken, site } = yield* Ref.get(configured).pipe(
             Effect.flatMap(Effect.fromOption),
             Effect.mapError(() => new Connector.CredentialsRejected({ reason: "The Jira connector is not configured" }))
           )
           const target = yield* parseTarget(input).pipe(
             Effect.mapError(({ reason }) => new Connector.SourceFailed({ reason }))
           )
-          return watch({ client, site, target, cursor })
+          const options = yield* parseOptions(input, target).pipe(
+            Effect.mapError(({ reason }) => new Connector.SourceFailed({ reason }))
+          )
+          return watch({ client, github, site, target, options, githubToken, cursor })
         }))
     }
   })

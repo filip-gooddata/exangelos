@@ -1,16 +1,24 @@
 import { DateTime } from "effect"
 import type { IssueCursor, JqlCursor } from "./Cursor.ts"
-import { overlap } from "./Snapshot.ts"
+import { reportsField, sameField } from "./Options.ts"
+import { overlap, sortedKeys } from "./Snapshot.ts"
 import { browseLink } from "./Site.ts"
 import type { Comment, FieldChange, History, IssueSnapshot, JqlSnapshot, ListPosition, ListTail, Person } from "./Snapshot.ts"
 
 export const eventTypes = {
   statusChanged: "status.changed",
   commentAdded: "comment.added",
+  commentDeleted: "comment.deleted",
   assigneeChanged: "assignee.changed",
   fieldChanged: "field.changed",
   issueEntered: "issue.entered",
-  issueLeft: "issue.left"
+  issueLeft: "issue.left",
+  pullRequestFound: "pull_request.found",
+  pullRequestStateChanged: "pull_request.state_changed",
+  commitAdded: "commit.added",
+  releaseFound: "release.found",
+  githubUnavailable: "github.unavailable",
+  jiraUnavailable: "jira.unavailable"
 } as const
 export type JiraEventType = typeof eventTypes[keyof typeof eventTypes]
 
@@ -85,6 +93,15 @@ const advance = <A extends { readonly id: string; readonly created: DateTime.Utc
   return { fresh, position }
 }
 
+const canonical = (json: string): string => JSON.stringify(sortedKeys(JSON.parse(json)))
+
+const valueText = (json: string): string | null => {
+  const text = (value: unknown): string =>
+    Array.isArray(value) ? value.map(text).join(", ") : typeof value === "string" ? value : JSON.stringify(value)
+  const value: unknown = JSON.parse(json)
+  return value === null ? null : text(value)
+}
+
 const typeOfChange = (change: FieldChange): JiraEventType => {
   switch (change.fieldId ?? change.field.toLowerCase()) {
     case "status":
@@ -96,11 +113,19 @@ const typeOfChange = (change: FieldChange): JiraEventType => {
   }
 }
 
-const historyEvents = (snapshot: IssueSnapshot, link: string, history: History): ReadonlyArray<JiraEvent> =>
-  history.items.map((change, index) => {
+const historyEvents = (
+  snapshot: IssueSnapshot,
+  link: string,
+  history: History,
+  fields: ReadonlyArray<string> | undefined
+): ReadonlyArray<JiraEvent> =>
+  history.items.flatMap((change, index) => {
     const type = typeOfChange(change)
+    if (type === eventTypes.fieldChanged && !reportsField(fields, { field: change.field, fieldId: change.fieldId ?? null })) {
+      return []
+    }
     const what = type === eventTypes.fieldChanged ? change.field : type === eventTypes.statusChanged ? "status" : "assignee"
-    return {
+    return [{
       type,
       occurredAt: history.created,
       summary: `${snapshot.key}: ${what} ${shown(change.fromString)} → ${shown(change.toString)} by ${
@@ -119,7 +144,7 @@ const historyEvents = (snapshot: IssueSnapshot, link: string, history: History):
       },
       link,
       dedupeKey: `${snapshot.id}:history:${history.id}:${index}`
-    }
+    }]
   })
 
 const commentEvent = (snapshot: IssueSnapshot, siteUrl: string, comment: Comment): JiraEvent => {
@@ -149,24 +174,77 @@ export const diffIssue = (input: {
   readonly siteUrl: string
   readonly previous: IssueCursor | undefined
   readonly snapshot: IssueSnapshot
+  readonly fields?: ReadonlyArray<string> | undefined
+  readonly observedAt: DateTime.Utc
 }): IssuePoll => {
-  const { previous, siteUrl, snapshot } = input
+  const { fields, observedAt, previous, siteUrl, snapshot } = input
   const link = browseLink(siteUrl, snapshot.key)
   const known = previous?.issueId === snapshot.id ? previous : undefined
   const changelog = advance(known?.changelog, snapshot.changelog)
   const comments = advance(known?.comments, snapshot.comments)
   const events = [
-    ...changelog.fresh.flatMap((history) => historyEvents(snapshot, link, history)),
+    ...changelog.fresh.flatMap((history) => historyEvents(snapshot, link, history, fields)),
     ...comments.fresh.map((comment) => commentEvent(snapshot, siteUrl, comment))
   ].sort((a, b) => DateTime.toEpochMillis(a.occurredAt) - DateTime.toEpochMillis(b.occurredAt))
+  let valueChanges = known?.valueChanges ?? 0
+  if (known?.values !== undefined) {
+    const changedInHistory = changelog.fresh.flatMap((history) => history.items)
+      .map((item) => ({ field: item.field, fieldId: item.fieldId ?? null }))
+    for (const [field, value] of Object.entries(snapshot.values)) {
+      if (!Object.hasOwn(known.values, field)) continue
+      const before = known.values[field] ?? "null"
+      if (canonical(before) === canonical(value) || changedInHistory.some((item) => sameField(field, item))) continue
+      const fromString = valueText(before)
+      const toString = valueText(value)
+      valueChanges += 1
+      events.push({
+        type: typeOfChange({ field, fieldId: field, from: null, fromString, to: null, toString }),
+        occurredAt: observedAt,
+        summary: `${snapshot.key}: ${field} ${shown(fromString)} → ${shown(toString)}`,
+        payload: {
+          issue: { id: snapshot.id, key: snapshot.key, summary: snapshot.summary },
+          historyId: "",
+          author: null,
+          field,
+          fieldId: field,
+          from: null,
+          fromString,
+          to: null,
+          toString
+        },
+        link,
+        dedupeKey: `${snapshot.id}:value:${valueChanges}:${field}`
+      })
+    }
+  }
+  if (known !== undefined) {
+    const before = known.comments.consumed
+    const after = comments.position.consumed
+    const removed = before + comments.fresh.length - after
+    if (removed > 0) {
+      events.push({
+        type: eventTypes.commentDeleted,
+        occurredAt: observedAt,
+        summary: `${snapshot.key}: ${removed === 1 ? "a comment was" : `${removed} comments were`} deleted (${after} left)`,
+        payload: { issue: { id: snapshot.id, key: snapshot.key, summary: snapshot.summary }, removed, count: after },
+        link,
+        dedupeKey: `${snapshot.id}:comments-deleted:${known.comments.recent.at(-1) ?? ""}:${before}:${after}`
+      })
+    }
+  }
   return {
     events,
     cursor: {
-      v: 1,
+      v: 2,
       target: "issue",
       issueId: snapshot.id,
       changelog: changelog.position,
-      comments: comments.position
+      comments: comments.position,
+      github: known?.github ?? null,
+      githubFailure: known?.githubFailure ?? null,
+      githubFailures: known?.githubFailures ?? 0,
+      values: { ...snapshot.values },
+      valueChanges
     }
   }
 }

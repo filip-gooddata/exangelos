@@ -13,9 +13,28 @@ export const TargetKind = Schema.Literals(["issue", "jql"])
  */
 export const Parameters = Schema.Struct({
   target: Schema.String,
-  kind: Schema.optionalKey(TargetKind)
+  kind: Schema.optionalKey(TargetKind),
+  fields: List("Field ids or names whose changes field.changed reports; default all"),
+  githubRepo: Schema.optionalKey(
+    Schema.String.annotate({ description: "owner/repo: report pull requests that mention the issue, and the signals below" })
+  ),
+  githubSearch: Schema.optionalKey(
+    Schema.String.annotate({ description: "Search text for the pull requests; default the issue key" })
+  ),
+  githubPaths: List("Paths in githubRepo whose new commits commit.added reports"),
+  since: Schema.optionalKey(
+    Schema.String.annotate({ description: "ISO time; commits to githubPaths are read from it on; default the first poll" })
+  ),
+  sha: Schema.optionalKey(
+    Schema.String.annotate({ description: "A commit SHA; release.found reports the newest release that contains it" })
+  )
 })
 export type Parameters = typeof Parameters.Type
+
+/** A list, or from the command line one value or a JSON array in a string. */
+function List(description: string) {
+  return Schema.optionalKey(Schema.Union([Schema.Array(Schema.String), Schema.String]).annotate({ description }))
+}
 
 const issueKey = /^[A-Z][A-Z0-9_]*-[1-9][0-9]*$/
 

@@ -48,6 +48,7 @@ export interface IssueSnapshot {
   readonly summary: string
   readonly changelog: ListTail<History>
   readonly comments: ListTail<Comment>
+  readonly values: Readonly<Record<string, string>>
 }
 
 export interface JqlIssue {
@@ -77,6 +78,14 @@ export interface ListPosition {
 export interface IssuePosition {
   readonly changelog: ListPosition
   readonly comments: ListPosition
+}
+
+export const sortedKeys = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(sortedKeys)
+  if (typeof value !== "object" || value === null) return value
+  return Object.fromEntries(
+    Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, inner]) => [key, sortedKeys(inner)])
+  )
 }
 
 /** How many items before a position a poll re-reads, and how many ids a position remembers. */

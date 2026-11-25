@@ -41,13 +41,18 @@ export const commentAdded = Catalogue.event(eventTypes.commentAdded, {
   })
 })
 
+export const commentDeleted = Catalogue.event(eventTypes.commentDeleted, {
+  description: "Comments were deleted from the issue: the comment count fell. Comments deleted and added between two polls can offset each other.",
+  payload: Schema.Struct({ issue: Issue, removed: Schema.Finite, count: Schema.Finite })
+})
+
 export const assigneeChanged = Catalogue.event(eventTypes.assigneeChanged, {
   description: "The issue was assigned to someone else, or unassigned.",
   payload: Change
 })
 
 export const fieldChanged = Catalogue.event(eventTypes.fieldChanged, {
-  description: "A field other than status or assignee changed.",
+  description: "A field other than status or assignee changed. With fields, only the fields it names.",
   payload: Change
 })
 
@@ -61,25 +66,99 @@ export const issueLeft = Catalogue.event(eventTypes.issueLeft, {
   payload: Schema.Struct({ issue: Schema.Struct({ id: Schema.String, key: Schema.String }), jql: Schema.String })
 })
 
-export const all = [statusChanged, commentAdded, assigneeChanged, fieldChanged, issueEntered, issueLeft] as const
+const PullRequest = {
+  issue: Issue,
+  repo: Schema.String,
+  number: Schema.Finite,
+  title: Schema.String,
+  state: Schema.Literals(["open", "closed", "merged"]),
+  url: Schema.String,
+  author: Schema.NullOr(Schema.String)
+}
+
+const fromGitHub = "Emitted only with githubRepo. Polled with the issue, once a minute."
+
+export const pullRequestFound = Catalogue.event(eventTypes.pullRequestFound, {
+  description: `A pull request in githubRepo started matching githubSearch (default the issue key). ${fromGitHub}`,
+  payload: Schema.Struct(PullRequest)
+})
+
+export const pullRequestStateChanged = Catalogue.event(eventTypes.pullRequestStateChanged, {
+  description: `A matching pull request was closed, merged or reopened. ${fromGitHub}`,
+  payload: Schema.Struct({ ...PullRequest, from: Schema.String })
+})
+
+export const commitAdded = Catalogue.event(eventTypes.commitAdded, {
+  description: `A new commit in githubRepo touched githubPaths; paths lists the ones it touched. ${fromGitHub}`,
+  payload: Schema.Struct({
+    issue: Issue,
+    repo: Schema.String,
+    paths: Schema.Array(Schema.String),
+    sha: Schema.String,
+    message: Schema.String,
+    url: Schema.String,
+    author: Schema.NullOr(Schema.String)
+  })
+})
+
+export const releaseFound = Catalogue.event(eventTypes.releaseFound, {
+  description: `One of the newest five releases of githubRepo contains sha. Reported once, on the first poll too. ${fromGitHub}`,
+  payload: Schema.Struct({ issue: Issue, repo: Schema.String, sha: Schema.String, tag: Schema.String, url: Schema.String })
+})
+
+export const githubUnavailable = Catalogue.event(eventTypes.githubUnavailable, {
+  description:
+    "GitHub refused githubToken, githubRepo or sha is gone, or no githubToken is configured. Jira events continue; the GitHub signals are retried every poll and this fires again only after they recover and fail anew.",
+  payload: Schema.Struct({ issue: Issue, repo: Schema.String, reason: Schema.String })
+})
+
+export const jiraUnavailable = Catalogue.event(eventTypes.jiraUnavailable, {
+  description:
+    "Polling Jira failed 12 times in a row (not a refused credential, which suspends the subscription). Reported once per outage; the watch keeps retrying and the outage ends at the next good poll.",
+  payload: Schema.Struct({ subject: Schema.String, failures: Schema.Finite, since: Schema.String, reason: Schema.String })
+})
+
+export const all = [
+  statusChanged,
+  commentAdded,
+  commentDeleted,
+  assigneeChanged,
+  fieldChanged,
+  issueEntered,
+  issueLeft,
+  pullRequestFound,
+  pullRequestStateChanged,
+  commitAdded,
+  releaseFound,
+  githubUnavailable,
+  jiraUnavailable
+] as const
 
 export type WatchItem = ReturnType<typeof Connector.end>
 
 const byType: Record<JiraEventType, Catalogue.EventType<any>> = {
   [eventTypes.statusChanged]: statusChanged,
   [eventTypes.commentAdded]: commentAdded,
+  [eventTypes.commentDeleted]: commentDeleted,
   [eventTypes.assigneeChanged]: assigneeChanged,
   [eventTypes.fieldChanged]: fieldChanged,
   [eventTypes.issueEntered]: issueEntered,
-  [eventTypes.issueLeft]: issueLeft
+  [eventTypes.issueLeft]: issueLeft,
+  [eventTypes.pullRequestFound]: pullRequestFound,
+  [eventTypes.pullRequestStateChanged]: pullRequestStateChanged,
+  [eventTypes.commitAdded]: commitAdded,
+  [eventTypes.releaseFound]: releaseFound,
+  [eventTypes.githubUnavailable]: githubUnavailable,
+  [eventTypes.jiraUnavailable]: jiraUnavailable
 }
 
 /** The watch item for a diffed event; its payload is checked against the catalogue as it is encoded. */
-export const toItem = (event: JiraEvent): WatchItem =>
+export const toItem = (event: JiraEvent, cursor?: string): WatchItem =>
   byType[event.type].item({
     occurredAt: event.occurredAt,
     summary: event.summary,
     payload: event.payload,
     dedupeKey: event.dedupeKey,
-    link: event.link
+    link: event.link,
+    ...(cursor === undefined ? {} : { cursor })
   })

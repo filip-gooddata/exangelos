@@ -13,7 +13,7 @@ import {
 import type { JiraError } from "./JiraError.ts"
 import { gatewayApi } from "./Site.ts"
 import type { JiraSite } from "./Site.ts"
-import { overlap } from "./Snapshot.ts"
+import { overlap, sortedKeys } from "./Snapshot.ts"
 import type {
   Comment,
   FieldChange,
@@ -55,6 +55,7 @@ export class JiraClient extends Context.Service<JiraClient, {
   readonly readIssue: (input: {
     readonly site: JiraSite
     readonly key: string
+    readonly fields?: ReadonlyArray<string>
     readonly position: IssuePosition | undefined
   }) => Effect.Effect<IssueSnapshot, JiraError>
   /** Every issue the query matches now. Fails with JqlResultTooLarge above `membershipLimit`. */
@@ -103,6 +104,12 @@ const IssueWire = Schema.Struct({
   fields: Schema.optionalKey(IssueFieldsWire)
 })
 
+const IssueValuesWire = Schema.Struct({
+  id: Schema.String,
+  key: Schema.String,
+  fields: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown))
+})
+
 const SearchPageWire = Schema.Struct({
   issues: Schema.Array(IssueWire),
   nextPageToken: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -134,6 +141,16 @@ const parseTime = (value: string): Effect.Effect<DateTime.Utc, DecodeFailure> =>
     onNone: () => Effect.fail(new DecodeFailure({ reason: "Jira returned an unreadable time." })),
     onSome: (time) => Effect.succeed(DateTime.toUtc(time))
   })
+
+const fieldValue = (value: unknown): unknown => {
+  if (value === undefined) return null
+  if (Array.isArray(value)) return value.map(fieldValue)
+  if (typeof value === "object" && value !== null) {
+    const named = value as Record<string, unknown>
+    return named.displayName ?? named.name ?? named.value ?? named.key ?? named
+  }
+  return value
+}
 
 const person = (wire: typeof PersonWire.Type | undefined): Person | undefined =>
   wire === undefined ? undefined : { accountId: wire.accountId, displayName: wire.displayName }
@@ -273,15 +290,23 @@ export const layer = Layer.effect(
       error._tag === "DecodeFailure" ||
       (error._tag === "HttpFailure" && error.status !== undefined && error.status < 500)
 
+    const myself = (site: JiraSite) =>
+      get(site, "/rest/api/3/myself", {}, MyselfWire).pipe(
+        Effect.catchIf(
+          (error) => error._tag === "HttpFailure" && error.status === 403,
+          () => Effect.fail(new CredentialRejected({ status: 403 }))
+        )
+      )
+
     const resolveRoute = (site: JiraSite): Effect.Effect<JiraSite, JiraError> => {
       const direct = { ...site, api: site.url }
-      return get(direct, "/rest/api/3/myself", {}, MyselfWire).pipe(
+      return myself(direct).pipe(
         Effect.as(direct),
         Effect.catchTag("CredentialRejected", (rejected) =>
           cloudId(site).pipe(
             Effect.catchIf(isAnswer, () => Effect.fail(rejected)),
             Effect.map((id) => ({ ...site, api: gatewayApi(id) })),
-            Effect.tap((gateway) => get(gateway, "/rest/api/3/myself", {}, MyselfWire))
+            Effect.tap(myself)
           ))
       )
     }
@@ -300,12 +325,21 @@ export const layer = Layer.effect(
           Effect.andThen(resolveRoute(site))
         ),
 
-      readIssue: ({ key, position, site }) =>
+      readIssue: ({ fields = [], key, position, site }) =>
         Effect.gen(function*() {
-          const issue = yield* get(site, `/rest/api/3/issue/${encodeURIComponent(key)}`, { fields: "summary" }, IssueWire)
+          const issue = yield* get(
+            site,
+            `/rest/api/3/issue/${encodeURIComponent(key)}`,
+            { fields: ["summary", ...fields].join(",") },
+            IssueValuesWire
+          )
           const changelog = yield* readTail(position?.changelog, changelogPage(site, key))
           const comments = yield* readTail(position?.comments, commentPage(site, key))
-          return { id: issue.id, key: issue.key, summary: issue.fields?.summary ?? "", changelog, comments }
+          const raw = issue.fields ?? {}
+          const values: Record<string, string> = {}
+          for (const field of fields) values[field] = JSON.stringify(sortedKeys(fieldValue(raw[field])))
+          const summary = typeof raw.summary === "string" ? raw.summary : ""
+          return { id: issue.id, key: issue.key, summary, changelog, comments, values }
         }),
 
       checkJql: ({ jql, site }) =>

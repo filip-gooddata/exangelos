@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Redacted } from "effect"
+import { DateTime, Effect, Redacted } from "effect"
 import { decodeIssueCursor, encodeCursor, issuePosition } from "../src/Cursor.ts"
 import { diffIssue } from "../src/Diff.ts"
 import { JiraClient } from "../src/JiraClient.ts"
@@ -9,6 +9,7 @@ import type { StubCall } from "./stubJira.ts"
 
 const token = "ATATT-not-a-real-token-7f3a"
 const site = makeSite({ url: "https://acme.atlassian.net/", email: "dev@example.com", token: Redacted.make(token) })
+const observedAt = DateTime.makeUnsafe("2026-11-12T11:00:00Z")
 
 const statusChange = (from: string, to: string) => ({
   field: "status",
@@ -59,15 +60,18 @@ describe("JiraClient", () => {
       const jira = yield* JiraClient
       const jiraSite = yield* site
       const stored = yield* decodeIssueCursor(encodeCursor({
-        v: 1,
+        v: 2,
         target: "issue",
         issueId: "10042",
         changelog: { consumed, recent: ["10001"], lastCreated: "2026-11-12T09:00:00.000Z", atLast: ["10001"] },
-        comments: { consumed: 1, recent: ["20001"], lastCreated: "2026-11-12T09:05:00.000Z", atLast: ["20001"] }
+        comments: { consumed: 1, recent: ["20001"], lastCreated: "2026-11-12T09:05:00.000Z", atLast: ["20001"] },
+        github: null,
+        githubFailure: null,
+        githubFailures: 0
       }))
 
       const snapshot = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: issuePosition(stored) })
-      const poll = diffIssue({ siteUrl: jiraSite.url, previous: stored, snapshot })
+      const poll = diffIssue({ siteUrl: jiraSite.url, previous: stored, snapshot, observedAt })
       expect(poll.events.map((event) => event.dedupeKey)).toEqual([
         "10042:history:10002:0",
         "10042:history:10003:0",
@@ -84,7 +88,7 @@ describe("JiraClient", () => {
       expect(calls.filter((call) => call.path.endsWith("/changelog")).map((call) => call.param("startAt"))).toEqual(startAts)
 
       const again = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: issuePosition(poll.cursor) })
-      expect(diffIssue({ siteUrl: jiraSite.url, previous: poll.cursor, snapshot: again }).events).toEqual([])
+      expect(diffIssue({ siteUrl: jiraSite.url, previous: poll.cursor, snapshot: again, observedAt }).events).toEqual([])
     }).pipe(Effect.provide(jiraWith(issueServer(calls))))
   })
 
@@ -110,6 +114,41 @@ describe("JiraClient", () => {
         return { status: 401, body: { errorMessages: ["Client must be authenticated to access this resource."] } }
       }))
     )
+  })
+
+  it.effect("reads the same field value whatever order Jira lists an object's keys in", () => {
+    const votes = [
+      { self: "https://acme.atlassian.net/votes", votes: 2, hasVoted: false },
+      { hasVoted: false, votes: 2, self: "https://acme.atlassian.net/votes" }
+    ]
+    const widgets = [{ value: { z: 1, a: 2 } }, { value: { a: 2, z: 1 } }]
+    let read = 0
+    return Effect.gen(function*() {
+      const jira = yield* JiraClient
+      const jiraSite = yield* site
+      const first = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: undefined, fields: ["votes", "labels", "customfield_1"] })
+      const second = yield* jira.readIssue({
+        site: jiraSite,
+        key: "DEMO-7",
+        position: undefined,
+        fields: ["votes", "labels", "customfield_1"]
+      })
+      expect(first.values).toEqual(second.values)
+      expect(first.values).toEqual({
+        votes: "{\"hasVoted\":false,\"self\":\"https://acme.atlassian.net/votes\",\"votes\":2}",
+        labels: "null",
+        customfield_1: "{\"a\":2,\"z\":1}"
+      })
+    }).pipe(Effect.provide(jiraWith((call) => {
+      if (call.path === "/rest/api/3/issue/DEMO-7") {
+        const index = read++
+        return {
+          status: 200,
+          body: { id: "10042", key: "DEMO-7", fields: { summary: "Fix login", votes: votes[index], customfield_1: widgets[index] } }
+        }
+      }
+      return { status: 200, body: { startAt: 0, total: 0, maxResults: 100, isLast: true, values: [], comments: [] } }
+    })))
   })
 
   it.effect("refuses a site that is not Jira Cloud", () =>
