@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSyn
 import { tmpdir } from "node:os"
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path"
 import { digestDirectory } from "@exangelos/connector-directory"
-import { inspectTree, type Limits, limits, unpack } from "@exangelos/connector-import"
+import { inspectTree, limits, unpack } from "@exangelos/connector-import"
 import { Data, Effect } from "effect"
 import { run } from "./command.ts"
 import { clearReleaseFiles, connectorArchiveName, writeChecksums } from "./release-files.ts"
@@ -94,7 +94,7 @@ const workDirectory = (name: string) =>
     (work) => Effect.sync(() => rmSync(work, { recursive: true, force: true }))
   )
 
-export const buildConnectorArchive = (connectorDirectory: string, outDirectory: string, within: Limits = limits) =>
+export const buildConnectorArchive = (connectorDirectory: string, outDirectory: string, within: typeof limits = limits) =>
   Effect.gen(function*() {
     const manifest = yield* readManifest(connectorDirectory)
     if (manifest.entry._tag !== "Bundle") {

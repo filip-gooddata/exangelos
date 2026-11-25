@@ -24,7 +24,10 @@ work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 (umask 077 && printf '%s\n' "$HOMEBREW_TAP_DEPLOY_KEY" > "$work/key")
 auth=()
-if [ -n "${GH_TOKEN:-}" ]; then auth=(-H "Authorization: Bearer $GH_TOKEN"); fi
+if [ -n "${GH_TOKEN:-}" ]; then
+  (umask 077 && printf 'Authorization: Bearer %s\n' "$GH_TOKEN" > "$work/auth")
+  auth=(-H "@$work/auth")
+fi
 retry curl -fsSL ${auth[@]+"${auth[@]}"} -o "$work/meta.json" https://api.github.com/meta
 jq -r '.ssh_keys[] | "github.com " + .' "$work/meta.json" > "$work/known_hosts"
 test -s "$work/known_hosts"

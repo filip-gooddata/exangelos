@@ -5,8 +5,9 @@
 #
 # - The commit has a version tag: with a published release there is nothing to build (skip=true, and publish-tap
 #   repairs the tap); without one an earlier attempt claimed it, and this run releases it.
-# - A later commit has a version tag: a later run took over, as it releases everything this commit has. Nothing to do
-#   (skip=true, no tag).
+# - A later commit has a version tag: a later run took over, as it releases everything this commit has. With that
+#   release published there is nothing to do (skip=true, no tag); without one the run fails and names the run to
+#   rerun, rather than release this older commit under a higher version.
 # - Otherwise the latest vX.Y.Z tag plus a patch bump, or a minor or major one for #minor or #major in a commit
 #   message since that tag, becomes a tag on the commit. A run that loses the tag to another fetches the tags and
 #   takes the next version. The first release is v0.1.0.
@@ -37,9 +38,20 @@ claim() {
   fi
   later=$(git tag --contains "$sha" | highest_version)
   if [ -n "$later" ]; then
-    echo "$later is on a later commit than $sha, and its run releases this commit's changes; nothing to do"
-    output "" true
-    return 0
+    release_published "$later" || state=$?
+    case $state in
+      0)
+        echo "$later, on a later commit than $sha, is released with this commit's changes; nothing to do"
+        output "" true
+        return 0
+        ;;
+      1)
+        echo "$later is claimed for $(git rev-list -n1 "$later"), a later commit than $sha, but not released;" \
+          "rerun the release run of that commit, which releases this commit's changes too" >&2
+        exit 1
+        ;;
+      *) return 1 ;;
+    esac
   fi
   last=$(git tag --list | highest_version)
   if [ -z "$last" ]; then
