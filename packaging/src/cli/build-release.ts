@@ -40,8 +40,7 @@ buildRelease({
     values.connectors === undefined ? officialConnectorDirectories() : values.connectors.split(",").filter((d) => d !== "").map((d) => resolve(d)),
   officialConnectorsDirectory: resolve(values["official-connectors-out"]),
   releaseDirectory: resolve(values.out),
-  targets: values.targets === undefined ? targets : values.targets.split(",").map(findTarget),
-  signingIdentity: process.env.APPLE_SIGNING_IDENTITY
+  targets: values.targets === undefined ? targets : values.targets.split(",").map(findTarget)
 }).pipe(
   Effect.flatMap((release) => Console.log(describeRelease(release))),
   Effect.provide(bunSpawner),

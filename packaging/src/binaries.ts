@@ -1,5 +1,5 @@
 import { copyFileSync, mkdirSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { join } from "node:path"
 import { Effect } from "effect"
 import { run } from "./command.ts"
 import type { OfficialConnector } from "./connector-archives.ts"
@@ -14,7 +14,6 @@ export interface BinaryBuild {
   readonly officialConnectors: ReadonlyArray<OfficialConnector>
   readonly targets: ReadonlyArray<Target>
   readonly outDirectory: string
-  readonly signingIdentity?: string | undefined
 }
 
 export interface BuiltBinary {
@@ -24,17 +23,8 @@ export interface BuiltBinary {
   readonly sidecar: string
 }
 
-export const entitlementsFile = resolve(import.meta.dirname, "..", "macos", "entitlements.plist")
-
-// A Developer ID signature turns on the hardened runtime, under which the Bun runtime in the binary needs the JIT
-// entitlement. Without an identity the binary gets an ad-hoc signature, which Apple Silicon needs to run it at all.
-export const codesignArguments = (binary: string, signingIdentity: string | undefined): ReadonlyArray<string> =>
-  signingIdentity === undefined || signingIdentity === ""
-    ? ["--sign", "-", "--force", binary]
-    : ["--sign", signingIdentity, "--force", "--options", "runtime", "--timestamp", "--entitlements", entitlementsFile, binary]
-
-const sign = (binary: string, target: Target, signingIdentity: string | undefined) =>
-  target.os === "darwin" && process.platform === "darwin" ? run("codesign", codesignArguments(binary, signingIdentity)) : Effect.void
+const adHocSign = (binary: string, target: Target) =>
+  target.os === "darwin" && process.platform === "darwin" ? run("codesign", ["--sign", "-", "--force", binary]) : Effect.void
 
 export const buildBinaries = (build: BinaryBuild) =>
   Effect.gen(function*() {
@@ -61,7 +51,7 @@ export const buildBinaries = (build: BinaryBuild) =>
           "--outfile",
           binary
         ])
-        yield* sign(binary, target, build.signingIdentity)
+        yield* adHocSign(binary, target)
         const archive = join(build.outDirectory, binaryArchiveName(build.version, target))
         yield* createTarGz(archive, directory, ["exangelos"])
         const sidecar = join(sidecars, `exangelos-${target.rustTriple}`)

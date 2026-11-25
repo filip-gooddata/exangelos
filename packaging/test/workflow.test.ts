@@ -79,16 +79,28 @@ describe("release workflow", () => {
     expect(push?.env?.HOMEBREW_TAP_DEPLOY_KEY).toBe("${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}")
   })
 
-  it("signs the macOS files only in release builds, from the release environment, with the certificate in one step", () => {
+  it("signs only the macOS tray app, only in release builds, from the release environment, with the certificate in one step", () => {
     expect(loadWorkflow<ReleaseWorkflow>("release.yml").jobs.build.with.sign).toBe(true)
     expect(loadWorkflow<{ jobs: { build: { with: Record<string, unknown> } } }>("release-check.yml").jobs.build.with.sign).toBeUndefined()
     const jobs = loadWorkflow<BuildWorkflow>("build-release.yml").jobs
-    for (const name of ["binaries", "tray-macos"]) {
-      const job = jobs[name]!
-      expect(job.environment, name).toBe("${{ inputs.sign && 'release' || '' }}")
-      const certificateSteps = job.steps.filter((step) => JSON.stringify(step).includes("secrets.APPLE_CERTIFICATE"))
-      expect(certificateSteps.map((step) => step.if), name).toEqual(["inputs.sign"])
-      expect(job.steps.find((step) => step.run?.includes("security delete-keychain"))?.if, name).toBe("always() && inputs.sign")
+    const tray = jobs["tray-macos"]!
+    expect(tray.environment).toBe("${{ inputs.sign && 'release' || '' }}")
+    const certificateSteps = tray.steps.filter((step) => JSON.stringify(step).includes("secrets.APPLE_CERTIFICATE"))
+    expect(certificateSteps.map((step) => step.if)).toEqual(["inputs.sign"])
+    expect(tray.steps.find((step) => step.run?.includes("security delete-keychain"))?.if).toBe("always() && inputs.sign")
+    for (const [name, job] of Object.entries(jobs).filter(([name]) => name !== "tray-macos")) {
+      expect(job.environment, name).toBeUndefined()
+      expect(JSON.stringify(job), name).not.toContain("secrets.APPLE")
     }
+  })
+
+  it("checks that no binary or connector archive carries a signing identity, and that the app holds no core", () => {
+    const jobs = loadWorkflow<BuildWorkflow>("build-release.yml").jobs
+    expect(jobs.binaries.steps.map((step) => step.run).join("\n")).toContain(
+      ".github/scripts/check-no-developer-id.sh packaging/dist/release/*.tar.gz packaging/dist/release/binaries"
+    )
+    const tray = jobs["tray-macos"]!
+    expect(JSON.stringify(tray)).not.toContain("externalBin")
+    expect(JSON.stringify(tray)).not.toContain("release-binaries")
   })
 })

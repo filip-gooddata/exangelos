@@ -1,6 +1,6 @@
-# On every push to main: run the checks, bump the version, build the release files (build-release.yml) with the macOS
-# binaries and app signed by the Developer ID, publish them as a GitHub release and push the Homebrew formula and cask
-# to the tap filip-gooddata/homebrew-exangelos.
+# On every push to main: run the checks, bump the version, build the release files (build-release.yml) with only the
+# macOS tray app signed by the Developer ID, publish them as a GitHub release and push the Homebrew formula and cask to
+# the tap filip-gooddata/homebrew-exangelos.
 #
 # The version is the latest vX.Y.Z tag plus a patch bump. Put #minor or #major in a commit message to bump that part
 # instead. The first release is v0.1.0.

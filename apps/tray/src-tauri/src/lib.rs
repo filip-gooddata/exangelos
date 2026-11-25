@@ -124,7 +124,7 @@ fn start_daemon() {
         Ok(socket) => socket,
         Err(message) => return eprintln!("the Exangelos daemon is not running: {message}"),
     };
-    match sidecar::sidecar_path()
+    match sidecar::core_path()
         .and_then(|sidecar| sidecar::ensure_daemon(&socket, &sidecar, DAEMON_START_DEADLINE))
     {
         Ok(sidecar::Daemon::Answering) => {}
@@ -135,7 +135,7 @@ fn start_daemon() {
 
 fn make_debug_report() {
     thread::spawn(|| {
-        let shown = sidecar::sidecar_path()
+        let shown = sidecar::core_path()
             .and_then(|sidecar| sidecar::debug_report(&sidecar))
             .and_then(|archive| sidecar::reveal(&archive));
         if let Err(message) = shown {

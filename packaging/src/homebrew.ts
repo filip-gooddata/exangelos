@@ -85,11 +85,9 @@ export const renderCask = (release: HomebrewRelease): string => {
   desc "${description}"
   homepage "${homepage}"
 
-  conflicts_with formula: "exangelos"
+  depends_on formula: "filip-gooddata/exangelos/exangelos"
 
   app "Exangelos.app"
-  binary "#{appdir}/Exangelos.app/Contents/MacOS/exangelos"
-  binary "#{appdir}/Exangelos.app/Contents/MacOS/exangelos", target: "xng"
 end
 `
 }

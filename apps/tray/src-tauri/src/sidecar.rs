@@ -1,23 +1,93 @@
+use std::ffi::OsStr;
+use std::fs;
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::thread;
 use std::time::{Duration, Instant};
-pub const SIDECAR: &str = "exangelos";
+pub const CORE: &str = "exangelos";
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum Daemon {
     Answering,
     Started,
 }
-pub fn sidecar_path() -> Result<PathBuf, String> {
+
+/// Where the tray looks for the `exangelos` core, in order: next to the tray
+/// executable (the Linux package and a development bundle ship it there), the
+/// Homebrew prefixes, the install script's `~/.local/bin`, then `PATH`. The
+/// signed macOS app holds no core, so there it comes from the formula the
+/// cask depends on.
+pub fn core_candidates(
+    host_directory: Option<&Path>,
+    home: Option<&Path>,
+    path: Option<&OsStr>,
+) -> Vec<PathBuf> {
+    let mut directories: Vec<PathBuf> = host_directory.map(Path::to_path_buf).into_iter().collect();
+    directories.extend(
+        [
+            "/opt/homebrew/bin",
+            "/usr/local/bin",
+            "/home/linuxbrew/.linuxbrew/bin",
+        ]
+        .iter()
+        .map(PathBuf::from),
+    );
+    directories.extend(home.map(|home| home.join(".local").join("bin")));
+    directories.extend(
+        path.map(|path| {
+            std::env::split_paths(path)
+                .filter(|entry| entry.is_absolute())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default(),
+    );
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    for directory in directories {
+        let candidate = directory.join(CORE);
+        if !candidates.contains(&candidate) {
+            candidates.push(candidate);
+        }
+    }
+    candidates
+}
+
+/// The first candidate that is an executable file.
+pub fn find_core(candidates: &[PathBuf]) -> Result<PathBuf, String> {
+    candidates
+        .iter()
+        .find(|candidate| {
+            fs::metadata(candidate)
+                .map(|metadata| metadata.is_file() && metadata.permissions().mode() & 0o111 != 0)
+                .unwrap_or(false)
+        })
+        .cloned()
+        .ok_or_else(|| {
+            format!(
+                "no exangelos core found; install it with `brew install filip-gooddata/exangelos/exangelos` (looked in {})",
+                candidates
+                    .iter()
+                    .filter_map(|candidate| candidate.parent())
+                    .map(|directory| directory.display().to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            )
+        })
+}
+
+pub fn core_path() -> Result<PathBuf, String> {
     let host = std::env::current_exe()
         .map_err(|error| format!("the host executable path is unknown: {error}"))?;
-    let directory = host
-        .parent()
-        .ok_or("the host executable has no parent directory")?;
-    Ok(directory.join(SIDECAR))
+    let home = std::env::var_os("HOME").map(PathBuf::from);
+    let path = std::env::var_os("PATH");
+    find_core(&core_candidates(
+        host.parent(),
+        home.as_deref(),
+        path.as_deref(),
+    ))
 }
+
 /// Leaves an answering daemon alone. Otherwise runs `exangelos service status`,
 /// which, like any CLI call that finds no daemon, installs and starts the user
 /// service and waits until the socket answers. A failed start returns the
@@ -78,13 +148,21 @@ pub fn debug_report(sidecar: &Path) -> Result<PathBuf, String> {
     if !output.status.success() {
         let message = String::from_utf8_lossy(&output.stderr).trim().to_string();
         return Err(if message.is_empty() {
-            format!("{} debug report failed: {}", sidecar.display(), output.status)
+            format!(
+                "{} debug report failed: {}",
+                sidecar.display(),
+                output.status
+            )
         } else {
             message
         });
     }
-    let written: serde_json::Value = serde_json::from_slice(&output.stdout)
-        .map_err(|error| format!("{} debug report printed no JSON: {error}", sidecar.display()))?;
+    let written: serde_json::Value = serde_json::from_slice(&output.stdout).map_err(|error| {
+        format!(
+            "{} debug report printed no JSON: {error}",
+            sidecar.display()
+        )
+    })?;
     written["path"]
         .as_str()
         .map(PathBuf::from)
