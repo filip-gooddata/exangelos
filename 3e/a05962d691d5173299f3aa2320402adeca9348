@@ -1,0 +1,51 @@
+connectors/jira/README.md
+  s_efc60de4232a1c::t_df952e99aaad3a 28,58-59,73-74,83,100,116
+connectors/jira/src/Cursor.ts
+  s_efc60de4232a1c::t_64f5d116bfb04c 38-40
+connectors/jira/src/Diff.ts
+  s_f04e62ec431b1f::t_8d9b9bf94ea1e0 3,20-21,180-208,234-235
+connectors/jira/src/Events.ts
+  s_f04e62ec431b1f::t_edd99364d507fb 115-120,133-134,151-152
+connectors/jira/src/GitHubSignals.ts
+  s_efc60de4232a1c::t_6b1f22767a7eb2 45-47
+connectors/jira/src/JiraClient.ts
+  s_efc60de4232a1c::t_0a8829826471b4 58,107-112,145-155,329,331-336,339-345
+connectors/jira/src/Options.ts
+  s_efc60de4232a1c::t_3acc02bc256908 40,85-92
+connectors/jira/src/Snapshot.ts
+  s_efc60de4232a1c::t_aabe8e427028ea 51
+connectors/jira/src/Watch.ts
+  s_f04e62ec431b1f::t_324378f6bc7b24 1,18,29-30,97,243-286,298,300-302
+connectors/jira/test/connector.test.ts
+  s_efc60de4232a1c::t_ccc4661c7c910d 91-92,340
+connectors/jira/test/diff.test.ts
+  s_efc60de4232a1c::t_d76c5a9523f4ba 42-43,95-115
+connectors/jira/test/github.test.ts
+  s_efc60de4232a1c::t_e4b4ce76f5af8f 157-158
+connectors/jira/test/watch.test.ts
+  s_efc60de4232a1c::t_f14978c81f628a 6,9-10,24-25,97-187,189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3ea05962d691d5173299f3aa2320402adeca9348",
+  "prompts": {},
+  "sessions": {
+    "s_efc60de4232a1c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e1519fc-1035-4aeb-a9ca-86fe69d9735c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_f04e62ec431b1f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21233-c262-7fe2-9737-d4aa86b42c4f",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
