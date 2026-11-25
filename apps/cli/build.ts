@@ -27,9 +27,12 @@ const template = Object.fromEntries(
     .filter((file) => !file.split(sep).some((segment) => skipped.has(segment)))
     .map((file) => [file, readFileSync(join(templateDirectory, file), "utf8")])
 )
+const skill = readFileSync(join(import.meta.dir, "../../skills/exangelos/SKILL.md"), "utf8")
 const defines = [
   "--define",
   `EXANGELOS_CONNECTOR_TEMPLATE=${JSON.stringify(template)}`,
+  "--define",
+  `EXANGELOS_SKILL=${JSON.stringify(skill)}`,
   ...(values.version === undefined ? [] : ["--define", `EXANGELOS_VERSION=${JSON.stringify(values.version)}`]),
   ...(values["official-connectors"] === undefined ? [] : ["--define", `EXANGELOS_OFFICIAL_CONNECTORS=${values["official-connectors"]}`]),
   ...(values["release-url"] === undefined ? [] : ["--define", `EXANGELOS_RELEASE_URL=${JSON.stringify(values["release-url"])}`])

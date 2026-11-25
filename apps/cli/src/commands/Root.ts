@@ -5,6 +5,7 @@ import * as Agent from "./Agent.ts"
 import * as Debug from "./Debug.ts"
 import * as Logs from "./Logs.ts"
 import * as Management from "./Management.ts"
+import * as Skill from "./Skill.ts"
 import { Json } from "./Output.ts"
 
 export const make = <
@@ -36,6 +37,7 @@ export const make = <
       ...loggedAll(Management.commands),
       logged(Logs.command),
       logged(Debug.command),
+      logged(Skill.command),
       ...(extra.commands ?? [])
     ]),
     Command.withGlobalFlags([Json])

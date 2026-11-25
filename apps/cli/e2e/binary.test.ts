@@ -464,6 +464,40 @@ describe("the exangelos binary", () => {
     expect(run(exangelos, "connector", "scaffold", "template-feed").status).toBe(1)
   })
 
+  it("installs, updates and removes the agent skill for Claude Code and Codex without touching a foreign one", async () => {
+    const claude = join(root, "user", ".claude", "skills", "exangelos")
+    const codex = join(root, "user", ".agents", "skills", "exangelos")
+    const source = await readFile(join(repo, "skills", "exangelos", "SKILL.md"), "utf8")
+
+    expect(run(exangelos, "skill", "install").status).toBe(0)
+    for (const directory of [claude, codex]) {
+      expect(await readFile(join(directory, "SKILL.md"), "utf8")).toContain(source.trimEnd())
+    }
+    const again = run(exangelos, "--json", "skill", "install")
+    expect(JSON.parse(again.stdout).map((outcome: { status: string }) => outcome.status)).toEqual(["unchanged", "unchanged"])
+
+    const owned = await readFile(join(claude, "SKILL.md"), "utf8")
+    await writeFile(join(claude, "SKILL.md"), owned.replace("# Exangelos watches", "# Older"))
+    expect(JSON.parse(run(exangelos, "--json", "skill", "install", "--claude").stdout)[0].status).toBe("updated")
+    expect(await readFile(join(claude, "SKILL.md"), "utf8")).toBe(owned)
+
+    const linkTarget = join(root, "linked-skill.md")
+    await writeFile(linkTarget, owned)
+    await rm(join(claude, "SKILL.md"))
+    await symlink(linkTarget, join(claude, "SKILL.md"))
+    expect(run(exangelos, "skill", "uninstall", "--claude").status).toBe(1)
+    expect(run(exangelos, "skill", "install", "--claude", "--force").status).toBe(0)
+    expect((await lstat(join(claude, "SKILL.md"))).isSymbolicLink()).toBe(false)
+    expect(await readFile(linkTarget, "utf8")).toBe(owned)
+
+    await writeFile(join(codex, "SKILL.md"), "---\nname: exangelos\n---\nmine\n")
+    expect(run(exangelos, "skill", "install", "--codex").status).toBe(1)
+    expect(run(exangelos, "skill", "uninstall").status).toBe(1)
+    expect(await readFile(join(codex, "SKILL.md"), "utf8")).toBe("---\nname: exangelos\n---\nmine\n")
+    await expect(lstat(claude)).rejects.toThrow()
+    await rm(codex, { recursive: true })
+  })
+
   it("cross-compiles for Linux x64 into an ELF executable", async () => {
     const linux = join(root, "bin", "exangelos-linux-x64")
     build("apps/cli/build.ts", "--target=bun-linux-x64", "--outfile", linux)

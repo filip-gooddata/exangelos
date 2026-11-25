@@ -5,6 +5,18 @@
 
 # Exangelos
 
+## Agent skill
+
+The [exangelos skill](skills/exangelos/SKILL.md) teaches Claude Code and Codex to watch PRs, Jira issues and conversations with Exangelos. It ships inside the CLI, so its version matches the binary.
+
+```sh
+exangelos skill install            # both hosts; --claude or --codex for one
+exangelos skill uninstall
+exangelos skill show               # print it, for any other harness
+```
+
+It installs to `~/.claude/skills/exangelos` and `~/.agents/skills/exangelos`. Rerun `exangelos skill install` after each upgrade. It leaves an `exangelos` skill it did not write alone unless you pass `--force`.
+
 ## Debugging
 
 Exangelos keeps its logs on your machine and sends nothing anywhere.
