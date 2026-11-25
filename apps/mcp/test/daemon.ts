@@ -25,6 +25,9 @@ export const existing: Subscription.Subscription = {
 
 const notFaked = () => Effect.fail(new DaemonContract.InvalidRequest({ message: "not faked" }))
 
+/** Waits on this subscription the daemon interrupts, as a stopping daemon does, before one gets through. */
+export const restartedWaits = { id: "sub_restart", interrupts: 0 }
+
 export const handlers = DaemonContract.AgentGroup.toLayer({
   ListConnectors: () => Effect.succeed([]),
   Subscribe: (payload, { headers }) =>
@@ -45,7 +48,7 @@ export const handlers = DaemonContract.AgentGroup.toLayer({
   Events: notFaked,
   Ack: notFaked,
   Wait: ({ id }) =>
-    Effect.succeed({
+    id === restartedWaits.id && restartedWaits.interrupts++ === 0 ? Effect.interrupt : Effect.succeed({
       subscription: id,
       connector: "github-pr",
       subject: "acme/app#123",

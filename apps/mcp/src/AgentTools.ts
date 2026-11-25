@@ -2,6 +2,7 @@ import { Cause, Clock, DateTime, Effect, Exit, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
 import { Catalogue, Event, Ids, Connector, Session, Subscription, Wake } from "@exangelos/domain"
+import { Reconnect } from "@exangelos/daemon-client"
 import { Redact } from "@exangelos/logging"
 import * as AgentClient from "./AgentClient.ts"
 import { type AgentFailure, failureMessage, wakeHint } from "./Messages.ts"
@@ -212,8 +213,15 @@ export const handlers = toolkit.toLayer(Effect.gen(function*() {
     show: (input) => call((client) => client.Show(input)),
     events: (input) => call((client) => client.Events(input)).pipe(Effect.map((events) => ({ events }))),
     ack: (input) => call((client) => client.Ack(input)),
+    // A daemon restart or upgrade drops the call; the subscription survives it, so the wait goes on.
     wait: (input) =>
-      call((client) => client.Wait(input)).pipe(Effect.map((wake) => ({ text: WakeText.render(wake), wake }))),
+      Reconnect.persist(
+        Effect.scoped(Effect.flatMap(connect, (client) => Reconnect.daemonInterruptsAsLoss(client.Wait(input)))),
+        Effect.scoped(Effect.flatMap(connect, (client) => client.ListConnectors()))
+      ).pipe(
+        Effect.mapError((failure) => fail(failure, input.id)),
+        Effect.map((wake) => ({ text: WakeText.render(wake), wake }))
+      ),
     pause: (input) => call((client) => client.Pause(input)),
     resume: (input) => call((client) => client.Resume(input), input.id).pipe(Effect.map(withHint)),
     retarget: ({ id, ...choice }) =>

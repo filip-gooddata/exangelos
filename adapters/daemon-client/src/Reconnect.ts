@@ -1,8 +1,8 @@
-import { Context, Duration, Effect, Schedule, Schema } from "effect"
-import type { RpcClientError } from "effect/rpc"
+import { Cause, Context, Duration, Effect, Schedule, Schema } from "effect"
+import { RpcClientError } from "effect/rpc"
 
 /** How long a lost daemon gets to answer again before {@link persist} fails with {@link DaemonUnreachable}. */
-export const Patience = Context.Reference<Duration.Duration>("@exangelos/cli/Reconnect/Patience", {
+export const Patience = Context.Reference<Duration.Duration>("@exangelos/daemon-client/Reconnect/Patience", {
   defaultValue: () => Duration.minutes(5)
 })
 
@@ -10,6 +10,17 @@ export class DaemonUnreachable extends Schema.TaggedError<DaemonUnreachable>()("
   waited: Schema.String,
   reason: Schema.String
 }) {}
+
+const daemonStopped = new RpcClientError.RpcClientError({
+  reason: new RpcClientError.RpcClientDefect({ message: "the daemon stopped before it answered", cause: undefined })
+})
+
+/**
+ * Turns a call the daemon interrupted, as it does to every call in flight when it stops, into a lost connection that
+ * {@link persist} retries. Interrupting the calling fiber itself still interrupts it.
+ */
+export const daemonInterruptsAsLoss = <A, E, R>(call: Effect.Effect<A, E, R>): Effect.Effect<A, E | RpcClientError.RpcClientError, R> =>
+  call.pipe(Effect.catchCauseIf(Cause.hasInterruptsOnly, () => Effect.fail(daemonStopped)))
 
 const isConnectionError = (error: unknown): error is RpcClientError.RpcClientError =>
   typeof error === "object" && error !== null && "_tag" in error && error._tag === "RpcClientError"

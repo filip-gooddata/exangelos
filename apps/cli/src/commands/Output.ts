@@ -2,7 +2,7 @@ import { Console, Data, Effect, Runtime, Schema } from "effect"
 import { Flag, GlobalFlag } from "effect/cli"
 import type { RpcClientError } from "effect/rpc"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
-import { DaemonClient } from "@exangelos/daemon-client"
+import { DaemonClient, Reconnect } from "@exangelos/daemon-client"
 import {
   backlogOverLimitMessage,
   connectionFailedMessage,
@@ -11,7 +11,6 @@ import {
   similarSubscriptionsMessage
 } from "../render/Messages.ts"
 import { InputInvalid } from "./Input.ts"
-import { DaemonUnreachable } from "./Reconnect.ts"
 
 const command = WakeText.command
 
@@ -47,7 +46,7 @@ const ContractError = Schema.Union([
   DaemonContract.ConfigurationInvalid,
   DaemonContract.ConfigurationRejected,
   DaemonClient.DaemonNotRunning,
-  DaemonUnreachable,
+  Reconnect.DaemonUnreachable,
   InputInvalid
 ])
 type ContractError = typeof ContractError.Type

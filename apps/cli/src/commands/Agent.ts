@@ -1,12 +1,12 @@
 import { Effect, Option, Schema } from "effect"
 import { Argument, Command, Flag } from "effect/cli"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
+import { Reconnect } from "@exangelos/daemon-client"
 import { Connector, Subscription } from "@exangelos/domain"
 import * as Text from "../render/Text.ts"
 import { Connection } from "./Connection.ts"
 import * as Input from "./Input.ts"
 import { type Failure, respond } from "./Output.ts"
-import * as Reconnect from "./Reconnect.ts"
 
 const subscriptionArgument = Argument.String("subscription").pipe(
   Argument.withDescription("The subscription id, for example sub_7f3k")

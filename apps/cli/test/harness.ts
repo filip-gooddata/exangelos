@@ -7,10 +7,9 @@ import { type Rpc, type RpcGroup, RpcServer, RpcTest } from "effect/rpc"
 import { TestConsole } from "effect/testing"
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import { Catalogue, Ids, Connector, Subscription } from "@exangelos/domain"
-import { DaemonClient, DaemonServer } from "@exangelos/daemon-client"
+import { DaemonClient, DaemonServer, Reconnect } from "@exangelos/daemon-client"
 import { Paths } from "@exangelos/paths"
 import * as Connection from "../src/commands/Connection.ts"
-import * as Reconnect from "../src/commands/Reconnect.ts"
 import * as Root from "../src/commands/Root.ts"
 
 const at = DateTime.makeUnsafe("2026-11-12T10:00:00Z")
