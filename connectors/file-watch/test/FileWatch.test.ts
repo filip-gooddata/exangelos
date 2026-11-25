@@ -110,12 +110,26 @@ describe("file-watch connector", () => {
             )
           )
       })
+      let sent = 0
       const notice = (event: FileSystem.WatchEvent) =>
         Effect.gen(function*() {
-          const before = yield* Ref.get(pulls)
+          sent += 1
           yield* Queue.offer(notices, event)
-          while ((yield* Ref.get(pulls)) <= before) yield* Effect.yieldNow
+          while ((yield* Ref.get(pulls)) <= sent) yield* Effect.yieldNow
         })
+      const observed = yield* Ref.make<ReadonlyArray<number>>([])
+      const fileSystem = Layer.effect(
+        FileSystem.FileSystem,
+        Effect.map(FileSystem.FileSystem, (fs) =>
+          FileSystem.FileSystem.of({
+            ...fs,
+            realPath: (path) =>
+              Clock.currentTimeMillis.pipe(
+                Effect.flatMap((now) => Ref.update(observed, (times) => [...times, now])),
+                Effect.andThen(fs.realPath(path))
+              )
+          }))
+      ).pipe(Layer.provide(BunFileSystem.layer.pipe(Layer.provide(Layer.succeed(FileSystem.WatchBackend, backend)))))
       const breather = Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
       const step = Duration.millis(500)
 
@@ -129,6 +143,7 @@ describe("file-watch connector", () => {
         )
         expect((yield* Queue.take(items))._tag).toBe("Cursor")
         const started = yield* Clock.currentTimeMillis
+        yield* Ref.set(observed, [])
 
         yield* fs.writeFileString(log, "started")
         yield* notice({ _tag: "Create", path: log })
@@ -146,7 +161,9 @@ describe("file-watch connector", () => {
           yield* breather
           item = yield* Queue.poll(items)
         }
-        expect((yield* Clock.currentTimeMillis) - started).toBeGreaterThanOrEqual(2000)
+        const observations = (yield* Ref.get(observed)).map((at) => at - started)
+        expect(observations.length).toBeGreaterThan(0)
+        expect(Math.min(...observations)).toBeGreaterThanOrEqual(2000)
         const event = item.value
         expect(event._tag === "Event" ? [event.event.type, event.event.payload] : event._tag).toEqual(
           ["file.created", expect.objectContaining({ size: 13 })]
@@ -159,7 +176,7 @@ describe("file-watch connector", () => {
         expect(Option.isNone(yield* Queue.poll(items))).toBe(true)
       }).pipe(
         Effect.scoped,
-        Effect.provide(BunFileSystem.layer.pipe(Layer.provide(Layer.succeed(FileSystem.WatchBackend, backend))))
+        Effect.provide(fileSystem)
       )
     }))
 
