@@ -1,4 +1,5 @@
 import type { Emitted } from "./Events.ts"
+import * as Login from "./Login.ts"
 import type { Check, Comment, DraftEvent, Review, ReviewRequest, Snapshot, Thread } from "./Snapshot.ts"
 
 export type { Emitted, EventType } from "./Events.ts"
@@ -153,9 +154,9 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
   if (draftBefore !== null) {
     const flips = timeline.items.filter((item): item is DraftEvent => "toDraft" in item)
     const changes = flips.length > 0
-      ? flips.map((flip) => ({ toDraft: flip.toDraft, at: flip.createdAt }))
+      ? flips.map((flip) => ({ toDraft: flip.toDraft, at: flip.createdAt, id: flip.id }))
       : draftBefore !== snapshot.isDraft
-      ? [{ toDraft: snapshot.isDraft, at: now }]
+      ? [{ toDraft: snapshot.isDraft, at: now, id: "state" }]
       : []
     for (const change of changes) {
       const from = draftState(!change.toDraft)
@@ -166,7 +167,7 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
         summary: change.toDraft ? "Turned back into a draft" : "Ready for review",
         payload: { head, from, to },
         link: snapshot.url,
-        dedupeKey: `draft.changed/${head}/${from}-${to}/${change.at}`
+        dedupeKey: `draft.changed/${head}/${from}-${to}/${change.at}/${change.id}`
       })
     }
   }
@@ -313,7 +314,7 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
   let reviewer: Memory["reviewer"] = null
   if (filters.reviewer !== null) {
     const login = filters.reviewer
-    const same = (name: string | null) => name !== null && name.toLowerCase() === login.toLowerCase()
+    const same = (name: string | null) => Login.same(name, login)
     const before = previous?.reviewer !== undefined && previous.reviewer !== null && same(previous.reviewer.login)
       ? previous.reviewer
       : null
@@ -344,7 +345,10 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     } else {
       for (const item of timeline.items) {
         if (!("reviewer" in item) || !same(item.reviewer)) continue
-        if (reviewedAt !== null && reviewedAt < item.createdAt) rerequested(item.id, item.createdAt)
+        // A review seen on an earlier poll came before a request first seen now, even at the same instant.
+        const earlier = reviewedAt !== null &&
+          (reviewedAt < item.createdAt || (before.reviewedAt !== null && before.reviewedAt <= item.createdAt))
+        if (earlier) rerequested(item.id, item.createdAt)
       }
     }
 

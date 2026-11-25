@@ -24,7 +24,7 @@ const timeline = `timelineItems(last: 50, before: $timeline,
   pageInfo { hasPreviousPage startCursor }
   nodes {
     __typename
-    ... on ReviewRequestedEvent { id createdAt requestedReviewer { __typename ... on User { login } } }
+    ... on ReviewRequestedEvent { id createdAt requestedReviewer { __typename ... on User { login } ... on Bot { login } } }
     ... on ReadyForReviewEvent { id createdAt }
     ... on ConvertToDraftEvent { id createdAt }
   }
@@ -49,7 +49,7 @@ export const pullRequest = `query PullRequest($owner: String!, $repo: String!, $
         refUpdateRule { requiredStatusCheckContexts }
         branchProtectionRule { requiredStatusCheckContexts }
       }
-      reviewRequests(first: 100) { nodes { requestedReviewer { __typename ... on User { login } } } }
+      reviewRequests(first: 100) { nodes { requestedReviewer { __typename ... on User { login } ... on Bot { login } } } }
       reviewerReviews: reviews(author: $reviewer, first: 1, states: [APPROVED, CHANGES_REQUESTED, COMMENTED, DISMISSED]) {
         nodes { submittedAt }
       }

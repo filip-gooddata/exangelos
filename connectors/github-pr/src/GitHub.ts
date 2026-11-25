@@ -1,5 +1,6 @@
 import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { HttpClient, HttpClientRequest } from "effect/http"
+import * as Logins from "./Login.ts"
 import type { PullRequestRef } from "./PullRequestRef.ts"
 import * as Query from "./Query.ts"
 import type { Check, CheckOutcome, Snapshot } from "./Snapshot.ts"
@@ -32,6 +33,15 @@ export interface Since {
   readonly replies: Readonly<Record<string, string | null>>
   readonly repliesSince: string | null
   readonly timeline: string | null
+}
+
+/**
+ * The reviewer of reviewer mode. `findRequest` asks for the timeline to be read back until the request that is
+ * outstanding for them, when the connector has not watched for this reviewer before.
+ */
+export interface ReviewerQuery {
+  readonly login: string
+  readonly findRequest: boolean
 }
 
 export const endpoint = (host: string) =>
@@ -246,7 +256,7 @@ export class GitHub extends Context.Service<GitHub, {
     connection: Connection,
     ref: PullRequestRef,
     since: Since | undefined,
-    reviewer: string | null
+    reviewer: ReviewerQuery | null
   ) => Effect.Effect<Fetched, GitHubError>
 }>()("@exangelos/connector-github-pr/GitHub") {}
 
@@ -318,11 +328,16 @@ export const layer = Layer.effect(
         Effect.catchTag("RateLimited", ({ retryAfter }) => Effect.sleep(retryAfter).pipe(Effect.andThen(request)))
       )
 
-    const pullRequest = (connection: Connection, ref: PullRequestRef, since: Since | undefined, reviewer: string | null) =>
+    const pullRequest = (
+      connection: Connection,
+      ref: PullRequestRef,
+      since: Since | undefined,
+      reviewer: ReviewerQuery | null
+    ) =>
       Effect.gen(function*() {
         const variables = { owner: ref.owner, repo: ref.repo, number: ref.number }
         const notFound = new NotFound({ reason: `No pull request ${ref.owner}/${ref.repo}#${ref.number}` })
-        const first = yield* post(connection, PullRequestData, Query.pullRequest, { ...variables, reviewer })
+        const first = yield* post(connection, PullRequestData, Query.pullRequest, { ...variables, reviewer: reviewer?.login ?? null })
         const pr = first.data.repository?.pullRequest
         if (pr == null) return yield* notFound
 
@@ -334,7 +349,16 @@ export const layer = Layer.effect(
             yield* Effect.sleep(Duration.millis(Math.max(quota.value.resetAt - now, 0)))
           }
         })
-        const reached = (mark: string | null, oldest: string | null) => mark !== null && oldest !== null && oldest < mark
+        // Older pages hold only items created before this page's, so ones at the mark's instant were seen already.
+        const reached = (mark: string | null, oldest: string | null) => mark !== null && oldest !== null && oldest <= mark
+        const outstanding = reviewer !== null && reviewer.findRequest &&
+            pr.reviewRequests.nodes.some((n) => Logins.same(n.requestedReviewer?.login ?? null, reviewer.login))
+          ? reviewer.login
+          : null
+        const requestFound = () =>
+          nodes.timeline.some((n) =>
+            n.__typename === "ReviewRequestedEvent" && Logins.same(n.requestedReviewer?.login ?? null, outstanding)
+          )
         const older = <N>(
           key: "reviews" | "comments" | "timeline",
           page: { readonly pageInfo: typeof Backward.Type; readonly nodes: ReadonlyArray<N> } | undefined,
@@ -345,10 +369,9 @@ export const layer = Layer.effect(
           if (page === undefined) return
           into.unshift(...page.nodes)
           const oldest = page.nodes[0] === undefined ? null : at(page.nodes[0])
-          if (
-            since !== undefined && page.pageInfo.hasPreviousPage && page.pageInfo.startCursor &&
-            !reached(since[key], oldest)
-          ) {
+          const wanted = (since !== undefined && !reached(since[key], oldest)) ||
+            (key === "timeline" && outstanding !== null && !requestFound())
+          if (page.pageInfo.hasPreviousPage && page.pageInfo.startCursor && wanted) {
             pending[key] = page.pageInfo.startCursor
           }
         }

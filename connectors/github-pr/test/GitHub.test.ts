@@ -133,4 +133,43 @@ describe("GitHub", () => {
       expect(snapshot.threads.map((t) => t.id)).toEqual(["T_1", "T_2"])
       expect((yield* stub.sent).map((s) => s.variables.threads)).toEqual([undefined, "before-T_2"])
     }))
+
+  it.effect("stops reading older replies at a page that starts at the instant last seen", () =>
+    Effect.gen(function*() {
+      const c = (id: string) => ({ id, login: "ana", createdAt: "2026-11-12T10:05:00Z" })
+      const stub = yield* Stub.make([
+        Stub.pullRequest({ threads: [{ id: "T_1", comments: [c("R_1"), c("R_2")], olderReplies: "before-R_1" }] })
+      ])
+      const since: GitHub.Since = {
+        reviews: null,
+        comments: null,
+        threads: null,
+        replies: { T_1: "2026-11-12T10:05:00Z" },
+        repliesSince: null,
+        timeline: null
+      }
+      yield* GitHub.GitHub.use((github) => github.pullRequest(connection(), ref, since, null)).pipe(
+        Effect.provide(Layer.provide(GitHub.layer, stub.layer))
+      )
+
+      expect(yield* stub.sent).toHaveLength(1)
+    }))
+
+  it.effect("reads the timeline back to the request outstanding for a reviewer it starts watching for", () =>
+    Effect.gen(function*() {
+      const stub = yield* Stub.make([
+        Stub.pullRequest({
+          requested: ["vera"],
+          requests: [{ id: "Q_2", login: "bo", createdAt: "2026-11-12T10:00:00Z" }],
+          olderTimeline: "before-Q_2"
+        }),
+        Stub.timelinePage([{ id: "Q_1", login: "vera", createdAt: "2026-11-11T10:00:00Z" }], "before-Q_1")
+      ])
+      const { snapshot } = yield* GitHub.GitHub.use((github) =>
+        github.pullRequest(connection(), ref, undefined, { login: "vera", findRequest: true })
+      ).pipe(Effect.provide(Layer.provide(GitHub.layer, stub.layer)))
+
+      expect(snapshot.reviewRequests.map((r) => r.id)).toEqual(["Q_1", "Q_2"])
+      expect((yield* stub.sent).map((s) => s.variables.timeline)).toEqual([undefined, "before-Q_2"])
+    }))
 })

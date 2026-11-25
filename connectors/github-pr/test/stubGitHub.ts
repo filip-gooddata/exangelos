@@ -94,6 +94,9 @@ export interface PullRequestFields {
   readonly isDraft?: boolean
   readonly threads?: ReadonlyArray<ThreadFields>
   readonly olderThreads?: string
+  readonly requested?: ReadonlyArray<string>
+  readonly requests?: ReadonlyArray<RequestFields>
+  readonly olderTimeline?: string
   readonly head?: string
   readonly mergeable?: "MERGEABLE" | "CONFLICTING" | "UNKNOWN"
   readonly reviewDecision?: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null
@@ -102,6 +105,18 @@ export interface PullRequestFields {
   readonly headers?: Record<string, string>
   readonly checks?: ReadonlyArray<{ readonly id: string; readonly name: string; readonly conclusion: string | null }>
 }
+
+type RequestFields = { readonly id: string; readonly login: string; readonly createdAt: string }
+
+const requestNode = (r: RequestFields) => ({
+  __typename: "ReviewRequestedEvent",
+  id: r.id,
+  createdAt: r.createdAt,
+  requestedReviewer: { __typename: "User", login: r.login }
+})
+
+export const timelinePage = (requests: ReadonlyArray<RequestFields>, older: string | null) =>
+  ok({ repository: { pullRequest: { timelineItems: page(requests.map(requestNode), older) } } })
 
 const threadNode = (t: ThreadFields) => ({
   id: t.id,
@@ -135,12 +150,12 @@ export const pullRequest = (fields: PullRequestFields = {}): Answer =>
           refUpdateRule: { requiredStatusCheckContexts: ["build"] },
           branchProtectionRule: null
         },
-        reviewRequests: { nodes: [] },
+        reviewRequests: { nodes: (fields.requested ?? []).map((login) => ({ requestedReviewer: { __typename: "User", login } })) },
         reviewerReviews: { nodes: [] },
         reviews: page([]),
         comments: page((fields.comments ?? []).map(commentNode), fields.olderComments ?? null),
         reviewThreads: page((fields.threads ?? []).map(threadNode), fields.olderThreads ?? null),
-        timelineItems: page([]),
+        timelineItems: page((fields.requests ?? []).map(requestNode), fields.olderTimeline ?? null),
         commits: {
           nodes: [{
             commit: {

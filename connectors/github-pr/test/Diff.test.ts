@@ -155,18 +155,25 @@ describe("step", () => {
 
     expect(keys([draft])).toEqual([])
     expect(keys([draft, ready])).toEqual([
-      `draft.changed/${head}/draft-ready/2026-11-12T11:01:00Z`,
-      `draft.changed/${head}/ready-draft/2026-11-12T11:02:00Z`,
-      `draft.changed/${head}/draft-ready/2026-11-12T11:03:00Z`
+      `draft.changed/${head}/draft-ready/2026-11-12T11:01:00Z/e1`,
+      `draft.changed/${head}/ready-draft/2026-11-12T11:02:00Z/e2`,
+      `draft.changed/${head}/draft-ready/2026-11-12T11:03:00Z/e3`
     ])
     expect(keys([draft, ready, ready])).toEqual([])
+  })
+
+  it("keeps draft changes made within the same second apart", () => {
+    const at = "2026-11-12T11:00:00Z"
+    const flips = [{ id: "e1", toDraft: false, createdAt: at }, { id: "e2", toDraft: true, createdAt: at }, { id: "e3", toDraft: false, createdAt: at }]
+
+    expect(new Set(keys([snapshot({ isDraft: true }), snapshot({ isDraft: false, draftEvents: flips })])).size).toBe(3)
   })
 
   it("falls back to the draft state when the timeline shows no change, and reports it on the closing poll", () => {
     const merged = snapshot({ isDraft: false, state: "MERGED", mergedAt: now })
     const last = poll([snapshot({ isDraft: true }), merged])
 
-    expect(last.events.map((e) => e.dedupeKey)).toEqual([`draft.changed/${head}/draft-ready/${now}`])
+    expect(last.events.map((e) => e.dedupeKey)).toEqual([`draft.changed/${head}/draft-ready/${now}/state`])
     expect(last.end).toBe("merged")
   })
 
@@ -308,6 +315,21 @@ describe("step", () => {
       expect(events.filter((e) => e.type !== "review.submitted").map((e) => e.dedupeKey))
         .toEqual(["review.rerequested/q1", "reviewer.submitted/r2"])
       expect(events.find((e) => e.type === "review.rerequested")?.payload).toMatchObject({ reviewedAt: "2026-11-12T10:00:00Z" })
+    })
+
+    it("reports a request made in the same second as a review seen on an earlier poll", () => {
+      const reviewed = snapshot({ reviews: [review("r1", "vera", "2026-11-12T10:00:00Z")] })
+      const asked = { ...reviewed, reviewRequests: [request("q1", "vera", "2026-11-12T10:00:00Z")] }
+
+      expect(keys([reviewed, asked], filters)).toEqual(["review.rerequested/q1"])
+    })
+
+    it("matches a bot reviewer whether or not GitHub writes [bot] after its login", () => {
+      const bot = { ...noFilters, reviewer: "copilot-reviewer[bot]" }
+      const reviewed = snapshot({ reviews: [review("r1", "copilot-reviewer[bot]", "2026-11-12T10:00:00Z", "COMMENTED")] })
+      const asked = { ...reviewed, reviewRequests: [request("q1", "copilot-reviewer", "2026-11-12T11:00:00Z")] }
+
+      expect(keys([reviewed, asked], bot)).toEqual(["review.rerequested/q1"])
     })
 
     it("on its first poll, finds an earlier review beyond the fetched pages and an outstanding request", () => {

@@ -7,6 +7,16 @@ Watches one GitHub pull request and reports what changes on it. The main paramet
 - `token`: a GitHub token that can read the repository. It is a secret.
 - `host`: a GitHub Enterprise Server host name. Leave it empty for github.com.
 
+To take the token from a GitHub CLI login, let the CLI run `gh` and store its answer in the keychain:
+
+```sh
+exangelos connector configure github-pr \
+  --secret-command 'host=printf %s github.com' \
+  --secret-command 'token=gh auth token --hostname github.com'
+```
+
+`gh`'s token carries every scope `gh` was granted, which is more than this connector needs; a fine-grained token that can read the repository is narrower. The stored copy does not follow later `gh` logins: configure again after GitHub refuses it.
+
 ## Parameters
 
 - `pullRequest`: `owner/repo#number`.
@@ -33,7 +43,7 @@ exangelos update SUBSCRIPTION pullRequest=owner/repo#7 reviewStates='["APPROVED"
 | Event | Dedupe key |
 | --- | --- |
 | `head.changed` | `head.changed/<head>` |
-| `draft.changed` | `draft.changed/<head>/<from>-<to>/<time of the change>` |
+| `draft.changed` | `draft.changed/<head>/<from>-<to>/<time of the change>/<timeline event id>` |
 | `base.changed` | `base.changed/<branch>/<base oid>` |
 | `conflict.detected` | `conflict.detected/<head>/<base oid>` |
 | `checks.failed` | `checks.failed/<head>/<check id>` |
@@ -52,7 +62,7 @@ The watch ends when the pull request is merged or closed, and gives that as the 
 
 The first poll reports the current state: a conflict, failed checks, passed checks and readiness. It reports none of the history before it: no earlier reviews, comments, threads, replies or draft changes.
 
-- `draft.changed` reports every change after the first poll, ready to draft included, with `from` and `to` set to `draft` or `ready`. It reads the changes from the pull request's timeline, so a change and its reversal between two polls are both reported, and so is a change seen on the poll that finds the pull request merged or closed. When the timeline lists no change but the state differs, it reports the state.
+- `draft.changed` reports every change after the first poll, ready to draft included, with `from` and `to` set to `draft` or `ready`. It reads the changes from the pull request's timeline, so a change and its reversal between two polls are both reported, and so is a change seen on the poll that finds the pull request merged or closed. When the timeline lists no change but the state differs, it reports the state, keyed by the poll's time and `state`.
 - `base.changed` without `baseHead` reports every move of the base branch. For a pull request into a busy trunk that is noise: leave `base.changed` out of `--types`. With `baseHead`, it reports a base that differs from the pinned one, once per base commit, and on the first poll too. With `current`, the pin is the base the first poll saw, kept in the cursor. Changing `baseHead` through `update` pins again.
 - `conflict.detected` fires when `mergeable` is `CONFLICTING` or `mergeStateStatus` is `DIRTY`.
 - `check.passed` fires once per matching check per head when it concludes `SUCCESS`, on the first poll too. A neutral or skipped check does not fire it, though `checks.passed` counts it as passed. Ignored checks never fire it.
@@ -63,7 +73,7 @@ The first poll reports the current state: a conflict, failed checks, passed chec
 `reviewer=LOGIN` turns on three events that need to know who the reviewer is:
 
 - `reviewer.submitted`: LOGIN submitted a review in any state, `COMMENTED` included. The payload has `state`, `reviewId`, `submittedAt` and `commit`.
-- `review.rerequested`: LOGIN was asked to review again after a review of theirs. It reads review-request events from the timeline, so a request made and answered between two polls is still reported. On the first poll it fires when LOGIN is a requested reviewer and has reviewed before; the first review is looked up by author, however many reviews came after it.
+- `review.rerequested`: LOGIN was asked to review again after a review of theirs. It reads review-request events from the timeline, so a request made and answered between two polls is still reported. On the first poll it fires when LOGIN is a requested reviewer and has reviewed before; the first review is looked up by author, however many reviews came after it, and the timeline is read back to the outstanding request. A bot reviewer matches with or without `[bot]` after its login.
 - `author.activity`: the pull request's author commented, opened a review thread or replied in one, resolved threads included.
 
 Without `reviewer` these events never fire. The parameter only adds them; it does not mute anything. Choose what reviewer mode hears with `--types`, usually `head.changed,reviewer.submitted,review.rerequested,author.activity`. The merged or closed end applies in every mode.
@@ -90,7 +100,7 @@ A subscription expires after the daemon's lifetime, 7 days by default, and keeps
 Resume  exangelos resume SUBSCRIPTION
 ```
 
-`exangelos resume` restarts the watch with a fresh expiry from the stored cursor, so nothing GitHub still lists is lost.
+`exangelos resume` restarts the watch with a fresh expiry from the stored cursor, so nothing GitHub still lists is lost. It is refused while the backlog is over its limit, so acknowledge events first with the `Ack` command the wake also prints.
 
 ## Moving from pr-watch
 
