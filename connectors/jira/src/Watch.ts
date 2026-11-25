@@ -94,7 +94,7 @@ const read = (watched: Watched, site: JiraSite, cursor: string | undefined) =>
     const { client, options, target } = watched
     if (target.kind === "issue") {
       const previous = cursor === undefined ? undefined : yield* decodeIssueCursor(cursor).pipe(Effect.catch(rebaseline))
-      const snapshot = yield* client.readIssue({ site, key: target.key, position: issuePosition(previous), fields: options.fields ?? [] })
+      const snapshot = yield* client.readIssue({ site, key: target.key, position: issuePosition(previous), fields: options.fields ?? defaultValueFields })
       const jira = diffIssue({ siteUrl: site.url, previous, snapshot, fields: options.fields, observedAt: yield* DateTime.now })
       const signals = options.github
       if (signals === undefined) {
@@ -183,7 +183,7 @@ const poll = (watched: Watched, state: PollState) => {
   return routed.pipe(
     Effect.map(({ cursor: after, events }): Poll => {
       const next = encodeCursor(after)
-      const items = events.map(toItem)
+      const items = events.map((event) => toItem(event))
       return {
         items: next === cursor ? items : [...items, Connector.cursor(next)],
         next: { ...reached, cursor: next, wait: defaultPollInterval, ended: false }
@@ -191,14 +191,22 @@ const poll = (watched: Watched, state: PollState) => {
     }),
     Effect.catchTags({
       RateLimited: ({ retryAfterSeconds }) =>
-        Effect.succeed<Poll>({
-          items: [],
-          next: {
-            ...state,
-            ...reached,
-            wait: retryAfterSeconds === undefined ? defaultPollInterval : Duration.seconds(retryAfterSeconds),
+        Effect.gen(function*() {
+          const failures = (state.outage?.failures ?? 0) + 1
+          if (failures >= failureLimit) {
+            return yield* new Connector.SourceFailed({ reason: `Jira rate limited ${failures} polls in a row.` })
           }
-        }).pipe(Effect.tap(Effect.logWarning("Jira is rate limiting this connector; waiting before the next poll"))),
+          yield* Effect.logWarning("Jira is rate limiting this connector; waiting before the next poll")
+          return {
+            items: [],
+            next: {
+              ...state,
+              ...reached,
+              outage: { failures, since: state.outage?.since ?? (yield* DateTime.now) },
+              wait: retryAfterSeconds === undefined ? defaultPollInterval : Duration.seconds(retryAfterSeconds)
+            }
+          } satisfies Poll
+        }),
       NotFound: () =>
         client.resolveRoute(site).pipe(
           Effect.as(ended(state, `The ${subjectName(target)} no longer exists or this account cannot see it.`)),
@@ -242,6 +250,8 @@ const poll = (watched: Watched, state: PollState) => {
 
 export const failureLimit = 12
 
+export const defaultValueFields = ["status", "assignee", "resolution", "fixVersions"]
+
 const Outage = Schema.Struct({ since: Schema.String })
 const CursorOutage = Schema.fromJsonString(Schema.Struct({ outage: Schema.optionalKey(Outage) }))
 
@@ -267,11 +277,9 @@ const failedPoll = (input: Watched, state: PollState, failed: Connector.SourceFa
       return { items: [], next: { ...state, outage, wait: defaultPollInterval } } satisfies Poll
     }
     const stopped: PollState = { ...state, outage, fail: failed }
-    if (state.cursor === undefined || (yield* reportedOutage(state.cursor)) !== undefined) {
-      return { items: [], next: stopped } satisfies Poll
-    }
+    if ((yield* reportedOutage(state.cursor)) !== undefined) return { items: [], next: stopped } satisfies Poll
     const since = DateTime.formatIso(outage.since)
-    const cursor = JSON.stringify({ ...JSON.parse(state.cursor), outage: { since } })
+    const cursor = JSON.stringify({ ...(state.cursor === undefined ? {} : JSON.parse(state.cursor)), outage: { since } })
     const { target } = input
     const event: JiraEvent = {
       type: eventTypes.jiraUnavailable,
@@ -281,7 +289,7 @@ const failedPoll = (input: Watched, state: PollState, failed: Connector.SourceFa
       link: target.kind === "issue" ? browseLink(input.site.url, target.key) : input.site.url,
       dedupeKey: `${subject(target)}:unavailable:${since}`
     }
-    return { items: [toItem(event), Connector.cursor(cursor)], next: { ...stopped, cursor } } satisfies Poll
+    return { items: [toItem(event, cursor)], next: { ...stopped, cursor } } satisfies Poll
   })
 
 /**

@@ -93,24 +93,35 @@ describe("diffIssue", () => {
   })
 
   it("reports a watched field whose value changed without a changelog item, once", () => {
-    const watched = { ...snapshot, values: { votes: "1", fixVersions: "1.1" } }
+    const watched = { ...snapshot, values: { votes: "1", fixVersions: "[\"1.1\"]", labels: "[\"a, b\"]" } }
     const baseline = diffIssue({ siteUrl, previous: seenUpTo100, snapshot: watched, observedAt: at(9) })
-    expect(baseline.cursor.values).toEqual({ votes: "1", fixVersions: "1.1" })
+    expect(baseline.cursor.values).toEqual(watched.values)
     const voted = {
       ...watched,
       changelog: {
         start: 0,
         items: [...histories, { id: "103", created: at(4), author: mia, items: [change("fixVersions", "1.1", "1.2")] }]
       },
-      values: { votes: "2", fixVersions: "1.2" }
+      values: { votes: "null", fixVersions: "[\"1.2\"]", labels: "[\"a\",\"b\"]" }
     }
     const poll = diffIssue({ siteUrl, previous: baseline.cursor, snapshot: voted, observedAt: at(9) })
     expect(poll.events.filter((event) => event.type === "field.changed").map((event) => [event.dedupeKey, event.summary]))
       .toEqual([
         ["10042:history:103:0", "DEMO-7: fixVersions 1.1 → 1.2 by Mia"],
-        ["10042:value:1:votes", "DEMO-7: votes 1 → 2"]
+        ["10042:value:1:votes", "DEMO-7: votes 1 → (none)"],
+        ["10042:value:2:labels", "DEMO-7: labels a, b → a, b"]
       ])
     expect(diffIssue({ siteUrl, previous: poll.cursor, snapshot: voted, observedAt: at(9) }).events).toEqual([])
+
+    const unwatched = diffIssue({ siteUrl, previous: poll.cursor, snapshot: { ...voted, values: {} }, observedAt: at(9) })
+    const rewatched = diffIssue({
+      siteUrl,
+      previous: unwatched.cursor,
+      snapshot: { ...voted, values: { votes: "3" } },
+      observedAt: at(9)
+    })
+    expect(unwatched.cursor.valueChanges).toBe(2)
+    expect(rewatched.events.map((event) => event.dedupeKey)).toEqual([])
   })
 
   it("maps each change and comment to its event type, oldest first", () => {

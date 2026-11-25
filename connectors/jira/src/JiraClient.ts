@@ -142,15 +142,14 @@ const parseTime = (value: string): Effect.Effect<DateTime.Utc, DecodeFailure> =>
     onSome: (time) => Effect.succeed(DateTime.toUtc(time))
   })
 
-const fieldText = (value: unknown): string | null => {
-  if (value === null || value === undefined) return null
-  if (Array.isArray(value)) return value.map(fieldText).filter((item) => item !== null).join(", ")
-  if (typeof value === "object") {
+const fieldValue = (value: unknown): unknown => {
+  if (value === undefined) return null
+  if (Array.isArray(value)) return value.map(fieldValue)
+  if (typeof value === "object" && value !== null) {
     const named = value as Record<string, unknown>
-    const label = named.displayName ?? named.name ?? named.value ?? named.key
-    return typeof label === "string" ? label : JSON.stringify(value)
+    return named.displayName ?? named.name ?? named.value ?? named.key ?? value
   }
-  return String(value)
+  return value
 }
 
 const person = (wire: typeof PersonWire.Type | undefined): Person | undefined =>
@@ -337,10 +336,8 @@ export const layer = Layer.effect(
           const changelog = yield* readTail(position?.changelog, changelogPage(site, key))
           const comments = yield* readTail(position?.comments, commentPage(site, key))
           const raw = issue.fields ?? {}
-          const values: Record<string, string | null> = {}
-          for (const field of fields) {
-            if (Object.hasOwn(raw, field)) values[field] = fieldText(raw[field])
-          }
+          const values: Record<string, string> = {}
+          for (const field of fields) values[field] = JSON.stringify(fieldValue(raw[field]))
           const summary = typeof raw.summary === "string" ? raw.summary : ""
           return { id: issue.id, key: issue.key, summary, changelog, comments, values }
         }),

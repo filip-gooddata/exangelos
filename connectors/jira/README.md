@@ -25,7 +25,7 @@ macOS asks once whether `security` may read the item. The stored copies do not f
 
 - `target`: an issue key or a JQL query.
 - `kind`: `issue` or `jql`, when the target's shape is not enough.
-- `fields`: field ids or names, such as `resolution`, `fixVersions` or `customfield_10010`. `field.changed` then reports only these fields. Default: every field. Status, assignee and comments have their own event types, so `fields` does not affect them. With an issue target, the connector also reads the current value of each field id in `fields` and reports a change that the changelog does not record, such as `votes`, as `field.changed` with an empty `historyId` and no author. Field names are matched in the changelog only.
+- `fields`: field ids or names, such as `resolution`, `fixVersions` or `customfield_10010`. `field.changed` then reports only these fields. Default: every field. Status, assignee and comments have their own event types, so `fields` does not affect them. With an issue target, the connector also reads the current value of each field id in `fields` (without `fields`: `status`, `assignee`, `resolution` and `fixVersions`) and reports a change that the changelog does not record, a field that disappears included, such as `votes`, as `field.changed` with an empty `historyId` and no author. Field names are matched in the changelog only.
 
 With an issue target only:
 
@@ -70,7 +70,7 @@ A GitHub failure never holds back the Jira events. When GitHub refuses `githubTo
 
 The watch ends when the issue is gone or the account can no longer see it, and when a JQL query fails or matches more than 1,000 issues.
 
-When a Jira poll fails for another reason, the watch retries after the poll interval. After 12 failed polls in a row it reports `jira.unavailable` once, then fails so the daemon backs off and reopens it; the next good poll ends the outage. A refused credential does not count: it suspends the subscription at once.
+When a Jira poll fails for another reason, or Jira rate limits it, the watch retries after the poll interval or `Retry-After`. After 12 such polls in a row it reports `jira.unavailable` once, then fails so the daemon backs off and reopens it; the next good poll ends the outage. A refused credential does not count: it suspends the subscription at once.
 
 ## Polling
 

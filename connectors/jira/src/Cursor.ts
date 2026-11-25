@@ -36,7 +36,7 @@ export const IssueCursor = Schema.Struct({
   github: Schema.NullOr(GitHubCursor),
   githubFailure: Schema.NullOr(Schema.Struct({ scope: Schema.String, reason: Schema.String })),
   githubFailures: Schema.Int,
-  values: Schema.optionalKey(Schema.Record(Schema.String, Schema.NullOr(Schema.String))),
+  values: Schema.optionalKey(Schema.Record(Schema.String, Schema.String)),
   valueChanges: Schema.optionalKey(Schema.Int)
 })
 export type IssueCursor = typeof IssueCursor.Type

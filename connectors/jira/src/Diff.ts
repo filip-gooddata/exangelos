@@ -93,6 +93,13 @@ const advance = <A extends { readonly id: string; readonly created: DateTime.Utc
   return { fresh, position }
 }
 
+const valueText = (json: string): string | null => {
+  const text = (value: unknown): string =>
+    Array.isArray(value) ? value.map(text).join(", ") : typeof value === "string" ? value : JSON.stringify(value)
+  const value: unknown = JSON.parse(json)
+  return value === null ? null : text(value)
+}
+
 const typeOfChange = (change: FieldChange): JiraEventType => {
   switch (change.fieldId ?? change.field.toLowerCase()) {
     case "status":
@@ -183,13 +190,15 @@ export const diffIssue = (input: {
       .map((item) => ({ field: item.field, fieldId: item.fieldId ?? null }))
     for (const [field, value] of Object.entries(snapshot.values)) {
       if (!Object.hasOwn(known.values, field)) continue
-      const before = known.values[field] ?? null
+      const before = known.values[field] ?? "null"
       if (before === value || changedInHistory.some((item) => sameField(field, item))) continue
+      const fromString = valueText(before)
+      const toString = valueText(value)
       valueChanges += 1
       events.push({
-        type: typeOfChange({ field, fieldId: field, from: null, fromString: before, to: null, toString: value }),
+        type: typeOfChange({ field, fieldId: field, from: null, fromString, to: null, toString }),
         occurredAt: observedAt,
-        summary: `${snapshot.key}: ${field} ${shown(before)} → ${shown(value)}`,
+        summary: `${snapshot.key}: ${field} ${shown(fromString)} → ${shown(toString)}`,
         payload: {
           issue: { id: snapshot.id, key: snapshot.key, summary: snapshot.summary },
           historyId: "",
@@ -197,9 +206,9 @@ export const diffIssue = (input: {
           field,
           fieldId: field,
           from: null,
-          fromString: before,
+          fromString,
           to: null,
-          toString: value
+          toString
         },
         link,
         dedupeKey: `${snapshot.id}:value:${valueChanges}:${field}`
@@ -232,7 +241,8 @@ export const diffIssue = (input: {
       github: known?.github ?? null,
       githubFailure: known?.githubFailure ?? null,
       githubFailures: known?.githubFailures ?? 0,
-      ...(Object.keys(snapshot.values).length === 0 ? {} : { values: { ...snapshot.values }, valueChanges })
+      values: { ...snapshot.values },
+      valueChanges
     }
   }
 }

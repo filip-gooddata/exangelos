@@ -153,11 +153,12 @@ const byType: Record<JiraEventType, Catalogue.EventType<any>> = {
 }
 
 /** The watch item for a diffed event; its payload is checked against the catalogue as it is encoded. */
-export const toItem = (event: JiraEvent): WatchItem =>
+export const toItem = (event: JiraEvent, cursor?: string): WatchItem =>
   byType[event.type].item({
     occurredAt: event.occurredAt,
     summary: event.summary,
     payload: event.payload,
     dedupeKey: event.dedupeKey,
-    link: event.link
+    link: event.link,
+    ...(cursor === undefined ? {} : { cursor })
   })

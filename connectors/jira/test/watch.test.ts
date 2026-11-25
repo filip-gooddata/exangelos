@@ -134,8 +134,8 @@ describe("Watch", () => {
       const first = yield* run(healthy)
       yield* TestClock.adjust(`${60 * (failureLimit - 1)} seconds`)
       expect((yield* Fiber.join(first))._tag).toBe("SourceFailed")
-      expect(items.map((item: any) => item._tag === "Event" ? item.event.type : item._tag)).toEqual(["jira.unavailable", "Cursor"])
-      const reported = (items[1] as { cursor: string }).cursor
+      expect(items.map((item: any) => item._tag === "Event" ? item.event.type : item._tag)).toEqual(["jira.unavailable"])
+      const reported = (items[0] as { cursor: string }).cursor
       expect(JSON.parse(reported).outage).toEqual({ since: "1970-01-01T00:00:00.000Z" })
 
       items.length = 0
@@ -185,5 +185,34 @@ describe("Watch", () => {
       yield* TestClock.adjust(`${60 * failureLimit} seconds`)
       expect((yield* Fiber.join(fiber))._tag).toBe(expected)
     }))
-})
 
+  it.effect.each([
+    { case: "before any good poll", cursor: undefined, failure: new HttpFailure({ status: 503, reason: "Jira answered 503." }) },
+    { case: "when every poll is rate limited", cursor: "{}", failure: new RateLimited({ retryAfterSeconds: 60 }) }
+  ])("reports a Jira outage $case", ({ cursor, failure }) =>
+    Effect.gen(function*() {
+      const client: JiraClient["Service"] = {
+        checkSite: () => Effect.succeed(site),
+        resolveRoute: () => Effect.succeed(site),
+        readIssue: () => Effect.fail(failure),
+        readJql: () => Effect.die("unused"),
+        checkJql: () => Effect.die("unused")
+      }
+      const items: Array<unknown> = []
+      const fiber = yield* watch({
+        client,
+        github: unusedGitHub,
+        site,
+        target: { kind: "issue", key: "DEMO-7" },
+        options: { fields: undefined, github: undefined },
+        githubToken: undefined,
+        cursor
+      }).pipe(Stream.tap((item) => Effect.sync(() => items.push(item))), Stream.runDrain, Effect.flip, Effect.forkChild)
+      yield* TestClock.adjust(`${60 * failureLimit} seconds`)
+      expect((yield* Fiber.join(fiber))._tag).toBe("SourceFailed")
+      expect(items).toEqual([
+        expect.objectContaining({ _tag: "Event", event: expect.objectContaining({ type: "jira.unavailable" }) })
+      ])
+      expect(JSON.parse((items[0] as { cursor: string }).cursor).outage).toBeDefined()
+    }))
+})
