@@ -5,6 +5,7 @@ name: Release check
 on:
   pull_request:
     paths:
+      - .github/scripts/**
       - .github/workflows/build-release.yml
       - .github/workflows/release.yml
       - .github/workflows/release-check.yml

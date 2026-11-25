@@ -85,11 +85,17 @@ export const renderCask = (release: HomebrewRelease): string => {
   desc "${description}"
   homepage "${homepage}"
 
-  conflicts_with formula: "exangelos"
+  depends_on formula: "filip-gooddata/exangelos/exangelos"
 
   app "Exangelos.app"
-  binary "#{appdir}/Exangelos.app/Contents/MacOS/exangelos"
-  binary "#{appdir}/Exangelos.app/Contents/MacOS/exangelos", target: "xng"
+
+  caveats <<~EOS
+    Exangelos.app is the menu bar tray. It uses the exangelos binary from the
+    exangelos formula, which this cask installs.
+
+    The app is signed but not notarized, so macOS blocks its first open.
+    Allow it under System Settings > Privacy & Security > Open Anyway.
+  EOS
 end
 `
 }

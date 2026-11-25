@@ -31,11 +31,14 @@ describe("Homebrew definitions", () => {
     expect(formula).toContain(`assert_equal "exangelos #{version}", shell_output("#{bin}/xng --version").strip`)
   })
 
-  it("renders a cask that parses and links the sidecar under both names", () => {
+  it("renders a cask that parses, installs only the app and depends on the formula for the core", () => {
     const cask = renderCask(release)
     writeFileSync(join(work, "Casks", "exangelos-app.rb"), cask)
     expect(rubySyntax(join(work, "Casks", "exangelos-app.rb"))).toBe("Syntax OK\n")
-    expect(cask).toContain(`target: "xng"`)
+    expect(cask).toContain(`depends_on formula: "filip-gooddata/exangelos/exangelos"`)
+    expect(cask).not.toMatch(/^\s*binary /m)
+    expect(cask).not.toContain("conflicts_with")
+    expect(cask).toContain("Open Anyway")
     expect(renderCask({ ...release, checksums: checksums.slice(0, 4) })).toContain("sha256 :no_check")
   })
 })
