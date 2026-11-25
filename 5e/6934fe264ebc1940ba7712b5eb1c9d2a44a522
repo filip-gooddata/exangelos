@@ -1,0 +1,29 @@
+connectors/jira/README.md
+  s_38969d375a251d::t_335a772717c5f9 26
+connectors/jira/src/JiraClient.ts
+  s_38969d375a251d::t_b28ac6f9aa84ef 49-50,279-280,307
+connectors/jira/src/JiraConnector.ts
+  s_38969d375a251d::t_4861720331eeb1 7,48
+connectors/jira/src/JiraError.ts
+  s_38969d375a251d::t_25d47c778e91f1 8-14
+connectors/jira/src/Watch.ts
+  s_38969d375a251d::t_b44bcb749ae85b 9,239
+connectors/jira/test/connector.test.ts
+  s_38969d375a251d::t_c7457015d982f2 142-148,187-189,253-257,259,261-290
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5e6934fe264ebc1940ba7712b5eb1c9d2a44a522",
+  "prompts": {},
+  "sessions": {
+    "s_38969d375a251d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f4dbe12-110d-4459-8dfa-c637bb8ffeb4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
