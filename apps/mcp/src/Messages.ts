@@ -1,7 +1,7 @@
 import { Array as Arr, Option } from "effect"
 import type { RpcClientError } from "effect/rpc"
 import type { DaemonContract } from "@exangelos/contracts"
-import type { DaemonClient } from "@exangelos/daemon-client"
+import type { DaemonClient, Reconnect } from "@exangelos/daemon-client"
 import { Refusal, type Subscription } from "@exangelos/domain"
 
 export type AnyRefusal =
@@ -29,6 +29,7 @@ export type AgentFailure =
   | DaemonContract.HumanRequired
   | RpcClientError.RpcClientError
   | DaemonClient.DaemonNotRunning
+  | Reconnect.DaemonUnreachable
 
 export const wakeHint = (subscription: Subscription.Subscription): Option.Option<string> =>
   subscription.wakeTarget?.harness === "claude-code"
@@ -113,5 +114,7 @@ export const failureMessage = (failure: AgentFailure, subscription = "<subscript
       return connectionFailedMessage(failure.message)
     case "DaemonNotRunning":
       return noDaemonMessage(failure.reason)
+    case "DaemonUnreachable":
+      return `The Exangelos daemon has not answered for ${failure.waited} (${failure.reason}), so this gave up. Check it with \`exangelos service status\`, then call wait again.`
   }
 }

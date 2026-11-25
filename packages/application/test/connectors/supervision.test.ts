@@ -1,10 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Deferred, Duration, Effect, Layer, Ref } from "effect"
+import { Deferred, Duration, Effect, Layer, Option, Ref } from "effect"
 import { TestClock } from "effect/testing"
 import { devLink, enableConnector, importConnector, listConnectors, ConnectorAccess, setSettings } from "@exangelos/application"
 import { AlertSinkFake, ConnectorFilesFake, ConnectorRuntimeFake, SubscriptionIntakeFake } from "@exangelos/application/testing"
 import { type Connector, Settings } from "@exangelos/domain"
 import { SettingsStore } from "../../src/ports/SettingsStore.ts"
+import { SourceFailed } from "../../src/ports/ConnectorRuntime.ts"
 import { activeSubscription, catalogue, installed, name, connectorOf, settle, tick, unavailableReports, withConnectors, withConnectorsOver, you } from "./harness.ts"
 
 /** Alerts other than the one an import raises while it waits to be enabled. */
@@ -117,6 +118,51 @@ describe("connector supervision", () => {
         expect(yield* openedWakeWindows).toEqual([2, 7])
       }))
     }))
+
+  it.effect("reports a failing stream's outage to the intake, bounded, and its recovery on the next item", () =>
+    withConnectors(Effect.gen(function*() {
+      yield* running
+      const runtime = yield* ConnectorRuntimeFake
+      const intake = yield* SubscriptionIntakeFake
+      const access = yield* ConnectorAccess.ConnectorAccess
+      const one = yield* activeSubscription("acme", "sub_one")
+      yield* access.watch(one)
+      yield* settle
+
+      yield* runtime.fail(acme, new SourceFailed({ connector: acme, category: "unavailable", reason: "x".repeat(500) }))
+      yield* settle
+      yield* TestClock.adjust("1 second")
+      yield* settle
+      yield* runtime.fail(acme, new SourceFailed({ connector: acme, category: "unavailable", reason: "x".repeat(500) }))
+      yield* settle
+
+      const failures = (yield* intake.observations).flatMap((report) => report.failure === undefined ? [] : [report.failure])
+      expect(failures).toHaveLength(2)
+      expect(failures[1]?.since).toEqual(failures[0]?.since)
+      expect(failures[0]?.reason).toHaveLength(300)
+      expect(Option.getOrThrow(yield* access.observation(one))).toMatchObject({ category: "unavailable" })
+      const status = (yield* listConnectors).find((connector) => connector.name === acme)
+      expect(status?.observation).toEqual({ affectedWatches: 1, categories: ["unavailable"] })
+
+      yield* TestClock.adjust("2 minutes")
+      yield* settle
+      expect((yield* intake.observations).at(-1)?.failure).toBeDefined()
+      expect(yield* access.reading(one)).toBe(false)
+      yield* runtime.emit(acme, { _tag: "Cursor", cursor: "c1" })
+      yield* settle
+      expect((yield* intake.observations).at(-1)).toEqual({ subscription: one })
+      expect(yield* access.reading(one)).toBe(true)
+
+      expect(yield* access.observation(one)).toEqual(Option.none())
+      yield* runtime.complete(acme)
+      yield* settle
+      expect(yield* access.reading(one)).toBe(true)
+      yield* TestClock.adjust("1 second")
+      yield* settle
+      yield* runtime.fail(acme, new SourceFailed({ connector: acme, category: "unreadable", reason: "gone" }))
+      yield* settle
+      expect(yield* access.reading(one)).toBe(false)
+    })))
 
   it.effect("restarts a crashed connector and reopens its streams", () =>
     withConnectors(Effect.gen(function*() {

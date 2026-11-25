@@ -7,6 +7,8 @@ import { Socket } from "effect/socket"
 export interface Options {
   readonly pingInterval?: Duration.Input | undefined
   readonly pingTimeout?: Duration.Input | undefined
+  /** Runs once when a ping goes unanswered, before calls fail; the protocol never reconnects. */
+  readonly onPingTimeout?: Effect.Effect<void> | undefined
 }
 
 /**
@@ -23,7 +25,8 @@ export interface Options {
  * timeout if needed. From
  * then on the client pings every `pingInterval` (default 5 seconds), and if no
  * frame arrives within `pingTimeout` (default `pingInterval`), calls fail with a
- * `SocketReadError` reason.
+ * `SocketReadError` reason whose cause is `ping timeout`. Either way the protocol
+ * stays failed: the caller decides whether to replace the child.
  */
 export const makeProtocol = (
   child: ChildProcessSpawner.ChildProcessHandle,

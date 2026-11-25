@@ -2,6 +2,7 @@ import { Cause, Clock, DateTime, Effect, Exit, Option, Schema } from "effect"
 import { Tool, Toolkit } from "effect/ai"
 import { DaemonContract, WakeText } from "@exangelos/contracts"
 import { Catalogue, Event, Ids, Connector, Session, Subscription, Wake } from "@exangelos/domain"
+import { Reconnect } from "@exangelos/daemon-client"
 import { Redact } from "@exangelos/logging"
 import * as AgentClient from "./AgentClient.ts"
 import { type AgentFailure, failureMessage, wakeHint } from "./Messages.ts"
@@ -84,7 +85,7 @@ export const toolkit = Toolkit.make(
     "list",
     "List this session's subscriptions, or every session's with all: true.",
     { all: Schema.optionalKey(Schema.Boolean) },
-    Schema.Struct({ subscriptions: Schema.Array(Subscription.Subscription) })
+    Schema.Struct({ subscriptions: Schema.Array(Subscription.Listed) })
   ),
   tool(
     "show",
@@ -212,8 +213,21 @@ export const handlers = toolkit.toLayer(Effect.gen(function*() {
     show: (input) => call((client) => client.Show(input)),
     events: (input) => call((client) => client.Events(input)).pipe(Effect.map((events) => ({ events }))),
     ack: (input) => call((client) => client.Ack(input)),
-    wait: (input) =>
-      call((client) => client.Wait(input)).pipe(Effect.map((wake) => ({ text: WakeText.render(wake), wake }))),
+    // A daemon restart or upgrade drops the call; the subscription survives it, so the wait goes on.
+    wait: (input) => {
+      let answered = false
+      // Once the daemon has answered again, failing to reach it means it is restarting once more, not that it is missing.
+      const reach = Effect.catchTag(connect, "DaemonNotRunning", (failure) => Effect.fail(answered ? Reconnect.lostWith(failure.reason) : failure))
+      return Reconnect.persist(
+        Effect.scoped(Effect.flatMap(reach, (client) => Reconnect.daemonInterruptsAsLoss(client.Wait(input)))),
+        Effect.scoped(Effect.flatMap(reach, (client) => Reconnect.daemonInterruptsAsLoss(client.ListConnectors()))).pipe(
+          Effect.tap(() => Effect.sync(() => (answered = true)))
+        )
+      ).pipe(
+        Effect.mapError((failure) => fail(failure, input.id)),
+        Effect.map((wake) => ({ text: WakeText.render(wake), wake }))
+      )
+    },
     pause: (input) => call((client) => client.Pause(input)),
     resume: (input) => call((client) => client.Resume(input), input.id).pipe(Effect.map(withHint)),
     retarget: ({ id, ...choice }) =>

@@ -77,6 +77,20 @@ export const render = (content: Wake.WakeContent): string => {
       )
       commands = through === undefined ? [] : [read, ...ack]
       break
+    case "Failing":
+      lines.push(
+        `${id} cannot be watched ${where}`,
+        `${content.connector} has failed to read it since ${DateTime.formatIso(why.since)} (${why.category}): ${why.reason}`,
+        "The daemon keeps retrying and sends one more wake when it recovers."
+      )
+      if (through !== undefined) lines.push(...eventLines())
+      commands = through === undefined ? [] : [read, ...ack]
+      break
+    case "Recovered":
+      lines.push(`${id} is watched again ${where}`, `${content.connector} reads it again and continues from its cursor.`)
+      if (through !== undefined) lines.push(...eventLines())
+      commands = through === undefined ? [] : [read, ...ack]
+      break
   }
   return [...lines, ...(commands.length === 0 ? [] : table(commands, "", 2))].join("\n")
 }

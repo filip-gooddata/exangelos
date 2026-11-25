@@ -64,6 +64,8 @@ export class ConnectorRuntimeFake extends Context.Service<ConnectorRuntimeFake, 
    */
   readonly emit: (name: Ids.ConnectorName, item: Event.WatchItem, where?: Where) => Effect.Effect<void>
   /** Fails the connector's open Watch streams that `where` picks; the process keeps running. */
+  /** Ends the connector's open Watch streams that `where` picks without an error, as a finite stream does. */
+  readonly complete: (name: Ids.ConnectorName, where?: Where) => Effect.Effect<void>
   readonly fail: (
     name: Ids.ConnectorName,
     error: CredentialsRejected | SourceFailed,
@@ -208,6 +210,8 @@ export const layerConnectorRuntime: Layer.Layer<ConnectorRuntime | ConnectorRunt
           }
           yield* Effect.forEach(queues, (queue) => deliver(queue, item), { discard: true })
         }),
+      complete: (name, where) =>
+        Effect.flatMap(openQueues(name, where), (queues) => Effect.forEach(queues, Queue.end, { discard: true })),
       fail: (name, error, where) =>
         Effect.flatMap(openQueues(name, where), (queues) => Effect.forEach(queues, (queue) => Queue.fail(queue, error), { discard: true })),
       crash: (name, reason) =>

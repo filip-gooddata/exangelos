@@ -1,8 +1,8 @@
-import { Array as Arr, DateTime, Option, Result } from "effect"
+import { Array as Arr, DateTime, Duration, Option, Result } from "effect"
 import type { Parameters } from "./Catalogue.ts"
 import type { EventType, ConnectorName, SubscriptionId } from "./Ids.ts"
 import type { Limits } from "./Limits.ts"
-import type { Connector } from "./Connector.ts"
+import type { Connector, ObservationFailure } from "./Connector.ts"
 import * as ConnectorRules from "./ConnectorRules.ts"
 import { BacklogOverLimit, NotAllowed } from "./Refusal.ts"
 import { type Actor, sameSession, type Target } from "./Session.ts"
@@ -191,4 +191,35 @@ export const suspensionWake = (
     ? Option.none()
     : Option.map(ConnectorRules.problem(connector), (problem) => ({ since, problem }))
   return suspensionWakeWhen(subscription, unavailable, lastSuspensionWake, now, limits)
+}
+
+/** How long a source must keep failing before the subscription's session hears of it. */
+export const failingBeforeWake = Duration.minutes(5)
+
+/** The least time between two failing wakes of one subscription, so a flapping source cannot wake on every cycle. */
+export const failingWakeCooldown = Duration.hours(1)
+
+/** What the subscription's stored wakes say about its failing wakes. */
+export interface FailingHistory {
+  /** A failing wake was sent or queued and no recovered wake has followed it, even before a daemon restart. */
+  readonly unresolved: boolean
+  readonly lastFailingWake: Option.Option<DateTime.Utc>
+}
+
+/**
+ * The failing wake an active subscription owes: once its source has failed for `failingBeforeWake`,
+ * not while an earlier failing wake is unresolved, and not within `failingWakeCooldown` of the last one.
+ */
+export const failingWake = (
+  subscription: Subscription,
+  failure: ObservationFailure,
+  history: FailingHistory,
+  now: DateTime.Utc
+): Option.Option<Why> => {
+  if (subscription.state._tag !== "Active" || history.unresolved) return Option.none()
+  if (DateTime.isLessThan(now, DateTime.addDuration(failure.since, failingBeforeWake))) return Option.none()
+  if (Option.exists(history.lastFailingWake, (woken) => DateTime.isLessThan(now, DateTime.addDuration(woken, failingWakeCooldown)))) {
+    return Option.none()
+  }
+  return Option.some({ _tag: "Failing", ...failure } as const)
 }

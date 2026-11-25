@@ -1,5 +1,5 @@
 import { Context, Effect, Layer } from "effect"
-import { DaemonClient } from "@exangelos/daemon-client"
+import { DaemonClient, Reconnect } from "@exangelos/daemon-client"
 
 type Client = DaemonClient.DaemonClient["Service"]
 
@@ -29,7 +29,7 @@ export const layer = <R>(
         Effect.flatMap(connect, (connected) =>
           (connected as unknown as Record<string, (...args: ReadonlyArray<unknown>) => Effect.Effect<unknown, unknown>>)[
             rpc
-          ](...args))
+          ](...args)).pipe(Reconnect.daemonInterruptsAsLoss)
       return new Proxy({}, { get: (_, rpc) => call(String(rpc)) }) as Lazy
     })
   )

@@ -1,6 +1,6 @@
-import { Context, Effect, Layer, Ref } from "effect"
+import { Context, Effect, Layer, Option, Ref } from "effect"
 import { Subscribe } from "@exangelos/domain"
-import type { Catalogue, Ids, Refusal } from "@exangelos/domain"
+import type { Catalogue, Connector, Ids, Refusal } from "@exangelos/domain"
 import type { OfficialFetchFailed } from "../ports/OfficialConnectorSource.ts"
 import { ConnectorAccess, ConnectorNotFound, type Described } from "../seam/ConnectorAccess.ts"
 
@@ -26,12 +26,15 @@ export class ConnectorAccessFake extends Context.Service<ConnectorAccessFake, {
   readonly watched: Effect.Effect<ReadonlyArray<Ids.SubscriptionId>>
   /** Subscriptions passed to `rewatch`, one entry per call. */
   readonly rewatched: Effect.Effect<ReadonlyArray<Ids.SubscriptionId>>
+  /** Sets what `observation` answers for the subscription; undefined clears it. */
+  readonly observe: (subscription: Ids.SubscriptionId, failure: Connector.ObservationFailure | undefined) => Effect.Effect<void>
 }>()("@exangelos/application/testing/ConnectorAccessFake") {}
 
 export const layerConnectorAccess: Layer.Layer<ConnectorAccess | ConnectorAccessFake> = Layer.unwrap(Effect.gen(function*() {
   const connectors = yield* Ref.make<ReadonlyMap<Ids.ConnectorName, AccessScript>>(new Map())
   const watched = yield* Ref.make<ReadonlyArray<Ids.SubscriptionId>>([])
   const rewatched = yield* Ref.make<ReadonlyArray<Ids.SubscriptionId>>([])
+  const observations = yield* Ref.make<ReadonlyMap<Ids.SubscriptionId, Connector.ObservationFailure>>(new Map())
   return Layer.merge(
     Layer.succeed(ConnectorAccess, {
       describe: (_actor, connector, { main, parameters }) =>
@@ -49,12 +52,21 @@ export const layerConnectorAccess: Layer.Layer<ConnectorAccess | ConnectorAccess
       watch: (subscription) =>
         Ref.update(watched, (all) => all.includes(subscription) ? all : [...all, subscription]),
       unwatch: (subscription) => Ref.update(watched, (all) => all.filter((id) => id !== subscription)),
-      rewatch: (subscription) => Ref.update(rewatched, (all) => [...all, subscription])
+      rewatch: (subscription) => Ref.update(rewatched, (all) => [...all, subscription]),
+      observation: (subscription) => Effect.map(Ref.get(observations), (all) => Option.fromUndefinedOr(all.get(subscription))),
+      reading: (subscription) => Effect.map(Ref.get(observations), (all) => !all.has(subscription))
     }),
     Layer.succeed(ConnectorAccessFake, {
       define: (connector, script) => Ref.update(connectors, (all) => new Map(all).set(connector, script)),
       watched: Ref.get(watched),
-      rewatched: Ref.get(rewatched)
+      rewatched: Ref.get(rewatched),
+      observe: (subscription, failure) =>
+        Ref.update(observations, (all) => {
+          const next = new Map(all)
+          if (failure === undefined) next.delete(subscription)
+          else next.set(subscription, failure)
+          return next
+        })
     })
   )
 }))

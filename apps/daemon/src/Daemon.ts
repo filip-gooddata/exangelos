@@ -162,7 +162,11 @@ const halves = Layer.effectContext(
       ingest: (subscription, item) => Effect.flatMap(Deferred.await(slot), (intake) => intake.ingest(subscription, item)),
       connectorChanged: (connector) => Effect.flatMap(Deferred.await(slot), (intake) => intake.connectorChanged(connector)),
       connectorRemoved: (connector, since, problem) =>
-        Effect.flatMap(Deferred.await(slot), (intake) => intake.connectorRemoved(connector, since, problem))
+        Effect.flatMap(Deferred.await(slot), (intake) => intake.connectorRemoved(connector, since, problem)),
+      observationFailing: (subscription, failure) =>
+        Effect.flatMap(Deferred.await(slot), (intake) => intake.observationFailing(subscription, failure)),
+      observationRecovered: (subscription) =>
+        Effect.flatMap(Deferred.await(slot), (intake) => intake.observationRecovered(subscription))
     })
     const connectors = yield* Layer.build(
       Layer.provide(layerConnectors, Layer.succeed(SubscriptionIntake.SubscriptionIntake, late))

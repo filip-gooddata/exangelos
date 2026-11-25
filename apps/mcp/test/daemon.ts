@@ -25,8 +25,14 @@ export const existing: Subscription.Subscription = {
 
 const notFaked = () => Effect.fail(new DaemonContract.InvalidRequest({ message: "not faked" }))
 
+/**
+ * A daemon that restarts twice under a wait on this subscription: it interrupts the first wait and the first
+ * ListConnectors probe, and while `restarting` is set it cannot be reached.
+ */
+export const restartedWaits = { id: "sub_restart", interrupts: 0, probes: 0, restarting: false }
+
 export const handlers = DaemonContract.AgentGroup.toLayer({
-  ListConnectors: () => Effect.succeed([]),
+  ListConnectors: () => restartedWaits.interrupts > 0 && restartedWaits.probes++ === 0 ? Effect.interrupt : Effect.succeed([]),
   Subscribe: (payload, { headers }) =>
     payload.parameters["pr"] === existing.parameters["pr"] && payload.similarOk.length === 0
       ? Effect.fail(new DaemonContract.SimilarSubscriptions({ similar: [existing] }))
@@ -45,7 +51,7 @@ export const handlers = DaemonContract.AgentGroup.toLayer({
   Events: notFaked,
   Ack: notFaked,
   Wait: ({ id }) =>
-    Effect.succeed({
+    id === restartedWaits.id && restartedWaits.interrupts++ === 0 ? Effect.interrupt : Effect.succeed({
       subscription: id,
       connector: "github-pr",
       subject: "acme/app#123",

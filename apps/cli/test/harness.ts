@@ -1,13 +1,13 @@
 /// <reference types="bun" />
 import * as fs from "node:fs"
-import { DateTime, Effect, Exit, FileSystem, Layer, Path, Ref, Stdio, Stream, Terminal } from "effect"
+import { DateTime, type Duration, Effect, Exit, FileSystem, Layer, Path, Ref, Stdio, Stream, Terminal } from "effect"
 import { Command } from "effect/cli"
 import { ChildProcessSpawner } from "effect/process"
 import { type Rpc, type RpcGroup, RpcServer, RpcTest } from "effect/rpc"
 import { TestConsole } from "effect/testing"
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import { Catalogue, Ids, Connector, Subscription } from "@exangelos/domain"
-import { DaemonClient, DaemonServer } from "@exangelos/daemon-client"
+import { DaemonClient, DaemonServer, Reconnect } from "@exangelos/daemon-client"
 import { Paths } from "@exangelos/paths"
 import * as Connection from "../src/commands/Connection.ts"
 import * as Root from "../src/commands/Root.ts"
@@ -99,10 +99,10 @@ const defaults = {
     Effect.succeed(subscription({ eventAlerts: payload.eventAlerts }))
 } satisfies HandlerMap
 
-export const daemonServer = (path: string) =>
+export const daemonServer = (path: string, handlers: Partial<HandlerMap> = {}) =>
   RpcServer.layer(DaemonContract.DaemonContract).pipe(
     Layer.provide(
-      DaemonContract.DaemonContract.toLayer(defaults) as Layer.Layer<
+      DaemonContract.DaemonContract.toLayer({ ...defaults, ...handlers }) as Layer.Layer<
         Rpc.ToHandler<RpcGroup.Rpcs<DaemonContract.DaemonContract>>
       >
     ),
@@ -156,6 +156,7 @@ export const run = (
       readonly serve?: boolean
     }
     readonly commandOutput?: string
+    readonly patience?: Duration.Duration
   } = {}
 ): Promise<Result> =>
   Effect.gen(function*() {
@@ -202,6 +203,7 @@ export const run = (
     )
     const exit = yield* Command.runWith(Root.make(), { version: "0.0.0-test" })(argv).pipe(
       Effect.provide(environment),
+      options.patience === undefined ? (effect) => effect : Effect.provideService(Reconnect.Patience, options.patience),
       Effect.exit
     )
     const lines = (all: ReadonlyArray<unknown>) => all.map((line) => String(line)).join("\n")
