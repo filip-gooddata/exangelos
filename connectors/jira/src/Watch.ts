@@ -6,6 +6,7 @@ import { toItem } from "./Events.ts"
 import type { WatchItem } from "./Events.ts"
 import { defaultPollInterval } from "./JiraClient.ts"
 import type { JiraClient } from "./JiraClient.ts"
+import { missingScopeReason } from "./JiraError.ts"
 import type { InvalidCursor } from "./JiraError.ts"
 import { diffIssue, diffJql, eventTypes } from "./Diff.ts"
 import type { JiraEvent } from "./Diff.ts"
@@ -166,9 +167,16 @@ const poll = (watched: Watched, state: PollState) => {
   const { cursor } = state
   /** Route and recovery as this poll leaves them, kept by every outcome that does not end the run. */
   let reached: Pick<PollState, "route" | "recovered"> = { route: state.route, recovered: state.recovered }
+  /** Whether this poll saw the gateway accept the credential, so a 401 after it means a missing scope. */
+  let gatewayAccepted = false
   const attempt = (route: JiraSite) => read(watched, route, cursor)
   const resolved = client.resolveRoute(site).pipe(
-    Effect.tap((route) => Effect.sync(() => (reached = { ...reached, route }))),
+    Effect.tap((route) =>
+      Effect.sync(() => {
+        reached = { ...reached, route }
+        gatewayAccepted = route.api !== route.url
+      })
+    ),
     Effect.flatMap(attempt)
   )
   const routed = state.route === undefined
@@ -225,7 +233,13 @@ const poll = (watched: Watched, state: PollState) => {
       JqlResultTooLarge: ({ limit }) =>
         Effect.succeed(ended(state, `The JQL query matches more than ${limit} issues, the most one subscription tracks.`)),
       CredentialRejected: ({ status }) =>
-        Effect.fail(new Connector.CredentialsRejected({ reason: `Jira rejected the email and API token (HTTP ${status}).` })),
+        Effect.fail(
+          new Connector.CredentialsRejected({
+            reason: gatewayAccepted
+              ? missingScopeReason(status)
+              : `Jira rejected the email and API token (HTTP ${status}).`
+          })
+        ),
       UnsupportedSite: ({ reason }) => Effect.fail(new Connector.SourceFailed({ reason })),
       HttpFailure: ({ reason, status }) => {
         if (target.kind === "jql" && status === 400) {

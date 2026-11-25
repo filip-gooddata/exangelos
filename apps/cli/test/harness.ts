@@ -36,7 +36,7 @@ const catalogue: Catalogue.Catalogue = {
   eventTypes: [{ type: Ids.EventType.make("checks.failed"), description: "CI failed", payload: {} }],
   parameters: { main: "pr", schema: {} },
   configuration: [
-    { _tag: "Text", key: "host", label: "GitHub host", required: false, secretDestination: false },
+    { _tag: "Text", key: "host", label: "GitHub host", required: false, secretDestination: true },
     { _tag: "Secret", key: "token", label: "GitHub token", required: true }
   ]
 }

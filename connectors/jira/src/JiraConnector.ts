@@ -4,6 +4,7 @@ import * as Events from "./Events.ts"
 import { GitHub } from "./GitHub.ts"
 import type { GitHubError } from "./GitHub.ts"
 import { JiraClient } from "./JiraClient.ts"
+import { missingScopeReason } from "./JiraError.ts"
 import type { JiraError } from "./JiraError.ts"
 import { normaliseOptions, parseOptions } from "./Options.ts"
 import { makeSite } from "./Site.ts"
@@ -113,14 +114,36 @@ export const connector = Connector.make({
             )
           }
           if (target.kind === "jql" && site !== undefined) {
+            const invalid = (error: JiraError) =>
+              new Connector.ParametersInvalid({
+                reason: error._tag === "HttpFailure" && error.status === 400
+                  ? "Jira refused the JQL query. Check its syntax and the fields it names."
+                  : `Could not check the JQL query with Jira. ${refusal(site, error)}`
+              })
             yield* client.checkJql({ site, jql: target.jql }).pipe(
-              Effect.mapError((error) =>
-                new Connector.ParametersInvalid({
-                  reason: error._tag === "HttpFailure" && error.status === 400
-                    ? "Jira refused the JQL query. Check its syntax and the fields it names."
-                    : `Could not check the JQL query with Jira. ${refusal(site, error)}`
-                })
-              )
+              // A 401 through the gateway names a missing scope only once the same gateway accepts the token again.
+              Effect.catchTag("CredentialRejected", (rejected) =>
+                site.api === site.url || rejected.status !== 401
+                  ? Effect.fail(invalid(rejected))
+                  : client.resolveRoute(site).pipe(
+                    Effect.matchEffect({
+                      onFailure: (error) =>
+                        Effect.fail(
+                          new Connector.ParametersInvalid({
+                            reason: `Could not check the JQL query with Jira. ${refusal(site, error)}`
+                          })
+                        ),
+                      onSuccess: (route) =>
+                        Effect.fail(
+                          new Connector.ParametersInvalid({
+                            reason: route.api === site.api
+                              ? missingScopeReason(rejected.status)
+                              : "Could not check the JQL query with Jira: the token now takes a different route than at configure. Configure the jira connector again."
+                          })
+                        )
+                    })
+                  )),
+              Effect.mapError((error) => error instanceof Connector.ParametersInvalid ? error : invalid(error))
             )
           }
           return {

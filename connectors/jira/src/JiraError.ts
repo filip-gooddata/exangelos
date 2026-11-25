@@ -5,6 +5,13 @@ export class CredentialRejected extends Schema.TaggedError<CredentialRejected>()
   status: Schema.Finite
 }) {}
 
+/**
+ * Why a read failed with 401 after the gateway accepted the scoped API token: the token most likely
+ * lacks a scope that read needs.
+ */
+export const missingScopeReason = (status: number): string =>
+  `Jira refused a read with the scoped API token (HTTP ${status}). The gateway accepts the token, so it most likely lacks a read scope; the jira connector's README lists them.`
+
 /** Jira answered 404: the issue does not exist or the credential cannot see it. */
 export class NotFound extends Schema.TaggedError<NotFound>()("NotFound", {
   path: Schema.String

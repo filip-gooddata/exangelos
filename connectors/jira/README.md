@@ -13,13 +13,28 @@ To take the Jira credential from a macOS keychain item that holds the account em
 
 ```sh
 exangelos connector configure jira \
-  --secret-command 'site=printf %s https://acme.atlassian.net' \
+  site=https://acme.atlassian.net \
   --secret-command "email=security find-generic-password -s jira-api-token | awk -F'\"' '/\"acct\"/ {print \$4}'" \
   --secret-command 'token=security find-generic-password -s jira-api-token -w' \
   --secret-command 'githubToken=gh auth token --hostname github.com'
 ```
 
 macOS asks once whether `security` may read the item. The stored copies do not follow later changes: configure again after Jira or GitHub refuses a token. Leave out the `githubToken` line if you do not watch GitHub.
+
+### Scopes for a scoped API token
+
+A classic API token acts with all of the account's permissions, and the connector checks it on the site with `/rest/api/3/myself`. A scoped token is checked through the gateway with `/rest/api/3/serverInfo`, which needs no scope, so the connector never needs `read:jira-user`. A scoped token missing a read scope is accepted at configure. A JQL subscription that needs it is then refused when you subscribe, and an issue subscription is suspended at its first poll; both reasons name a missing scope.
+
+The classic scope `read:jira-work` covers every read. With granular scopes, give the token those of each feature you use (from Atlassian's [Jira REST API v3](https://developer.atlassian.com/cloud/jira/platform/rest/v3/) reference):
+
+| Feature | Endpoint | Granular scopes |
+| --- | --- | --- |
+| Issue subscriptions: fields | `GET /rest/api/3/issue/{key}` | `read:issue:jira`, `read:issue-meta:jira`, `read:issue-security-level:jira`, `read:issue.vote:jira`, `read:issue.changelog:jira`, `read:avatar:jira`, `read:status:jira`, `read:user:jira`, `read:field-configuration:jira` |
+| Issue subscriptions: changes | `GET /rest/api/3/issue/{key}/changelog` | `read:issue-meta:jira`, `read:avatar:jira`, `read:issue.changelog:jira` |
+| Issue subscriptions: comments | `GET /rest/api/3/issue/{key}/comment` | `read:comment:jira`, `read:comment.property:jira`, `read:group:jira`, `read:project:jira`, `read:project-role:jira`, `read:user:jira`, `read:avatar:jira` |
+| JQL subscriptions, and checking a query at subscribe | `GET /rest/api/3/search/jql` | `read:issue-details:jira`, `read:audit-log:jira`, `read:avatar:jira`, `read:field-configuration:jira`, `read:issue-meta:jira` |
+
+The union for both kinds of subscription is `read:issue:jira`, `read:issue-meta:jira`, `read:issue-security-level:jira`, `read:issue.vote:jira`, `read:issue.changelog:jira`, `read:issue-details:jira`, `read:comment:jira`, `read:comment.property:jira`, `read:status:jira`, `read:user:jira`, `read:group:jira`, `read:project:jira`, `read:project-role:jira`, `read:avatar:jira`, `read:field-configuration:jira` and `read:audit-log:jira`. The connector writes nothing to Jira.
 
 ## Parameters
 
@@ -96,7 +111,7 @@ The issue cursor is JSON with `v: 2`. It holds the changelog and comment positio
 | `--gh-path PATH` (repeatable) | `githubPaths`, with `commit.added` |
 | `--since ISO` | `since` |
 | `--sha SHA` | `sha`, with `release.found`. It also fires when a release already contains the commit at the first poll |
-| `AUTH_FAIL` | No count. Jira refusing the token (401, or 403 on the account check) makes the connector unavailable, which suspends the subscription and wakes. GitHub refusing `githubToken` reports `github.unavailable` and Jira events continue |
+| `AUTH_FAIL` | No count. Jira refusing the token (401, or 403 on the credential check) makes the connector unavailable, which suspends the subscription and wakes. GitHub refusing `githubToken` reports `github.unavailable` and Jira events continue |
 | `ERROR` | `jira.unavailable` after 12 failed polls in a row, and the watch keeps retrying. An issue that is gone ends the subscription with that reason. A GitHub repository or commit that is gone reports `github.unavailable` |
 | One-shot exit and re-arm | A subscription keeps watching after each event and dedupes by the keys above. `--max-events 1` ends it after the first event |
 | `--site`, `--cloud-id`, `--keychain-item` | `site`, `email` and `token` from `exangelos connector configure`. The gateway route and cloud id are found from the site |
