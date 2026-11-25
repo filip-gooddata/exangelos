@@ -1,0 +1,21 @@
+connectors/teams/runtime/test_portable.py
+  s_18ee533d60ab25::t_e099e823982390 102,117,119,137
+connectors/teams/validation/native_cache.py
+  s_18ee533d60ab25::t_2d24d44e22bc68 159
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d1d857b0e9452eb4e50de73da5455023255cf750",
+  "prompts": {},
+  "sessions": {
+    "s_18ee533d60ab25": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a214cc-523d-7f00-b017-4c84e399ba1e",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
