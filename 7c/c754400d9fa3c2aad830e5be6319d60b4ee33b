@@ -1,0 +1,23 @@
+connectors/jira/src/JiraClient.ts
+  s_38969d375a251d::t_ff5b2621285ac3 305-308,315-316
+connectors/jira/src/JiraConnector.ts
+  s_38969d375a251d::t_f671396000c826 130-135
+connectors/jira/test/connector.test.ts
+  s_38969d375a251d::t_cf3421d6b3d96d 305-310,329,332-335,338,348
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7cc754400d9fa3c2aad830e5be6319d60b4ee33b",
+  "prompts": {},
+  "sessions": {
+    "s_38969d375a251d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f4dbe12-110d-4459-8dfa-c637bb8ffeb4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
