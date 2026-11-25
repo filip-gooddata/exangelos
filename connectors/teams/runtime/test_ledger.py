@@ -33,7 +33,7 @@ class LedgerTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
-        self.path = Path(self.temp.name) / 'connectors/teams/ledger.sqlite3'
+        self.path = Path(self.temp.name) / 'connector-state/teams/ledger.sqlite3'
 
     def call(self, messages, cursor=None, clock=1700000000000):
         request = {'snapshot': snapshot(messages), 'observedAt': clock}
@@ -281,9 +281,9 @@ class LedgerTests(unittest.TestCase):
             self.assertEqual(result.stdout, '')
             self.assertEqual(result.stderr, ledger.ERROR + '\n')
         with patch.dict(os.environ, {'EXANGELOS_HOME': '', 'XDG_DATA_HOME': self.temp.name}):
-            self.assertEqual(ledger.ledger_path(), Path(self.temp.name) / 'exangelos/connectors/teams/ledger.sqlite3')
+            self.assertEqual(ledger.ledger_path(), Path(self.temp.name) / 'exangelos/connector-state/teams/ledger.sqlite3')
         with patch.dict(os.environ, {'EXANGELOS_HOME': '', 'XDG_DATA_HOME': ''}):
-            self.assertEqual(ledger.ledger_path(), Path.home() / '.local/share/exangelos/connectors/teams/ledger.sqlite3')
+            self.assertEqual(ledger.ledger_path(), Path.home() / '.local/share/exangelos/connector-state/teams/ledger.sqlite3')
 
 
 if __name__ == '__main__':

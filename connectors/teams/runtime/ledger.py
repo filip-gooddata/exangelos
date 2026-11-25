@@ -14,6 +14,9 @@ import sqlite3
 import sys
 import uuid
 
+sys.dont_write_bytecode = True
+from state_directory import state_directory
+
 
 ERROR = 'Teams observation or resume state is unavailable, unsupported, or inconsistent'
 TOKEN = re.compile(r'[a-f0-9]{64}\Z')
@@ -44,9 +47,7 @@ def packed(value):
 
 
 def ledger_path():
-    home = os.environ.get('EXANGELOS_HOME')
-    root = Path(home) if home else Path(os.environ.get('XDG_DATA_HOME') or Path.home() / '.local/share') / 'exangelos'
-    return root / 'connectors/teams/ledger.sqlite3'
+    return state_directory() / 'ledger.sqlite3'
 
 
 CONTEXT = ('conversationLabel', 'messageTime', 'sender', 'permalink')

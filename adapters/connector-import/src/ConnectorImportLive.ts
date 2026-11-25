@@ -95,11 +95,19 @@ const make = Effect.gen(function*() {
       }
 
       const protectLegacyState = async (name: string, path: string) => {
-        if (name !== "slack") return
+        if (name !== "slack" && name !== "teams") return
         const entries: ReadonlyArray<string> = await Fs.readdir(path).catch((error: NodeJS.ErrnoException) => {
           if (error.code === "ENOENT") return []
           throw error
         })
+        if (name === "teams") {
+          if (entries.some((entry) => entry === "selection.json" || entry === "pin-key-v1.json" ||
+            /^pin-[a-f0-9]{64}\.json$/.test(entry) || entry.startsWith(".teams-") ||
+            entry === "ledger.sqlite3" || entry.startsWith("ledger.sqlite3-"))) {
+            throw new Refused({ reason: "Teams private state occupies the install directory. Move the legacy state before importing Teams." })
+          }
+          return
+        }
         const privateState = entries.some((entry) =>
           entry === "setup.lock" || entry === "setup.json" || entry.startsWith(".setup-") ||
           entry === "subscriptions-key.json" || /^scope-[a-f0-9]{64}\.json$/.test(entry) ||
