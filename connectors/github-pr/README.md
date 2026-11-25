@@ -58,6 +58,8 @@ exangelos update SUBSCRIPTION pullRequest=owner/repo#7 reviewStates='["APPROVED"
 | `review.rerequested` | `review.rerequested/<request event id>` |
 | `author.activity` | `author.activity/<comment id>` |
 
+GitHub files a thread reply posted on its own under a `COMMENTED` review with no body. `review.submitted` does not fire for such a review; the reply is `review.reply`. A `COMMENTED` review with a body, or one that opens a thread, still reports. `reviewer.submitted` does fire for it: reviewer mode has no reply event, so that review is the only sign the reviewer answered in a thread.
+
 The watch ends when the pull request is merged or closed, and gives that as the reason.
 
 The first poll reports the current state: a conflict, failed checks, passed checks and readiness. It reports none of the history before it: no earlier reviews, comments, threads, replies or draft changes.
@@ -123,7 +125,7 @@ Resume  exangelos resume SUBSCRIPTION
 | `GHFAIL` | No wake for a failed poll: the daemon logs it and retries with backoff. A refused token makes the connector unavailable, which suspends the subscription and wakes |
 | `QUIET` | Nothing is sent |
 | `--base-head SHA` or `current` | `baseHead=SHA` or `baseHead=current`, with `base.changed` in `--types` |
-| `--updates-only` | `--types head.changed,draft.changed,review.submitted,comment.added` |
+| `--updates-only` | `--types head.changed,draft.changed,review.submitted,review.reply,comment.added` |
 | `--reviewer LOGIN` | `reviewer=LOGIN` and reviewer-mode `--types` |
 | `--reviewer none` | `exangelos update` without `reviewer`, and owner-mode `--types` |
 | `--ignore URL`, `ignore add` | `ignoreIds`, changed with `exangelos update` |
@@ -160,7 +162,7 @@ exangelos subscribe github-pr owner/repo#N baseHead=current \
 
 # launch owner/repo N --updates-only
 exangelos subscribe github-pr owner/repo#N \
-  --types head.changed,draft.changed,review.submitted,comment.added \
+  --types head.changed,draft.changed,review.submitted,review.reply,comment.added \
   --intent "Wait for an update on owner/repo#N"
 
 # launch owner/repo N --reviewer LOGIN

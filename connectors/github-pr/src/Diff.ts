@@ -289,9 +289,14 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     })
   }
 
+  const replyReviews = new Set(snapshot.threads.flatMap((t) => t.replies.flatMap((r) => r.review === null ? [] : [r.review])))
+  for (const thread of snapshot.threads) if (thread.openerReview !== null) replyReviews.delete(thread.openerReview)
+  const onlyWrapsReplies = (review: Review) =>
+    review.state === "COMMENTED" && review.body.trim() === "" && replyReviews.has(review.id)
+
   const reviews = fresh<Review>(previous?.reviews, snapshot.reviews, (r) => r.submittedAt)
   for (const review of reviews.items) {
-    if (!visible(review.author, null) || muted(review.id, review.url)) continue
+    if (!visible(review.author, null) || muted(review.id, review.url) || onlyWrapsReplies(review)) continue
     if (filters.reviewStates !== null && !filters.reviewStates.includes(review.state)) continue
     emit({
       type: "review.submitted",

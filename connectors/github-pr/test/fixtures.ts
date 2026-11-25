@@ -1,4 +1,4 @@
-import type { Check, Comment, Review, ReviewRequest, Snapshot, Thread } from "../src/Snapshot.ts"
+import type { Check, Comment, Review, ReviewRequest, Snapshot, Thread, ThreadReply } from "../src/Snapshot.ts"
 
 export const url = "https://github.com/acme/api/pull/7"
 
@@ -62,12 +62,13 @@ export const thread = (
   author: string,
   createdAt: string,
   isResolved = false,
-  replies: ReadonlyArray<Comment> = []
+  replies: ReadonlyArray<ThreadReply> = []
 ): Thread => ({
   id,
   isResolved,
   path: "src/retry.ts",
   openerId: `${id}-opener`,
+  openerReview: null,
   author,
   body: "Off by one?",
   createdAt,
@@ -75,12 +76,13 @@ export const thread = (
   replies
 })
 
-export const reply = (id: string, author: string, createdAt: string, body = "Fixed"): Comment => ({
+export const reply = (id: string, author: string, createdAt: string, body = "Fixed"): ThreadReply => ({
   id,
   author,
   body,
   createdAt,
-  url: `${url}#discussion_r${id}`
+  url: `${url}#discussion_r${id}`,
+  review: null
 })
 
 export const request = (id: string, reviewer: string, createdAt: string): ReviewRequest => ({ id, reviewer, createdAt })
