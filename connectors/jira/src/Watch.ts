@@ -193,7 +193,9 @@ const poll = (watched: Watched, state: PollState) => {
       RateLimited: ({ retryAfterSeconds }) =>
         Effect.gen(function*() {
           const failures = (state.outage?.failures ?? 0) + 1
+          const wait = retryAfterSeconds === undefined ? defaultPollInterval : Duration.seconds(retryAfterSeconds)
           if (failures >= failureLimit) {
+            yield* Effect.sleep(wait)
             return yield* new Connector.SourceFailed({ reason: `Jira rate limited ${failures} polls in a row.` })
           }
           yield* Effect.logWarning("Jira is rate limiting this connector; waiting before the next poll")
@@ -203,7 +205,7 @@ const poll = (watched: Watched, state: PollState) => {
               ...state,
               ...reached,
               outage: { failures, since: state.outage?.since ?? (yield* DateTime.now) },
-              wait: retryAfterSeconds === undefined ? defaultPollInterval : Duration.seconds(retryAfterSeconds)
+              wait
             }
           } satisfies Poll
         }),

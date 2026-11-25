@@ -147,9 +147,17 @@ const fieldValue = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(fieldValue)
   if (typeof value === "object" && value !== null) {
     const named = value as Record<string, unknown>
-    return named.displayName ?? named.name ?? named.value ?? named.key ?? value
+    return named.displayName ?? named.name ?? named.value ?? named.key ?? sortedKeys(named)
   }
   return value
+}
+
+const sortedKeys = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(sortedKeys)
+  if (typeof value !== "object" || value === null) return value
+  return Object.fromEntries(
+    Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, inner]) => [key, sortedKeys(inner)])
+  )
 }
 
 const person = (wire: typeof PersonWire.Type | undefined): Person | undefined =>

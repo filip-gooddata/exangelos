@@ -116,6 +116,27 @@ describe("JiraClient", () => {
     )
   })
 
+  it.effect("reads the same field value whatever order Jira lists an object's keys in", () => {
+    const votes = [{ self: "https://acme.atlassian.net/votes", votes: 2, hasVoted: false }, { hasVoted: false, votes: 2, self: "https://acme.atlassian.net/votes" }]
+    let read = 0
+    return Effect.gen(function*() {
+      const jira = yield* JiraClient
+      const jiraSite = yield* site
+      const first = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: undefined, fields: ["votes", "labels"] })
+      const second = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: undefined, fields: ["votes", "labels"] })
+      expect(first.values).toEqual(second.values)
+      expect(first.values).toEqual({
+        votes: "{\"hasVoted\":false,\"self\":\"https://acme.atlassian.net/votes\",\"votes\":2}",
+        labels: "null"
+      })
+    }).pipe(Effect.provide(jiraWith((call) => {
+      if (call.path === "/rest/api/3/issue/DEMO-7") {
+        return { status: 200, body: { id: "10042", key: "DEMO-7", fields: { summary: "Fix login", votes: votes[read++] } } }
+      }
+      return { status: 200, body: { startAt: 0, total: 0, maxResults: 100, isLast: true, values: [], comments: [] } }
+    })))
+  })
+
   it.effect("refuses a site that is not Jira Cloud", () =>
     Effect.gen(function*() {
       const jira = yield* JiraClient

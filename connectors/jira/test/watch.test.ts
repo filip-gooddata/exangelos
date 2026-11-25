@@ -208,7 +208,9 @@ describe("Watch", () => {
         githubToken: undefined,
         cursor
       }).pipe(Stream.tap((item) => Effect.sync(() => items.push(item))), Stream.runDrain, Effect.flip, Effect.forkChild)
-      yield* TestClock.adjust(`${60 * failureLimit} seconds`)
+      yield* TestClock.adjust(`${60 * (failureLimit - 1)} seconds`)
+      expect(items.length).toBe(failure._tag === "RateLimited" ? 0 : 1)
+      yield* TestClock.adjust("60 seconds")
       expect((yield* Fiber.join(fiber))._tag).toBe("SourceFailed")
       expect(items).toEqual([
         expect.objectContaining({ _tag: "Event", event: expect.objectContaining({ type: "jira.unavailable" }) })
