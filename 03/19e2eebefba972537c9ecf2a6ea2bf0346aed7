@@ -1,0 +1,21 @@
+docs/proposals/github-token-from-gh.md
+  s_a2806d77c1af45::t_2cca6b1e9b01e6 11,13,18-20,23,26-27,31-32,36-38,40,46,48,54,58
+docs/proposals/long-lived-watches.md
+  s_a2806d77c1af45::t_34720d58f9195d 7,11,15,25,30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0319e2eebefba972537c9ecf2a6ea2bf0346aed7",
+  "prompts": {},
+  "sessions": {
+    "s_a2806d77c1af45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "76bcc883-6ca5-4144-beaf-5792e63cd9fd",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
