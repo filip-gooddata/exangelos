@@ -476,6 +476,20 @@ describe("the exangelos binary", () => {
     const again = run(exangelos, "--json", "skill", "install")
     expect(JSON.parse(again.stdout).map((outcome: { status: string }) => outcome.status)).toEqual(["unchanged", "unchanged"])
 
+    const owned = await readFile(join(claude, "SKILL.md"), "utf8")
+    await writeFile(join(claude, "SKILL.md"), owned.replace("# Exangelos watches", "# Older"))
+    expect(JSON.parse(run(exangelos, "--json", "skill", "install", "--claude").stdout)[0].status).toBe("updated")
+    expect(await readFile(join(claude, "SKILL.md"), "utf8")).toBe(owned)
+
+    const linkTarget = join(root, "linked-skill.md")
+    await writeFile(linkTarget, owned)
+    await rm(join(claude, "SKILL.md"))
+    await symlink(linkTarget, join(claude, "SKILL.md"))
+    expect(run(exangelos, "skill", "uninstall", "--claude").status).toBe(1)
+    expect(run(exangelos, "skill", "install", "--claude", "--force").status).toBe(0)
+    expect((await lstat(join(claude, "SKILL.md"))).isSymbolicLink()).toBe(false)
+    expect(await readFile(linkTarget, "utf8")).toBe(owned)
+
     await writeFile(join(codex, "SKILL.md"), "---\nname: exangelos\n---\nmine\n")
     expect(run(exangelos, "skill", "install", "--codex").status).toBe(1)
     expect(run(exangelos, "skill", "uninstall").status).toBe(1)

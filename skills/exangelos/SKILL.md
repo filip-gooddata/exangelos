@@ -58,8 +58,7 @@ exangelos subscribe jira KEY githubRepo=owner/repo sha=SHA \
   exangelos connector configure github-pr --secret-command 'token=gh auth token --hostname github.com'
   exangelos connector configure jira site=https://acme.atlassian.net email=you@example.com --secret-command 'token=<command printing the API token>'
   ```
-
-Record the subscription id wherever you record the work (report, state file, brief result).
+  The Jira recipes with `githubRepo` also need `--secret-command 'githubToken=gh auth token --hostname github.com'` in that configure.
 
 ## Wake
 

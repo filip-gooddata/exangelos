@@ -43,17 +43,23 @@ const locate = (host: Host) =>
     const path = yield* Path.Path
     const directory = path.join(yield* Config.NonEmptyString("HOME"), ...host.directory)
     const file = path.join(directory, "SKILL.md")
-    const linked = yield* fs.readLink(directory).pipe(Effect.as(true), Effect.orElseSucceed(() => false))
+    const isLink = (target: string) => fs.readLink(target).pipe(Effect.as(true), Effect.orElseSucceed(() => false))
+    const linkedDirectory = yield* isLink(directory)
+    const linked = linkedDirectory || (yield* isLink(file))
     const current = linked || !(yield* fs.exists(file)) ? undefined : yield* fs.readFileString(file)
     const exists = linked || (yield* fs.exists(directory))
     const ours = current !== undefined && current.includes(marker)
-    return { directory, file, linked, current, exists, ours }
+    return { directory, file, linkedDirectory, linked, current, exists, ours }
   })
 
 const report = (outcomes: ReadonlyArray<Outcome>, sentence: (outcome: Outcome) => string) =>
   Effect.gen(function*() {
     if (yield* Json) yield* Console.log(JSON.stringify(outcomes))
-    else for (const outcome of outcomes) yield* Console.log(sentence(outcome))
+    else {
+      for (const outcome of outcomes) {
+        yield* (outcome.status === "foreign" ? Console.error : Console.log)(sentence(outcome))
+      }
+    }
     if (outcomes.some((outcome) => outcome.status === "foreign")) {
       return yield* new CommandFailed({ tag: "SkillForeign" })
     }
@@ -93,7 +99,7 @@ const install = Command.make(
           outcomes.push({ host: host.name, path: found.file, status: "unchanged" })
           continue
         }
-        if (found.linked) yield* fs.remove(found.directory)
+        if (found.linked) yield* fs.remove(found.linkedDirectory ? found.directory : found.file)
         yield* fs.makeDirectory(found.directory, { recursive: true })
         yield* fs.writeFileString(found.file, text)
         outcomes.push({ host: host.name, path: found.file, status: found.current === undefined ? "installed" : "updated" })
