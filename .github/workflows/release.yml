@@ -3,7 +3,13 @@
 # the tap filip-gooddata/homebrew-exangelos.
 #
 # The version is the latest vX.Y.Z tag plus a patch bump. Put #minor or #major in a commit message to bump that part
-# instead. The first release is v0.1.0.
+# instead. The first release is v0.1.0. The version job claims the tag on the commit before anything is built
+# (.github/scripts/claim-version.sh), so a rerun releases under the version its first attempt took, and a run that a
+# later one overtook leaves the release to it.
+#
+# Release runs queue one at a time. GitHub keeps one pending run per concurrency group and cancels an older pending one
+# when a newer push arrives; that is fine, as each run releases the commit it was pushed for (GITHUB_SHA), and the newer
+# commit holds the older one's changes.
 name: Release
 
 on:
@@ -22,6 +28,8 @@ jobs:
   version:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       tag: ${{ steps.next.outputs.tag }}
       version: ${{ steps.next.outputs.version }}
@@ -31,33 +39,9 @@ jobs:
         with:
           fetch-depth: 0
       - id: next
-        run: |
-          released=$(git tag --points-at HEAD | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n1 || true)
-          if [ -n "$released" ]; then
-            echo "HEAD is already released as $released"
-            echo "tag=$released" >> "$GITHUB_OUTPUT"
-            echo "version=${released#v}" >> "$GITHUB_OUTPUT"
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          last=$(git tag --list 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | head -n1)
-          if [ -z "$last" ]; then
-            next=v0.1.0
-          else
-            IFS=. read -r major minor patch <<< "${last#v}"
-            log=$(git log --format=%B "$last..HEAD")
-            if grep -q '#major' <<< "$log"; then
-              next="v$((major + 1)).0.0"
-            elif grep -q '#minor' <<< "$log"; then
-              next="v$major.$((minor + 1)).0"
-            else
-              next="v$major.$minor.$((patch + 1))"
-            fi
-          fi
-          echo "${last:-none} -> $next"
-          echo "tag=$next" >> "$GITHUB_OUTPUT"
-          echo "version=${next#v}" >> "$GITHUB_OUTPUT"
-          echo "skip=false" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/claim-version.sh
 
   checks:
     needs: version
@@ -81,6 +65,7 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v5
       - uses: actions/download-artifact@v4
         with:
           name: release
@@ -89,18 +74,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ needs.version.outputs.tag }}
-        run: |
-          gh release create "$TAG" assets/* \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --title "$TAG" \
-            --generate-notes
+        run: .github/scripts/publish-release.sh "$TAG" assets/*
 
   # Renders the formula and the cask from the published release's SHA256SUMS and pushes them to the tap. It also runs
   # when HEAD is already released, so re-running a release whose tap push failed repairs the tap.
   publish-tap:
     needs: [version, release]
-    if: ${{ !cancelled() && needs.version.result == 'success' && (needs.release.result == 'success' || needs.version.outputs.skip == 'true') }}
+    if: ${{ !cancelled() && needs.version.result == 'success' && needs.version.outputs.tag != '' && (needs.release.result == 'success' || needs.version.outputs.skip == 'true') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
@@ -121,10 +101,12 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
           VERSION: ${{ needs.version.outputs.version }}
         run: |
-          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir "$RUNNER_TEMP/release"
+          . .github/scripts/github.sh
+          retry gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern SHA256SUMS --dir "$RUNNER_TEMP/release" --clobber
           pnpm --filter @exangelos/packaging run render:homebrew --release "$RUNNER_TEMP/release" --version "$VERSION" --base-url "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG" --out "$RUNNER_TEMP/homebrew-tap"
       - name: Push the formula and the cask to the tap
         env:
+          GH_TOKEN: ${{ github.token }}
           HOMEBREW_TAP_DEPLOY_KEY: ${{ secrets.HOMEBREW_TAP_DEPLOY_KEY }}
           VERSION: ${{ needs.version.outputs.version }}
         run: .github/scripts/publish-homebrew-tap.sh "$RUNNER_TEMP/homebrew-tap" "$VERSION"
