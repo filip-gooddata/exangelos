@@ -352,7 +352,7 @@ def reconcile(request, path=None):
             waiting = False
             context = delivery[message['id']]
             unavailable = context.get('fileUnavailable') is True
-            if unavailable and old is None:
+            if context.get('fileUnavailable') == 'suppressed' or (unavailable and old is None):
                 continue
             raw_body = message['body']
             if 'legacyBody' in context:

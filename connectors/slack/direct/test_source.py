@@ -85,6 +85,35 @@ class SourceTests(unittest.TestCase):
             for raw in (SELECTION[1], str(root), 'ab' * 32):
                 self.assertNotIn(raw, first.stdout)
 
+    def test_deleted_file_keeps_legacy_checkpoint_without_delivery(self):
+        import ledger
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp) / 'cache'
+            root.mkdir()
+            state = fixture()
+            row = state['messages'][CHANNEL][TIME]
+            row.update(text='', subtype='file_share', deleted=True, files=[dict(id='F0000001')])
+            database(root, state)
+            query = request(root)
+            current = json.loads(self.invoke(query).stdout)
+            key = bytes.fromhex(query['key'])
+            # Checkpoint fields produced by the 0.6.1 reader for this fixture.
+            legacy_rows = [dict(
+                messageTs=TIME, conversationLabel=f'Slack conversation {CHANNEL}',
+                permalink=f'https://app.slack.com/client/{SELECTION[0]}/{CHANNEL}?message_ts={TIME}',
+                id=observation.token(key, 'message', *SELECTION, TIME),
+                body=observation.token(key, 'body', '', None), reply=False,
+                reactions=[observation.token(key, 'reaction', 'wave', 'U0000002')], reactionsComplete=True)]
+            marker = observation.token(key, 'selected-snapshot-v1', current['scope'], legacy_rows)
+            self.assertEqual(current['snapshot'], marker)
+            self.assertEqual(current['messages'][0]['fileUnavailable'], 'suppressed')
+            db = Path(temp) / 'ledger.sqlite3'
+            def reconcile(snap, **extra):
+                return ledger.reconcile(dict(snapshot=snap, observedAt=1700000000000, **extra), db)
+            previous = reconcile(dict(current, messages=legacy_rows, snapshot=marker))
+            self.assertEqual(reconcile(current, cursor=previous['cursor'])['events'], [])
+            self.assertEqual(reconcile(dict(current, generation='14'), cursor=previous['cursor'])['events'], [])
+
     def test_unrelated_undecodable_member_label_keeps_selected_watch_available(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)

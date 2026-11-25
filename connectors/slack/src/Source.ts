@@ -39,7 +39,7 @@ export const Snapshot = Schema.Struct({
   complete: Schema.Literal(true),
   messages: Schema.Array(Schema.Struct({
     ...MessageContext.fields,
-    fileUnavailable: Schema.optionalKey(Schema.Literal(true)),
+    fileUnavailable: Schema.optionalKey(Schema.Literals([true, "suppressed"])),
     legacyBody: Schema.optionalKey(Token),
     legacySpaceBody: Schema.optionalKey(Token),
     edited: Schema.optionalKey(Schema.Literal(true)),

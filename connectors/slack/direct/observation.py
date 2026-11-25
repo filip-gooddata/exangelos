@@ -392,19 +392,23 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
         fallback = message.get('text')
         eligible = not hidden and same_team(message, workspace) and excerpt_eligible(message)
         no_caption = 'text' not in message or isinstance(fallback, str) and not fallback.strip()
-        file_candidate = no_caption and (message.get('files') or message.get('subtype') == 'file_share')
+        has_files = bool(message.get('files')) or message.get('subtype') == 'file_share'
+        file_candidate = no_caption and has_files
         missing_app_text = 'text' not in message and app_message(message)
         layout = visible_layout(message) if eligible and (include_preview or missing_app_text or file_candidate) else ''
         has_layout = any(c.isprintable() and not c.isspace() for c in layout)
         files = []
         unavailable = False
         legacy_body = None
-        if file_candidate and not has_layout:
-            if eligible and message.get('subtype') in (None, 'file_share'):
+        if has_files and not eligible:
+            if hidden or not isinstance(fallback, str):
+                continue
+            # 0.6.1 included this row in its checkpoint. Retain it only for cursor validation.
+            unavailable = 'suppressed'
+        elif file_candidate and not has_layout:
+            if message.get('subtype') in (None, 'file_share'):
                 files = list(visible_files(message))
             if not files:
-                if not eligible:
-                    continue
                 unavailable = True
                 if fallback is None:
                     fallback = ''
@@ -454,7 +458,7 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
             **({'memberSender': sender_name} if sender_name else {}),
             **({'memberPeer': peer_name} if peer_name else {}),
             **({'fileShare': True, 'legacySpaceBody': token(key, 'body', ' ', message.get('edited'))} if files else {}),
-            **({'fileUnavailable': True} if unavailable else {}),
+            **({'fileUnavailable': unavailable} if unavailable else {}),
             **({'legacyBody': legacy_body} if legacy_body else {}),
             **({'preview': preview} if preview else {}),
             **({'edited': True} if message.get('edited') else {}),
