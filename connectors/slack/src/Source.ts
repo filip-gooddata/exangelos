@@ -33,10 +33,12 @@ export const MessageContext = Schema.Struct({
   sender: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160)))
 })
 export const Snapshot = Schema.Struct({
+  emptyBody: Schema.optionalKey(Token),
   scope: Token,
   complete: Schema.Literal(true),
   messages: Schema.Array(Schema.Struct({
     ...MessageContext.fields,
+    edited: Schema.optionalKey(Schema.Literal(true)),
     memberSender: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160))),
     memberPeer: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160))),
     id: Token, body: Token, reply: Schema.Boolean,

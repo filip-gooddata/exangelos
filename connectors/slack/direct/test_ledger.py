@@ -36,8 +36,8 @@ class LedgerTests(unittest.TestCase):
         self.addCleanup(self.temp.cleanup)
         self.path = Path(self.temp.name) / 'connector-state/slack/ledger.sqlite3'
 
-    def call(self, snap, cursor=None):
-        request = {'snapshot': snap, 'observedAt': 1700000000000}
+    def call(self, snap, cursor=None, **options):
+        request = dict(snapshot=snap, observedAt=1700000000000, **options)
         if cursor is not None:
             request['cursor'] = cursor
         return ledger.reconcile(request, self.path)
@@ -64,56 +64,203 @@ class LedgerTests(unittest.TestCase):
                 self.assertEqual(list(package.iterdir()), [package / 'direct'])
                 self.assertFalse(external.exists())
 
-    def test_early_reply_waits_for_deliverable_context(self):
-        initial = self.call(snapshot(1, []))['cursor']
-        reply = message(1, reply=True)
-        del reply['sender']
-        notice = {field: reply[field] for field in ('id', 'reply', 'messageTs', 'permalink', 'conversationLabel')}
-        receipt = ledger.reconcile(dict(snapshot={'scope': token('scope')}, cursor=initial,
-                                        notification=notice, observedAt=1700000000000), self.path)
-        sparse = self.call(snapshot(2, [reply]), receipt['cursor'])
-        self.assertEqual(sparse['events'], [])
-        richer = self.call(snapshot(3, [dict(reply, preview='fixture')]), sparse['cursor'])
-        details, = richer['events']
-        self.assertEqual(details['type'], 'thread.reply')
-        self.assertEqual(details['payload']['detailsFor'], receipt['events'][0]['dedupeKey'])
-        self.assertEqual(details['payload']['count'], 0)
-        self.assertIn('Details for earlier thread reply', details['summary'])
-        self.assertEqual(self.call(snapshot(4, [dict(reply, preview='fixture')]), richer['cursor'])['events'], [])
-        self.assertEqual(self.call(snapshot(4, []), sparse['cursor']), richer)
-
-    def test_sender_and_original_excerpt_can_arrive_in_separate_snapshots(self):
-        cursor = self.call(snapshot(1, []))['cursor']
-        row = message(2)
+    def notice(self, cursor, row, **options):
         notice = {field: row[field] for field in ('id', 'reply', 'messageTs', 'permalink', 'conversationLabel')}
-        early = ledger.reconcile(dict(snapshot={'scope': token('scope')}, cursor=cursor,
-                                      notification=notice, observedAt=1700000000000), self.path)
-        author = self.call(snapshot(2, [row]), early['cursor'])
-        unchanged = self.call(snapshot(3, [row]), author['cursor'])
-        self.assertEqual(unchanged['events'], [])
-        row['preview'] = 'fixture'
-        excerpt = self.call(snapshot(4, [row]), unchanged['cursor'])
-        first, second = author['events'][0], excerpt['events'][0]
-        self.assertNotIn('preview', first['payload'])
-        self.assertEqual(second['payload']['preview'], 'fixture')
-        self.assertEqual(first['payload']['detailsFor'], second['payload']['detailsFor'])
-        self.assertNotEqual(first['dedupeKey'], second['dedupeKey'])
-        self.assertEqual(self.call(snapshot(5, [row]), excerpt['cursor'])['events'], [])
+        return self.call({'scope': token('scope')}, cursor, notification=notice, **options)
 
-    def migrated_receipt(self):
+    def test_notification_waits_for_actionable_cache_and_delivers_once(self):
         cursor = self.call(snapshot(1, []))['cursor']
         row = message(2, reply=True)
-        notice = {field: row[field] for field in ('id', 'reply', 'messageTs', 'permalink', 'conversationLabel')}
-        early = ledger.reconcile(dict(snapshot={'scope': token('scope')}, cursor=cursor,
-                                      notification=notice, observedAt=1700000000000), self.path)
+        early = self.notice(cursor, row, includePreview=True)
+        duplicate = self.notice(early['cursor'], row, includePreview=True)
+        self.assertEqual(early['events'], [])
+        self.assertEqual(duplicate['events'], [])
+        partial = dict(row, preview='fixture')
+        del partial['sender']
+        unseen_author = self.call(snapshot(2, [partial]), duplicate['cursor'], includePreview=True)
+        self.assertEqual(unseen_author['events'], [])
+        unknown_domain = dict(row, preview='fixture', permalink=(
+            'https://app.slack.com/client/T0000001/C0000001?message_ts=' + row['messageTs']))
+        no_link = self.call(snapshot(3, [unknown_domain]), unseen_author['cursor'], includePreview=True)
+        self.assertEqual(no_link['events'], [])
+        ready = snapshot(4, [dict(row, preview='fixture')])
+        created = self.call(ready, no_link['cursor'], includePreview=True)
+        event, = created['events']
+        self.assertEqual(event['type'], 'thread.reply')
+        self.assertEqual(event['payload'], dict(version=1, count=1, sender=row['sender'], preview='fixture',
+                         conversationLabel=row['conversationLabel'], permalink=row['permalink'], messageTs=row['messageTs']))
+        self.assertEqual(self.call(ready, no_link['cursor'], includePreview=True), created)
+        self.assertEqual(self.notice(created['cursor'], row)['events'], [])
+        changed = self.call(snapshot(5, [dict(message(2, 'edit', ['reaction'], reply=True), preview='edited')]),
+                            created['cursor'], includePreview=True)
+        self.assertEqual([e['type'] for e in changed['events']], ['message.edited', 'reaction.added'])
+
+    def test_body_edit_without_slack_edit_timestamp_while_arrival_pending(self):
+        cursor = self.call(snapshot(1, []))['cursor']
+        first = message(2, body='first text')
+        del first['sender']
+        pending = self.call(snapshot(2, [first]), cursor)
+        ready = self.call(snapshot(3, [message(2, body='second text')]), pending['cursor'])
+        self.assertEqual([event['type'] for event in ready['events']], ['message.new', 'message.edited'])
+
+    def test_pending_changes_release_after_creation_with_stable_order_across_pages(self):
+        cursor = self.call(snapshot(1, []))['cursor']
+        row = message(2)
+        del row['sender']
+        for generation, body, reactions in [(2, 'first', []), (3, 'second', [token('wave')]), (4, 'third', [])]:
+            row.update(body=token(body), reactions=reactions)
+            result = self.call(snapshot(generation, [row]), cursor)
+            self.assertEqual(result['events'], [])
+            cursor = result['cursor']
+        row.update(sender='Fixture Author', preview='final visible text')
+        ready = snapshot(5, [row])
+        with patch.object(ledger, 'MAX_BATCH', 2):
+            events = []
+            page = self.call(ready, cursor, includePreview=True)
+            while True:
+                events.extend(page['events'])
+                if not page.get('retryObservation'):
+                    break
+                page = self.call(ready, page['cursor'], includePreview=True)
+        self.assertEqual([e['type'] for e in events], ['message.new', 'message.edited', 'reaction.added',
+                                                       'message.edited', 'reaction.removed'])
+        self.assertEqual(len({e['dedupeKey'] for e in events}), len(events))
+        self.assertTrue(all('preview' not in e['payload'] for e in events[1:]))
+        self.assertEqual(self.count('deferred_changes'), 0)
+
+    def test_pending_status_follows_subscription_and_preview_choice(self):
+        cursor = self.call(snapshot(1, []))['cursor']
+        row = message(1)
+        reply = message(2, reply=True)
+        snap = snapshot(2, [row, reply])
+        pending = self.call(snap, cursor, includePreview=True, arrivals=['message.new'])
+        self.assertEqual(pending['events'], [])
+        self.assertEqual(ledger.pending_status(pending['cursor'], self.path),
+                         [dict(delivery='arrival', awaiting=['opted-in excerpt'], messages=1)])
+        disabled = self.call(snap, pending['cursor'], includePreview=False, arrivals=['message.new'])
+        event, = disabled['events']
+        self.assertEqual(event['type'], 'message.new')
+        self.assertNotIn('preview', event['payload'])
+        self.assertEqual(ledger.pending_status(disabled['cursor'], self.path), [])
+
+    def test_cache_first_preview_enrichment_in_same_generation(self):
+        cursor = self.call(snapshot(1, []))['cursor']
+        row = message(2)
+        snap = snapshot(2, [row])
+        partial = self.call(snap, cursor, includePreview=True)
+        self.assertEqual(partial['events'], [])
+        self.assertEqual(self.notice(partial['cursor'], row, includePreview=True)['events'], [])
+        self.assertEqual(self.call(snap, partial['cursor'], includePreview=True)['events'], [])
+        row.update(preview='excerpt', memberSender='Example')
+        ready = self.call(snap, partial['cursor'], includePreview=True)
+        event, = ready['events']
+        self.assertEqual(event['type'], 'message.new')
+        self.assertEqual(event['payload']['count'], 1)
+        self.assertEqual(event['payload']['sender'], 'Example')
+        self.assertEqual(event['payload']['preview'], 'excerpt')
+        self.assertEqual(self.call(snap, ready['cursor'], includePreview=True)['events'], [])
+        replay, = self.call(snap, partial['cursor'])['events']
+        self.assertNotIn('preview', replay['payload'])
+        self.assertNotIn('excerpt', replay['summary'])
+
+    def test_cache_first_sender_enrichment_without_preview_consent(self):
+        cursor = self.call(snapshot(1, []))['cursor']
+        row = dict(message(2), preview='private excerpt')
+        del row['sender']
+        partial = self.call(snapshot(2, [row]), cursor)
+        self.assertEqual(partial['events'], [])
+        empty = self.call(snapshot(3, []), partial['cursor'])
+        self.assertEqual(empty['events'], [])
+        snap = snapshot(4, [row])
+        returned = self.call(snap, empty['cursor'])
+        self.assertEqual(returned['events'], [])
+        row['memberSender'] = 'Example'
+        ready = self.call(snap, returned['cursor'])
+        event, = ready['events']
+        self.assertEqual(event['type'], 'message.new')
+        self.assertEqual(event['payload']['count'], 1)
+        self.assertEqual(event['payload']['sender'], 'Example')
+        self.assertNotIn('preview', event['payload'])
+        self.assertNotIn('private excerpt', event['summary'])
+        self.assertEqual(self.call(snap, ready['cursor'])['events'], [])
+
+    def migrated_receipt(self, version=5):
+        # Synthetic receipt produced by the v5/v6 notification writer with fixed UUIDs.
+        row = message(2, reply=True)
+        lineage, source, tip = (f'{n:032x}' for n in (1, 2, 3))
+        context = {field: row[field] for field in ('messageTs', 'permalink', 'conversationLabel')}
+        receipt = dict(type='thread.reply', occurredAt=1700000000000, payload=dict(context, count=1, version=1),
+                       dedupeKey='slack:e86ad43449fc4f3e2045365555772e3091cf603039f9ec1a5292ab77420c4614',
+                       summary='Thread reply by unknown author in "#fixture" (message time 2023-11-14 22:13:20.000003 UTC)')
+        early = dict(events=[receipt], cursor=f'4:{lineage}:{tip}')
+        self.path.parent.mkdir(parents=True)
         with closing(sqlite3.connect(self.path)) as db, db:
-            db.execute('CREATE TABLE early AS SELECT lineage,message FROM pending_details')
-            db.execute('DROP TABLE pending_details')
-            db.execute('PRAGMA user_version=5')
+            for sql in ledger.SCHEMA:
+                db.execute(sql)
+            db.execute(ledger.FLOORS)
+            db.execute('INSERT INTO watch_starts VALUES (?,?)', (lineage, 1700000000000))
+            for commit in (source, tip):
+                db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)',
+                           (lineage, commit, token('scope'), '1', token('[]'), '2:' + token('[]')))
+            db.execute('INSERT INTO edges VALUES (?,?,?)', (lineage, source, ledger.packed(early)))
+            if version == 5:
+                db.execute('CREATE TABLE early (lineage TEXT, message TEXT, PRIMARY KEY(lineage,message))')
+                db.execute('INSERT INTO early VALUES (?,?)', (lineage, row['id']))
+            else:
+                db.execute('CREATE TABLE pending_details (lineage TEXT, message TEXT, reply INTEGER, '
+                           'need_sender INTEGER, need_preview INTEGER, PRIMARY KEY(lineage,message))')
+                db.execute('INSERT INTO pending_details VALUES (?,?,1,1,1)', (lineage, row['id']))
+            db.execute(f'PRAGMA user_version={version}')
         return row, early
+
+    def test_read_only_status_keeps_one_snapshot_during_migration(self):
+        _, receipt = self.migrated_receipt()
+        connection = sqlite3.connect(self.path)
+        self.addCleanup(connection.close)
+        connection.execute('PRAGMA journal_mode=WAL')
+        connection.execute('SELECT count(*) FROM commits').fetchone()
+        connect = sqlite3.connect
+        path = self.path
+
+        class MigratingReader(sqlite3.Connection):
+            def execute(self, sql, *args):
+                if 'sqlite_master' in sql:
+                    with closing(ledger.open_ledger(path, True)) as writer:
+                        writer.commit()
+                return super().execute(sql, *args)
+
+        def connect_with_migration(database, **kwargs):
+            if kwargs.get('uri'):
+                kwargs['factory'] = MigratingReader
+            return connect(database, **kwargs)
+
+        with patch.object(sqlite3, 'connect', connect_with_migration):
+            during = ledger.pending_status(receipt['cursor'], path)
+        self.assertEqual(during, [dict(delivery='legacy details', fieldsRecorded=False, messages=1)])
+        after, = ledger.pending_status(receipt['cursor'], path)
+        self.assertEqual((after['delivery'], after['messages']), ('legacy details', 1))
+
+    def test_v6_pending_receipt_gets_one_actionable_details_event(self):
+        row, early = self.migrated_receipt(6)
+        self.assertEqual(ledger.pending_status(early['cursor'], self.path),
+                         [dict(delivery='legacy details', awaiting=['author', 'opted-in excerpt'], permalinkRecorded=False, messages=1)])
+        snap = snapshot(2, [row])
+        partial = self.call(snap, early['cursor'], includePreview=True)
+        self.assertEqual(partial['events'], [])
+        row['preview'] = 'original excerpt'
+        result = self.call(snap, partial['cursor'], includePreview=True)
+        details, = result['events']
+        self.assertEqual(details['type'], 'thread.reply')
+        self.assertEqual(details['payload']['count'], 0)
+        self.assertEqual(details['payload']['delivery'], 'details')
+        self.assertEqual(details['payload']['detailsFor'], early['events'][0]['dedupeKey'])
+        self.assertEqual(details['payload']['preview'], 'original excerpt')
+        self.assertEqual(self.call(snap, result['cursor'], includePreview=True)['events'], [])
 
     def test_missing_migrated_receipt_rolls_back_and_preserves_cursor(self):
         row, early = self.migrated_receipt()
+        self.assertEqual(ledger.pending_status(early['cursor'], self.path),
+                         [dict(delivery='legacy details', fieldsRecorded=False, messages=1)])
         with closing(sqlite3.connect(self.path)) as db, db:
             edge = db.execute('SELECT lineage,source,result FROM edges').fetchone()
             db.execute('DELETE FROM edges')
@@ -138,10 +285,10 @@ class LedgerTests(unittest.TestCase):
         self.assertEqual(details['payload']['detailsFor'], early['events'][0]['dedupeKey'])
 
     def test_numeric_timestamp_ties_and_preexisting_order_replay(self):
-        cursor = self.call(snapshot(1, []))['cursor']
         rows = [dict(message(i), messageTs=ts, sender=f'U000000{i}') for i, ts in enumerate(
             ('1700000000.0000000003', '1700000000.1', '1700000000.0000000002', '1700000000.10'))]
-        batch = self.call(snapshot(2, rows), cursor)
+        cursor = self.call(snapshot(1, rows))['cursor']
+        batch = self.call(snapshot(2, [dict(row, body=token('edit')) for row in rows]), cursor)
         ties = sorted((rows[1], rows[3]), key=lambda row: row['id'])
         self.assertEqual([event['payload']['sender'] for event in batch['events']],
                          [row['sender'] for row in (rows[2], rows[0], *ties)])
@@ -179,7 +326,7 @@ class LedgerTests(unittest.TestCase):
         baseline = snapshot(1, [dict(message(1), preview='baseline only')])
         cursor = self.call(baseline)['cursor']
         updated = snapshot(2, [dict(message(1, 'edited', ['r']), preview='edited excerpt')])
-        edit, reaction = self.call(updated, cursor)['events']
+        edit, reaction = self.call(updated, cursor, includePreview=True)['events']
         self.assertEqual(edit['payload']['preview'], 'edited excerpt')
         self.assertIn('Untrusted message excerpt: "edited excerpt"', edit['summary'])
         self.assertNotIn('edited excerpt', ledger.packed(reaction))
@@ -274,6 +421,8 @@ class LedgerTests(unittest.TestCase):
     def test_inclusive_start_preserves_microseconds_and_tracks_suppressed_rows(self):
         initial = ledger.reconcile({'observedAt': 1700000000002, 'startedAt': 1700000000001,
                                     'snapshot': snapshot(1, [])}, self.path)
+        stale = self.notice(initial['cursor'], message(998))
+        self.assertEqual(stale, {'cursor': initial['cursor'], 'events': []})
         # These fixtures fall one microsecond before, exactly at, and one after the floor.
         changed = self.call(snapshot(2, [message(998), message(999), message(1000)]), initial['cursor'])
         self.assertEqual(sorted(event['payload']['messageTs'] for event in changed['events']),
@@ -288,6 +437,7 @@ class LedgerTests(unittest.TestCase):
         frozen = dict(tip, events=[{'type': 'message.new', 'occurredAt': 1000,
                                     'dedupeKey': 'slack:' + token('legacy')}])
         with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('DROP TABLE deferred_changes')
             db.execute('DROP TABLE watch_starts')
             db.execute('DROP TABLE pending_details')
             db.execute('PRAGMA user_version=4')

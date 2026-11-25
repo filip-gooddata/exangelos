@@ -16,6 +16,31 @@ const snapshot = (messages = [message(1)], generation = "2") => ({
   snapshot: createHash("sha256").update(JSON.stringify(messages)).digest("hex")
 })
 
+it.effect("new notifications trigger a cache read and deliver one actionable arrival across restarts", () => Effect.gen(function*() {
+  const initial = yield* reconcile(undefined, snapshot([], "1"))
+  const row = message(2)
+  const notice = { id: row.id, reply: row.reply, messageTs: row.messageTs, conversationLabel: row.conversationLabel, permalink: row.permalink }
+  const { scope } = snapshot()
+  const wrongScope = yield* reconcile(initial.cursor, { scope: token(9) }, undefined, notice).pipe(Effect.flip)
+  expect(wrongScope._tag).toBe("ObservationGap")
+  const hint = yield* reconcile(initial.cursor, { scope }, undefined, notice)
+  expect(hint).toMatchObject({ events: [], refreshCache: true })
+  const duplicate = yield* reconcile(hint.cursor, { scope }, undefined, notice)
+  expect(duplicate).toEqual({ cursor: hint.cursor, events: [] })
+
+  const partial = yield* reconcile(duplicate.cursor, snapshot([{ ...row, permalink: "https://app.slack.com/client/T0000001/C0000001" }]))
+  expect(partial.events).toEqual([])
+  const ready = snapshot([{ ...row }], "3")
+  const arrival = yield* reconcile(partial.cursor, { ...ready, messages: [{ ...row, preview: "private excerpt" }] })
+  expect(arrival.events.map((event) => event.type)).toEqual(["message.new"])
+  expect(arrival.events[0]?.payload).toMatchObject({ count: 1, sender: row.sender, permalink: row.permalink })
+  expect(arrival.events[0]?.payload).not.toHaveProperty("preview")
+  expect(arrival.events[0]?.summary).toContain(row.permalink)
+  expect(arrival.events[0]?.summary).not.toContain("private excerpt")
+  expect(yield* reconcile(arrival.cursor, { scope }, undefined, notice)).toEqual({ cursor: arrival.cursor, events: [] })
+  expect((yield* reconcile(arrival.cursor, ready)).events).toEqual([])
+}).pipe(Effect.provide(ledgerProcess)), ledgerTestTimeout)
+
 it.effect("real Python ledger replays the committed batch before considering a changed snapshot", () => Effect.gen(function*() {
   const initial = yield* reconcile(undefined, snapshot([message(1)], "1"))
   const first = yield* reconcile(initial.cursor, snapshot([message(1), message(3, true)]))

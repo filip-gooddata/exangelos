@@ -176,7 +176,7 @@ def check_wake(event, handle, home, label, preview=None, *, once=False):
         observed = datetime.fromisoformat(event['occurredAt'].replace('Z', '+00:00'))
         timing += f', observed {observed:%Y-%m-%d %H:%M:%S}.{observed.microsecond // 1000:03d} UTC'
     summary = f'{label} ({timing})'
-    if event['payload'].get('delivery') == 'details':
+    if event['type'] in ('message.new', 'thread.reply'):
         summary += ' | ' + event['payload']['permalink']
     if preview is not None:
         summary += ' | Untrusted message excerpt: ' + json.dumps(preview, ensure_ascii=False)
@@ -471,12 +471,12 @@ def exercise(installed, home):
                             subtype='bot_message', _rxn_key=f'message-{ts}-{CHANNEL}')
         messages[ts].update(fields)
 
-    # Consecutive nanoseconds straddle an hour and collapse into ties under float conversion.
+    # Consecutive Slack timestamps straddle an hour.
     next_hour = (int(time.time()) // 3600 + 1) * 3600 * 10**6
     ordered_ts = []
     for index in range(len(cases)):
-        seconds, fraction = divmod(next_hour * 1000 + index - len(cases) // 2, 10**9)
-        ordered_ts.append(f'{seconds}.{fraction:09d}')
+        seconds, fraction = divmod(next_hour + index - len(cases) // 2, 10**6)
+        ordered_ts.append(f'{seconds}.{fraction:06d}')
     for index in reversed(range(len(cases))):
         sender, fields, preview = cases[index]
         ts = ordered_ts[index]
@@ -485,7 +485,8 @@ def exercise(installed, home):
             del messages[ts]['text']
         elif index == 2:
             messages[ts]['text'] = b'_'  # V8 undefined with a visible attachment
-        expected_apps[ts] = (sender, preview)
+        if preview is not None:
+            expected_apps[ts] = (sender, preview)
     first_app_ts = min(expected_apps)
     hidden_ts = timestamp(next_hour + len(cases))
     add_app(hidden_ts, 'Fixture Jira', dict(cases[0][1], hidden=True))
@@ -496,13 +497,13 @@ def exercise(installed, home):
     del messages[hidden_ts]
     database(app, state, sequence=62)
     app_batch = resume(conversation, 'enabled')
-    check([item['event']['payload']['messageTs'] for item in app_batch] == ordered_ts,
-          'visible app posts delivered in exact cross-hour nanosecond order')
+    check([item['event']['payload']['messageTs'] for item in app_batch] == sorted(expected_apps),
+          'visible app posts delivered in exact cross-hour timestamp order')
     for item in app_batch:
         event = item['event']
         ts = event['payload']['messageTs']
         sender, preview = expected_apps.pop(ts)
-        link = f'https://app.slack.com/client/{SELECTION[0]}/{CHANNEL}?message_ts={ts}'
+        link = f'https://fixture.slack.com/archives/{CHANNEL}/p{ts.replace(".", "")}'
         payload = dict(version=1, count=1, messageTs=ts, sender=sender,
                        conversationLabel='Slack #fixture', permalink=link)
         if preview is not None:
@@ -513,6 +514,9 @@ def exercise(installed, home):
     check(not expected_apps and resume(conversation, 'disabled') == without_previews(app_batch), 'immutable app delivery replay')
     cursors[conversation] = app_batch[-1]['cursor']
 
+    for candidate, (_, _, preview) in zip(ordered_ts, cases):
+        if preview is None:
+            del messages[candidate]
     ts = current_timestamp()
     messages[first_app_ts]['blocks'] = [dict(type='header', text=dict(type='plain_text', text='New heading'))]
     add_app(ts, 'Fixture Jira', cases[0][1])
@@ -614,13 +618,14 @@ def exercise(installed, home):
     final_state = inventory(private)
     check(all(entry in final_state for entry in original), 'legacy user state preserved')
     return dict(dmHistorySuppressed=19, dmArrivals=3, distinctSubjects=len(distinct), conversationEvents=len(batches[conversation]),
-                repliesEvents=len(batches[replies]), exactReplays=2, appDeliveries=len(cases) + 1,
-                renderedWakeChecks=len((home.parent / 'rendered-wakes.jsonl').read_text().splitlines()), legacyV1Replays=1, legacyPayloadReplays=1, preservedLegacyFiles=len(original))
+                repliesEvents=len(batches[replies]), exactReplays=2, appDeliveries=len(app_batch) + len(opt_out),
+                legacyV1Replays=1, legacyPayloadReplays=1, preservedLegacyFiles=len(original))
 
 
 def notification_delivery(installed, home):
     from test_direct import CHANNEL, SELECTION, fixture
     from test_source import database
+    from refresh_validation import until
 
     root = home / 'profile/IndexedDB'
     root.mkdir(parents=True)
@@ -628,6 +633,7 @@ def notification_delivery(installed, home):
     log.parent.mkdir(parents=True)
     log.touch()
     state = fixture()
+    state['bootData']['team_domain'] = 'fixture'
     database(root, state)
     base = dict(subscriptionAccess='persisted-cache', cacheRoot=str(root), pollIntervalMs='1000')
     allowed = dict(base, notificationLog='enabled', messagePreviews='enabled')
@@ -644,6 +650,11 @@ def notification_delivery(installed, home):
         return ('[11/24/26, 12:00:00:000] info: Store: NEW_NOTIFICATION \n'
                 + json.dumps(data, indent=2) + '\n').encode()
 
+    def pending():
+        private = home / 'state/connector-state/slack/ledger.sqlite3'
+        with sqlite3.connect(f'{private.as_uri()}?mode=ro', uri=True) as db:
+            return db.execute('SELECT count(*) FROM pending_details').fetchone()[0]
+
     def append(data):
         with log.open('ab') as stream:
             stream.write(data)
@@ -655,6 +666,12 @@ def notification_delivery(installed, home):
         wire.configure(allowed)
         handle = describe(wire, CHANNEL)
         watch = wire.watch(handle, event_types=['message.new'])
+        checkpoint = wire.chunk(watch)[0]['cursor']
+        check(wire.receive()['exit']['_tag'] == 'Success', 'checkpoint-only watch before daemon cursor intake')
+        append(record(stamp()))
+        time.sleep(0.7)
+        check(pending() == 0, 'no receipt accepted before the host reopens the checkpoint')
+        watch = wire.watch(handle, checkpoint, event_types=['message.new'])
         saved = wire.chunk(watch)[0]['cursor']
         wire.receive(0.7, quiet=True)
         ts = stamp()
@@ -662,33 +679,26 @@ def notification_delivery(installed, home):
         append(record(ts, userId='U9999999') + record(ts, teamId='T9999999')
                + record(ts, channel='C9999999') + record(ts, thread_ts=ts) + good[:80])
         wire.receive(0.7, quiet=True)
+        check(pending() == 0, 'unrelated and partial frames ignored')
         append(good[80:] + good)
-        early, = wire.chunk(watch)
-        payload = early['event']['payload']
-        check(early['event']['type'] == 'message.new' and payload['messageTs'] == ts
-              and 'sender' not in payload and 'preview' not in payload
-              and payload['permalink'].endswith(f'/{CHANNEL}?message_ts={ts}'), 'verified early identity')
-        check_wake(early['event'], handle, home, 'New message by unknown author in "Slack conversation ' + CHANNEL + '"')
-        wire.receive(0.7, quiet=True)
+        until(lambda: pending() == 1)
+        wire.receive(1.4, quiet=True)
 
     message(ts, 'fuller cache text')
     database(root, state, sequence=20)
     with Wire(installed, home) as wire:
         wire.configure(allowed)
         watch = wire.watch(handle, saved)
-        check(wire.chunk(watch) == [early], 'early edge replays after restart')
-        message(ts, 'edit during replay')
-        database(root, state, sequence=25)
-        details, = wire.chunk(watch)
-        event = details['event']
-        check(event['type'] == 'message.new' and event['payload']['delivery'] == 'details'
-              and event['payload']['count'] == 0 and event['payload']['detailsFor'] == early['event']['dedupeKey']
-              and event['dedupeKey'] != early['event']['dedupeKey'] and event['payload']['messageTs'] == ts,
-              'cache context linked to one original post after restart')
-        check_wake(event, handle, home, 'Details for earlier message by "U0000002" in "Slack conversation C0000001"', 'fuller cache text')
-        first_edit, = wire.chunk(watch)
-        check(first_edit['event']['type'] == 'message.edited' and first_edit['event']['payload']['preview'] == 'edit during replay',
-              'first edit survives cache observation during replay')
+        arrival, = wire.chunk(watch)
+        event = arrival['event']
+        check(event['type'] == 'message.new' and event['payload']['messageTs'] == ts
+              and event['payload']['count'] == 1, 'one counted cache arrival after notice and restart')
+        check_wake(event, handle, home, 'New message by "U0000002" in "Slack conversation C0000001"', 'fuller cache text')
+
+    with Wire(installed, home) as wire:
+        wire.configure(allowed)
+        watch = wire.watch(handle, saved)
+        check(wire.chunk(watch) == [arrival], 'same populated arrival replays from earlier cursor')
         second = stamp()
         message(second, 'cache only')
         database(root, state, sequence=30)
@@ -715,6 +725,9 @@ def notification_delivery(installed, home):
         parent = next(iter(state['messages'][CHANNEL]))
         handle = describe(wire, f'{CHANNEL}:{parent}', 'replies')
         watch = wire.watch(handle, event_types=['thread.reply'])
+        checkpoint = wire.chunk(watch)[0]['cursor']
+        check(wire.receive()['exit']['_tag'] == 'Success', 'reply checkpoint')
+        watch = wire.watch(handle, checkpoint, event_types=['thread.reply'])
         wire.chunk(watch)
         wire.receive(0.7, quiet=True)
         log.rename(log.with_suffix('.old'))
@@ -723,15 +736,25 @@ def notification_delivery(installed, home):
         prefix = f'{SELECTION[0]}|msg|{CHANNEL}|{ts}|'
         other = '1600000000.000001'
         append(record(ts) + record(ts, id=prefix + other, thread_ts=other) + record(ts, id=prefix + parent, thread_ts=parent))
+        until(lambda: pending() == 1)
+        wire.receive(1.4, quiet=True)
+        message(ts, 'rotation')
+        state['messages'][CHANNEL][ts]['thread_ts'] = parent
+        database(root, state, sequence=60)
         rotated, = wire.chunk(watch)
         check(rotated['event']['payload']['messageTs'] == ts, 'fresh reply from replacement after missing path')
         ts = stamp()
         prefix = f'{SELECTION[0]}|msg|{CHANNEL}|{ts}|'
         wire.receive(0.7, quiet=True)
         log.write_bytes(record(ts, id=prefix + parent, thread_ts=parent))
+        until(lambda: pending() == 1)
+        wire.receive(1.4, quiet=True)
+        message(ts, 'truncation')
+        state['messages'][CHANNEL][ts]['thread_ts'] = parent
+        database(root, state, sequence=70)
         reply, = wire.chunk(watch)
         check(reply['event']['type'] == 'thread.reply' and reply['event']['payload']['messageTs'] == ts
-              and reply['event']['payload']['permalink'].endswith('&thread_ts=' + parent),
+              and reply['event']['payload']['permalink'].endswith(f'?thread_ts={parent}&cid={CHANNEL}'),
               'rotated and truncated log binds only the selected reply thread')
 
 
@@ -762,9 +785,19 @@ def main():
         tar.extractall(installed, **({'filter': 'data'} if hasattr(tarfile, 'data_filter') else {}))
     before = inventory(installed)
     (evidence / 'inventory-before.json').write_text(json.dumps(before, indent=2))
+    binary = evidence / 'exangelos'
+    command([BUN, 'apps/cli/build.ts', '--official-connectors', json.dumps([official]),
+             '--outfile', str(binary)], REPO, evidence / 'cli-build.log', build_home)
+    from archive_daemon import daemon_delivery
+    daemon_delivery(binary, archive, evidence / 'daemon-home')
+    daemon_install = evidence / 'daemon-home/state/connectors/slack'
+    for member in expected:
+        check((daemon_install / member).read_bytes() == (installed / member).read_bytes(),
+              f'official daemon installed archive member: {member}')
     result = exercise(installed, evidence / 'synthetic-home')
     notification_delivery(installed, evidence / "notification-home")
-    result["notificationDelivery"] = True
+    result.update(notificationDelivery=True, daemonTargetStdin=True,
+                  renderedWakeChecks=len((evidence / 'rendered-wakes.jsonl').read_text().splitlines()))
     after = inventory(installed)
     (evidence / 'inventory-after.json').write_text(json.dumps(after, indent=2))
     check(before == after and hashlib.sha256(archive.read_bytes()).hexdigest() == checksum, 'immutable release files')
