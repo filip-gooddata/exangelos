@@ -113,11 +113,18 @@ def wake_summary(kind, payload, observed_at):
         seconds, millis = divmod(observed_at, 1000)
         timing = f"message time {when}, observed {utc_stamp(seconds, f'{millis:03d}')}"
     summary = f"{action} in {quote(payload['conversationLabel'])} ({timing})"
-    if payload.get('delivery') == 'details':
+    if kind in ('message.new', 'thread.reply'):
         summary += ' | ' + payload['permalink']
     if 'preview' in payload:
         summary += ' | Untrusted message excerpt: ' + quote(payload['preview'])
     return summary
+
+
+def archive_permalink(context):
+    link = re.fullmatch(r'https://[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.slack\.com/archives/'
+                        r'([CDG][A-Z0-9]{6,30})/p([0-9]+)(?:\?thread_ts=[0-9]+\.[0-9]+&cid=\1)?',
+                        context['permalink'])
+    return link is not None and link[2] == context['messageTs'].replace('.', '')
 
 
 def snapshot_metadata(snapshot):
@@ -205,7 +212,7 @@ def open_ledger(path, resume, *, check_integrity=True):
             version = 0
         else:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            require(version in (4, 5, 6))
+            require(version in (4, 5, 6, 7))
             if check_integrity:
                 require(db.execute('PRAGMA quick_check').fetchall() == [('ok',)])
             for table, columns in (('commits', 'lineage,id,scope,generation,snapshot,digest'),
@@ -220,7 +227,10 @@ def open_ledger(path, resume, *, check_integrity=True):
             if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='early'").fetchone():
                 db.execute('INSERT INTO pending_details SELECT lineage,message,NULL,1,1 FROM early')
                 db.execute('DROP TABLE early')
-            db.execute('PRAGMA user_version=6')
+        if version < 7:
+            db.execute('ALTER TABLE pending_details ADD COLUMN receipted INTEGER NOT NULL DEFAULT 1')
+            db.execute('ALTER TABLE pending_details ADD COLUMN need_permalink INTEGER NOT NULL DEFAULT 1')
+            db.execute('PRAGMA user_version=7')
         return db
     except BaseException:
         db.close()
@@ -251,7 +261,7 @@ def reconcile(request, path=None):
             edge = db.execute('SELECT result FROM edges WHERE lineage=? AND source=?', (lineage, source)).fetchone()
             if edge:
                 result = json.loads(edge[0])
-                if request.get('includePreview') is False:
+                if request.get('includePreview') is not True:
                     for event in result['events']:
                         payload = event.get('payload', {})
                         if payload.pop('preview', None) is not None:
@@ -260,7 +270,8 @@ def reconcile(request, path=None):
                     successor = CURSOR.fullmatch(result['cursor'])
                     generation, = db.execute('SELECT generation FROM commits WHERE lineage=? AND id=?',
                                               successor.groups()).fetchone()
-                    if notice is not None or int(snapshot['generation']) > int(generation):
+                    if notice is not None or int(snapshot['generation']) > int(generation) or db.execute(
+                            'SELECT 1 FROM pending_details WHERE lineage=? LIMIT 1', (lineage,)).fetchone():
                         result['retryObservation'] = True
                 db.commit()
                 return result
@@ -274,77 +285,66 @@ def reconcile(request, path=None):
             require(type(start_ms) is int and 0 <= start_ms <= observed_at)
             db.execute('INSERT INTO watch_starts VALUES (?,?)', (lineage, start_ms))
         start = Decimal(start_ms).scaleb(-3)
-        previews = request.get('includePreview') is not False
+        previews = request.get('includePreview') is True
         if notice is not None:
             message = notice['id']
             require(token(message) and type(notice['reply']) is bool)
             known = db.execute('SELECT 1 FROM versions WHERE lineage=? AND message=? LIMIT 1', (lineage, message)).fetchone()
-            if (known or Decimal(notice['messageTs']) < start or
-                    not db.execute('INSERT OR IGNORE INTO pending_details VALUES (?,?,?,1,?)',
-                                   (lineage, message, notice['reply'], previews)).rowcount):
-                db.commit()
-                return {'events': [], 'cursor': cursor}
-            commit = uuid.uuid4().hex
-            kind = 'thread.reply' if notice['reply'] else 'message.new'
-            payload = {field: notice[field] for field in ('messageTs', 'conversationLabel', 'permalink')}
-            event = dict(type=kind, occurredAt=observed_at, payload=dict(payload, version=1, count=1),
-                         summary=wake_summary(kind, payload, observed_at),
-                         dedupeKey=event_key(lineage, previous[0], message, 0, kind, 'created'))
-            result = dict(events=[event], cursor=f'4:{lineage}:{commit}')
-            db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)', (lineage, commit, *previous))
-            db.execute('INSERT INTO edges VALUES (?,?,?)', (lineage, source, packed(result)))
+            recorded = False
+            if not known and Decimal(notice['messageTs']) >= start:
+                recorded = bool(db.execute('INSERT OR IGNORE INTO pending_details VALUES (?,?,?,1,?,0,1)',
+                                           (lineage, message, notice['reply'], previews)).rowcount)
             db.commit()
-            return result
+            return dict(events=[], cursor=cursor, **({'refreshCache': True} if recorded else {}))
         messages, digest = baseline if baseline is not None else snapshot_metadata(snapshot)
+        same_generation = previous and snapshot['generation'] == previous[1]
         if previous:
             require(int(snapshot['generation']) >= int(previous[1]))
-            if snapshot['generation'] == previous[1]:
+            if same_generation:
                 unchanged = snapshot['snapshot'] == previous[2] and previous[3] in (digest, '2:' + digest)
                 require(unchanged or legacy_context_matches(db, lineage, messages, previous[3]))
-                db.commit()
-                return {'events': [], 'cursor': cursor}
+                if not db.execute('SELECT 1 FROM pending_details WHERE lineage=? LIMIT 1', (lineage,)).fetchone():
+                    db.commit()
+                    return {'events': [], 'cursor': cursor}
         # Previews belong only to eligible delivery edges, never to baselines or version history.
         delivery = {row['id']: row for row in snapshot['messages']}
         commit = uuid.uuid4().hex
         result = {'events': [], 'cursor': f'4:{lineage}:{commit}'}
-        db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)', (lineage, commit, snapshot['scope'], snapshot['generation'], snapshot['snapshot'], '2:' + digest))
+        version_changed = False
         # snapshot_metadata supplies message-id order for equal numeric times.
         for message in sorted(messages, key=lambda entry: Decimal(entry['messageTs'])):
             row = db.execute('SELECT metadata,revision FROM versions WHERE lineage=? AND message=? ORDER BY sequence DESC LIMIT 1', (lineage, message['id'])).fetchone()
             old, revision = (json.loads(row[0]), row[1]) if row else (None, 0)
             changes = []
-            early = False
             context = delivery[message['id']]
             if previous:
                 kind = 'thread.reply' if message['reply'] else 'message.new'
                 key = lineage, message['id']
-                pending = db.execute('SELECT reply,need_sender,need_preview FROM pending_details '
-                                     'WHERE lineage=? AND message=?', key).fetchone()
-                early = pending is not None
-                if pending:
-                    reply, need_sender, need_preview = pending
+                pending = db.execute('SELECT reply,receipted FROM pending_details WHERE lineage=? AND message=?', key).fetchone()
+                arrival = pending is not None or (kind in request.get('arrivals', ('thread.reply', 'message.new')) and
+                                                  old is None and Decimal(message['messageTs']) >= start)
+                if arrival:
+                    reply, receipted = pending or (message['reply'], False)
                     if reply is None:
                         reply = legacy_receipt_is_reply(db, lineage, snapshot['scope'], message['id'])
                         db.execute('UPDATE pending_details SET reply=? WHERE lineage=? AND message=?', (reply, *key))
                     if reply != message['reply']:
                         continue
-                    same_post = old is None or old['body'] == message['body']
-                    sender_ready = need_sender and ('sender' in context or 'memberSender' in context)
-                    preview_ready = need_preview and previews and 'preview' in context
-                    if same_post and (sender_ready or preview_ready):
-                        changes.append((kind, 'details'))
-                    remaining = (need_sender and not sender_ready, need_preview and previews and not preview_ready)
-                    if not same_post or not any(remaining):
+                    need_sender = not (context.get('memberSender') or context.get('sender'))
+                    need_preview = previews and 'preview' not in context
+                    need_permalink = not archive_permalink(context)
+                    if need_sender or need_preview or need_permalink:
+                        db.execute('INSERT INTO pending_details VALUES (?,?,?,?,?,?,?) ON CONFLICT(lineage,message) '
+                                   'DO UPDATE SET need_sender=excluded.need_sender, need_preview=excluded.need_preview, '
+                                   'need_permalink=excluded.need_permalink WHERE (need_sender,need_preview,need_permalink) '
+                                   '!= (excluded.need_sender,excluded.need_preview,excluded.need_permalink)',
+                                   (*key, reply, need_sender, need_preview, receipted, need_permalink))
+                    else:
+                        changes.append((kind, 'details' if receipted else 'created'))
                         db.execute('DELETE FROM pending_details WHERE lineage=? AND message=?', key)
-                    elif remaining != (need_sender, need_preview):
-                        db.execute('UPDATE pending_details SET need_sender=?,need_preview=? '
-                                   'WHERE lineage=? AND message=?', (*remaining, *key))
-                if old is None:
-                    if not early and Decimal(message['messageTs']) >= start:
-                        changes.append((kind, 'created'))
-                else:
+                if old is not None:
                     require(old['reply'] == message['reply'])
-                    if old['body'] != message['body']:
+                    if old['body'] != message['body'] and (not arrival or context.get('edited') is True):
                         changes.append(('message.edited', message['body']))
                     if old['reactionsComplete'] and message['reactionsComplete']:
                         changes.extend(('reaction.added', r) for r in message['reactions'] if r not in old['reactions'])
@@ -360,16 +360,19 @@ def reconcile(request, path=None):
                     payload['preview'] = context['preview']
                 if transition == 'details':
                     original = event_key(lineage, snapshot['scope'], message['id'], 0, kind, 'created')
-                    if not preview_ready:
-                        payload.pop('preview', None)
                     payload.update(delivery='details', detailsFor=original)
                 result['events'].append({'type': kind, 'occurredAt': observed_at, 'summary': wake_summary(kind, payload, observed_at),
                                          'dedupeKey': event_key(lineage, snapshot['scope'], message['id'], revision, kind, transition),
                                          'payload': dict(payload, version=1, count=0 if transition == 'details' else 1)})
-            revision += bool(changes or (old is None and early))
+            revision += bool(changes)
             require(revision < 9007199254740990)
             if old != message or changes:
+                version_changed = True
                 db.execute('INSERT INTO versions(lineage,message,commit_id,metadata,revision) VALUES (?,?,?,?,?)', (lineage, message['id'], commit, packed(message), revision))
+        if same_generation and not version_changed:
+            db.commit()
+            return dict(events=[], cursor=cursor)
+        db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)', (lineage, commit, snapshot['scope'], snapshot['generation'], snapshot['snapshot'], '2:' + digest))
         if source:
             db.execute('INSERT INTO edges VALUES (?,?,?)', (lineage, source, packed(result)))
         db.commit()
@@ -378,9 +381,27 @@ def reconcile(request, path=None):
         db.close()
 
 
+def pending_status(cursor, path):
+    match = CURSOR.fullmatch(cursor)
+    require(match is not None and not path.is_symlink())
+    db = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
+    try:
+        require(db.execute('SELECT 1 FROM commits WHERE lineage=? AND id=?', match.groups()).fetchone())
+        rows = db.execute('SELECT receipted,need_sender,need_preview,need_permalink,COUNT(*) '
+                          'FROM pending_details WHERE lineage=? GROUP BY 1,2,3,4', (match[1],))
+        return [dict(delivery='legacy details' if receipt else 'arrival', awaiting=[
+            field for field, missing in zip(('author', 'opted-in excerpt', 'archive permalink'), (sender, preview, link))
+            if missing], messages=count) for receipt, sender, preview, link, count in rows]
+    finally:
+        db.close()
+
+
 def main():
     os.umask(0o077)
     try:
+        if sys.argv[1:] == ['--pending']:
+            print(json.dumps(pending_status(sys.stdin.readline(128).strip(), ledger_path())))
+            return 0
         text = sys.stdin.buffer.read(5_000_001)
         require(len(text) <= 5_000_000)
         result = reconcile(json.loads(text))

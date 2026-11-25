@@ -19,7 +19,7 @@ OTHER = '1700000001.000005'
 
 
 def add_message(state, timestamp, thread=None, channel=CHANNEL):
-    row = dict(ts=timestamp, text='synthetic body', _rxn_key=f'message-{timestamp}-{channel}')
+    row = dict(ts=timestamp, user='U0000002', text='synthetic body', _rxn_key=f'message-{timestamp}-{channel}')
     if thread:
         row['thread_ts'] = thread
     state['messages'].setdefault(channel, {})[timestamp] = row

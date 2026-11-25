@@ -32,7 +32,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
   }) }),
   configuration: [
     Catalogue.choice("subscriptionAccess", { label: "Allow reading persisted Slack cache data and sharing conversation labels, message timestamps, links and available senders with the host, even after logout or access changes (sign-in unverified)", choices: ["persisted-cache", "disabled"], required: false }),
-    Catalogue.choice("notificationLog", { label: "Read new Slack Desktop notification records from the selected profile for early message timestamps and links", choices: ["disabled", "enabled"], required: false }),
+    Catalogue.choice("notificationLog", { label: "Read new Slack Desktop notification records from the selected profile to detect arrivals and check the selected cache for complete details", choices: ["disabled", "enabled"], required: false }),
     Catalogue.choice("messagePreviews", { label: "Share short visible excerpts, which may contain confidential text, from selected messages in new message, reply and edit events, including wakes, stored event history, desktop alerts and debug payload logs", choices: ["disabled", "enabled"], required: false }),
     Catalogue.text("cacheRoot", { label: "Optional absolute IndexedDB folder for a custom Slack installation", required: false }),
     Catalogue.text("subscriptionCacheRoot", { label: "Optional subscription cache folder override (takes precedence over cacheRoot)", required: false }),
@@ -102,13 +102,15 @@ export const make = <R>(source: Source<R>) => Connector.make({
           yield* active
           const snapshot = yield* source.read(configuration.includePreview ? { ...request, includePreview: true } : request)
           if (snapshot.scope !== request.expectedScope) return yield* new Connector.SourceFailed({ reason, category: "scope-changed" })
-          return { kind: "cache", snapshot } as const
+          return snapshot
         })
-        const cache = Stream.fromEffect(read).pipe(Stream.concat(
-          Stream.fromEffectRepeat(Effect.sleep(configuration.interval).pipe(Effect.andThen(read)))
+        const tick = { kind: "cache" } as const
+        const cache = Stream.make(tick).pipe(Stream.concat(
+          Stream.fromEffectRepeat(Effect.sleep(configuration.interval).pipe(Effect.as(tick)))
         ))
         const selectedTypes: ReadonlyArray<string> = eventTypes
         const accepts = (type: string) => !selectedTypes.length || selectedTypes.includes(type)
+        const arrivals = ["message.new", "thread.reply"].filter(accepts)
         const useLog = configuration.notificationLog && (accepts("thread.reply") || (!request.selection.thread && accepts("message.new")))
         const initialCursor = useLog && cursor === undefined ? (yield* reconcile(undefined, {
           scope: request.expectedScope, complete: true, generation: "0", snapshot: "0".repeat(64), messages: []
@@ -118,10 +120,10 @@ export const make = <R>(source: Source<R>) => Connector.make({
           Stream.map((notification) => ({ kind: "notice", notification } as const))
         ), { haltStrategy: "left" }) : cache
         const progress = yield* Ref.make({ cursor: initialCursor, first: true })
-        return updates.pipe(Stream.flatMap((update) => Stream.paginate(undefined, () => Effect.gen(function*() {
+        return updates.pipe(Stream.flatMap((update) => Stream.paginate(false, (refresh) => Effect.gen(function*() {
           const state = yield* Ref.get(progress)
           yield* active
-          const result = update.kind === "cache" ? yield* reconcile(state.cursor, update.snapshot, startedAt, undefined, configuration.includePreview)
+          const result = refresh || update.kind === "cache" ? yield* reconcile(state.cursor, yield* read, startedAt, undefined, configuration.includePreview, arrivals)
             : yield* reconcile(state.cursor, { scope: request.expectedScope }, undefined, update.notification, configuration.includePreview)
           yield* active
           const items = result.events.map((event, index) => events[event.type].item({
@@ -131,9 +133,9 @@ export const make = <R>(source: Source<R>) => Connector.make({
           }))
           if (items.length === 0 && (state.first || state.cursor !== result.cursor)) items.push(Connector.cursor(result.cursor))
           yield* Ref.set(progress, { cursor: result.cursor, first: false })
-          return [items, result.retryObservation ? Option.some(undefined) : Option.none()] as const
+          return [items, result.refreshCache || result.retryObservation ? Option.some(refresh || !!result.refreshCache) : Option.none()] as const
         }))),
-          Stream.interruptWhen(Deferred.await(configuration.revoked)),
+          Stream.interruptWhen(Deferred.await(configuration.revoked).pipe(Effect.andThen(Effect.fail(new Connector.SourceFailed({ reason: authorize }))))),
           Stream.catchTag("LegacyCursor", () => Stream.make(Connector.end(
             "This Slack cursor predates message freshness tracking. Create a new subscription for the same selection to establish a baseline."
           ))),

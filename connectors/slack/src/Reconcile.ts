@@ -19,6 +19,7 @@ export const EventPayload = Schema.Union([
   })
 ])
 const Result = Schema.Struct({
+  refreshCache: Schema.optionalKey(Schema.Literal(true)),
   retryObservation: Schema.optionalKey(Schema.Literal(true)),
   events: Schema.Array(Schema.Struct({ type: EventType, summary: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))), payload: Schema.optionalKey(EventPayload), occurredAt: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8640000000000000 })), dedupeKey: Schema.String.check(Schema.isMaxLength(512)) }))
     .check(Schema.isMaxLength(101000)),
@@ -33,7 +34,7 @@ export const validateObservation = (input: unknown) => Effect.gen(function*() {
   return snapshot
 })
 
-export const reconcile = (cursor: string | undefined, input: unknown, startedAt?: number, notification?: typeof Notice.Type, includePreview?: boolean) => Effect.gen(function*() {
+export const reconcile = (cursor: string | undefined, input: unknown, startedAt?: number, notification?: typeof Notice.Type, includePreview?: boolean, arrivals?: ReadonlyArray<string>) => Effect.gen(function*() {
   const snapshot = notification === undefined ? yield* validateObservation(input) : input
   if (cursor !== undefined && cursor.length > 512) return yield* gap()
   const observedAt = yield* Clock.currentTimeMillis
@@ -42,7 +43,7 @@ export const reconcile = (cursor: string | undefined, input: unknown, startedAt?
     fileURLToPath(new URL("../direct/ledger.py", import.meta.url))
   ], {
     env: { PYTHONDONTWRITEBYTECODE: "1" }, extendEnv: true,
-    stdin: { stream: Stream.make(new TextEncoder().encode(JSON.stringify({ cursor, snapshot, observedAt, startedAt, notification, includePreview, retryObservation: true }) + "\n")), endOnDone: true },
+    stdin: { stream: Stream.make(new TextEncoder().encode(JSON.stringify({ cursor, snapshot, observedAt, startedAt, notification, includePreview, arrivals, retryObservation: true }) + "\n")), endOnDone: true },
     stderr: "ignore", forceKillAfter: "1 second"
   }))
   let bytes = 0

@@ -2,7 +2,7 @@
 
 Watches delayed, persisted Slack desktop snapshots for new messages, replies, edits,
 and reaction additions/removals in selected conversations and threads. Optional
-notification-log access can deliver verified posts and replies earlier.
+notification-log access can detect a post or reply and trigger an immediate cache check.
 
 Staleness is unbounded. Polling more often cannot reveal unpersisted changes.
 Intermediate messages, edits, replies and reaction toggles can be missed. Cache events
@@ -189,8 +189,8 @@ The first Watch snapshot establishes a silent baseline. Only the last event in a
 batch carries its cursor; an empty changed batch emits a cursor item. Creation, edit and reaction payloads
 carry `version: 1`, `count: 1`, the exact Slack timestamp string (`messageTs`),
 a `conversationLabel` and a `permalink`. Replies include their parent timestamp
-in the link. When the workspace domain is unavailable, the link uses the workspace
-and conversation IDs. The optional `sender` identifies the message author, including
+in the link. New arrivals wait for a workspace archive permalink. Edit and reaction events can
+use a client link when the workspace domain is unavailable. The optional `sender` identifies the message author, including
 on reaction events. Legacy count-only events retain their original shape.
 Reconciliation owns stale/backwards snapshot handling and reaction coverage on both
 sides of a comparison. Missing messages do not imply deletion, and missing reaction
@@ -260,48 +260,44 @@ On macOS the connector reads the icon from the installed Slack app bundle withou
 
 The connector ships without vendor artwork. The Slack icon is a trademark of Slack. Displaying it from a local installation still carries trademark risk and does not imply endorsement.
 
-### Earlier delivery from Slack Desktop notifications
+### Arrival delivery in 0.6.0
 
-With cache access configured, set `notificationLog=enabled` to also read new
-records in the selected profile's `logs/default/browser.log`. The selected
-cache folder must be named `IndexedDB`. Existing configurations keep their
-cache-only behavior on upgrade. Set `notificationLog=disabled` to switch back.
-The cache scan interval stays the same.
+New posts and replies produce one counted arrival once a scoped Desktop cache
+snapshot supplies the author and workspace archive permalink, plus a safe
+visible excerpt when previews are enabled. A cached Slack account or bot ID can
+identify the author. Metadata-only subscriptions can deliver without an excerpt.
+Slack sign-in and permission to open the link are checked by Slack when opened.
 
-A structured message notification can deliver a new post or thread reply
-before the post reaches the cache. Its workspace, receiving account,
-conversation, message timestamp and optional thread parent must agree with
-the saved selection and the notification ID. The early event includes the
-saved label, message time and a reconstructed Slack link. Slack Desktop
-redacted author, text and launch URL in all sampled message notifications.
-The fast path uses only the verified identity fields. Starting with 0.5.1,
-when the cache supplies a sender or an opted-in excerpt, the subscription
-gets a second wake labeled “Details for earlier message” or “Details for
-earlier thread reply”. It includes the Slack link. A channel subscription
-filtered to `message.new` receives message details under that same type.
-Reply details use `thread.reply`. The supplemental payload has `delivery:
-"details"`, `count: 0`, and `detailsFor` containing the original creation's
-dedupe key. If sender and excerpt appear in separate snapshots of the original
-body, each newly available field can trigger a details wake. The connector stops
-tracking outstanding fields when the body changes. Each delivery has its own
-stable dedupe key. Host event limits
-count deliveries, so an already-ended one-shot subscription cannot be woken again.
+With cache access configured, `notificationLog=enabled` also tails the selected
+profile's `logs/default/browser.log`. The cache folder must be named `IndexedDB`.
+A matching workspace, account, conversation, message timestamp and thread parent
+let the connector record the arrival privately and check the cache immediately.
+Slack Desktop redacted the author, body and launch URL in sampled log records.
+A notice or incomplete cache row consumes no host event, wake, backlog slot or
+one-shot allowance. Pending markers survive restarts and log rotation. The
+connector checks outstanding arrivals on each configured poll, including when
+the cache generation is unchanged. `notificationLog=disabled` uses cache polling
+alone. Revoking cache access stops the watch.
 
-Existing cursors need no reconfiguration. An early receipt issued by 0.5.0
-can get details if its pending marker survives until the upgraded cache scan.
-Once 0.5.0 has already reconciled the post, upgrading does not backfill it.
-Subsequent observed edits and reaction changes follow the ordinary cache path.
+To inspect the last observed missing fields for one subscription without waking
+its target, run this against the installed 0.6.0 connector and its private ledger:
 
-In a prospective local observation, one matching conversation and timestamp
-appeared in the log 97.8–98.8 seconds before host receipt. That timing probe
-did not establish the workspace. A separate bounded schema check found 96
-message records matching a saved workspace and receiving account, of which
-34 also matched a saved conversation. Earlier retrospective observations
-matched five of 18 cached messages. Notification coverage and delivery
-latency vary with Slack settings and client behavior.
+```sh
+data="${EXANGELOS_HOME:-${XDG_DATA_HOME:-$HOME/.local/share}/exangelos}"
+exangelos --json show "$subscription" | jq -er '.subscription.cursor' |
+  python3 -B "$data/connectors/slack/direct/ledger.py" --pending
+```
 
-The reader tails the active file in bounded chunks. Startup and excessive backlog establish an end-of-file baseline. After rotation
-or truncation, a bounded replacement is eligible only for posts newer than the
-active tail. A new subscription records its start before the readers race.
-Unread, unsupported, ambiguous or missing notifications therefore depend on
-the cache. Slack may retain neither source long enough to observe a change.
+An empty array means there are no recorded outstanding obligations on that
+lineage. For pending arrivals, keep Slack Desktop online with access to the
+selected conversation. Desktop may never persist an eligible excerpt, author,
+or workspace domain, and a sleeping machine cannot deliver a wake. The reader
+starts at the active log's end and skips excessive backlog. Messages missed by
+both sources cannot appear in the pending report.
+
+Existing subscriptions keep their cursor and receipt history. For an outstanding
+0.5.x receipt, the first complete cache context produces one linked
+`delivery: "details"` event with `count: 0` under the original event type.
+The host can only deliver it to a subscription that is still active. Messages
+already reconciled on earlier versions are not replayed on upgrade. Later edits
+and reaction changes follow ordinary cache reconciliation.
