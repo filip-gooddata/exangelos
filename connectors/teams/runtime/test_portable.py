@@ -100,6 +100,9 @@ class PortableTests(unittest.TestCase):
             'root-key': message(dedupeKey='root-key', conversationId=CHANNEL),
             'unbound': message('102', dedupeKey='other', conversationId=CHANNEL),
             '999': message('102', conversationId=CHANNEL),
+            '997': message('bad-id', conversationId=CHANNEL),
+            '996': None,
+            '995': message('995', conversationId=CHAT),
         }
         def install():
             data = view([record])
@@ -135,7 +138,9 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(poll(1795165200125, baseline['cursor']), changed)
         self.assertEqual(poll(1795165200125, changed['cursor'])['events'], [])
         record['messageMap']['998'] = record['messageMap'].pop('root-key')
+        record['messageMap']['100'] = message('bad-id', conversationId=CHANNEL)
         install()
+        self.call(selection=link+'100?parentMessageId=100', scope='replies', code=22)
         self.call('configured-snapshot', scope=pin, includeMessagePreview=False, code=24)
         self.call(selection=link+'101', scope='replies', code=28)
 
@@ -162,7 +167,7 @@ class PortableTests(unittest.TestCase):
                 record = chain()
                 record['messageMap']['100']['id'] = value
                 self.install(view([record]))
-                self.call(selection=CHAT,code=21)
+                self.call(selection=CHAT,code=22)
 
     def test_legacy_and_invalid_state(self):
         self.call('setup',code=20)

@@ -143,20 +143,21 @@ def identifier(v):
 
 
 def mapped_identity(key, node, chat):
+    if type(node) is not dict or node.get('conversationId', chat) != chat:
+        return None
+    try:
+        identity = identifier(node.get('id'))
+    except Refusal:
+        return None
     try:
         numeric = identifier(key)
     except Refusal:
         # Current clients can index a message by its opaque dedupe key.
-        if (type(key) is not str or not key or len(key) > 512 or not key.isprintable()
-                or type(node) is not dict or node.get('dedupeKey') != key
-                or node.get('conversationId') != chat):
-            return None
-        try:
-            return identifier(node.get('id'))
-        except Refusal:
-            return None
-    check(type(node) is dict and node.get('conversationId', chat) == chat)
-    return numeric if numeric == identifier(node.get('id')) else None
+        if (type(key) is str and 0 < len(key) <= 512 and key.isprintable()
+                and node.get('dedupeKey') == key and node.get('conversationId') == chat):
+            return identity
+        return None
+    return identity if numeric == identity else None
 
 
 def messages(records, chat, root_filter=None, lookup=None):
