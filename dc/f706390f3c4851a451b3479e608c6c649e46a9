@@ -1,0 +1,33 @@
+connectors/shared/localAppIcon.ts
+  s_85dc69d817a3f7::t_e5af0a6a90f4c4 7,14-16
+connectors/shared/test_icon_rpc.py
+  s_4f6dc733f6b6f0::t_beffce0126fee1 1-77
+connectors/slack/src/Slack.ts
+  s_85dc69d817a3f7::t_79efd58a19b3f7 62
+connectors/teams/src/Teams.ts
+  s_85dc69d817a3f7::t_bea5fbdee6dd53 40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dcf706390f3c4851a451b3479e608c6c649e46a9",
+  "prompts": {},
+  "sessions": {
+    "s_4f6dc733f6b6f0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2136c-6645-7d72-b5f9-260ab4774df5",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_85dc69d817a3f7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2134c-1a56-7432-acbf-0db1aa01d9f9",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
