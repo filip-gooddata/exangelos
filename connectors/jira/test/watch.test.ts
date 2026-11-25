@@ -188,7 +188,7 @@ describe("Watch", () => {
 
   it.effect.each([
     { case: "before any good poll", cursor: undefined, failure: new HttpFailure({ status: 503, reason: "Jira answered 503." }) },
-    { case: "when every poll is rate limited", cursor: "{}", failure: new RateLimited({ retryAfterSeconds: 60 }) }
+    { case: "when every poll is rate limited", cursor: "{}", failure: new RateLimited({ retryAfterSeconds: 90 }) }
   ])("reports a Jira outage $case", ({ cursor, failure }) =>
     Effect.gen(function*() {
       const client: JiraClient["Service"] = {
@@ -208,9 +208,10 @@ describe("Watch", () => {
         githubToken: undefined,
         cursor
       }).pipe(Stream.tap((item) => Effect.sync(() => items.push(item))), Stream.runDrain, Effect.flip, Effect.forkChild)
-      yield* TestClock.adjust(`${60 * (failureLimit - 1)} seconds`)
+      const wait = failure._tag === "RateLimited" ? 90 : 60
+      yield* TestClock.adjust(`${wait * failureLimit - 1} seconds`)
       expect(items.length).toBe(failure._tag === "RateLimited" ? 0 : 1)
-      yield* TestClock.adjust("60 seconds")
+      yield* TestClock.adjust("1 second")
       expect((yield* Fiber.join(fiber))._tag).toBe("SourceFailed")
       expect(items).toEqual([
         expect.objectContaining({ _tag: "Event", event: expect.objectContaining({ type: "jira.unavailable" }) })

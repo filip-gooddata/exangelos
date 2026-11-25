@@ -1,7 +1,7 @@
 import { DateTime } from "effect"
 import type { IssueCursor, JqlCursor } from "./Cursor.ts"
 import { reportsField, sameField } from "./Options.ts"
-import { overlap } from "./Snapshot.ts"
+import { overlap, sortedKeys } from "./Snapshot.ts"
 import { browseLink } from "./Site.ts"
 import type { Comment, FieldChange, History, IssueSnapshot, JqlSnapshot, ListPosition, ListTail, Person } from "./Snapshot.ts"
 
@@ -92,6 +92,8 @@ const advance = <A extends { readonly id: string; readonly created: DateTime.Utc
   })
   return { fresh, position }
 }
+
+const canonical = (json: string): string => JSON.stringify(sortedKeys(JSON.parse(json)))
 
 const valueText = (json: string): string | null => {
   const text = (value: unknown): string =>
@@ -191,7 +193,7 @@ export const diffIssue = (input: {
     for (const [field, value] of Object.entries(snapshot.values)) {
       if (!Object.hasOwn(known.values, field)) continue
       const before = known.values[field] ?? "null"
-      if (before === value || changedInHistory.some((item) => sameField(field, item))) continue
+      if (canonical(before) === canonical(value) || changedInHistory.some((item) => sameField(field, item))) continue
       const fromString = valueText(before)
       const toString = valueText(value)
       valueChanges += 1

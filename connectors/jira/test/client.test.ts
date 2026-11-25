@@ -117,21 +117,35 @@ describe("JiraClient", () => {
   })
 
   it.effect("reads the same field value whatever order Jira lists an object's keys in", () => {
-    const votes = [{ self: "https://acme.atlassian.net/votes", votes: 2, hasVoted: false }, { hasVoted: false, votes: 2, self: "https://acme.atlassian.net/votes" }]
+    const votes = [
+      { self: "https://acme.atlassian.net/votes", votes: 2, hasVoted: false },
+      { hasVoted: false, votes: 2, self: "https://acme.atlassian.net/votes" }
+    ]
+    const widgets = [{ value: { z: 1, a: 2 } }, { value: { a: 2, z: 1 } }]
     let read = 0
     return Effect.gen(function*() {
       const jira = yield* JiraClient
       const jiraSite = yield* site
-      const first = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: undefined, fields: ["votes", "labels"] })
-      const second = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: undefined, fields: ["votes", "labels"] })
+      const first = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: undefined, fields: ["votes", "labels", "customfield_1"] })
+      const second = yield* jira.readIssue({
+        site: jiraSite,
+        key: "DEMO-7",
+        position: undefined,
+        fields: ["votes", "labels", "customfield_1"]
+      })
       expect(first.values).toEqual(second.values)
       expect(first.values).toEqual({
         votes: "{\"hasVoted\":false,\"self\":\"https://acme.atlassian.net/votes\",\"votes\":2}",
-        labels: "null"
+        labels: "null",
+        customfield_1: "{\"a\":2,\"z\":1}"
       })
     }).pipe(Effect.provide(jiraWith((call) => {
       if (call.path === "/rest/api/3/issue/DEMO-7") {
-        return { status: 200, body: { id: "10042", key: "DEMO-7", fields: { summary: "Fix login", votes: votes[read++] } } }
+        const index = read++
+        return {
+          status: 200,
+          body: { id: "10042", key: "DEMO-7", fields: { summary: "Fix login", votes: votes[index], customfield_1: widgets[index] } }
+        }
       }
       return { status: 200, body: { startAt: 0, total: 0, maxResults: 100, isLast: true, values: [], comments: [] } }
     })))

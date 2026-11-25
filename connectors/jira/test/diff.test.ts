@@ -121,6 +121,10 @@ describe("diffIssue", () => {
       observedAt: at(9)
     })
     expect(unwatched.cursor.valueChanges).toBe(2)
+
+    const unsorted = { ...poll.cursor, values: { ...poll.cursor.values, custom: "{\"z\":1,\"a\":2}" } }
+    const resorted = { ...voted, values: { ...voted.values, custom: "{\"a\":2,\"z\":1}" } }
+    expect(diffIssue({ siteUrl, previous: unsorted, snapshot: resorted, observedAt: at(9) }).events).toEqual([])
     expect(rewatched.events.map((event) => event.dedupeKey)).toEqual([])
   })
 

@@ -13,7 +13,7 @@ import {
 import type { JiraError } from "./JiraError.ts"
 import { gatewayApi } from "./Site.ts"
 import type { JiraSite } from "./Site.ts"
-import { overlap } from "./Snapshot.ts"
+import { overlap, sortedKeys } from "./Snapshot.ts"
 import type {
   Comment,
   FieldChange,
@@ -147,17 +147,9 @@ const fieldValue = (value: unknown): unknown => {
   if (Array.isArray(value)) return value.map(fieldValue)
   if (typeof value === "object" && value !== null) {
     const named = value as Record<string, unknown>
-    return named.displayName ?? named.name ?? named.value ?? named.key ?? sortedKeys(named)
+    return named.displayName ?? named.name ?? named.value ?? named.key ?? named
   }
   return value
-}
-
-const sortedKeys = (value: unknown): unknown => {
-  if (Array.isArray(value)) return value.map(sortedKeys)
-  if (typeof value !== "object" || value === null) return value
-  return Object.fromEntries(
-    Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, inner]) => [key, sortedKeys(inner)])
-  )
 }
 
 const person = (wire: typeof PersonWire.Type | undefined): Person | undefined =>
@@ -345,7 +337,7 @@ export const layer = Layer.effect(
           const comments = yield* readTail(position?.comments, commentPage(site, key))
           const raw = issue.fields ?? {}
           const values: Record<string, string> = {}
-          for (const field of fields) values[field] = JSON.stringify(fieldValue(raw[field]))
+          for (const field of fields) values[field] = JSON.stringify(sortedKeys(fieldValue(raw[field])))
           const summary = typeof raw.summary === "string" ? raw.summary : ""
           return { id: issue.id, key: issue.key, summary, changelog, comments, values }
         }),

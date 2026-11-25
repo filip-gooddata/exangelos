@@ -80,5 +80,13 @@ export interface IssuePosition {
   readonly comments: ListPosition
 }
 
+export const sortedKeys = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(sortedKeys)
+  if (typeof value !== "object" || value === null) return value
+  return Object.fromEntries(
+    Object.entries(value).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0).map(([key, inner]) => [key, sortedKeys(inner)])
+  )
+}
+
 /** How many items before a position a poll re-reads, and how many ids a position remembers. */
 export const overlap = 50
