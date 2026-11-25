@@ -302,13 +302,18 @@ export const layer = Layer.effect(
 
     const resolveRoute = (site: JiraSite): Effect.Effect<JiraSite, JiraError> => {
       const direct = { ...site, api: site.url }
+      // A probe's status stays in the reason only: callers read HTTP 400 as Jira refusing a JQL query.
+      const statusless = Effect.mapError((error: JiraError) =>
+        error._tag === "HttpFailure" ? new HttpFailure({ reason: error.reason }) : error
+      )
       return myself(direct).pipe(
         Effect.as(direct),
         Effect.catchTag("CredentialRejected", () =>
           cloudId(site).pipe(
             Effect.map((id) => ({ ...site, api: gatewayApi(id) })),
             Effect.tap(gatewayAccepts)
-          ))
+          )),
+        statusless
       )
     }
 

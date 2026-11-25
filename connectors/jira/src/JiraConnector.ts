@@ -127,7 +127,12 @@ export const connector = Connector.make({
                   ? Effect.fail(invalid(rejected))
                   : client.resolveRoute(site).pipe(
                     Effect.matchEffect({
-                      onFailure: (error) => Effect.fail(invalid(error)),
+                      onFailure: (error) =>
+                        Effect.fail(
+                          new Connector.ParametersInvalid({
+                            reason: `Could not check the JQL query with Jira. ${refusal(site, error)}`
+                          })
+                        ),
                       onSuccess: (route) =>
                         Effect.fail(
                           new Connector.ParametersInvalid({

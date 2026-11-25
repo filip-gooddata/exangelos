@@ -303,6 +303,12 @@ describe("Jira connector", () => {
       reason: "rate limiting"
     },
     {
+      recheck: "answers 400",
+      answer: (call: StubCall): StubAnswer | undefined =>
+        call.path === `${gateway}/rest/api/3/serverInfo` ? { status: 400 } : undefined,
+      reason: "Could not check https://acme.atlassian.net: Jira answered 400 for /rest/api/3/serverInfo."
+    },
+    {
       recheck: "now passes on the site",
       answer: (call: StubCall): StubAnswer | undefined =>
         call.path === "/rest/api/3/myself" ? { status: 200, body: { accountId: "id-dev" } } : undefined,
@@ -320,15 +326,16 @@ describe("Jira connector", () => {
       refused = true
       const described = yield* client.Describe({ parameters: { target: "project = DEMO", kind: "jql" } })
       expect(described).toMatchObject({ _tag: "Invalid", reason: expect.stringContaining(reason) })
-      expect(JSON.stringify(described)).not.toMatch(/scope|rejected the email/)
+      expect(JSON.stringify(described)).not.toMatch(/scope|rejected the email|syntax/)
     }).pipe(Effect.scoped))
 
-  it.effect("keeps a JQL watch whose cloud id lookup answers 400 a source failure, not an ended query", () =>
+  it.effect.each([
+    { probe: "cloud id lookup", path: "/_edge/tenant_info", reason: "cloud id (HTTP 400)" },
+    { probe: "gateway check", path: `${gateway}/rest/api/3/serverInfo`, reason: "answered 400 for /rest/api/3/serverInfo" }
+  ])("keeps a JQL watch whose $probe answers 400 a source failure, not an ended query", ({ path, reason }) =>
     Effect.gen(function*() {
       let lookupFails = false
-      const client = yield* jira((call) =>
-        lookupFails && call.path === "/_edge/tenant_info" ? { status: 400 } : scoped(call)
-      )
+      const client = yield* jira((call) => lookupFails && call.path === path ? { status: 400 } : scoped(call))
       expect(yield* client.Configure({ values })).toEqual({ _tag: "Accepted" })
       lookupFails = true
       const watching = yield* client.Watch({ parameters: { target: "project = DEMO", kind: "jql" }, eventTypes: [] }).pipe(
@@ -338,7 +345,7 @@ describe("Jira connector", () => {
       )
       yield* TestClock.adjust(`${60 * failureLimit} seconds`)
       const failure = yield* Fiber.join(watching)
-      expect(failure).toMatchObject({ _tag: "SourceFailed", reason: expect.stringContaining("cloud id (HTTP 400)") })
+      expect(failure).toMatchObject({ _tag: "SourceFailed", reason: expect.stringContaining(reason) })
     }).pipe(Effect.scoped))
 
   it.effect("names a missing scope when the gateway refuses the JQL check at subscribe", () =>
