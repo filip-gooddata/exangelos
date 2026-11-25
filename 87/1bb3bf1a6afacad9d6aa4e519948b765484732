@@ -1,0 +1,53 @@
+connectors/github-pr/README.md
+  s_036d38518fcef8::t_482f819ca276fd 61-62
+connectors/github-pr/connector.json
+  s_036d38518fcef8::t_07f6041623d515 3
+connectors/github-pr/src/Diff.ts
+  s_b1cb59ed41f235::t_13c8e558b91491 62-63,76-77,295-301,304,370
+connectors/github-pr/src/GitHub.ts
+  s_036d38518fcef8::t_69433b9b6d3e23 73-74,438-439,488
+connectors/github-pr/src/GithubPr.ts
+  s_036d38518fcef8::t_5e033932268ecd 120-121,203,211-212
+connectors/github-pr/src/Query.ts
+  s_036d38518fcef8::t_643f2dac6837a7 11
+connectors/github-pr/src/Snapshot.ts
+  s_036d38518fcef8::t_53368ba570ba27 58-62,69-70,75
+connectors/github-pr/test/GithubPr.test.ts
+  s_f415d4891b49e7::t_4cbef4014e0db6 136-173
+connectors/github-pr/test/fixtures.ts
+  s_036d38518fcef8::t_b7c805b71534be 1,65,71,79,84-85
+connectors/github-pr/test/stubGitHub.ts
+  s_036d38518fcef8::t_f3de995a13b2ed 74-79,88-101,123,174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "871bb3bf1a6afacad9d6aa4e519948b765484732",
+  "prompts": {},
+  "sessions": {
+    "s_036d38518fcef8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4beaa9f0-fd41-4691-853d-034642e36450",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_b1cb59ed41f235": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5892f4d7-2e21-4507-92e5-402942cb290c",
+        "model": "unknown"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_f415d4891b49e7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21216-010a-7ed2-bbb2-a60e6933b3e1",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
