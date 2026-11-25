@@ -1,0 +1,69 @@
+adapters/daemon-client/src/Reconnect.ts
+  s_4fb37ac07f8be5::t_ab8d27a0d802cd 1-2,5,14-24
+adapters/daemon-client/src/index.ts
+  s_4fb37ac07f8be5::t_fb1563201b350f 3
+apps/cli/src/commands/Agent.ts
+  s_1b822b28e19c5a::t_023b212adecee5 4
+apps/cli/src/commands/Connection.ts
+  s_4fb37ac07f8be5::t_c5ee3d70399fae 1-2,32
+apps/cli/src/commands/Output.ts
+  s_1b822b28e19c5a::t_3091944c089888 5,49
+apps/cli/test/harness.ts
+  s_1b822b28e19c5a::t_22824d0ca60c9c 10
+apps/mcp/src/AgentTools.ts
+  s_71c93ea787a696::t_65808e3518d815 5,216,218-224
+apps/mcp/src/Messages.ts
+  s_4fb37ac07f8be5::t_d967f290521774 4,32,117-118
+apps/mcp/test/AgentTools.test.ts
+  s_406c2bac0efb01::t_9a4b3aab4dc942 3,85-93
+apps/mcp/test/daemon.ts
+  s_dacedc02aa9fe9::t_2218feaa4ff6a5 28-30,51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d57d7b42428d9aee584aa0bf6666cc0d3c1a896a",
+  "prompts": {},
+  "sessions": {
+    "s_1b822b28e19c5a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2135e-c40c-7e60-a691-f99e60f49cc7",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_406c2bac0efb01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e73e21c9-1cbb-4ec0-9f3f-b8eb5b2137f0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_4fb37ac07f8be5": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2135a-444d-75c0-a16e-2f08e2f87cb6",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_71c93ea787a696": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2135c-48c6-7011-9e20-2e59f6b0392c",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_dacedc02aa9fe9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "0e022ea3-f622-4989-b655-adfaa0bcc3a9",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
