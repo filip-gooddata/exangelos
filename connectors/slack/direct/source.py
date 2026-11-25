@@ -68,7 +68,7 @@ def acquire(request):
     def collect(state, generation):
         if observation.scope(state) == (workspace, owner):
             candidates.append((state, generation))
-    result = scan.run(root, observe=collect, layout_channels=conversations)
+    result = scan.run(root, observe=collect, layout_channels=conversations, file_names=include_preview)
     after, after_epoch = inventory(root, binding)
     if before != after or epoch != after_epoch or result['files_changed'] or not result['current_unchanged']:
         raise ValueError('mutation')
@@ -87,7 +87,7 @@ def acquire(request):
         if len(messages) > MAX_MESSAGES:
             raise ValueError('limit')
     messages.sort(key=lambda message: message['id'])
-    marker_rows = [{k: v for k, v in message.items() if k not in ('preview', 'memberSender', 'memberPeer', 'edited')} for message in messages]
+    marker_rows = [{k: v for k, v in message.items() if k not in ('preview', 'memberSender', 'memberPeer', 'edited', 'fileShare')} for message in messages]
     return {'scope': scope, 'complete': True, 'messages': messages, 'generation': str(generation),
             'emptyBody': observation.token(key, 'body', '', None),
             'snapshot': observation.token(key, 'selected-snapshot-v1', scope, marker_rows)}

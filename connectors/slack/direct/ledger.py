@@ -103,7 +103,13 @@ def wake_summary(kind, payload, observed_at):
     quote = lambda value: json.dumps(value, ensure_ascii=False)
     author = quote(payload['sender']) if 'sender' in payload else 'unknown author'
     if kind in ('message.new', 'thread.reply'):
-        if payload.get('delivery') == 'details':
+        if payload.get('fileShare'):
+            action = f'{author} shared a file'
+            if kind == 'thread.reply':
+                action += ' in a thread reply'
+            if payload.get('delivery') == 'details':
+                action = 'Details for earlier arrival: ' + action
+        elif payload.get('delivery') == 'details':
             subject = 'thread reply' if kind == 'thread.reply' else 'message'
             action = f'Details for earlier {subject} by {author}'
         else:
@@ -144,6 +150,7 @@ def snapshot_metadata(snapshot):
         require(isinstance(reactions, list) and len(reactions) <= 100 and all(token(r) for r in reactions))
         require(len(set(reactions)) == len(reactions) and message['id'] not in seen)
         seen.add(message['id'])
+        require(message.get('fileShare', True) is True)
         if 'preview' in message:
             preview = message['preview']
             require(isinstance(preview, str) and 0 < len(preview) <= 160 and preview.isprintable())
@@ -354,7 +361,7 @@ def reconcile(request, path=None):
                     if reply != message['reply']:
                         continue
                     need_sender = not (context.get('memberSender') or context.get('sender'))
-                    need_preview = previews and 'preview' not in context
+                    need_preview = previews and 'preview' not in context and not context.get('fileShare')
                     need_permalink = not archive_permalink(context)
                     waiting = need_sender or need_preview or need_permalink
                     if waiting:
@@ -388,6 +395,8 @@ def reconcile(request, path=None):
                     payload['conversationLabel'] = 'Slack DM with ' + context['memberPeer']
                 if previews and kind in ('message.new', 'thread.reply', 'message.edited') and 'preview' in context:
                     payload['preview'] = context['preview']
+                if context.get('fileShare') and kind in ('message.new', 'thread.reply'):
+                    payload['fileShare'] = True
                 if transition == 'details':
                     original = event_key(lineage, snapshot['scope'], message['id'], 0, kind, 'created')
                     payload.update(delivery='details', detailsFor=original)

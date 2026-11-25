@@ -214,6 +214,25 @@ def excerpt_eligible(message):
     return True
 
 
+def visible_files(message):
+    for entry in layout_items(message, 'files'):
+        identity = entry.get('id')
+        if (isinstance(identity, str) and re.fullmatch(r'F[A-Z0-9]{6,30}', identity)
+                and entry.get('file_access', 'visible') == 'visible'
+                and entry.get('mode', 'hosted') in ('hosted', 'external', 'post', 'snippet')
+                and all(entry.get(flag, False) is False for flag in ('deleted', 'is_deleted', 'hidden', 'is_tombstoned'))):
+            yield entry
+
+
+def file_excerpt(files):
+    names = []
+    for entry in files:
+        name = entry.get('name')
+        if isinstance(name, str) and name.strip() and '/' not in name and '\\' not in name:
+            names.append(name)
+    return finish_excerpt(', '.join(names))
+
+
 def app_message(message):
     return message.get('subtype') == 'bot_message' or (
         message.get('subtype') is None and any(
@@ -372,8 +391,18 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
                 continue
         fallback = message.get('text')
         eligible = not hidden and same_team(message, workspace) and excerpt_eligible(message)
+        files = []
+        no_caption = 'text' not in message or isinstance(fallback, str) and not fallback.strip()
+        if no_caption and (message.get('files') or message.get('subtype') == 'file_share'):
+            if eligible and message.get('subtype') in (None, 'file_share'):
+                files = list(visible_files(message))
+            if not files:
+                complete = False
+                continue
+            if fallback is None:
+                fallback = ''
         missing_app_text = 'text' not in message and app_message(message)
-        layout = visible_layout(message) if eligible and (include_preview or missing_app_text) else ''
+        layout = visible_layout(message) if eligible and not files and (include_preview or missing_app_text) else ''
         if missing_app_text and any(c.isprintable() and not c.isspace() for c in layout):
             # Slack's optional notification fallback uses the existing empty-text body marker.
             fallback = ''
@@ -405,7 +434,9 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
         sender = message_sender(state, workspace, message)
         sender_name = member_name(state, workspace, sender) if sender == message.get('user') else None
         preview = None
-        if include_preview and eligible:
+        if include_preview and files:
+            preview = file_excerpt(files)
+        elif include_preview and eligible:
             preview = finish_excerpt(layout or display_text(fallback, message.get('mrkdwn', True) is True))
         result.append({
             'messageTs': timestamp, 'conversationLabel': label,
@@ -413,6 +444,7 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
             **({'sender': sender} if sender else {}),
             **({'memberSender': sender_name} if sender_name else {}),
             **({'memberPeer': peer_name} if peer_name else {}),
+            **({'fileShare': True} if files else {}),
             **({'preview': preview} if preview else {}),
             **({'edited': True} if message.get('edited') else {}),
             'id': token(key, 'message', *selection, timestamp),

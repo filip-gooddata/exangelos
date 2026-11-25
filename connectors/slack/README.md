@@ -113,6 +113,11 @@ share the broader range of visible text for new deliveries. Existing disabled
 or unconfigured installations keep previews off. Changing the setting does
 not rewrite previously committed events.
 
+A file-only post or reply says the sender shared a file and links to the
+message. With previews enabled, visible filenames form the untrusted excerpt.
+A verified share can arrive even when its filename is unavailable. The
+connector uses cached display metadata and never opens the shared files.
+
 The connector prefers visible block and attachment text to a notification
 fallback. Scoped app and bot messages can omit that fallback when their
 layout contains supported visible text. An absent or undefined fallback uses
@@ -265,7 +270,7 @@ The connector ships without vendor artwork. The Slack icon is a trademark of Sla
 New posts and replies produce one counted arrival once a scoped Desktop cache
 snapshot supplies the author and workspace archive permalink, plus a safe
 visible excerpt when previews are enabled. A cached Slack account or bot ID can
-identify the author. Metadata-only subscriptions can deliver without an excerpt.
+identify the author. Metadata-only subscriptions and verified file shares without a visible filename can deliver without an excerpt.
 Slack sign-in and permission to open the link are checked by Slack when opened.
 
 With cache access configured, `notificationLog=enabled` also tails the selected

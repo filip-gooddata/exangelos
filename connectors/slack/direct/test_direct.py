@@ -177,6 +177,49 @@ class DirectTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, '^scope$'):
             selected()
 
+    def test_file_only_context_uses_scoped_visible_metadata(self):
+        data = fixture()
+        msg = data['messages'][CHANNEL][TIME]
+        del msg['text']
+        msg['subtype'] = 'file_share'
+        first = dict(id='F0000001', name='fixture-secret.pdf', url_private='forbidden', thumb_64='forbidden')
+        second = dict(id='F0000002', name='agenda.txt')
+        msg['files'] = [first, second]
+
+        def selected(previews=True):
+            state = projection.project(b'\xff\x10' + encode(data), [CHANNEL], file_names=previews)
+            projected_files = state['messages'][CHANNEL][TIME].get('files')
+            self.assertNotIn('forbidden', repr(projected_files))
+            if not previews:
+                self.assertNotIn('name', repr(projected_files))
+            return observation.snapshot(state, SELECTION, KEY, include_preview=previews)['messages']
+
+        with mock.patch.dict('os.environ', {'FIXTURE_SECRET': 'fixture-secret'}):
+            share, = selected()
+            self.assertTrue(share['fileShare'])
+            self.assertEqual(share['preview'], '[redacted].pdf, agenda.txt')
+        self.assertNotIn('preview', selected(False)[0])
+        msg['text'] = ''
+        self.assertEqual(share['body'], selected()[0]['body'])
+        msg['text'] = 'caption'
+        self.assertNotIn('fileShare', selected()[0])
+        self.assertEqual(selected()[0]['preview'], 'caption')
+        msg['text'] = ''
+        msg['files'] = [dict(id='F0000001')]
+        self.assertNotIn('preview', selected()[0])
+        for fields in (dict(id='invalid'), dict(mode='tombstone'), dict(file_access='check_file_info'), dict(deleted=True)):
+            msg['files'] = [dict(first, **fields)]
+            self.assertEqual(selected(), [])
+        msg['files'] = [first]
+        for fields in (dict(hidden=True), dict(subtype='message_deleted'), dict(text=None)):
+            msg.update(fields)
+            self.assertEqual(selected(), [])
+            for key in fields:
+                del msg[key]
+        del msg['files']
+        msg['attachments'] = [dict(title='attachment')]
+        self.assertEqual(selected(), [])
+
     def test_opted_in_app_visible_layout_projection(self):
         data = fixture()
         msg = data['messages'][CHANNEL][TIME]

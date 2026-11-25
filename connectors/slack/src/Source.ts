@@ -29,6 +29,7 @@ export const MessageContext = Schema.Struct({
   messageTs: Schema.String.check(Schema.isPattern(/^[0-9]{1,20}\.[0-9]{1,10}$/)),
   conversationLabel: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(256)),
   permalink: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512)),
+  fileShare: Schema.optionalKey(Schema.Literal(true)),
   preview: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(320))),
   sender: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160)))
 })
