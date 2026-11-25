@@ -16,6 +16,7 @@ try:
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'validation'))
     import native_cache as native
     import current_store
+    from state_directory import state_directory
 except BaseException:
     sys.stderr.write('teams_bridge_unavailable\n')
     sys.exit(1)
@@ -87,13 +88,7 @@ def save_config(fd, name, config):
 
 
 def portable_path():
-    if 'EXANGELOS_HOME' in os.environ:
-        root = absolute(os.environ['EXANGELOS_HOME'])
-    elif 'XDG_DATA_HOME' in os.environ:
-        root = absolute(os.environ['XDG_DATA_HOME']) / 'exangelos'
-    else:
-        root = absolute(os.environ.get('HOME')) / '.local/share/exangelos'
-    path = root / 'connectors/teams/pin-key-v1.json'
+    path = state_directory() / 'pin-key-v1.json'
     require(not path.is_relative_to(Path(__file__).resolve().parents[1]))
     return path
 

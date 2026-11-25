@@ -143,19 +143,26 @@ describe("ConnectorImportSource", () => {
       expect(yield* listing(s.connectors)).toEqual(["template"])
     }).pipe(Effect.scoped), gitTimeout)
 
-  for (const filename of ["setup.json", "setup.lock", ".setup-interrupted", "subscriptions-key.json", `scope-${"a".repeat(64)}.json`, "ledger.sqlite3", "ledger.sqlite3-wal"]) {
-    it.live(`preserves isolated Slack state when only ${filename} occupies the install directory`, () =>
-      Effect.gen(function*() {
-        const s = yield* setup
-        const target = Path.join(s.connectors, "slack")
-        const state = Path.join(target, filename)
-        yield* writeFile(state, "synthetic state")
-        const archive = yield* archiveFile(s, "slack.tar.gz", tarGz(connectorEntries("slack")))
-        const failure = yield* Effect.flip(place(s, { _tag: "ArchiveFile", path: archive }))
-        expect(failure.reason).toContain("Slack private state occupies the install directory")
-        expect(yield* listing(target)).toEqual([filename])
-        expect(yield* Effect.promise(() => Fs.readFile(state, "utf8"))).toBe("synthetic state")
-      }).pipe(Effect.scoped))
+  const stateFiles = {
+    Slack: ["setup.json", "setup.lock", ".setup-interrupted", "subscriptions-key.json", `scope-${"a".repeat(64)}.json`, "ledger.sqlite3", "ledger.sqlite3-wal"],
+    Teams: ["selection.json", ".teams-interrupted", "pin-key-v1.json", `pin-${"a".repeat(64)}.json`, "ledger.sqlite3", "ledger.sqlite3-journal"]
+  }
+  for (const [label, filenames] of Object.entries(stateFiles)) {
+    const name = label.toLowerCase()
+    for (const filename of filenames) {
+      it.live(`preserves isolated ${label} state when only ${filename} occupies the install directory`, () =>
+        Effect.gen(function*() {
+          const s = yield* setup
+          const target = Path.join(s.connectors, name)
+          const state = Path.join(target, filename)
+          yield* writeFile(state, "synthetic state")
+          const archive = yield* archiveFile(s, `${name}.tar.gz`, tarGz(connectorEntries(name)))
+          const failure = yield* Effect.flip(place(s, { _tag: "ArchiveFile", path: archive }))
+          expect(failure.reason).toContain(`${label} private state occupies the install directory`)
+          expect(yield* listing(target)).toEqual([filename])
+          expect(yield* Effect.promise(() => Fs.readFile(state, "utf8"))).toBe("synthetic state")
+        }).pipe(Effect.scoped))
+    }
   }
 
   const refusals: ReadonlyArray<[string, ReadonlyArray<ArchiveEntry>, RegExp]> = [

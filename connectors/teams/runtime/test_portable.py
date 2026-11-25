@@ -58,6 +58,29 @@ class PortableTests(unittest.TestCase):
         self.call(selection='scope-'+one,code=24)
         self.assertNotEqual(one,self.call(selection=CHAT)['scope'])
 
+    def test_default_layout_and_upgrade_from_external_private_state(self):
+        del self.env['EXANGELOS_HOME']
+        base = self.root / '.local/share/exangelos'
+        installed = base / 'connectors/teams'
+        installed.mkdir(parents=True)
+        manifest = installed / 'connector.json'
+        manifest.write_text('{}')
+        pin = self.call(selection=CHAT)['scope']
+        current = base / 'connector-state/teams'
+        with patch.dict(os.environ, self.env, clear=True):
+            self.assertEqual(ledger.ledger_path(), current / 'ledger.sqlite3')
+            snapshot = self.call('configured-snapshot', scope=pin, includeMessagePreview=False)
+            baseline = ledger.reconcile(dict(snapshot=snapshot, observedAt=1000))
+            self.assertEqual(list(installed.iterdir()), [manifest])
+            manifest.unlink()
+            installed.rmdir()
+            current.rename(installed)
+            self.assertEqual(self.call(selection='scope-'+pin)['scope'], pin)
+            self.assertEqual(ledger.ledger_path(), installed / 'ledger.sqlite3')
+            resumed = ledger.reconcile(dict(snapshot=snapshot, observedAt=2000, cursor=baseline['cursor']))
+            self.assertFalse(resumed['events'])
+            self.assertFalse(current.exists())
+
     def test_two_users_same_tenant_require_explicit_account_and_keep_pin(self):
         values = view()
         other = view(user=TENANT)
@@ -177,7 +200,7 @@ class PortableTests(unittest.TestCase):
         self.call(selection='scope-'+'0'*64,code=24)
         self.call(selection=CHANNEL,code=22)
         pin = self.call(selection=CHAT)['scope']
-        state = self.root/'state/connectors/teams'/('pin-'+pin+'.json')
+        state = self.root/'state/connector-state/teams'/('pin-'+pin+'.json')
         self.assertEqual(state.stat().st_mode & 0o777,0o600)
         self.assertNotIn('Hello world',state.read_text())
         state.chmod(0o644)

@@ -1,6 +1,6 @@
 {
   "name": "teams",
-  "version": "0.3.3",
+  "version": "0.3.4",
   "entry": {
     "_tag": "Bundle",
     "path": "dist/main.js"
@@ -10,6 +10,7 @@
     "dist/local-app-icon.js",
     "runtime/bridge.py",
     "runtime/ledger.py",
+    "runtime/state_directory.py",
     "validation/native_cache.py",
     "validation/current_store.py",
     "validation/idb_comparator.py",
