@@ -117,6 +117,9 @@ A file-only post or reply says the sender shared a file and links to the
 message. With previews enabled, visible filenames form the untrusted excerpt.
 A verified share can arrive even when its filename is unavailable. The
 connector uses cached display metadata and never opens the shared files.
+With the accompanying host update, disabling previews hides previously
+committed file-share excerpts in `events` and `show`, as well as in wakes
+and `wait`. The original stored event and its identity are preserved.
 
 The connector prefers visible block and attachment text to a notification
 fallback. Scoped app and bot messages can omit that fallback when their

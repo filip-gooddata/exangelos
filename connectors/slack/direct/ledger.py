@@ -393,7 +393,8 @@ def reconcile(request, path=None):
                     payload['sender'] = context['memberSender']
                 if 'memberPeer' in context:
                     payload['conversationLabel'] = 'Slack DM with ' + context['memberPeer']
-                if previews and kind in ('message.new', 'thread.reply', 'message.edited') and 'preview' in context:
+                show_preview = kind in ('message.new', 'thread.reply') or (kind == 'message.edited' and not context.get('fileShare'))
+                if previews and show_preview and 'preview' in context:
                     payload['preview'] = context['preview']
                 if context.get('fileShare') and kind in ('message.new', 'thread.reply'):
                     payload['fileShare'] = True

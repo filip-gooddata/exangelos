@@ -5,6 +5,7 @@ import { ConnectorAccess } from "../../seam/ConnectorAccess.ts"
 import { EventRepository } from "../../ports/EventRepository.ts"
 import { SubscriptionRepository } from "../../ports/SubscriptionRepository.ts"
 import { WakeRepository } from "../../ports/WakeRepository.ts"
+import { eventsForDisplay } from "../eventPreviews.ts"
 import { load } from "./shared.ts"
 
 const observationOf = (subscription: Subscription.Subscription) =>
@@ -33,7 +34,7 @@ export const show = (_actor: Session.Actor, request: { readonly id: Ids.Subscrip
         onNone: (): Subscription.Shown => subscription,
         onSome: (observation): Subscription.Shown => ({ ...subscription, observation })
       }),
-      events: yield* (yield* EventRepository).list(subscription.id),
+      events: yield* eventsForDisplay(subscription.connector, yield* (yield* EventRepository).list(subscription.id), "history"),
       wakes: yield* (yield* WakeRepository).list(subscription.id),
       changes: yield* (yield* SubscriptionRepository).changes(subscription.id)
     }
@@ -45,5 +46,5 @@ export const events = (
 ) =>
   Effect.gen(function*() {
     const subscription = yield* load(request.id)
-    return yield* (yield* EventRepository).list(subscription.id, request.after)
+    return yield* eventsForDisplay(subscription.connector, yield* (yield* EventRepository).list(subscription.id, request.after), "history")
   })
