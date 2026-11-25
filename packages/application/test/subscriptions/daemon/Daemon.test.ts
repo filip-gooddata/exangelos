@@ -1,10 +1,11 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect, Fiber, Option } from "effect"
+import { DateTime, Duration, Effect, Fiber, Option } from "effect"
 import { WakeTargetFake } from "@exangelos/application/testing"
 import { TestClock } from "effect/testing"
 import { WakeTarget } from "../../../src/ports/WakeTarget.ts"
 import { SubscriptionIntake } from "../../../src/seam/SubscriptionIntake.ts"
 import { runSubscriptionDaemon } from "../../../src/subscriptions/daemon/Daemon.ts"
+import { deliveryTimeout } from "../../../src/subscriptions/daemon/Delivery.ts"
 import { layer, reload, reported, seed, wakesOf } from "./support.ts"
 
 describe("runSubscriptionDaemon", () => {
@@ -41,7 +42,7 @@ describe("runSubscriptionDaemon", () => {
       expect((yield* reload(ending)).state._tag).not.toBe("Active")
       expect((yield* wakesOf(hung)).map((wake) => wake.state)).toEqual(["sending"])
 
-      yield* TestClock.adjust("10 seconds")
+      yield* TestClock.adjust(Duration.subtract(deliveryTimeout, Duration.seconds(20)))
       expect((yield* wakesOf(hung)).map((wake) => [wake.state, wake.attempts.count, wake.attempts.lastError]))
         .toEqual([["waiting", 1, "timed out"]])
 
