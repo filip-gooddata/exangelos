@@ -1,4 +1,4 @@
-import { Option, Schema } from "effect"
+import { Duration, Option, Schema } from "effect"
 import type { Invocation, Outcome, Verdict } from "./Attempt.ts"
 import { delivered, exitReason, failed, timedOutReason } from "./Attempt.ts"
 
@@ -15,6 +15,13 @@ export const invocation = (sessionId: string, text: string): Invocation => ({
   args: ["thread", "send", "--", sessionId, "-"],
   stdin: text
 })
+
+/**
+ * How long a send may run. `t3 thread send` took 29 to 52 seconds on a loaded machine (2026-11-25), and
+ * a send killed at the limit may already have reached the thread, so its retry repeats the wake. t3
+ * 0.1.7 takes no request id to dedupe on, so the limit sits well above that.
+ */
+export const limit = Duration.minutes(2)
 
 export const interpret = (outcome: Outcome): Verdict => {
   switch (outcome._tag) {

@@ -336,9 +336,11 @@ export const configurationText = (connector: Connector.Connector): string => {
   }
 }
 
-/** A field whose value goes to the system keychain, so the panel never shows it. */
-export const isSecretField = (field: Catalogue.ConfigurationField): boolean =>
-  field._tag === "Secret" || field.secretDestination
+/**
+ * A field whose value goes to the system keychain, so the panel never shows it. A text field that says
+ * where secrets are sent is stored as plain text, so it is typed in the open like any other text.
+ */
+export const isSecretField = (field: Catalogue.ConfigurationField): boolean => field._tag === "Secret"
 
 /**
  * Whether a secret is stored, when the connector record can tell: a required field of a complete configuration is set.

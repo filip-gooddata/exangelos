@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Layer } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { TestClock } from "effect/testing"
 import { WakeTarget } from "@exangelos/application"
 import { layerSettingsStore } from "@exangelos/application/testing"
 import { WakeText } from "@exangelos/contracts"
@@ -40,6 +41,23 @@ describe("T3 Code", () => {
       const { exit, spawned } = yield* deliverTo({ harness: "t3", sessionId: "-x:1" })
       expect(Exit.isSuccess(exit)).toBe(true)
       expect(spawned).toEqual([{ program: "/fake/bin/t3", args: ["thread", "send", "--", "-x:1", "-"], stdin: text }])
+    }))
+
+  it.effect("gives a slow t3 two minutes before it fails the wake", () =>
+    Effect.gen(function*() {
+      const runner = yield* recordingSpawner({ exitCode: 0, hangs: true })
+      const fiber = yield* Effect.gen(function*() {
+        yield* (yield* WakeTarget.WakeTarget).deliver({ harness: "t3", sessionId: "t1" }, content)
+      }).pipe(
+        Effect.provide(layer({ lookup: () => fakeBin }).pipe(Layer.provide([runner.layer, layerSettingsStore()]))),
+        Effect.exit,
+        Effect.forkChild
+      )
+      yield* TestClock.adjust("1 minute")
+      expect(fiber.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust("1 minute")
+      const exit = yield* Fiber.join(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
     }))
 })
 

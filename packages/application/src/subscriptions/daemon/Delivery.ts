@@ -26,8 +26,11 @@ export type DeliveryServices =
   | RemovedConnectors
   | ConnectorAccess
 
-/** How long one attempt may take before it counts as failed, so a hung session cannot stall delivery. */
-export const deliveryTimeout = Duration.seconds(30)
+/**
+ * How long one attempt may take before it counts as failed, so a hung session cannot stall delivery. It
+ * sits above every wake command's own limit, so the command's limit decides and its outcome is logged.
+ */
+export const deliveryTimeout = Duration.minutes(3)
 
 const isDue = (wake: Wake.Wake, now: DateTime.Utc): boolean =>
   wake.attempts.nextAttemptAt === undefined || DateTime.isLessThanOrEqualTo(wake.attempts.nextAttemptAt, now)
