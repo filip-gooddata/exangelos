@@ -15,9 +15,11 @@ const reserved = new Set([SessionHeaders.harnessHeader, SessionHeaders.sessionHe
 const withoutSession = (headers: ReadonlyArray<[string, string]>) =>
   headers.filter(([name]) => !reserved.has(name.toLowerCase()))
 
+// The default reconnect backoff grows over the whole session up to 5 seconds,
+// longer than a snapshot retries a dropped connection.
 const protocol = Layer.effect(
   RpcClient.Protocol,
-  Effect.map(RpcClient.makeProtocolSocket(), (socket) =>
+  Effect.map(RpcClient.makeProtocolSocket({ retryPolicy: Schedule.spaced("1 second") }), (socket) =>
     RpcClient.Protocol.of({
       ...socket,
       send: (clientId, request) =>

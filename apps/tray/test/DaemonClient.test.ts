@@ -125,12 +125,13 @@ describe("daemon client over a unix socket", () => {
       }).pipe(Effect.provide(client(path).pipe(Layer.provideMerge(daemon(path)))))
     ))
 
-  it.live("retries the calls of a connection the daemon closes and loads every section", () =>
+  it.live("retries the calls of a connection the daemon closes", () =>
     withHome((path) =>
       Effect.gen(function*() {
         const loaded = yield* DaemonClient.snapshot
         expect(Result.getOrThrow(loaded.subscriptions)).toHaveLength(2)
         expect(Result.getOrThrow(loaded.details)).toHaveLength(2)
+        expect(Result.getOrThrow(loaded.titles)).toHaveLength(1)
         expect(Result.getOrThrow(loaded.connectors)).toHaveLength(1)
         expect(Result.getOrThrow(loaded.status).version).toBe("you")
       }).pipe(Effect.provide(
