@@ -379,7 +379,7 @@ export const layerConnectorSupervisor: Layer.Layer<
           ),
           Effect.result
         )
-        readSince.delete(id)
+        if (result._tag === "Failure") readSince.delete(id)
         if (stop) return
         if (result._tag === "Failure") {
           const error = result.failure
