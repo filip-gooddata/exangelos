@@ -24,16 +24,19 @@ describe("cursor", () => {
     expect(Cursor.decode(Cursor.encode(memory))).toEqual(memory)
   })
 
-  it("carries a v1 cursor over, reporting replies newer than its latest activity and nothing it already reported", () => {
+  it("carries a v1 cursor over, reporting replies from its latest activity on, once each", () => {
     const memory = Cursor.decode(v1)
     const threads = [thread("t1", "ana", "2026-11-12T09:00:00Z", false, [
       reply("p0", "bo", "2026-11-12T09:30:00Z"),
-      reply("p1", "bo", "2026-11-12T10:30:00Z")
+      reply("p1", "bo", "2026-11-12T10:30:00Z"),
+      reply("p2", "bo", "2026-11-12T10:00:00Z")
     ])]
 
     expect(memory).toMatchObject({ replies: { since: "2026-11-12T10:00:00Z", threads: {} }, draft: null })
-    const events = step(memory, snapshot({ isDraft: true, threads }), noFilters, "2026-11-12T12:00:00Z").events
-    expect(events.map((e) => e.dedupeKey)).toEqual(["review.reply/p1"])
+    const first = step(memory, snapshot({ isDraft: true, threads }), noFilters, "2026-11-12T12:00:00Z")
+    expect(first.events.map((e) => e.dedupeKey)).toEqual(["review.reply/p2", "review.reply/p1"])
+    const resumed = Cursor.decode(Cursor.encode(first.memory))
+    expect(step(resumed, snapshot({ isDraft: true, threads }), noFilters, "2026-11-12T12:01:00Z").events).toEqual([])
   })
 
   it("starts over on a cursor it cannot read", () => {

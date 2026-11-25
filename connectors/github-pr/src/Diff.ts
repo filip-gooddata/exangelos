@@ -27,7 +27,7 @@ export interface Memory {
   /**
    * The ids of the replies seen in each thread that has replies. Every reply is read on every poll, and a reply drafted
    * in a pending review can show up behind newer ones, so ids, not times, tell new replies apart. A thread not listed
-   * had none, unless `since` is set: then the memory came from a v1 cursor, and replies newer than `since` are new.
+   * had none, unless `since` is set: then the memory came from a v1 cursor, and replies from `since` on are new.
    */
   readonly replies: {
     readonly since: string | null
@@ -265,7 +265,7 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     const since = previous?.replies.since ?? null
     const isNewReply = (comment: Comment) =>
       previous !== undefined &&
-      (seen !== undefined ? !seen.includes(comment.id) : since === null || comment.createdAt > since)
+      (seen !== undefined ? !seen.includes(comment.id) : since === null || comment.createdAt >= since)
     newReplies.push(...thread.replies.filter(isNewReply).map((comment) => ({ id: comment.id, thread, comment })))
     if (thread.replies.length > 0) seenReplies[thread.id] = thread.replies.map((c) => c.id)
   }
