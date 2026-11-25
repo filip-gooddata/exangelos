@@ -60,7 +60,7 @@ const attempt = (
       )
       return yield* new WakeTarget.DeliveryFailed({ reason: verdict.reason })
     }
-    if (verdict.note !== undefined) yield* Effect.logWarning("wake delivered with a note").pipe(Effect.annotateLogs(annotations))
+    if (verdict.note !== undefined) yield* Effect.logWarning("wake delivered with a note").pipe(Effect.annotateLogs({ ...annotations, note: verdict.note }))
   })
 
 const named = (

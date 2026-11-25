@@ -17,9 +17,8 @@ export const invocation = (sessionId: string, text: string): Invocation => ({
 })
 
 /**
- * How long a send may run. `t3 thread send` took 29 to 52 seconds on a loaded machine (2026-11-25), and
- * a send killed at the limit may already have reached the thread, so its retry repeats the wake. t3
- * 0.1.7 takes no request id to dedupe on, so the limit sits well above that.
+ * How long a send may run. `t3 thread send` took 29 to 52 seconds on a loaded machine (2026-11-25), so
+ * the limit sits well above that.
  */
 export const limit = Duration.minutes(2)
 
@@ -28,7 +27,10 @@ export const interpret = (outcome: Outcome): Verdict => {
     case "NotStarted":
       return failed(`t3 could not start: ${outcome.reason}`)
     case "TimedOut":
-      return failed(timedOutReason("t3", outcome))
+      // A send killed at the limit may already have reached the thread: on 2026-11-25 one arrived six
+      // seconds before its timeout. t3 0.1.7 takes no request id to dedupe a resend on, so the wake
+      // counts as sent rather than risk running it twice.
+      return delivered(`${timedOutReason("t3", outcome)}; the wake may not have arrived and is not resent`)
     case "Exited":
       // Seen with t3 0.1.7 (hand check, 2026-11-12): an idle thread exits 0, prints "Sent." and
       // runs the text as its next turn. A busy thread exits 0, prints "Queued." and runs it after
