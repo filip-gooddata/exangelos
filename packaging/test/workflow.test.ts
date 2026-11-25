@@ -80,7 +80,13 @@ describe("release workflow", () => {
   })
 
   it("signs only the macOS tray app, only in release builds, from the release environment, with the certificate in one step", () => {
-    expect(loadWorkflow<ReleaseWorkflow>("release.yml").jobs.build.with.sign).toBe(true)
+    const build = loadWorkflow<ReleaseWorkflow & { jobs: { build: { secrets: Record<string, string> } } }>("release.yml").jobs.build
+    expect(build.with.sign).toBe(true)
+    expect(build.secrets).toEqual({
+      APPLE_CERTIFICATE: "${{ secrets.APPLE_CERTIFICATE }}",
+      APPLE_CERTIFICATE_PASSWORD: "${{ secrets.APPLE_CERTIFICATE_PASSWORD }}",
+      APPLE_SIGNING_IDENTITY: "${{ secrets.APPLE_SIGNING_IDENTITY }}"
+    })
     expect(loadWorkflow<{ jobs: { build: { with: Record<string, unknown> } } }>("release-check.yml").jobs.build.with.sign).toBeUndefined()
     const jobs = loadWorkflow<BuildWorkflow>("build-release.yml").jobs
     const tray = jobs["tray-macos"]!
@@ -103,6 +109,10 @@ describe("release workflow", () => {
       ".github/scripts/check-no-developer-id.sh --adhoc packaging/dist/release/binaries/darwin-*/exangelos"
     )
     const tray = jobs["tray-macos"]!
+    const trayRuns = tray.steps.map((step) => step.run ?? "").join("\n")
+    expect(trayRuns).toContain("--bundles app --config")
+    expect(trayRuns).not.toContain("dmg --config")
+    expect(trayRuns).toContain('.github/scripts/check-no-developer-id.sh "$DMG"')
     expect(JSON.stringify(tray)).not.toContain("externalBin")
     expect(JSON.stringify(tray)).not.toContain("release-binaries")
   })

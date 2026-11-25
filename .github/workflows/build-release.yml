@@ -25,6 +25,15 @@ on:
         required: false
         default: false
         type: boolean
+    # With `sign` the tray jobs read these from the `release` environment, whose secrets take precedence over values
+    # passed by the caller. Callers without `sign`, such as release-check.yml, pass none.
+    secrets:
+      APPLE_CERTIFICATE:
+        required: false
+      APPLE_CERTIFICATE_PASSWORD:
+        required: false
+      APPLE_SIGNING_IDENTITY:
+        required: false
 
 permissions:
   contents: read
@@ -114,8 +123,14 @@ jobs:
         run: |
           if [ -z "$APPLE_SIGNING_IDENTITY" ]; then unset APPLE_SIGNING_IDENTITY; fi
           node -e 'console.log(JSON.stringify({ version: process.env.VERSION, build: { beforeBuildCommand: "pnpm run build:web" } }))' > src-tauri/tauri.release.conf.json
-          pnpm tauri build --ci --target ${{ matrix.triple }} --bundles app,dmg --config src-tauri/tauri.release.conf.json
-          cp src-tauri/target/${{ matrix.triple }}/release/bundle/dmg/*.dmg "$GITHUB_WORKSPACE/$DMG"
+          pnpm tauri build --ci --target ${{ matrix.triple }} --bundles app --config src-tauri/tauri.release.conf.json
+      - name: Pack the app into an unsigned disk image
+        run: |
+          staging="$RUNNER_TEMP/dmg"
+          mkdir -p "$staging"
+          ditto "apps/tray/src-tauri/target/${{ matrix.triple }}/release/bundle/macos/Exangelos.app" "$staging/Exangelos.app"
+          ln -s /Applications "$staging/Applications"
+          hdiutil create -volname Exangelos -srcfolder "$staging" -fs HFS+ -format UDZO -ov "$DMG"
       - name: Check the disk image
         env:
           APPLE_SIGNING_IDENTITY: ${{ inputs.sign && secrets.APPLE_SIGNING_IDENTITY || '' }}
@@ -132,6 +147,7 @@ jobs:
             .github/scripts/verify-macos-signature.sh "$APPLE_SIGNING_IDENTITY" "$app"
           fi
           hdiutil detach "$RUNNER_TEMP/image"
+          .github/scripts/check-no-developer-id.sh "$DMG"
       - name: Delete the signing keychain
         if: always() && inputs.sign
         run: security delete-keychain "$RUNNER_TEMP/signing.keychain-db" || true
