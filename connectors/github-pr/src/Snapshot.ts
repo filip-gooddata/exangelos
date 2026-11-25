@@ -55,17 +55,24 @@ export interface Comment {
   readonly url: string
 }
 
+/** A reply in a review thread, with the review GitHub filed it under. */
+export interface ThreadReply extends Comment {
+  readonly review: string | null
+}
+
 /** A review thread. `author`, `body`, `createdAt` and `url` belong to its opening comment. */
 export interface Thread {
   readonly id: string
   readonly isResolved: boolean
   readonly path: string
   readonly openerId: string
+  /** The review the opening comment belongs to. */
+  readonly openerReview: string | null
   readonly author: string
   readonly body: string
   readonly createdAt: string
   readonly url: string
-  readonly replies: ReadonlyArray<Comment>
+  readonly replies: ReadonlyArray<ThreadReply>
 }
 
 /** A ReviewRequestedEvent from the timeline. `reviewer` is null when a team was asked. */

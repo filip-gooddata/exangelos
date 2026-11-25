@@ -71,7 +71,12 @@ const commentNode = (c: CommentFields) => ({
   author: { login: c.login }
 })
 
-type ThreadCommentFields = { readonly id: string; readonly login: string; readonly createdAt: string }
+type ThreadCommentFields = {
+  readonly id: string
+  readonly login: string
+  readonly createdAt: string
+  readonly review?: string
+}
 
 const threadCommentNode = (c: ThreadCommentFields) => ({
   id: c.id,
@@ -80,7 +85,20 @@ const threadCommentNode = (c: ThreadCommentFields) => ({
   publishedAt: c.createdAt,
   state: "SUBMITTED",
   url: `https://github.com/acme/api/pull/7#discussion_${c.id}`,
-  author: { login: c.login }
+  author: { login: c.login },
+  pullRequestReview: c.review === undefined ? null : { id: c.review }
+})
+
+type ReviewFields = { readonly id: string; readonly login: string; readonly body: string; readonly submittedAt: string }
+
+const reviewNode = (r: ReviewFields) => ({
+  id: r.id,
+  state: "COMMENTED",
+  body: r.body,
+  submittedAt: r.submittedAt,
+  url: `https://github.com/acme/api/pull/7#pullrequestreview-${r.id}`,
+  author: { login: r.login },
+  commit: { oid: "a".repeat(40) }
 })
 
 export interface ThreadFields {
@@ -102,6 +120,7 @@ export interface PullRequestFields {
   readonly reviewDecision?: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null
   readonly comments?: ReadonlyArray<CommentFields>
   readonly olderComments?: string
+  readonly reviews?: ReadonlyArray<ReviewFields>
   readonly headers?: Record<string, string>
   readonly checks?: ReadonlyArray<{ readonly id: string; readonly name: string; readonly conclusion: string | null }>
 }
@@ -152,7 +171,7 @@ export const pullRequest = (fields: PullRequestFields = {}): Answer =>
         },
         reviewRequests: { nodes: (fields.requested ?? []).map((login) => ({ requestedReviewer: { __typename: "User", login } })) },
         reviewerReviews: { nodes: [] },
-        reviews: page([]),
+        reviews: page((fields.reviews ?? []).map(reviewNode)),
         comments: page((fields.comments ?? []).map(commentNode), fields.olderComments ?? null),
         reviewThreads: page((fields.threads ?? []).map(threadNode), fields.olderThreads ?? null),
         timelineItems: page((fields.requests ?? []).map(requestNode), fields.olderTimeline ?? null),

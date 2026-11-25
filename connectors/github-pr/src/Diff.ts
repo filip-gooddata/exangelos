@@ -59,6 +59,8 @@ export interface Filters {
   /** A base oid (or prefix) to compare against, or "current" for the base seen first; null to report every move. */
   readonly baseHead: string | null
   readonly existingThreads: boolean
+  /** Whether `review.reply` is subscribed, so a review that only wraps replies need not report again. */
+  readonly repliesReported: boolean
 }
 
 export const noFilters: Filters = {
@@ -71,7 +73,8 @@ export const noFilters: Filters = {
   reviewStates: null,
   reviewer: null,
   baseHead: null,
-  existingThreads: false
+  existingThreads: false,
+  repliesReported: true
 }
 
 export interface Step {
@@ -289,9 +292,16 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     })
   }
 
+  // GitHub files every reply posted outside a review under a COMMENTED review of its own, with no body. Its only
+  // content is replies `review.reply` reports, so it does not wake again. A review that opens a thread still does.
+  const replyReviews = new Set(snapshot.threads.flatMap((t) => t.replies.flatMap((r) => r.review === null ? [] : [r.review])))
+  for (const thread of snapshot.threads) if (thread.openerReview !== null) replyReviews.delete(thread.openerReview)
+  const onlyWrapsReplies = (review: Review) =>
+    filters.repliesReported && review.state === "COMMENTED" && review.body.trim() === "" && replyReviews.has(review.id)
+
   const reviews = fresh<Review>(previous?.reviews, snapshot.reviews, (r) => r.submittedAt)
   for (const review of reviews.items) {
-    if (!visible(review.author, null) || muted(review.id, review.url)) continue
+    if (!visible(review.author, null) || muted(review.id, review.url) || onlyWrapsReplies(review)) continue
     if (filters.reviewStates !== null && !filters.reviewStates.includes(review.state)) continue
     emit({
       type: "review.submitted",
@@ -357,7 +367,7 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     }
 
     for (const review of reviews.items) {
-      if (!same(review.author) || muted(review.id, review.url)) continue
+      if (!same(review.author) || muted(review.id, review.url) || onlyWrapsReplies(review)) continue
       emit({
         type: "reviewer.submitted",
         occurredAt: review.submittedAt,

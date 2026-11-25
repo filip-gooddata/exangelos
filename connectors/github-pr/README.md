@@ -58,6 +58,8 @@ exangelos update SUBSCRIPTION pullRequest=owner/repo#7 reviewStates='["APPROVED"
 | `review.rerequested` | `review.rerequested/<request event id>` |
 | `author.activity` | `author.activity/<comment id>` |
 
+GitHub files a thread reply posted on its own under a `COMMENTED` review with no body. While `review.reply` is among the subscribed types, such a review reports nothing more: neither `review.submitted` nor `reviewer.submitted` fires for it. A `COMMENTED` review with a body, or one that opens a thread, still reports. Without `review.reply`, as in reviewer mode or pr-watch's `--updates-only`, that review is the only sign of the reply and still fires.
+
 The watch ends when the pull request is merged or closed, and gives that as the reason.
 
 The first poll reports the current state: a conflict, failed checks, passed checks and readiness. It reports none of the history before it: no earlier reviews, comments, threads, replies or draft changes.

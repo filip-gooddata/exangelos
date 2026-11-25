@@ -70,7 +70,8 @@ const ThreadCommentNode = Schema.Struct({
   publishedAt: Schema.NullOr(Schema.String),
   state: Schema.String,
   url: Schema.String,
-  author: Login
+  author: Login,
+  pullRequestReview: Schema.optionalKey(Schema.NullOr(Schema.Struct({ id: Schema.String })))
 })
 const ThreadNode = Schema.Struct({
   id: Schema.String,
@@ -434,7 +435,8 @@ export const layer = Layer.effect(
           author: author(n.author),
           body: n.body,
           createdAt: shownAt(n),
-          url: n.url
+          url: n.url,
+          review: n.pullRequestReview?.id ?? null
         })
         const snapshot: Snapshot = {
           url: pr.url,
@@ -483,6 +485,7 @@ export const layer = Layer.effect(
               isResolved: n.isResolved,
               path: n.path,
               openerId: opening.id,
+              openerReview: opening.pullRequestReview?.id ?? null,
               author: author(opening.author),
               body: opening.body,
               createdAt: shownAt(opening),

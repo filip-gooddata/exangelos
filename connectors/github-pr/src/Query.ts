@@ -8,7 +8,7 @@ const comments = `comments(last: 100, before: $comments) {
   nodes { id body createdAt url author { login } }
 }`
 
-const threadComment = `id body createdAt publishedAt state url author { login }`
+const threadComment = `id body createdAt publishedAt state url author { login } pullRequestReview { id }`
 
 const threads = `reviewThreads(last: 100, before: $threads) {
   pageInfo { hasPreviousPage startCursor }
