@@ -1,0 +1,45 @@
+connectors/github-pr/README.md
+  s_5c051164407b8a::t_e331855ada0548 22,36,55,58,66,81,83,124-127
+connectors/github-pr/src/Cursor.ts
+  s_5c051164407b8a::t_b6d777be083f74 23-25,35-37,41-51
+connectors/github-pr/src/Diff.ts
+  s_5c051164407b8a::t_dcc6fdd83a6e8f 2,26-34,39,138-151,153-162,165-166,169,256-266,320-323,326-350,437,483-485
+connectors/github-pr/src/GitHub.ts
+  s_5c051164407b8a::t_77c16a8278921b 31-34,76-77,119,144,206,216,233,248-249,321,325,329,339,360,394-397,480-481,486-493
+connectors/github-pr/src/GithubPr.ts
+  s_5c051164407b8a::t_91ebbfc731385a 64-75
+connectors/github-pr/src/Poll.ts
+  s_5c051164407b8a::t_3d581ec058d891 36-38,62
+connectors/github-pr/src/Query.ts
+  s_5c051164407b8a::t_cce65de9d02381 22-23,25-30,43,53-55,59,65,67
+connectors/github-pr/src/Snapshot.ts
+  s_5c051164407b8a::t_d97afa4878f39e 21-23,33-34,77-83
+connectors/github-pr/test/Cursor.test.ts
+  s_5c051164407b8a::t_257df385ad163b 34
+connectors/github-pr/test/Diff.test.ts
+  s_5c051164407b8a::t_657bd625d4380f 3,151-154,157-160,162-170,207-227,252-257,300-319
+connectors/github-pr/test/GitHub.test.ts
+  s_5c051164407b8a::t_80ecb2182383f2 13,36,73-75,77,106-114,121-135
+connectors/github-pr/test/GithubPr.test.ts
+  s_5c051164407b8a::t_8a5e5a7c03b22d 71,82
+connectors/github-pr/test/fixtures.ts
+  s_5c051164407b8a::t_4d64903a0ec995 25-26,35
+connectors/github-pr/test/stubGitHub.ts
+  s_5c051164407b8a::t_068e74c27fafda 96,106-116,139,142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da86b79658bf3e169f2fa0c2a211432283668eaa",
+  "prompts": {},
+  "sessions": {
+    "s_5c051164407b8a": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "571fc072-5a8d-4311-b737-58d00daf9d3b",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
