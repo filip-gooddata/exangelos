@@ -393,6 +393,8 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
         eligible = not hidden and same_team(message, workspace) and excerpt_eligible(message)
         no_caption = 'text' not in message or isinstance(fallback, str) and not fallback.strip()
         has_files = bool(message.get('files')) or message.get('subtype') == 'file_share'
+        if has_files and 'text' in message and not isinstance(fallback, str):
+            continue
         file_candidate = no_caption and has_files
         missing_app_text = 'text' not in message and app_message(message)
         layout = visible_layout(message) if eligible and (include_preview or missing_app_text or file_candidate) else ''

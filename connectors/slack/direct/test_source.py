@@ -85,6 +85,25 @@ class SourceTests(unittest.TestCase):
             for raw in (SELECTION[1], str(root), 'ab' * 32):
                 self.assertNotIn(raw, first.stdout)
 
+    def test_invalid_file_text_keeps_peer_and_reactions(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            state = fixture()
+            ts = '1700000001.000002'
+            state['messages'][CHANNEL][ts] = dict(
+                type='message', subtype='file_share', ts=ts, text=None, _rxn_key=f'message-{ts}-{CHANNEL}',
+                files=[dict(id='F0000001', name='fixture.pdf')])
+            database(root, state)
+            query = request(root)
+            result = self.invoke(query)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            snapshot = json.loads(result.stdout)
+            self.assertTrue(snapshot['complete'])
+            peer, = snapshot['messages']
+            self.assertEqual(peer['messageTs'], TIME)
+            self.assertTrue(peer['reactionsComplete'])
+            self.assertEqual(peer['reactions'], [observation.token(bytes.fromhex(query['key']), 'reaction', 'wave', 'U0000002')])
+
     def test_deleted_file_keeps_legacy_checkpoint_without_delivery(self):
         import ledger
         with tempfile.TemporaryDirectory() as temp:
