@@ -152,7 +152,16 @@ describe("connector supervision", () => {
       yield* settle
       expect((yield* intake.observations).at(-1)).toEqual({ subscription: one })
       expect(yield* access.reading(one)).toBe(true)
+
       expect(yield* access.observation(one)).toEqual(Option.none())
+      yield* runtime.complete(acme)
+      yield* settle
+      expect(yield* access.reading(one)).toBe(true)
+      yield* TestClock.adjust("1 second")
+      yield* settle
+      yield* runtime.fail(acme, new SourceFailed({ connector: acme, category: "unreadable", reason: "gone" }))
+      yield* settle
+      expect(yield* access.reading(one)).toBe(false)
     })))
 
   it.effect("restarts a crashed connector and reopens its streams", () =>
