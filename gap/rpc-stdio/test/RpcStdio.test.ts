@@ -1,25 +1,52 @@
 import { BunServices } from "@effect/platform-bun"
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Fiber, Stream } from "effect"
-import { ChildProcess } from "effect/process"
-import { RpcClient } from "effect/rpc"
+import { Effect, Fiber, FileSystem, Queue, Sink, Stream } from "effect"
+import { ChildProcess, ChildProcessSpawner } from "effect/process"
+import { TestClock } from "effect/testing"
+import { RpcClient, RpcSerialization } from "effect/rpc"
 import { RpcStdio } from "@exangelos/rpc-stdio"
 import { EchoRpcs } from "./fixture/EchoRpcs.ts"
 
-const startFixture = (options?: RpcStdio.Options, startupDelayMillis = 0) =>
+const frames = (tag: string) => {
+  const parser = RpcSerialization.ndjson.makeUnsafe()
+  return (chunk: Uint8Array) => (parser.decode(chunk) as Array<{ readonly _tag: string }>).filter((frame) => frame._tag === tag).length
+}
+
+const signal = (queue: Queue.Queue<void>, times: number) => Queue.offerAll(queue, Array.from({ length: times }, () => undefined))
+
+const spawnFixture = (gate?: string) =>
   Effect.gen(function*() {
     const fixture = `${import.meta.dirname}/fixture/server.ts`
-    const child = yield* ChildProcess.make(process.execPath, [fixture, String(startupDelayMillis)], {
+    const spawned = yield* ChildProcess.make(process.execPath, gate === undefined ? [fixture] : [fixture, gate], {
       stderr: "inherit"
     })
+    const pings = yield* Queue.unbounded<void>()
+    const pongs = yield* Queue.unbounded<void>()
+    const pingFrames = frames("Ping")
+    const pongFrames = frames("Pong")
+    const child = ChildProcessSpawner.makeHandle({
+      ...spawned,
+      stdin: Sink.mapInputEffect(spawned.stdin, (chunk: Uint8Array) => Effect.as(signal(pings, pingFrames(chunk)), chunk)),
+      stdout: Stream.tap(spawned.stdout, (chunk) => signal(pongs, pongFrames(chunk)))
+    })
+    return { child, pings, pongs }
+  })
+
+const connect = (child: ChildProcessSpawner.ChildProcessHandle, options?: RpcStdio.Options) =>
+  Effect.gen(function*() {
     const protocol = yield* RpcStdio.makeProtocol(child, options)
-    const client = yield* RpcClient.make(EchoRpcs).pipe(Effect.provideService(RpcClient.Protocol, protocol))
-    return { child, client }
+    return yield* RpcClient.make(EchoRpcs).pipe(Effect.provideService(RpcClient.Protocol, protocol))
+  })
+
+const startFixture = (options?: RpcStdio.Options) =>
+  Effect.gen(function*() {
+    const fixture = yield* spawnFixture()
+    return { ...fixture, client: yield* connect(fixture.child, options) }
   })
 
 const stdoutClosed = { _tag: "RpcClientError", reason: { _tag: "SocketCloseError" } }
 
-describe("RpcStdio", () => {
+describe("RpcStdio", { timeout: 30_000 }, () => {
   it.live("round-trips a unary call over the child's stdin and stdout", () =>
     Effect.gen(function*() {
       const { client } = yield* startFixture()
@@ -32,17 +59,29 @@ describe("RpcStdio", () => {
       expect(yield* Stream.runCollect(client.Count({ to: 3 }))).toEqual([1, 2, 3])
     }).pipe(Effect.scoped, Effect.provide(BunServices.layer)))
 
-  it.live("stays connected across ping intervals", () =>
+  it.effect("stays connected across ping intervals", () =>
     Effect.gen(function*() {
-      const { client } = yield* startFixture({ pingInterval: "50 millis", pingTimeout: "200 millis" })
+      const { client, pongs } = yield* startFixture({ pingInterval: "50 millis", pingTimeout: "200 millis" })
       yield* client.Echo({ text: "up" })
-      yield* Effect.sleep("600 millis")
+      yield* Queue.take(pongs)
+      const stalled = yield* Effect.forkChild(client.Stall())
+      for (let interval = 0; interval < 12; interval++) {
+        yield* TestClock.adjust("50 millis")
+        yield* Effect.raceFirst(Queue.take(pongs), Fiber.join(stalled))
+      }
       expect(yield* client.Echo({ text: "still here" })).toBe("still here")
     }).pipe(Effect.scoped, Effect.provide(BunServices.layer)))
 
-  it.live("arms the ping only once a slow-starting child answers", () =>
+  it.effect("arms the ping only once a slow-starting child answers", () =>
     Effect.gen(function*() {
-      const { client } = yield* startFixture({ pingInterval: "50 millis", pingTimeout: "200 millis" }, 600)
+      const fs = yield* FileSystem.FileSystem
+      const gate = `${yield* fs.makeTempDirectoryScoped()}/started`
+      const { child, pings } = yield* spawnFixture(gate)
+      const connecting = yield* Effect.forkChild(connect(child, { pingInterval: "50 millis", pingTimeout: "200 millis" }))
+      yield* Queue.take(pings)
+      yield* TestClock.adjust("1 minute")
+      yield* fs.writeFileString(gate, "")
+      const client = yield* Fiber.join(connecting)
       expect(yield* client.Echo({ text: "late" })).toBe("late")
     }).pipe(Effect.scoped, Effect.provide(BunServices.layer)))
 
