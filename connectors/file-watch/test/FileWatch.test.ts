@@ -118,6 +118,7 @@ describe("file-watch connector", () => {
           while ((yield* Ref.get(pulls)) <= sent) yield* Effect.yieldNow
         })
       const observed = yield* Ref.make<ReadonlyArray<number>>([])
+      const checked = yield* Ref.make<ReadonlyArray<number>>([])
       const ticked = yield* Ref.make<ReadonlyArray<number>>([])
       const record = (times: Ref.Ref<ReadonlyArray<number>>) =>
         Clock.currentTimeMillis.pipe(Effect.flatMap((now) => Ref.update(times, (earlier) => [...earlier, now])))
@@ -127,7 +128,7 @@ describe("file-watch connector", () => {
           FileSystem.FileSystem.of({
             ...fs,
             realPath: (path) => record(observed).pipe(Effect.andThen(fs.realPath(path))),
-            lstat: (path) => fs.lstat(path).pipe(Effect.ensuring(record(ticked)))
+            lstat: (path) => record(checked).pipe(Effect.andThen(fs.lstat(path)), Effect.ensuring(record(ticked)))
           }))
       ).pipe(Layer.provide(BunFileSystem.layer.pipe(Layer.provide(Layer.succeed(FileSystem.WatchBackend, backend)))))
       const breather = Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
@@ -155,6 +156,7 @@ describe("file-watch connector", () => {
         expect((yield* Queue.take(items))._tag).toBe("Cursor")
         const started = yield* Clock.currentTimeMillis
         yield* Ref.set(observed, [])
+        yield* Ref.set(checked, [])
 
         yield* fs.writeFileString(log, "started")
         yield* notice({ _tag: "Create", path: log })
@@ -164,6 +166,9 @@ describe("file-watch connector", () => {
           held = yield* tickedAt(yield* Clock.currentTimeMillis)
         }
         expect(held).toBe(true)
+        const checks = yield* Ref.get(checked)
+        expect(checks.length).toBeGreaterThan(0)
+        expect(new Set(checks).size).toBe(checks.length)
         expect(yield* Ref.get(observed)).toEqual([])
         expect(Option.isNone(yield* Queue.poll(items))).toBe(true)
 
