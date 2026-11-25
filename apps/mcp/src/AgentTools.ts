@@ -84,7 +84,7 @@ export const toolkit = Toolkit.make(
     "list",
     "List this session's subscriptions, or every session's with all: true.",
     { all: Schema.optionalKey(Schema.Boolean) },
-    Schema.Struct({ subscriptions: Schema.Array(Subscription.Subscription) })
+    Schema.Struct({ subscriptions: Schema.Array(Subscription.Listed) })
   ),
   tool(
     "show",

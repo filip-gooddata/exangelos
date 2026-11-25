@@ -194,6 +194,43 @@ const connectorRemoved = (connector: Ids.ConnectorName, since: DateTime.Utc, pro
     }
   }).pipe(Effect.annotateLogs("connector", connector))
 
+const lastFailingWake = (wakes: ReadonlyArray<Wake.Wake>) =>
+  Option.map(Arr.findLast(wakes, (wake) => wake.reason === "failing"), (wake) => wake.createdAt)
+
+const observationFailing = (id: Ids.SubscriptionId, failure: Connector.ObservationFailure) =>
+  withSubscription(id, (subscription) =>
+    Effect.gen(function*() {
+      const wakes = yield* WakeRepository
+      const now = yield* DateTime.now
+      const why = Lifecycle.failingWake(subscription, failure, lastFailingWake(yield* wakes.list(subscription.id)), now)
+      if (Option.isNone(why)) return
+      yield* requestWake(subscription, why.value)
+      yield* Effect.logInfo("failing wake requested").pipe(Effect.annotateLogs("category", failure.category))
+    }).pipe(Effect.annotateLogs(logAnnotations(subscription))))
+
+/**
+ * Follows the subscription's latest failing or recovered wake: a delivered failing wake owes one
+ * recovered wake, an undelivered one has nothing left to say and is dropped.
+ */
+const observationRecovered = (id: Ids.SubscriptionId) =>
+  withSubscription(id, (subscription) =>
+    Effect.gen(function*() {
+      const wakes = yield* WakeRepository
+      const latest = Arr.findLast(
+        yield* wakes.list(subscription.id),
+        (wake) => wake.reason === "failing" || wake.reason === "recovered"
+      )
+      if (Option.isNone(latest) || latest.value.reason !== "failing") return
+      if (Delivery.isUndelivered(latest.value)) {
+        yield* wakes.update({ ...latest.value, state: "dropped" })
+        yield* Effect.logDebug("failing wake dropped").pipe(Effect.annotateLogs("wake", latest.value.id))
+        return
+      }
+      if (latest.value.state !== "delivered" || subscription.state._tag !== "Active") return
+      yield* requestWake(subscription, { _tag: "Recovered" })
+      yield* Effect.logInfo("recovered wake requested")
+    }).pipe(Effect.annotateLogs(logAnnotations(subscription))))
+
 /** The subscription half's intake, as the connector half's Watch streams and supervision call it. */
 export const layerSubscriptionIntake: Layer.Layer<SubscriptionIntake, never, IntakeServices> = Layer.effect(
   SubscriptionIntake,
@@ -202,7 +239,9 @@ export const layerSubscriptionIntake: Layer.Layer<SubscriptionIntake, never, Int
     return {
       ingest: (id, item) => Effect.provideContext(ingest(id, item), context),
       connectorChanged: (connector) => Effect.provideContext(connectorChanged(connector), context),
-      connectorRemoved: (connector, since, problem) => Effect.provideContext(connectorRemoved(connector, since, problem), context)
+      connectorRemoved: (connector, since, problem) => Effect.provideContext(connectorRemoved(connector, since, problem), context),
+      observationFailing: (id, failure) => Effect.provideContext(Effect.asVoid(observationFailing(id, failure)), context),
+      observationRecovered: (id) => Effect.provideContext(Effect.asVoid(observationRecovered(id)), context)
     }
   })
 )

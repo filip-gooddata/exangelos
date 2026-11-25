@@ -13,6 +13,7 @@ import type { SubscriptionLocks } from "../Locks.ts"
 import { logAnnotations } from "../Transitions.ts"
 import { withSubscription } from "./Intake.ts"
 import { RemovedConnectors } from "../RemovedConnectors.ts"
+import { ConnectorAccess } from "../../seam/ConnectorAccess.ts"
 
 export type DeliveryServices =
   | WakeRepository
@@ -23,6 +24,7 @@ export type DeliveryServices =
   | SettingsStore
   | SubscriptionLocks
   | RemovedConnectors
+  | ConnectorAccess
 
 /** How long one attempt may take before it counts as failed, so a hung session cannot stall delivery. */
 export const deliveryTimeout = Duration.seconds(30)
@@ -80,6 +82,12 @@ const decide = (
         if (Option.isNone(why)) return wait
         return send(Option.map(why.value, (w) => Delivery.content(subscription, w, pending)))
       }
+      case "failing": {
+        const failure = yield* (yield* ConnectorAccess).observation(subscription.id)
+        return send(Option.map(failure, (f) => Delivery.content(subscription, { _tag: "Failing", ...f }, pending)))
+      }
+      case "recovered":
+        return send(Option.some(Delivery.content(subscription, { _tag: "Recovered" }, pending)))
       default:
         return send(Delivery.waitContent(subscription, pending, Option.none()))
     }

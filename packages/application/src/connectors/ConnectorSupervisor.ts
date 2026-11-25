@@ -28,6 +28,12 @@ export const startTimeout = Duration.seconds(30)
 /** How long a started connector may take to serve its logo. */
 export const iconTimeout = Duration.seconds(10)
 
+/** The most of a connector's failure reason that show and wakes carry. */
+export const observationReasonLimit = 300
+
+const bounded = (text: string): string =>
+  text.length <= observationReasonLimit ? text : `${text.slice(0, observationReasonLimit - 1)}…`
+
 export const backoff = (failures: number): Duration.Duration =>
   Duration.min(
     Duration.times(restartPolicy.firstDelay, 2 ** Math.max(0, failures - 1)),
@@ -69,6 +75,8 @@ export class ConnectorSupervisor extends Context.Service<ConnectorSupervisor, {
   readonly watch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly unwatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly rewatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
+  /** Why the subscription's open Watch stream keeps failing, while it does. */
+  readonly observation: (subscription: Ids.SubscriptionId) => Option.Option<Connector.ObservationFailure>
   /**
    * Rewatches, on the supervisor's own fiber and one pass at a time, every Watch stream not yet
    * known to be open with the stored wake window.
@@ -127,7 +135,16 @@ export const layerConnectorSupervisor: Layer.Layer<
   const writes = yield* Semaphore.make(1)
   const refreshes = yield* Semaphore.make(1)
   const scope = yield* Effect.scope
-  const observationFailures = new Map<Ids.SubscriptionId, { name: Ids.ConnectorName; category: Connector.ObservationCategory }>()
+  /**
+   * Each failing stream's failure: `raw` is the connector's own reason, kept only to notice a change;
+   * `reason` is that text scrubbed of configured secrets and bounded, the only form that leaves here.
+   */
+  const observationFailures = new Map<
+    Ids.SubscriptionId,
+    Connector.ObservationFailure & { readonly name: Ids.ConnectorName; readonly raw: string }
+  >()
+  const observation = (id: Ids.SubscriptionId): Option.Option<Connector.ObservationFailure> =>
+    Option.map(Option.fromUndefinedOr(observationFailures.get(id)), ({ category, reason, since }) => ({ category, reason, since }))
   /** The logo each connector's latest process served. A new process replaces it; a removal drops it. */
   const icons = new Map<Ids.ConnectorName, Connector.Icon>()
   const status = (connector: Connector.Connector): Connector.Status => {
@@ -287,6 +304,8 @@ export const layerConnectorSupervisor: Layer.Layer<
     Effect.gen(function*() {
       const configured = yield* generation(name)
       let failures = 0
+      // A failing wake may be owed a recovery from before this stream opened, even across a daemon restart.
+      let recoveryOwed = true
       while (true) {
         const found = yield* subscriptions.find(id)
         if (Option.isNone(found) || found.value.state._tag !== "Active") return
@@ -304,12 +323,22 @@ export const layerConnectorSupervisor: Layer.Layer<
         }).pipe(
           Stream.runForEachWhile((item) =>
             // Interrupting the stream waits until an item is fully ingested.
-            Effect.map(Effect.uninterruptible(intake.ingest(id, item)), (verdict) => {
-              observationFailures.delete(id)
-              failures = 0
-              stop = verdict === "stop"
-              return !stop
-            })
+            Effect.map(
+              Effect.uninterruptible(Effect.gen(function*() {
+                const verdict = yield* intake.ingest(id, item)
+                observationFailures.delete(id)
+                failures = 0
+                if (recoveryOwed) {
+                  recoveryOwed = false
+                  yield* intake.observationRecovered(id)
+                }
+                return verdict
+              })),
+              (verdict) => {
+                stop = verdict === "stop"
+                return !stop
+              }
+            )
           ),
           Effect.result
         )
@@ -323,12 +352,27 @@ export const layerConnectorSupervisor: Layer.Layer<
             return
           }
           const category = error.category ?? "unavailable"
-          if (observationFailures.get(id)?.category !== category) {
-            observationFailures.set(id, { name, category })
+          const previous = observationFailures.get(id)
+          const now = yield* DateTime.now
+          const since = previous?.since ?? now
+          const reason = previous?.raw === error.reason
+            ? previous.reason
+            : bounded(scrub(error.reason, (yield* configurationOf(name, process.catalogue)).present))
+          observationFailures.set(id, { name, category, reason, since, raw: error.reason })
+          // The reason is the connector's free text and can hold source content, so the log keeps to safe facts.
+          if (previous?.category !== category) {
             yield* Effect.logWarning("watch observation failed").pipe(
-              Effect.annotateLogs({ connector: name, subscription: id, category })
+              Effect.annotateLogs({
+                connector: name,
+                subscription: id,
+                category,
+                attempts: failures + 1,
+                failingFor: Duration.format(DateTime.distance(since, now))
+              })
             )
           }
+          recoveryOwed = true
+          yield* intake.observationFailing(id, { category, reason, since })
         }
         failures++
         yield* Effect.sleep(backoff(failures))
@@ -698,6 +742,7 @@ export const layerConnectorSupervisor: Layer.Layer<
     // The intake may unwatch from inside the stream's own ingest, so the removal runs on its own fiber.
     unwatch: (subscription) => Effect.asVoid(Effect.forkDetach(FiberMap.remove(streams, subscription))),
     rewatch,
+    observation,
     settingsChanged: Effect.asVoid(Effect.forkIn(refreshes.withPermit(refresh), scope)),
     exclusiveFor: (name, effect) => everyName.withPermits(1)(nameLock(name).withPermits(1)(effect)),
     exclusive: (effect) => everyName.withPermits(allPermits)(effect),

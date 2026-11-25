@@ -173,7 +173,7 @@ const list = Command.make(
   ({ all }) =>
     Effect.gen(function*() {
       const client = yield* Connection
-      yield* respond(client.List({ all }), { schema: Schema.Array(SubscriptionSchema), text: Text.subscriptions })
+      yield* respond(client.List({ all }), { schema: Schema.Array(Subscription.Listed), text: Text.subscriptions })
     })
 ).pipe(Command.withDescription("List this session's subscriptions"))
 

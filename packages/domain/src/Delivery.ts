@@ -32,6 +32,10 @@ export const reasonOf = (why: Why): WakeReason => {
       return "cancelled"
     case "Suspended":
       return "suspended"
+    case "Failing":
+      return "failing"
+    case "Recovered":
+      return "recovered"
   }
 }
 
@@ -92,6 +96,10 @@ export const hasSomethingToSayWhen = (wake: Wake, subscription: Subscription, av
       return subscription.state._tag === "Expired"
     case "suspended":
       return Lifecycle.isSuspendedWhen(subscription, available)
+    case "failing":
+      return subscription.state._tag === "Active" && available
+    case "recovered":
+      return subscription.state._tag === "Active"
     case "ended":
     case "cancelled":
       return true

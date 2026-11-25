@@ -242,6 +242,7 @@ export const layerConnectorAccess: Layer.Layer<
       }),
     watch: supervisor.watch,
     unwatch: supervisor.unwatch,
-    rewatch: supervisor.rewatch
+    rewatch: supervisor.rewatch,
+    observation: (subscription) => Effect.sync(() => supervisor.observation(subscription))
   })
 }))

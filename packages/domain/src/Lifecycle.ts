@@ -1,8 +1,8 @@
-import { Array as Arr, DateTime, Option, Result } from "effect"
+import { Array as Arr, DateTime, Duration, Option, Result } from "effect"
 import type { Parameters } from "./Catalogue.ts"
 import type { EventType, ConnectorName, SubscriptionId } from "./Ids.ts"
 import type { Limits } from "./Limits.ts"
-import type { Connector } from "./Connector.ts"
+import type { Connector, ObservationFailure } from "./Connector.ts"
 import * as ConnectorRules from "./ConnectorRules.ts"
 import { BacklogOverLimit, NotAllowed } from "./Refusal.ts"
 import { type Actor, sameSession, type Target } from "./Session.ts"
@@ -191,4 +191,30 @@ export const suspensionWake = (
     ? Option.none()
     : Option.map(ConnectorRules.problem(connector), (problem) => ({ since, problem }))
   return suspensionWakeWhen(subscription, unavailable, lastSuspensionWake, now, limits)
+}
+
+/** How long a source must keep failing before the subscription's session hears of it. */
+export const failingBeforeWake = Duration.minutes(5)
+
+/** The least time between two failing wakes of one subscription, so a flapping source cannot wake on every cycle. */
+export const failingWakeCooldown = Duration.hours(1)
+
+/**
+ * The failing wake an active subscription owes: once per failure that has lasted `failingBeforeWake`,
+ * and not within `failingWakeCooldown` of the previous one.
+ */
+export const failingWake = (
+  subscription: Subscription,
+  failure: ObservationFailure,
+  lastFailingWake: Option.Option<DateTime.Utc>,
+  now: DateTime.Utc
+): Option.Option<Why> => {
+  if (subscription.state._tag !== "Active") return Option.none()
+  if (DateTime.isLessThan(now, DateTime.addDuration(failure.since, failingBeforeWake))) return Option.none()
+  if (
+    Option.exists(lastFailingWake, (woken) =>
+      DateTime.isGreaterThanOrEqualTo(woken, failure.since) ||
+      DateTime.isLessThan(now, DateTime.addDuration(woken, failingWakeCooldown)))
+  ) return Option.none()
+  return Option.some({ _tag: "Failing", ...failure } as const)
 }

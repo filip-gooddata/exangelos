@@ -27,4 +27,16 @@ export class SubscriptionIntake extends Context.Service<SubscriptionIntake, {
    * has passed, also after a daemon restart, so a repeat with the same `since` must store nothing new.
    */
   readonly connectorRemoved: (connector: Ids.ConnectorName, since: DateTime.Utc, problem: string) => Effect.Effect<void>
+  /**
+   * The subscription's Watch stream failed again while its connector runs, failing since
+   * `failure.since`. Called after every failed attempt; the subscription sends the one failing wake
+   * when `Lifecycle.failingWake` says so.
+   */
+  readonly observationFailing: (subscription: Ids.SubscriptionId, failure: Connector.ObservationFailure) => Effect.Effect<void>
+  /**
+   * The subscription's Watch stream delivered an item after failing, or for the first time since it
+   * opened. Sends the one recovered wake when the session was told of the failure, drops a failing
+   * wake not yet delivered, and does nothing otherwise, so a repeat stores nothing new.
+   */
+  readonly observationRecovered: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
 }>()("@exangelos/application/SubscriptionIntake") {}

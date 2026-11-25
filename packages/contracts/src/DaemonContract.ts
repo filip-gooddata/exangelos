@@ -147,11 +147,11 @@ export class Update extends Rpc.make("Update", {
 
 export class List extends Rpc.make("List", {
   payload: { all: Schema.Boolean },
-  success: Schema.Array(Subscription.Subscription)
+  success: Schema.Array(Subscription.Listed)
 }) {}
 
 export const Details = Schema.Struct({
-  subscription: Subscription.Subscription,
+  subscription: Subscription.Shown,
   events: Schema.Array(Event.Event),
   wakes: Schema.Array(Wake.Wake),
   changes: Schema.Array(Subscription.Change)

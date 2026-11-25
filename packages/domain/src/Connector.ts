@@ -43,6 +43,26 @@ export type Connector = typeof Connector.Type
 export const ObservationCategory = Schema.Literals(["unavailable", "unreadable", "invalid-data", "scope-changed"])
 export type ObservationCategory = typeof ObservationCategory.Type
 
+/**
+ * That a subscription's source cannot be read right now while its connector runs: the category the
+ * connector reported and when the failures began. Safe for lists and status. Kept in memory; never stored.
+ */
+export const ObservationOutage = Schema.Struct({
+  category: ObservationCategory,
+  since: Schema.DateTimeUtc
+})
+export type ObservationOutage = typeof ObservationOutage.Type
+
+/**
+ * An outage with the connector's free-form reason, configured secrets replaced and cut to a bounded
+ * length. Only the subscription's own view (show) and its wakes carry the reason, never logs or lists.
+ */
+export const ObservationFailure = Schema.Struct({
+  ...ObservationOutage.fields,
+  reason: Schema.String
+})
+export type ObservationFailure = typeof ObservationFailure.Type
+
 /** A connector's logo: the bytes of its manifest icon, base64-encoded. */
 export const Icon = Schema.Struct({
   mediaType: Schema.Literals(["image/svg+xml", "image/png"]),

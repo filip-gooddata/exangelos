@@ -1,6 +1,7 @@
 import { Schema } from "effect"
 import { Parameters } from "./Catalogue.ts"
 import { AckedThrough, EventType, ConnectorName, SubscriptionId } from "./Ids.ts"
+import { ObservationFailure, ObservationOutage } from "./Connector.ts"
 import { Actor, Target } from "./Session.ts"
 
 export const PauseReason = Schema.TaggedUnion({
@@ -45,6 +46,20 @@ export const Subscription = Schema.Struct({
   eventAlerts: Schema.Boolean
 })
 export type Subscription = typeof Subscription.Type
+
+/** A subscription as list reports it: the stored record and, while its source keeps failing, since when. */
+export const Listed = Schema.Struct({
+  ...Subscription.fields,
+  observation: Schema.optionalKey(ObservationOutage)
+})
+export type Listed = typeof Listed.Type
+
+/** A subscription as show reports it: like Listed, with the failure's reason. */
+export const Shown = Schema.Struct({
+  ...Subscription.fields,
+  observation: Schema.optionalKey(ObservationFailure)
+})
+export type Shown = typeof Shown.Type
 
 export const ChangeKind = Schema.Literals(["create", "update", "ack", "pause", "resume", "retarget", "cancel", "eventAlerts"])
 export type ChangeKind = typeof ChangeKind.Type
