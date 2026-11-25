@@ -55,6 +55,7 @@ export class JiraClient extends Context.Service<JiraClient, {
   readonly readIssue: (input: {
     readonly site: JiraSite
     readonly key: string
+    readonly fields?: ReadonlyArray<string>
     readonly position: IssuePosition | undefined
   }) => Effect.Effect<IssueSnapshot, JiraError>
   /** Every issue the query matches now. Fails with JqlResultTooLarge above `membershipLimit`. */
@@ -103,6 +104,12 @@ const IssueWire = Schema.Struct({
   fields: Schema.optionalKey(IssueFieldsWire)
 })
 
+const IssueValuesWire = Schema.Struct({
+  id: Schema.String,
+  key: Schema.String,
+  fields: Schema.optionalKey(Schema.Record(Schema.String, Schema.Unknown))
+})
+
 const SearchPageWire = Schema.Struct({
   issues: Schema.Array(IssueWire),
   nextPageToken: Schema.optionalKey(Schema.NullOr(Schema.String)),
@@ -134,6 +141,17 @@ const parseTime = (value: string): Effect.Effect<DateTime.Utc, DecodeFailure> =>
     onNone: () => Effect.fail(new DecodeFailure({ reason: "Jira returned an unreadable time." })),
     onSome: (time) => Effect.succeed(DateTime.toUtc(time))
   })
+
+const fieldText = (value: unknown): string | null => {
+  if (value === null || value === undefined) return null
+  if (Array.isArray(value)) return value.map(fieldText).filter((item) => item !== null).join(", ")
+  if (typeof value === "object") {
+    const named = value as Record<string, unknown>
+    const label = named.displayName ?? named.name ?? named.value ?? named.key
+    return typeof label === "string" ? label : JSON.stringify(value)
+  }
+  return String(value)
+}
 
 const person = (wire: typeof PersonWire.Type | undefined): Person | undefined =>
   wire === undefined ? undefined : { accountId: wire.accountId, displayName: wire.displayName }
@@ -308,12 +326,23 @@ export const layer = Layer.effect(
           Effect.andThen(resolveRoute(site))
         ),
 
-      readIssue: ({ key, position, site }) =>
+      readIssue: ({ fields = [], key, position, site }) =>
         Effect.gen(function*() {
-          const issue = yield* get(site, `/rest/api/3/issue/${encodeURIComponent(key)}`, { fields: "summary" }, IssueWire)
+          const issue = yield* get(
+            site,
+            `/rest/api/3/issue/${encodeURIComponent(key)}`,
+            { fields: ["summary", ...fields].join(",") },
+            IssueValuesWire
+          )
           const changelog = yield* readTail(position?.changelog, changelogPage(site, key))
           const comments = yield* readTail(position?.comments, commentPage(site, key))
-          return { id: issue.id, key: issue.key, summary: issue.fields?.summary ?? "", changelog, comments }
+          const raw = issue.fields ?? {}
+          const values: Record<string, string | null> = {}
+          for (const field of fields) {
+            if (Object.hasOwn(raw, field)) values[field] = fieldText(raw[field])
+          }
+          const summary = typeof raw.summary === "string" ? raw.summary : ""
+          return { id: issue.id, key: issue.key, summary, changelog, comments, values }
         }),
 
       checkJql: ({ jql, site }) =>

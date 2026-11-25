@@ -154,6 +154,8 @@ describe("GitHub signals", () => {
       })
       const failure = yield* poll(github, null, { paths: [] }).pipe(Effect.flip)
       expect(failure).toEqual(new GitHubNotFound({ path: "/repos/acme/app/commits/abc1234" }))
+      const unreleased = fakeGitHub({ pullRequests: [], commits: [], releases: [], containing: [], shaGone: true })
+      expect(yield* poll(unreleased.github, null, { paths: [] }).pipe(Effect.flip)).toEqual(failure)
     }))
 
   it.effect("starts pull requests from a new baseline when the search changes", () =>

@@ -1,6 +1,6 @@
 import { DateTime } from "effect"
 import type { IssueCursor, JqlCursor } from "./Cursor.ts"
-import { reportsField } from "./Options.ts"
+import { reportsField, sameField } from "./Options.ts"
 import { overlap } from "./Snapshot.ts"
 import { browseLink } from "./Site.ts"
 import type { Comment, FieldChange, History, IssueSnapshot, JqlSnapshot, ListPosition, ListTail, Person } from "./Snapshot.ts"
@@ -17,7 +17,8 @@ export const eventTypes = {
   pullRequestStateChanged: "pull_request.state_changed",
   commitAdded: "commit.added",
   releaseFound: "release.found",
-  githubUnavailable: "github.unavailable"
+  githubUnavailable: "github.unavailable",
+  jiraUnavailable: "jira.unavailable"
 } as const
 export type JiraEventType = typeof eventTypes[keyof typeof eventTypes]
 
@@ -176,6 +177,35 @@ export const diffIssue = (input: {
     ...changelog.fresh.flatMap((history) => historyEvents(snapshot, link, history, fields)),
     ...comments.fresh.map((comment) => commentEvent(snapshot, siteUrl, comment))
   ].sort((a, b) => DateTime.toEpochMillis(a.occurredAt) - DateTime.toEpochMillis(b.occurredAt))
+  let valueChanges = known?.valueChanges ?? 0
+  if (known?.values !== undefined) {
+    const changedInHistory = changelog.fresh.flatMap((history) => history.items)
+      .map((item) => ({ field: item.field, fieldId: item.fieldId ?? null }))
+    for (const [field, value] of Object.entries(snapshot.values)) {
+      if (!Object.hasOwn(known.values, field)) continue
+      const before = known.values[field] ?? null
+      if (before === value || changedInHistory.some((item) => sameField(field, item))) continue
+      valueChanges += 1
+      events.push({
+        type: typeOfChange({ field, fieldId: field, from: null, fromString: before, to: null, toString: value }),
+        occurredAt: observedAt,
+        summary: `${snapshot.key}: ${field} ${shown(before)} → ${shown(value)}`,
+        payload: {
+          issue: { id: snapshot.id, key: snapshot.key, summary: snapshot.summary },
+          historyId: "",
+          author: null,
+          field,
+          fieldId: field,
+          from: null,
+          fromString: before,
+          to: null,
+          toString: value
+        },
+        link,
+        dedupeKey: `${snapshot.id}:value:${valueChanges}:${field}`
+      })
+    }
+  }
   if (known !== undefined) {
     const before = known.comments.consumed
     const after = comments.position.consumed
@@ -201,7 +231,8 @@ export const diffIssue = (input: {
       comments: comments.position,
       github: known?.github ?? null,
       githubFailure: known?.githubFailure ?? null,
-      githubFailures: known?.githubFailures ?? 0
+      githubFailures: known?.githubFailures ?? 0,
+      ...(Object.keys(snapshot.values).length === 0 ? {} : { values: { ...snapshot.values }, valueChanges })
     }
   }
 }

@@ -88,7 +88,8 @@ describe("Jira connector", () => {
         "pull_request.state_changed",
         "commit.added",
         "release.found",
-        "github.unavailable"
+        "github.unavailable",
+        "jira.unavailable"
       ])
       expect(catalogue.eventTypes[5]?.description).toContain("enters and leaves the result between two polls is never seen")
       expect(catalogue.parameters.main).toBe("target")
@@ -336,6 +337,7 @@ describe("Jira connector", () => {
       })
       const search = calls.find((call) => call.path === "/search/issues")
       expect(search?.param("q")).toBe("DEMO-7 repo:acme/app is:pr")
+      expect(calls.find((call) => call.path === "/rest/api/3/issue/DEMO-7")?.param("fields")).toBe("summary,resolution,fixVersions")
       const github = calls.filter((call) => call.request.url.startsWith("https://api.github.com/"))
       expect(github.every((call) => call.request.headers.authorization === `Bearer ${githubToken}`)).toBe(true)
       const jiraCalls = calls.filter((call) => !call.request.url.startsWith("https://api.github.com/"))

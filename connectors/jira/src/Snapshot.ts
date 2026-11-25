@@ -48,6 +48,7 @@ export interface IssueSnapshot {
   readonly summary: string
   readonly changelog: ListTail<History>
   readonly comments: ListTail<Comment>
+  readonly values: Readonly<Record<string, string | null>>
 }
 
 export interface JqlIssue {

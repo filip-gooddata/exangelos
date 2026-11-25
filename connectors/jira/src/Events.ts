@@ -112,6 +112,12 @@ export const githubUnavailable = Catalogue.event(eventTypes.githubUnavailable, {
   payload: Schema.Struct({ issue: Issue, repo: Schema.String, reason: Schema.String })
 })
 
+export const jiraUnavailable = Catalogue.event(eventTypes.jiraUnavailable, {
+  description:
+    "Polling Jira failed 12 times in a row (not a refused credential, which suspends the subscription). Reported once per outage; the watch keeps retrying and the outage ends at the next good poll.",
+  payload: Schema.Struct({ subject: Schema.String, failures: Schema.Finite, since: Schema.String, reason: Schema.String })
+})
+
 export const all = [
   statusChanged,
   commentAdded,
@@ -124,7 +130,8 @@ export const all = [
   pullRequestStateChanged,
   commitAdded,
   releaseFound,
-  githubUnavailable
+  githubUnavailable,
+  jiraUnavailable
 ] as const
 
 export type WatchItem = ReturnType<typeof Connector.end>
@@ -141,7 +148,8 @@ const byType: Record<JiraEventType, Catalogue.EventType<any>> = {
   [eventTypes.pullRequestStateChanged]: pullRequestStateChanged,
   [eventTypes.commitAdded]: commitAdded,
   [eventTypes.releaseFound]: releaseFound,
-  [eventTypes.githubUnavailable]: githubUnavailable
+  [eventTypes.githubUnavailable]: githubUnavailable,
+  [eventTypes.jiraUnavailable]: jiraUnavailable
 }
 
 /** The watch item for a diffed event; its payload is checked against the catalogue as it is encoded. */

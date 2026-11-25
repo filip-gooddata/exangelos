@@ -37,7 +37,7 @@ const invalid = (reason: string) => Effect.fail(new TargetInvalid({ reason }))
 
 export const parseOptions = (parameters: Parameters, target: Target): Effect.Effect<Options, TargetInvalid> =>
   Effect.gen(function*() {
-    const fields = parameters.fields === undefined ? undefined : list(parameters.fields).map((field) => field.toLowerCase())
+    const fields = parameters.fields === undefined ? undefined : list(parameters.fields)
     if (fields !== undefined && fields.length === 0) return yield* invalid("fields is empty: name at least one field.")
     const repo = parameters.githubRepo?.trim()
     const paths = list(parameters.githubPaths)
@@ -82,5 +82,11 @@ export const reportsField = (
   change: { readonly field: string; readonly fieldId: string | null }
 ): boolean =>
   fields === undefined ||
-  fields.includes(change.field.toLowerCase()) ||
-  (change.fieldId !== null && fields.includes(change.fieldId.toLowerCase()))
+  fields.some((field) => sameField(field, change))
+
+export const sameField = (
+  field: string,
+  change: { readonly field: string; readonly fieldId: string | null }
+): boolean =>
+  field.toLowerCase() === change.field.toLowerCase() ||
+  (change.fieldId !== null && field.toLowerCase() === change.fieldId.toLowerCase())

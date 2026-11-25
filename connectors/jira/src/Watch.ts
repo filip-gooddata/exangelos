@@ -1,4 +1,4 @@
-import { DateTime, Duration, Effect, Stream } from "effect"
+import { DateTime, Duration, Effect, Schema, Stream } from "effect"
 import type { Redacted } from "effect"
 import { Connector } from "@exangelos/connector-sdk"
 import { decodeIssueCursor, decodeJqlCursor, encodeCursor, issuePosition } from "./Cursor.ts"
@@ -15,6 +15,7 @@ import type { GitHubPoll, IssueRef } from "./GitHubSignals.ts"
 import type { Options } from "./Options.ts"
 import { browseLink } from "./Site.ts"
 import type { JiraSite } from "./Site.ts"
+import { label, subject } from "./Target.ts"
 import type { Target } from "./Target.ts"
 
 interface PollState {
@@ -25,6 +26,8 @@ interface PollState {
   readonly ended: boolean
   /** Whether this run already re-resolved the route after a 401; the next 401 ends it. */
   readonly recovered: boolean
+  readonly outage?: { readonly failures: number; readonly since: DateTime.Utc }
+  readonly fail?: Connector.SourceFailed
 }
 
 interface Poll {
@@ -91,7 +94,7 @@ const read = (watched: Watched, site: JiraSite, cursor: string | undefined) =>
     const { client, options, target } = watched
     if (target.kind === "issue") {
       const previous = cursor === undefined ? undefined : yield* decodeIssueCursor(cursor).pipe(Effect.catch(rebaseline))
-      const snapshot = yield* client.readIssue({ site, key: target.key, position: issuePosition(previous) })
+      const snapshot = yield* client.readIssue({ site, key: target.key, position: issuePosition(previous), fields: options.fields ?? [] })
       const jira = diffIssue({ siteUrl: site.url, previous, snapshot, fields: options.fields, observedAt: yield* DateTime.now })
       const signals = options.github
       if (signals === undefined) {
@@ -237,6 +240,50 @@ const poll = (watched: Watched, state: PollState) => {
   )
 }
 
+export const failureLimit = 12
+
+const Outage = Schema.Struct({ since: Schema.String })
+const CursorOutage = Schema.fromJsonString(Schema.Struct({ outage: Schema.optionalKey(Outage) }))
+
+const reportedOutage = (cursor: string | undefined) =>
+  cursor === undefined
+    ? Effect.succeed(undefined)
+    : Schema.decodeEffect(CursorOutage)(cursor).pipe(
+      Effect.map(({ outage }) => outage),
+      Effect.orElseSucceed(() => undefined)
+    )
+
+/**
+ * A failed poll is retried in the stream after the poll interval. The failure that completes
+ * `failureLimit` in a row reports jira.unavailable, unless the cursor shows the outage was already
+ * reported, records it in the cursor, and fails, so the daemon backs off and reopens the watch.
+ */
+const failedPoll = (input: Watched, state: PollState, failed: Connector.SourceFailed) =>
+  Effect.gen(function*() {
+    const now = yield* DateTime.now
+    const outage = { failures: (state.outage?.failures ?? 0) + 1, since: state.outage?.since ?? now }
+    yield* Effect.logWarning(`Jira poll failed (${outage.failures} in a row): ${failed.reason}`)
+    if (outage.failures < failureLimit) {
+      return { items: [], next: { ...state, outage, wait: defaultPollInterval } } satisfies Poll
+    }
+    const stopped: PollState = { ...state, outage, fail: failed }
+    if (state.cursor === undefined || (yield* reportedOutage(state.cursor)) !== undefined) {
+      return { items: [], next: stopped } satisfies Poll
+    }
+    const since = DateTime.formatIso(outage.since)
+    const cursor = JSON.stringify({ ...JSON.parse(state.cursor), outage: { since } })
+    const { target } = input
+    const event: JiraEvent = {
+      type: eventTypes.jiraUnavailable,
+      occurredAt: now,
+      summary: `${label(target)}: Jira polling failed ${outage.failures} times in a row since ${since}: ${failed.reason}`,
+      payload: { subject: subject(target), failures: outage.failures, since, reason: failed.reason },
+      link: target.kind === "issue" ? browseLink(input.site.url, target.key) : input.site.url,
+      dedupeKey: `${subject(target)}:unavailable:${since}`
+    }
+    return { items: [toItem(event), Connector.cursor(cursor)], next: { ...stopped, cursor } } satisfies Poll
+  })
+
 /**
  * Polls the target until it ends: the first poll at once, then one every `defaultPollInterval`,
  * or after Retry-After when Jira rate limits.
@@ -248,8 +295,11 @@ export const watch = (input: Watched & { readonly cursor: string | undefined }) 
       state.ended
         ? Effect.undefined
         : Effect.gen(function*() {
+          if (state.fail !== undefined) return yield* state.fail
           if (state.wait !== undefined) yield* Effect.sleep(state.wait)
-          const { items, next } = yield* poll(input, state)
+          const { items, next } = yield* poll(input, state).pipe(
+            Effect.catchTag("SourceFailed", (failed) => failedPoll(input, state, failed))
+          )
           return [items, next] as const
         })
   ).pipe(Stream.flattenIterable)

@@ -39,7 +39,8 @@ const snapshot: IssueSnapshot = {
         body: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Looks good" }] }] }
       }
     ]
-  }
+  },
+  values: {}
 }
 
 const seenUpTo100: IssueCursor = {
@@ -89,6 +90,27 @@ describe("diffIssue", () => {
     expect(types(undefined)).toEqual(["10042:history:102:1", "10042:history:103:0"])
     expect(types(["resolution", "fixversions"])).toEqual(["10042:history:103:0"])
     expect(types(["fix version"])).toEqual(["10042:history:103:0"])
+  })
+
+  it("reports a watched field whose value changed without a changelog item, once", () => {
+    const watched = { ...snapshot, values: { votes: "1", fixVersions: "1.1" } }
+    const baseline = diffIssue({ siteUrl, previous: seenUpTo100, snapshot: watched, observedAt: at(9) })
+    expect(baseline.cursor.values).toEqual({ votes: "1", fixVersions: "1.1" })
+    const voted = {
+      ...watched,
+      changelog: {
+        start: 0,
+        items: [...histories, { id: "103", created: at(4), author: mia, items: [change("fixVersions", "1.1", "1.2")] }]
+      },
+      values: { votes: "2", fixVersions: "1.2" }
+    }
+    const poll = diffIssue({ siteUrl, previous: baseline.cursor, snapshot: voted, observedAt: at(9) })
+    expect(poll.events.filter((event) => event.type === "field.changed").map((event) => [event.dedupeKey, event.summary]))
+      .toEqual([
+        ["10042:history:103:0", "DEMO-7: fixVersions 1.1 → 1.2 by Mia"],
+        ["10042:value:1:votes", "DEMO-7: votes 1 → 2"]
+      ])
+    expect(diffIssue({ siteUrl, previous: poll.cursor, snapshot: voted, observedAt: at(9) }).events).toEqual([])
   })
 
   it("maps each change and comment to its event type, oldest first", () => {

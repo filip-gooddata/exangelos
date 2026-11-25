@@ -42,7 +42,9 @@ const releaseContaining = (
   sha: string
 ): Effect.Effect<Release | undefined, GitHubError> =>
   Effect.gen(function*() {
-    for (const candidate of yield* github.releases(token, repo)) {
+    const releases = yield* github.releases(token, repo)
+    if (releases.length === 0) yield* github.checkCommit(token, repo, sha)
+    for (const candidate of releases) {
       const contains = yield* github.contains(token, repo, sha, candidate.tag).pipe(
         Effect.catchTag("GitHubNotFound", () => github.checkCommit(token, repo, sha).pipe(Effect.as(false)))
       )

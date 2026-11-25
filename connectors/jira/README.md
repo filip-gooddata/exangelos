@@ -25,7 +25,7 @@ macOS asks once whether `security` may read the item. The stored copies do not f
 
 - `target`: an issue key or a JQL query.
 - `kind`: `issue` or `jql`, when the target's shape is not enough.
-- `fields`: field ids or names, such as `resolution`, `fixVersions` or `customfield_10010`. `field.changed` then reports only these fields. Default: every field. Status, assignee and comments have their own event types, so `fields` does not affect them.
+- `fields`: field ids or names, such as `resolution`, `fixVersions` or `customfield_10010`. `field.changed` then reports only these fields. Default: every field. Status, assignee and comments have their own event types, so `fields` does not affect them. With an issue target, the connector also reads the current value of each field id in `fields` and reports a change that the changelog does not record, such as `votes`, as `field.changed` with an empty `historyId` and no author. Field names are matched in the changelog only.
 
 With an issue target only:
 
@@ -55,6 +55,8 @@ None of these parameters change the subject, so `exangelos update` can change th
 | `commit.added` | `<issue id>:github:<repo>:commit:<sha>` |
 | `release.found` | `<issue id>:github:<repo>:release:<sha>` |
 | `github.unavailable` | `<issue id>:github:unavailable:<outage number>` |
+| `jira.unavailable` | `<subject>:unavailable:<time the outage began>` |
+| `field.changed` from a value | `<issue id>:value:<change number>:<field id>` |
 
 Jira events come from the issue's changelog and comments, so a change and its reversal between two polls are both reported. The first poll reports no history.
 
@@ -68,6 +70,8 @@ A GitHub failure never holds back the Jira events. When GitHub refuses `githubTo
 
 The watch ends when the issue is gone or the account can no longer see it, and when a JQL query fails or matches more than 1,000 issues.
 
+When a Jira poll fails for another reason, the watch retries after the poll interval. After 12 failed polls in a row it reports `jira.unavailable` once, then fails so the daemon backs off and reopens it; the next good poll ends the outage. A refused credential does not count: it suspends the subscription at once.
+
 ## Polling
 
 The connector polls once a minute. A poll of an issue reads the issue, its changelog and its comments. With `githubRepo`, it also makes one GitHub search, one commits request per path, and, until `release.found`, one releases request plus a compare for each of the latest five releases, so a tag that moves is seen. GitHub's search API allows 30 requests a minute per token, so about 25 issues with GitHub signals fit in one token.
@@ -76,7 +80,7 @@ When Jira rate limits, the connector waits as long as `Retry-After` asks. When G
 
 ## Cursor
 
-The issue cursor is JSON with `v: 2`. It holds the changelog and comment positions and, with `githubRepo`, the repository, search and `since` it read with, each matched pull request's state, the commits seen per path, and the release found for `sha`. It also records whether the GitHub signals are unavailable and how many outages there were. A `v: 1` cursor carries over: the issue events continue where it stopped, and the GitHub signals start from a baseline. A cursor of an unknown version starts a new baseline, so going back to a 0.1 connector restarts the subscription from the current state and misses what changed in between.
+The issue cursor is JSON with `v: 2`. It holds the changelog and comment positions and, with `githubRepo`, the repository, search and `since` it read with, each matched pull request's state, the commits seen per path, and the release found for `sha`. It also records whether the GitHub signals are unavailable and how many outages there were, the values of the fields in `fields`, and a reported Jira outage. A `v: 1` cursor carries over: the issue events continue where it stopped, and the GitHub signals start from a baseline. A cursor of an unknown version starts a new baseline, so going back to a 0.1 connector restarts the subscription from the current state and misses what changed in between.
 
 ## Moving from watch-jira.sh
 
@@ -93,7 +97,7 @@ The issue cursor is JSON with `v: 2`. It holds the changelog and comment positio
 | `--since ISO` | `since` |
 | `--sha SHA` | `sha`, with `release.found`. It also fires when a release already contains the commit at the first poll |
 | `AUTH_FAIL` | No count. Jira refusing the token (401, or 403 on the account check) makes the connector unavailable, which suspends the subscription and wakes. GitHub refusing `githubToken` reports `github.unavailable` and Jira events continue |
-| `ERROR` | No wake for a failed Jira poll: the daemon logs it and retries with backoff. An issue that is gone ends the subscription with that reason. A GitHub repository or commit that is gone reports `github.unavailable` |
+| `ERROR` | `jira.unavailable` after 12 failed polls in a row, and the watch keeps retrying. An issue that is gone ends the subscription with that reason. A GitHub repository or commit that is gone reports `github.unavailable` |
 | One-shot exit and re-arm | A subscription keeps watching after each event and dedupes by the keys above. `--max-events 1` ends it after the first event |
 | `--site`, `--cloud-id`, `--keychain-item` | `site`, `email` and `token` from `exangelos connector configure`. The gateway route and cloud id are found from the site |
 | `--interval SEC` | No equivalent. Polls run once a minute |
@@ -109,7 +113,7 @@ Equivalent subscriptions. Set the shell variables first; the values below are ex
 
 ```sh
 KEY=DEMO-7 REPO=owner/repo SHA=0123abc
-JIRA_TYPES=status.changed,assignee.changed,comment.added,comment.deleted,field.changed
+JIRA_TYPES=status.changed,assignee.changed,comment.added,comment.deleted,field.changed,jira.unavailable
 
 # launch KEY
 exangelos subscribe jira "$KEY" fields='["resolution","fixVersions"]' \
