@@ -28,6 +28,15 @@ export const startTimeout = Duration.seconds(30)
 /** How long a started connector may take to serve its logo. */
 export const iconTimeout = Duration.seconds(10)
 
+/** The most of a connector's failure reason that show and wakes carry. */
+export const observationReasonLimit = 300
+
+const bounded = (text: string): string =>
+  text.length <= observationReasonLimit ? text : `${text.slice(0, observationReasonLimit - 1)}…`
+
+/** What show and wakes carry instead of a failure reason that could not be checked for secrets. */
+export const withheldReason = "withheld: the connector's secrets could not be read to redact it"
+
 export const backoff = (failures: number): Duration.Duration =>
   Duration.min(
     Duration.times(restartPolicy.firstDelay, 2 ** Math.max(0, failures - 1)),
@@ -69,6 +78,10 @@ export class ConnectorSupervisor extends Context.Service<ConnectorSupervisor, {
   readonly watch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly unwatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
   readonly rewatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
+  /** Why the subscription's open Watch stream keeps failing, while it does. */
+  readonly observation: (subscription: Ids.SubscriptionId) => Option.Option<Connector.ObservationFailure>
+  /** Whether the subscription's open Watch stream delivered an item, with no failure since. */
+  readonly reading: (subscription: Ids.SubscriptionId) => boolean
   /**
    * Rewatches, on the supervisor's own fiber and one pass at a time, every Watch stream not yet
    * known to be open with the stored wake window.
@@ -127,7 +140,18 @@ export const layerConnectorSupervisor: Layer.Layer<
   const writes = yield* Semaphore.make(1)
   const refreshes = yield* Semaphore.make(1)
   const scope = yield* Effect.scope
-  const observationFailures = new Map<Ids.SubscriptionId, { name: Ids.ConnectorName; category: Connector.ObservationCategory }>()
+  /**
+   * Each failing stream's failure: `raw` is the connector's own reason, kept only to notice a change;
+   * `reason` is that text scrubbed of configured secrets and bounded, the only form that leaves here.
+   */
+  const observationFailures = new Map<
+    Ids.SubscriptionId,
+    Connector.ObservationFailure & { readonly name: Ids.ConnectorName; readonly raw: string }
+  >()
+  /** Streams that delivered an item since they opened, with no failure since. */
+  const readSince = new Set<Ids.SubscriptionId>()
+  const observation = (id: Ids.SubscriptionId): Option.Option<Connector.ObservationFailure> =>
+    Option.map(Option.fromUndefinedOr(observationFailures.get(id)), ({ category, reason, since }) => ({ category, reason, since }))
   /** The logo each connector's latest process served. A new process replaces it; a removal drops it. */
   const icons = new Map<Ids.ConnectorName, Connector.Icon>()
   const status = (connector: Connector.Connector): Connector.Status => {
@@ -237,6 +261,30 @@ export const layerConnectorSupervisor: Layer.Layer<
   const scrub = (text: string, present: ReadonlyArray<readonly [string, Redacted.Redacted<string>]>) =>
     redact(text, present.map(([, value]) => Redacted.value(value)))
 
+  /** Every secret value each process was configured with, kept for the process's life across reconfigurations. */
+  const secretsGiven = new WeakMap<ConnectorProcess, Set<string>>()
+
+  /**
+   * The failure reason scrubbed of every secret the process was given and every one stored now, and
+   * bounded; `withheldReason` when a stored secret cannot be read.
+   */
+  const observationReason = (name: Ids.ConnectorName, process: ConnectorProcess, text: string) =>
+    Effect.map(
+      Effect.option(Effect.forEach(
+        process.catalogue.configuration.filter((field) => field._tag === "Secret"),
+        (field) => secrets.get(name, field.key)
+      )),
+      (found) =>
+        Option.match(found, {
+          onNone: () => withheldReason,
+          onSome: (stored) =>
+            bounded(redact(text, [
+              ...(secretsGiven.get(process) ?? []),
+              ...stored.flatMap((value) => Option.isSome(value) ? [Redacted.value(value.value)] : [])
+            ]))
+        })
+    )
+
   /** Counts Configure calls per connector, so a stream's late rejection cannot undo a newer configuration. */
   const generations = yield* Ref.make<ReadonlyMap<Ids.ConnectorName, number>>(new Map())
   const generation = (name: Ids.ConnectorName) => Effect.map(Ref.get(generations), (all) => all.get(name) ?? 0)
@@ -252,6 +300,9 @@ export const layerConnectorSupervisor: Layer.Layer<
       }
       const withSecrets: Record<string, string> = { ...values }
       for (const [key, value] of present) withSecrets[key] = Redacted.value(value)
+      const given = secretsGiven.get(process) ?? new Set<string>()
+      for (const [, value] of present) given.add(Redacted.value(value))
+      secretsGiven.set(process, given)
       const answer = yield* process.configure(withSecrets)
       const next: Connector.Configuration = answer._tag === "Accepted"
         ? { _tag: "Set" }
@@ -287,11 +338,20 @@ export const layerConnectorSupervisor: Layer.Layer<
     Effect.gen(function*() {
       const configured = yield* generation(name)
       let failures = 0
+      let firstItemOfAttempt = false
+      const recover = Effect.suspend(() => {
+        observationFailures.delete(id)
+        readSince.add(id)
+        if (!firstItemOfAttempt) return Effect.void
+        firstItemOfAttempt = false
+        return intake.observationRecovered(id)
+      })
       while (true) {
         const found = yield* subscriptions.find(id)
         if (Option.isNone(found) || found.value.state._tag !== "Active") return
         const subscription = found.value
         let stop = false
+        firstItemOfAttempt = true
         // A settings refresh during the read sees no recorded wake window and rewatches the stream.
         yield* recordWakeWindow(id, undefined)
         const { wakeWindow } = yield* limits
@@ -304,15 +364,22 @@ export const layerConnectorSupervisor: Layer.Layer<
         }).pipe(
           Stream.runForEachWhile((item) =>
             // Interrupting the stream waits until an item is fully ingested.
-            Effect.map(Effect.uninterruptible(intake.ingest(id, item)), (verdict) => {
-              observationFailures.delete(id)
-              failures = 0
-              stop = verdict === "stop"
-              return !stop
-            })
+            Effect.map(
+              Effect.uninterruptible(Effect.gen(function*() {
+                const verdict = yield* intake.ingest(id, item)
+                failures = 0
+                yield* recover
+                return verdict
+              })),
+              (verdict) => {
+                stop = verdict === "stop"
+                return !stop
+              }
+            )
           ),
           Effect.result
         )
+        if (result._tag === "Failure") readSince.delete(id)
         if (stop) return
         if (result._tag === "Failure") {
           const error = result.failure
@@ -323,12 +390,25 @@ export const layerConnectorSupervisor: Layer.Layer<
             return
           }
           const category = error.category ?? "unavailable"
-          if (observationFailures.get(id)?.category !== category) {
-            observationFailures.set(id, { name, category })
+          const previous = observationFailures.get(id)
+          const now = yield* DateTime.now
+          const since = previous?.since ?? now
+          const reason = previous?.raw === error.reason
+            ? previous.reason
+            : yield* observationReason(name, process, error.reason)
+          observationFailures.set(id, { name, category, reason, since, raw: error.reason })
+          if (previous?.category !== category) {
             yield* Effect.logWarning("watch observation failed").pipe(
-              Effect.annotateLogs({ connector: name, subscription: id, category })
+              Effect.annotateLogs({
+                connector: name,
+                subscription: id,
+                category,
+                attempts: failures + 1,
+                failingFor: Duration.format(DateTime.distance(since, now))
+              })
             )
           }
+          yield* intake.observationFailing(id, { category, reason, since })
         }
         failures++
         yield* Effect.sleep(backoff(failures))
@@ -345,6 +425,7 @@ export const layerConnectorSupervisor: Layer.Layer<
       if (Option.isNone(connector) || !ConnectorRules.isAvailable(connector.value) || process === undefined) return
       yield* FiberMap.run(streams, id, Effect.ensuring(runStream(id, name, process), Effect.suspend(() => {
         observationFailures.delete(id)
+        readSince.delete(id)
         return recordWakeWindow(id, undefined)
       })), {
         onlyIfMissing: true
@@ -698,6 +779,8 @@ export const layerConnectorSupervisor: Layer.Layer<
     // The intake may unwatch from inside the stream's own ingest, so the removal runs on its own fiber.
     unwatch: (subscription) => Effect.asVoid(Effect.forkDetach(FiberMap.remove(streams, subscription))),
     rewatch,
+    observation,
+    reading: (subscription) => readSince.has(subscription),
     settingsChanged: Effect.asVoid(Effect.forkIn(refreshes.withPermit(refresh), scope)),
     exclusiveFor: (name, effect) => everyName.withPermits(1)(nameLock(name).withPermits(1)(effect)),
     exclusive: (effect) => everyName.withPermits(allPermits)(effect),

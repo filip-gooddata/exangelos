@@ -54,15 +54,27 @@ export const stateText = (state: Subscription.State): string => {
 const pending = (subscription: Subscription.Subscription): number =>
   subscription.lastNumber - subscription.ackedThrough
 
-const subscriptionRow = (subscription: Subscription.Subscription): Array<string> => [
+const observationReasons: Record<Connector.ObservationCategory, string> = {
+  unavailable: "source unavailable. Check the source application and connector configuration",
+  unreadable: "source could not be read. Check the configured location and read permissions",
+  "invalid-data": "source or checkpoint could not be validated. Check source availability and connector compatibility",
+  "scope-changed": "saved source identity could not be verified. Check the configured location and reselect the source if it changed"
+}
+
+const observationText = (observation: NonNullable<Subscription.Listed["observation"]>): string =>
+  `failing since ${time(observation.since)}: ${observationReasons[observation.category]}`
+
+const subscriptionRow = (subscription: Subscription.Listed): Array<string> => [
   subscription.id,
   subscription.connector,
   subscription.subject,
-  stateText(subscription.state),
+  subscription.observation === undefined
+    ? stateText(subscription.state)
+    : `${stateText(subscription.state)}, failing (${subscription.observation.category})`,
   `${pending(subscription)} pending`
 ]
 
-export const subscription = (subscription: Subscription.Subscription): string =>
+export const subscription = (subscription: Subscription.Listed | Subscription.Shown): string =>
   fields([
     ["Subscription", subscription.id],
     ["Connector", subscription.connector],
@@ -71,6 +83,11 @@ export const subscription = (subscription: Subscription.Subscription): string =>
     ["Parameters", parametersText(subscription.parameters) || undefined],
     ["Event types", subscription.eventTypes?.join(", ") ?? "all"],
     ["State", `${stateText(subscription.state)} since ${time(subscription.stateSince)}`],
+    ["Observation", subscription.observation === undefined ? undefined : observationText(subscription.observation)],
+    [
+      "Failure",
+      subscription.observation !== undefined && "reason" in subscription.observation ? subscription.observation.reason : undefined
+    ],
     ["Wakes", subscription.wakeTarget === undefined ? "none (pull-only)" : sessionText(subscription.wakeTarget)],
     ["Event alerts", subscription.eventAlerts ? "on" : "off"],
     ["Events", `${subscription.lastNumber} received, acknowledged through ${subscription.ackedThrough}`],
@@ -79,7 +96,7 @@ export const subscription = (subscription: Subscription.Subscription): string =>
     ["Expires", time(subscription.expiresAt)]
   ]).join("\n")
 
-export const subscriptions = (list: ReadonlyArray<Subscription.Subscription>): string =>
+export const subscriptions = (list: ReadonlyArray<Subscription.Listed>): string =>
   list.length === 0 ? "No subscriptions." : columns(list.map(subscriptionRow)).join("\n")
 
 const eventLines = (event: Event.Event): Array<string> => [
@@ -157,12 +174,6 @@ export const connectors = (list: ReadonlyArray<Connector.Connector>): string =>
       connector.catalogue === undefined ? "" : connector.catalogue.eventTypes.map((spec) => spec.type).join(", ")
     ])).join("\n")
 
-const observationReasons: Record<Connector.ObservationCategory, string> = {
-  unavailable: "source unavailable. Check the source application and connector configuration",
-  unreadable: "source could not be read. Check the configured location and read permissions",
-  "invalid-data": "source or checkpoint could not be validated. Check source availability and connector compatibility",
-  "scope-changed": "saved source identity could not be verified. Check the configured location and reselect the source if it changed"
-}
 
 export const connector = (connector: Connector.Status): string => {
   const catalogue = connector.catalogue

@@ -1,6 +1,6 @@
 import { Context, Schema } from "effect"
 import type { Effect, Option } from "effect"
-import { Catalogue, Ids, type Refusal, Session } from "@exangelos/domain"
+import { Catalogue, type Connector, Ids, type Refusal, Session } from "@exangelos/domain"
 import type { OfficialFetchFailed } from "../ports/OfficialConnectorSource.ts"
 
 export const Described = Schema.Struct({
@@ -46,4 +46,11 @@ export class ConnectorAccess extends Context.Service<ConnectorAccess, {
    * an item being ingested, so never call it while holding the subscription's lock.
    */
   readonly rewatch: (subscription: Ids.SubscriptionId) => Effect.Effect<void>
+  /**
+   * Why the subscription's Watch stream keeps failing while its connector runs, from the first
+   * failure until an item arrives again or the stream stops. None while it is healthy or unwatched.
+   */
+  readonly observation: (subscription: Ids.SubscriptionId) => Effect.Effect<Option.Option<Connector.ObservationFailure>>
+  /** Whether the subscription's open Watch stream delivered an item with no failure since: proof it reads again. */
+  readonly reading: (subscription: Ids.SubscriptionId) => Effect.Effect<boolean>
 }>()("@exangelos/application/ConnectorAccess") {}

@@ -167,6 +167,8 @@ const wakeReasons: Record<Wake.WakeReason, string> = {
   paused: "paused itself",
   expired: "expired",
   suspended: "suspended",
+  failing: "failing to read",
+  recovered: "reading again",
   ended: "ended",
   cancelled: "cancelled"
 }

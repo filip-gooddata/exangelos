@@ -11,8 +11,9 @@ import { DeliveryFailed, WakeTarget } from "../../ports/WakeTarget.ts"
 import { currentLimits } from "../Limits.ts"
 import type { SubscriptionLocks } from "../Locks.ts"
 import { logAnnotations } from "../Transitions.ts"
-import { withSubscription } from "./Intake.ts"
+import { followRecovery, withSubscription } from "./Intake.ts"
 import { RemovedConnectors } from "../RemovedConnectors.ts"
+import { ConnectorAccess } from "../../seam/ConnectorAccess.ts"
 
 export type DeliveryServices =
   | WakeRepository
@@ -23,6 +24,7 @@ export type DeliveryServices =
   | SettingsStore
   | SubscriptionLocks
   | RemovedConnectors
+  | ConnectorAccess
 
 /** How long one attempt may take before it counts as failed, so a hung session cannot stall delivery. */
 export const deliveryTimeout = Duration.seconds(30)
@@ -80,6 +82,14 @@ const decide = (
         if (Option.isNone(why)) return wait
         return send(Option.map(why.value, (w) => Delivery.content(subscription, w, pending)))
       }
+      case "failing": {
+        const failure = yield* (yield* ConnectorAccess).observation(subscription.id)
+        return send(Option.map(failure, (f) => Delivery.content(subscription, { _tag: "Failing", ...f }, pending)))
+      }
+      case "recovered": {
+        if (!(yield* (yield* ConnectorAccess).reading(subscription.id))) return drop
+        return send(Option.some(Delivery.content(subscription, { _tag: "Recovered" }, pending)))
+      }
       default:
         return send(Delivery.waitContent(subscription, pending, Option.none()))
     }
@@ -122,16 +132,25 @@ const claim = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
     Option.flatten
   )
 
-/** Under the subscription's lock: stores the outcome while the wake is still being sent; a newer wake or a drop wins. */
+/**
+ * Under the subscription's lock: stores the outcome while the wake is still being sent; a newer wake
+ * or a drop wins, except that a wake replaced while it was sent still records that it arrived.
+ */
 const settle = (wake: Wake.Wake) =>
   withSubscription(wake.subscription, () =>
     Effect.gen(function*() {
-      if (!Option.exists(yield* findWake(wake.subscription, wake.id), (current) => current.state === "sending")) return
+      const current = yield* findWake(wake.subscription, wake.id)
+      const recordable = Option.exists(current, (found) =>
+        found.state === "sending" || (found.state === "replaced" && wake.state === "delivered"))
+      if (!recordable) return
       const wakes = yield* WakeRepository
       yield* wakes.update(wake)
     }))
 
 const attempt = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
+  Effect.andThen(attemptOnce(listed, now, limits), followRecovery(listed.subscription))
+
+const attemptOnce = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
   Effect.gen(function*() {
     const claimed = yield* claim(listed, now, limits)
     if (Option.isNone(claimed)) return

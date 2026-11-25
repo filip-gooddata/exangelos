@@ -1,9 +1,10 @@
 import { Schema } from "effect"
+import { ObservationFailure } from "./Connector.ts"
 import { AckedThrough, SubscriptionId, WakeId } from "./Ids.ts"
 import { Actor } from "./Session.ts"
 import { EndReason, PauseReason } from "./Subscription.ts"
 
-export const WakeReason = Schema.Literals(["events", "paused", "expired", "suspended", "ended", "cancelled"])
+export const WakeReason = Schema.Literals(["events", "paused", "expired", "suspended", "failing", "recovered", "ended", "cancelled"])
 export type WakeReason = typeof WakeReason.Type
 
 export const WakeState = Schema.Literals(["waiting", "sending", "delivered", "replaced", "dropped"])
@@ -40,7 +41,9 @@ export const Why = Schema.TaggedUnion({
   Expired: {},
   Ended: { reason: EndReason },
   Cancelled: { actor: Actor },
-  Suspended: { since: Schema.DateTimeUtc, problem: Schema.String }
+  Suspended: { since: Schema.DateTimeUtc, problem: Schema.String },
+  Failing: ObservationFailure.fields,
+  Recovered: {}
 })
 export type Why = typeof Why.Type
 

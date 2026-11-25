@@ -11,7 +11,14 @@ export class SubscriptionIntakeFake extends Context.Service<SubscriptionIntakeFa
   readonly connectorChanges: Effect.Effect<ReadonlyArray<Connector.Connector>>
   /** Calls to `connectorRemoved`, in order. */
   readonly connectorRemovals: Effect.Effect<ReadonlyArray<Removal>>
+  /** Calls to `observationFailing` (with a failure) and `observationRecovered` (without), in order. */
+  readonly observations: Effect.Effect<ReadonlyArray<ObservationReport>>
 }>()("@exangelos/application/testing/SubscriptionIntakeFake") {}
+
+export interface ObservationReport {
+  readonly subscription: Ids.SubscriptionId
+  readonly failure?: Connector.ObservationFailure
+}
 
 export interface Removal {
   readonly connector: Ids.ConnectorName
@@ -26,6 +33,7 @@ export const layerSubscriptionIntake: Layer.Layer<SubscriptionIntake | Subscript
     const stopped = yield* Ref.make<ReadonlySet<Ids.SubscriptionId>>(new Set())
     const connectorChanges = yield* Ref.make<ReadonlyArray<Connector.Connector>>([])
     const removals = yield* Ref.make<ReadonlyArray<Removal>>([])
+    const observations = yield* Ref.make<ReadonlyArray<ObservationReport>>([])
     return Layer.merge(
       Layer.succeed(SubscriptionIntake, {
         ingest: (subscription, item) =>
@@ -36,14 +44,18 @@ export const layerSubscriptionIntake: Layer.Layer<SubscriptionIntake | Subscript
             return verdict
           }),
         connectorChanged: (connector) => Ref.update(connectorChanges, (all) => [...all, connector]),
-        connectorRemoved: (connector, since, problem) => Ref.update(removals, (all) => [...all, { connector, since, problem }])
+        connectorRemoved: (connector, since, problem) => Ref.update(removals, (all) => [...all, { connector, since, problem }]),
+        observationFailing: (subscription, failure) =>
+          Ref.update(observations, (all) => [...all, { subscription, failure }]),
+        observationRecovered: (subscription) => Ref.update(observations, (all) => [...all, { subscription }])
       }),
       Layer.succeed(SubscriptionIntakeFake, {
         ingested: (subscription) =>
           Effect.map(Ref.get(items), (all) => all.filter((entry) => entry.subscription === subscription).map((entry) => entry.item)),
         stop: (subscription) => Ref.update(stopped, (all) => new Set(all).add(subscription)),
         connectorChanges: Ref.get(connectorChanges),
-        connectorRemovals: Ref.get(removals)
+        connectorRemovals: Ref.get(removals),
+        observations: Ref.get(observations)
       })
     )
   })

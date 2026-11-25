@@ -207,6 +207,7 @@ export const connector = Connector.make({
           )
           const { filters, ref } = yield* read(p).pipe(Effect.mapError((reason) => new Connector.SourceFailed({ reason })))
           let last = cursor
+          let first = true
           return Poll.watch(connection, ref, filters, cursor).pipe(
             Stream.mapError((error) => {
               switch (error._tag) {
@@ -221,8 +222,9 @@ export const connector = Connector.make({
               }
             }),
             Stream.flatMap((polled) => {
-              const moved = polled.cursor !== last
+              const moved = polled.cursor !== last || first
               last = polled.cursor
+              first = false
               const items = polled.events.map((event, i) =>
                 toItem(event, i === polled.events.length - 1 ? polled.cursor : undefined)
               )
