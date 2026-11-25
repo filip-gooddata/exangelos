@@ -11,7 +11,7 @@ To take the token from a GitHub CLI login, let the CLI run `gh` and store its an
 
 ```sh
 exangelos connector configure github-pr \
-  --secret-command 'host=printf %s github.com' \
+  host=github.com \
   --secret-command 'token=gh auth token --hostname github.com'
 ```
 

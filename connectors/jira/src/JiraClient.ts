@@ -43,9 +43,11 @@ export class JiraClient extends Context.Service<JiraClient, {
   readonly checkSite: (site: JiraSite) => Effect.Effect<JiraSite, JiraError>
   /**
    * Finds the base that accepts the credential. A classic API token reads /rest/api/3/myself on the
-   * site URL. When the site answers 401, the cloud id from the unauthenticated /_edge/tenant_info
-   * leads to the Atlassian gateway, where a scoped API token reads /myself. Fails with
-   * CredentialRejected when neither accepts it.
+   * site URL, which answers 401 to anything else. Then the cloud id from the unauthenticated
+   * /_edge/tenant_info leads to the Atlassian gateway, where a scoped API token reads
+   * /rest/api/3/serverInfo. That needs no scope, yet the gateway answers 401 to a credential it does
+   * not accept, so a token without read:jira-user passes. Fails with CredentialRejected when neither
+   * accepts it.
    */
   readonly resolveRoute: (site: JiraSite) => Effect.Effect<JiraSite, JiraError>
   /**
@@ -290,13 +292,17 @@ export const layer = Layer.effect(
       error._tag === "DecodeFailure" ||
       (error._tag === "HttpFailure" && error.status !== undefined && error.status < 500)
 
-    const myself = (site: JiraSite) =>
-      get(site, "/rest/api/3/myself", {}, MyselfWire).pipe(
+    const refusing403 = <A>(probe: Effect.Effect<A, JiraError>) =>
+      probe.pipe(
         Effect.catchIf(
           (error) => error._tag === "HttpFailure" && error.status === 403,
           () => Effect.fail(new CredentialRejected({ status: 403 }))
         )
       )
+
+    const myself = (site: JiraSite) => refusing403(get(site, "/rest/api/3/myself", {}, MyselfWire))
+
+    const gatewayAccepts = (site: JiraSite) => refusing403(get(site, "/rest/api/3/serverInfo", {}, ServerInfoWire))
 
     const resolveRoute = (site: JiraSite): Effect.Effect<JiraSite, JiraError> => {
       const direct = { ...site, api: site.url }
@@ -306,7 +312,7 @@ export const layer = Layer.effect(
           cloudId(site).pipe(
             Effect.catchIf(isAnswer, () => Effect.fail(rejected)),
             Effect.map((id) => ({ ...site, api: gatewayApi(id) })),
-            Effect.tap(myself)
+            Effect.tap(gatewayAccepts)
           ))
       )
     }

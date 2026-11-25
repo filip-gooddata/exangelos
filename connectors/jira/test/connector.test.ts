@@ -51,11 +51,16 @@ const site = (call: StubCall): StubAnswer => {
 
 const gateway = "/ex/jira/cloud-1"
 
-/** A site that takes only a scoped token: 401 on the site URL, the same answers through the gateway. */
+/**
+ * A site that takes only a scoped token without read:jira-user: 401 on the site URL and on /myself,
+ * the same answers as the site through the gateway otherwise.
+ */
 const scoped = (call: StubCall): StubAnswer => {
   if (call.path === "/rest/api/3/serverInfo") return cloud
   if (call.path === "/_edge/tenant_info") return { status: 200, body: { cloudId: "cloud-1" } }
-  if (call.path.startsWith(gateway)) return site({ ...call, path: call.path.slice(gateway.length) })
+  if (call.path.startsWith(gateway) && !call.path.endsWith("/myself")) {
+    return site({ ...call, path: call.path.slice(gateway.length) })
+  }
   return { status: 401, body: { message: "Client must be authenticated" } }
 }
 
@@ -195,7 +200,9 @@ describe("Jira connector", () => {
         if (call.path === "/rest/api/3/serverInfo") return cloud
         if (call.path === "/_edge/tenant_info") return { status: 200, body: { cloudId: "cloud-1" } }
         if (call.path === "/rest/api/3/myself" && checks++ === 0) return site(call)
-        if (call.path.endsWith("/rest/api/3/myself")) return { status: 401, body: { message: "Client must be authenticated" } }
+        if (call.path.endsWith("/rest/api/3/myself") || call.path.startsWith(gateway)) {
+          return { status: 401, body: { message: "Client must be authenticated" } }
+        }
         return { status: 404, body: { errorMessages: ["Issue does not exist or you do not have permission to see it."] } }
       })
       yield* client.Configure({ values })
@@ -207,7 +214,7 @@ describe("Jira connector", () => {
       expect(failure).toMatchObject({ _tag: "CredentialsRejected" })
     }).pipe(Effect.scoped))
 
-  it.effect("calls a gateway 403 on /myself a rejected credential, at configure and while watching", () =>
+  it.effect("calls a gateway 403 a rejected credential, at configure and while watching", () =>
     Effect.gen(function*() {
       let denied = false
       const client = yield* jira((call) =>
@@ -223,6 +230,17 @@ describe("Jira connector", () => {
         expect.objectContaining({ _tag: "CredentialsRejected", reason: "Jira rejected the email and API token (HTTP 403)." })
       )
       expect(yield* client.Configure({ values })).toMatchObject({ _tag: "Rejected", reason: expect.stringContaining("HTTP 403") })
+    }).pipe(Effect.scoped))
+
+  it.effect("names a missing scope when the gateway accepts the token but refuses the issue read", () =>
+    Effect.gen(function*() {
+      const client = yield* jira((call) => call.path.startsWith(`${gateway}/rest/api/3/issue/`) ? { status: 401 } : scoped(call))
+      expect(yield* client.Configure({ values })).toEqual({ _tag: "Accepted" })
+      const failure = yield* client.Watch({ parameters: { target: "DEMO-7" }, eventTypes: [] }).pipe(
+        Stream.runCollect,
+        Effect.flip
+      )
+      expect(failure).toMatchObject({ _tag: "CredentialsRejected", reason: expect.stringContaining("lacks a read scope") })
     }).pipe(Effect.scoped))
 
   it.effect("does not call a credential rejected when the site cannot tell its cloud id", () =>
@@ -390,6 +408,6 @@ describe("Jira connector", () => {
     const manifest = Schema.decodeUnknownSync(Manifest.Manifest)(
       JSON.parse(readFileSync(new URL("../connector.json", import.meta.url), "utf8"))
     )
-    expect(manifest).toEqual({ name: "jira", version: "0.2.0", entry: { _tag: "Bundle", path: "dist/main.js" }, icon: "icon.svg" })
+    expect(manifest).toEqual({ name: "jira", version: "0.2.1", entry: { _tag: "Bundle", path: "dist/main.js" }, icon: "icon.svg" })
   })
 })

@@ -136,10 +136,14 @@ const devLink = Command.make(
     })
 ).pipe(Command.withDescription("Trust a connector working directory for development"))
 
+/**
+ * The fields the daemon keeps in the secret store. A text field that says where secrets are sent is
+ * stored as plain text, and changing it clears the stored secrets, so it is given as key=value.
+ */
 const secretFieldKeys = (connector: Connector.Connector): Set<string> =>
   new Set(
     (connector.catalogue?.configuration ?? [])
-      .filter((field) => field._tag === "Secret" || field.secretDestination)
+      .filter((field) => field._tag === "Secret")
       .map((field) => field.key)
   )
 
