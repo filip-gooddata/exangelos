@@ -72,13 +72,20 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
     const connector = launch.name
     const startFailed = (reason: string) => new ConnectorRuntime.ConnectorStartFailed({ connector, reason })
     const crashed = (reason: string) => new ConnectorRuntime.ConnectorCrashed({ connector, reason })
+    const lost = (error: RpcClientError.RpcClientError) => crashed(`Lost the connector's connection: ${describeLoss(error)}`)
+    // Completed when the transport ends for good, whether or not a call was in flight; a call that fails on its own
+    // (an answer that does not decode) leaves the transport, and so the process, running.
     const connectionLost = yield* Deferred.make<ConnectorRuntime.ConnectorCrashed>()
-    const loseConnection = (reason: string) => {
-      const error = crashed(`Lost the connector's connection: ${reason}`)
-      Deferred.doneUnsafe(connectionLost, Effect.succeed(error))
-      return error
-    }
-    const lost = (error: RpcClientError.RpcClientError) => loseConnection(describeLoss(error))
+    let silence: string | undefined
+    const hooks = RpcClient.ConnectionHooks.of({
+      onConnect: Effect.void,
+      onDisconnect: Effect.suspend(() =>
+        Deferred.succeed(
+          connectionLost,
+          crashed(`Lost the connector's connection: ${silence ?? "its stdin or stdout closed or failed"}`)
+        )
+      ).pipe(Effect.asVoid)
+    })
 
     const { args, command, env } = commandFor(launch)
     const child = yield* ChildProcess.make(command, args, {
@@ -100,8 +107,10 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
       const protocol = yield* RpcStdio.makeProtocol(child, {
         pingInterval,
         pingTimeout,
-        onPingTimeout: Effect.sync(() => loseConnection(`it answered no ping for ${Duration.format(pingTimeout)}`))
-      })
+        onPingTimeout: Effect.sync(() => {
+          silence = `it answered no ping for ${Duration.format(pingTimeout)}`
+        })
+      }).pipe(Effect.provideService(RpcClient.ConnectionHooks, hooks))
       const client = yield* RpcClient.make(ConnectorProtocol.ConnectorProtocol).pipe(
         Effect.provideService(RpcClient.Protocol, protocol)
       )

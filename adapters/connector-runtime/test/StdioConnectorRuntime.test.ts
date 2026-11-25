@@ -42,6 +42,10 @@ const runtime = StdioConnectorRuntime.layer().pipe(Layer.provide(recordingSpawne
 
 const impatientRuntime = StdioConnectorRuntime.layer({ startTimeout: "1 millis" }).pipe(Layer.provide(recordingSpawner))
 
+const watchfulRuntime = StdioConnectorRuntime.layer({ pingInterval: "100 millis", pingTimeout: "300 millis" }).pipe(
+  Layer.provide(recordingSpawner)
+)
+
 const hastyRuntime = StdioConnectorRuntime.layer({ stopTimeout: "200 millis" }).pipe(Layer.provide(recordingSpawner))
 
 const start = Effect.fnUntraced(function*(target: ConnectorRuntime.Launch) {
@@ -115,6 +119,29 @@ describe("StdioConnectorRuntime", { timeout: 30_000 }, () => {
       expect(yield* Effect.flip(items)).toMatchObject(crashed)
       expect(yield* Effect.flip(connector.describe({ ticks: 1 }))).toMatchObject(crashed)
       expect(yield* connector.exited).toMatchObject(crashed)
+    }).pipe(Effect.scoped, Effect.provide(runtime)))
+
+  it.live("reports a running connector that stops answering while no call is in flight as exited", () =>
+    Effect.gen(function*() {
+      const connector = yield* start(template)
+      const silent = spawned.at(-1)!
+      yield* Effect.addFinalizer(() => Effect.ignore(silent.kill({ killSignal: "SIGKILL" })))
+      // A stopped process keeps its pipes open but answers no ping, like a stalled one.
+      process.kill(silent.pid, "SIGSTOP")
+      const exited = yield* connector.exited.pipe(Effect.timeout("5 seconds"))
+      expect(exited).toMatchObject({
+        _tag: "ConnectorCrashed",
+        reason: "Lost the connector's connection: it answered no ping for 300ms"
+      })
+      expect(yield* silent.isRunning).toBe(true)
+    }).pipe(Effect.scoped, Effect.provide(watchfulRuntime)))
+
+  it.live("keeps a connector running after an answer that does not decode", () =>
+    Effect.gen(function*() {
+      const connector = yield* start(launch(`${import.meta.dirname}/fixture`, "garbled.ts"))
+      yield* Effect.ignore(connector.configure({}))
+      expect(yield* connector.configure({})).toEqual({ _tag: "Accepted" })
+      expect(yield* connector.exited.pipe(Effect.timeoutOption("1 second"))).toEqual(Option.none())
     }).pipe(Effect.scoped, Effect.provide(runtime)))
 
   it.live("logs each stderr line with the connector's name, through its exit", () =>

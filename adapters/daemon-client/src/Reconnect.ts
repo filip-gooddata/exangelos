@@ -11,9 +11,11 @@ export class DaemonUnreachable extends Schema.TaggedError<DaemonUnreachable>()("
   reason: Schema.String
 }) {}
 
-const daemonStopped = new RpcClientError.RpcClientError({
-  reason: new RpcClientError.RpcClientDefect({ message: "the daemon stopped before it answered", cause: undefined })
-})
+/** A lost connection that {@link persist} retries, for a failure that is not an RpcClientError itself. */
+export const lostWith = (message: string): RpcClientError.RpcClientError =>
+  new RpcClientError.RpcClientError({ reason: new RpcClientError.RpcClientDefect({ message, cause: undefined }) })
+
+const daemonStopped = lostWith("the daemon stopped before it answered")
 
 /**
  * Turns a call the daemon interrupted, as it does to every call in flight when it stops, into a lost connection that

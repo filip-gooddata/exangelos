@@ -101,7 +101,7 @@ describe("connector supervision over the real runtime", () => {
       yield* Effect.addFinalizer(() => Effect.ignore(frozen.kill({ killSignal: "SIGKILL" })))
 
       // A stopped process keeps its pipes open but answers no ping, like a stalled one.
-      yield* frozen.kill({ killSignal: "SIGSTOP" })
+      process.kill(frozen.pid, "SIGSTOP")
       yield* until(connectorOf("template"), (connector) => connector.process !== "running")
 
       yield* until(connectorOf("template"), (connector) => connector.process === "running")

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
+import { DaemonClient } from "@exangelos/daemon-client"
+import { AgentClient } from "@exangelos/mcp"
 import { inMemory, mcpClient, restartedWaits, subscribeInput } from "./daemon.ts"
 
 describe("MCP tools", () => {
@@ -84,9 +86,19 @@ describe("MCP tools", () => {
 
   it.live("keeps waiting when the daemon stops the wait, as it does on a restart", () =>
     Effect.gen(function*() {
-      const mcp = yield* mcpClient(inMemory)
+      // The second connection after the probe answers finds the daemon restarting again.
+      const { connect } = yield* Effect.provide(AgentClient.AgentClient, inMemory)
+      let connections = 0
+      const restarting = Layer.succeed(AgentClient.AgentClient, {
+        connect: Effect.suspend(() =>
+          ++connections === 4
+            ? Effect.fail(new DaemonClient.DaemonNotRunning({ path: "daemon.sock", reason: "it is restarting" }))
+            : connect
+        )
+      })
+      const mcp = yield* mcpClient(restarting)
       const result = yield* mcp.callTool({ name: "wait", arguments: { id: restartedWaits.id } })
-      expect(restartedWaits.interrupts).toBe(2)
+      expect(restartedWaits).toMatchObject({ interrupts: 2, probes: 3 })
       expect(result.isError).toBe(false)
       expect(result.structuredContent).toMatchObject({ wake: { subscription: restartedWaits.id } })
     }), { timeout: 10_000 })

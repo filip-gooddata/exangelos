@@ -214,14 +214,20 @@ export const handlers = toolkit.toLayer(Effect.gen(function*() {
     events: (input) => call((client) => client.Events(input)).pipe(Effect.map((events) => ({ events }))),
     ack: (input) => call((client) => client.Ack(input)),
     // A daemon restart or upgrade drops the call; the subscription survives it, so the wait goes on.
-    wait: (input) =>
-      Reconnect.persist(
-        Effect.scoped(Effect.flatMap(connect, (client) => Reconnect.daemonInterruptsAsLoss(client.Wait(input)))),
-        Effect.scoped(Effect.flatMap(connect, (client) => client.ListConnectors()))
+    wait: (input) => {
+      let answered = false
+      // Once the daemon has answered again, failing to reach it means it is restarting once more, not that it is missing.
+      const reach = Effect.catchTag(connect, "DaemonNotRunning", (failure) => Effect.fail(answered ? Reconnect.lostWith(failure.reason) : failure))
+      return Reconnect.persist(
+        Effect.scoped(Effect.flatMap(reach, (client) => Reconnect.daemonInterruptsAsLoss(client.Wait(input)))),
+        Effect.scoped(Effect.flatMap(reach, (client) => Reconnect.daemonInterruptsAsLoss(client.ListConnectors()))).pipe(
+          Effect.tap(() => Effect.sync(() => (answered = true)))
+        )
       ).pipe(
         Effect.mapError((failure) => fail(failure, input.id)),
         Effect.map((wake) => ({ text: WakeText.render(wake), wake }))
-      ),
+      )
+    },
     pause: (input) => call((client) => client.Pause(input)),
     resume: (input) => call((client) => client.Resume(input), input.id).pipe(Effect.map(withHint)),
     retarget: ({ id, ...choice }) =>
