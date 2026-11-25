@@ -73,7 +73,7 @@ An active subscription whose connector is unavailable; it continues by itself wh
 _Avoid_: Paused, stalled, blocked
 
 **Failing**:
-An active subscription whose connector runs but cannot read its subject, retrying until an item arrives again. Its session gets one wake once it has failed for five minutes, at most one an hour, and one more when it recovers.
+An active subscription whose connector runs but cannot read its subject, retrying until a read succeeds again. Its session gets one wake once it has failed for five minutes, at most one an hour, and one more when it recovers.
 _Avoid_: Suspended, degraded, broken, erroring
 
 **Paused**:
