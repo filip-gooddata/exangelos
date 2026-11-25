@@ -162,7 +162,14 @@ def resolve(key, reference, cache, account):
                 continue
             if account and partition[:2] != account:
                 continue
-            rows = native.messages(records, chat)
+            if replies and not parent_hint:
+                found = native.messages(records, chat, lookup=mid)
+                if mid not in found:
+                    continue
+                root_filter = found[mid][0] or mid
+            else:
+                root_filter = parent_hint if replies else None
+            rows = native.messages(records, chat, root_filter=root_filter)
             if not rows or (mid and mid not in rows):
                 continue
             name, group = native.conversation_metadata(tables, partition, chat)
@@ -193,7 +200,7 @@ def pinned(key, pin, cache, account, consent):
     records = [records for table, binding, records in tables
                if table == 'replychains-2' and binding == pin['partition']]
     native.check(len(records) == 1, 24)
-    rows = native.messages(records[0], pin['chat'])
+    rows = native.messages(records[0], pin['chat'], root_filter=pin['root'])
     native.check(rows and (not pin['root'] or
                  (pin['root'] in rows and rows[pin['root']][0] is None)), 24)
     name, group = native.conversation_metadata(tables, pin['partition'], pin['chat'])

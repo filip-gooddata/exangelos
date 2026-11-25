@@ -84,7 +84,7 @@ def is_channel(chat):
 
 
 def stores(view):
-    names, tables, data = {}, {}, {}
+    names, tables, paths, data = {}, {}, {}, {}
     for raw, value in view.items():
         db, store, index, pos = prefix(raw)
         tail = raw[pos:]
@@ -102,8 +102,10 @@ def stores(view):
             check(reader.p == len(reader.data))
             if kind == b'\0':
                 tables[db, sid] = value.decode('utf-16-be')
+            elif kind == b'\1':
+                paths[db, sid] = value
         elif db and store and index == 1:
-            data.setdefault((db, store), []).append(value)
+            data.setdefault((db, store), []).append((tail, value))
     result = []
     for (db, store), table in tables.items():
         if table not in ('replychains-2', 'conversations'):
@@ -114,7 +116,18 @@ def stores(view):
         check(match, 23)
         manager, tenant, user, locale = match.groups()
         check((table == 'replychains-2') == (manager == 'replychain-manager'))
-        result.append((table, [tenant.lower(), user.lower(), locale, db, store], data.get((db,store), [])))
+        compound = (table == 'replychains-2' and (db, store) in paths and
+                    ser._keypath(paths[db, store]) == ['conversationId', 'replyChainId'])
+        records = []
+        for key, raw in data.get((db, store), []):
+            primary = None
+            if compound:
+                reader = ser.Reader(key)
+                primary = ser._idb_key(reader)
+                check(reader.p == len(key) and type(primary) is list and len(primary) == 2
+                      and type(primary[0]) is str)
+            records.append((primary, raw))
+        result.append((table, [tenant.lower(), user.lower(), locale, db, store], records))
     check(any(table == 'replychains-2' for table, _, _ in result))
     return result
 
@@ -129,22 +142,48 @@ def identifier(v):
     return v
 
 
-def messages(records, chat):
+def mapped_identity(key, node, chat):
+    if type(node) is not dict or node.get('conversationId', chat) != chat:
+        return None
+    try:
+        identity = identifier(node.get('id'))
+    except Refusal:
+        return None
+    try:
+        numeric = identifier(key)
+    except Refusal:
+        # Current clients can index a message by its opaque dedupe key.
+        if (type(key) is str and 0 < len(key) <= 512 and key.isprintable()
+                and node.get('dedupeKey') == key and node.get('conversationId') == chat):
+            return identity
+        return None
+    return identity if numeric == identity else None
+
+
+def messages(records, chat, root_filter=None, lookup=None):
     rows = {}
-    for raw in records:
+    for primary, raw in records:
+        if primary and (primary[0] != chat or
+                        (root_filter and identifier(primary[1]) != root_filter)):
+            continue
         chain = ser._decode(raw)
         check(type(chain) is dict and type(chain.get('conversationId')) is str)
+        if primary:
+            check(primary[0] == chain['conversationId'] and
+                  identifier(primary[1]) == identifier(chain.get('replyChainId')))
         if chain['conversationId'] != chat:
             continue
         root = chain.get('replyChainId')
         if root is not None:
             root = identifier(root)
+            if root_filter and root != root_filter:
+                continue
         entries = chain.get('messageMap')
         check(type(entries) is dict and entries)
         for mid, node in entries.items():
-            check(type(node) is dict and node.get('conversationId',chat) == chat)
-            identity = identifier(node.get('id'))
-            check(identifier(mid) == identity)
+            identity = mapped_identity(mid, node, chat)
+            if identity is None or (lookup and identity != lookup):
+                continue
             explicit = node.get('parentMessageId')
             if explicit not in (None, ''):
                 explicit = identifier(explicit)
@@ -155,6 +194,8 @@ def messages(records, chat):
                 parent = explicit or root
                 if parent == identity:
                     parent = None
+            if root_filter and (parent or identity) != root_filter:
+                continue
             check(identity not in rows or rows[identity] == (parent, node))
             rows[identity] = parent, node
             check(len(rows) <= 500)
@@ -281,7 +322,7 @@ def conversation_metadata(tables, partition, chat):
     for table, binding, records in tables:
         if table != 'conversations' or partition[:3] != binding[:3]:
             continue
-        for raw in records:
+        for _, raw in records:
             row = ser._decode(raw)
             check(type(row) is dict)
             if row.get('id') != chat:

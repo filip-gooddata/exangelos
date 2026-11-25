@@ -103,12 +103,17 @@ def handle(data, p=0):
     size, p = varint(data, p)
     return (offset, size), p
 
+def crc32c_entry(byte):
+    for _ in range(8):
+        byte = (byte >> 1) ^ (0x82f63b78 if byte & 1 else 0)
+    return byte
+
+CRC32C_TABLE = tuple(crc32c_entry(byte) for byte in range(256))
+
 def crc32c(data):
     crc = 0xffffffff
     for byte in data:
-        crc ^= byte
-        for _ in range(8):
-            crc = (crc >> 1) ^ (0x82f63b78 if crc & 1 else 0)
+        crc = (crc >> 8) ^ CRC32C_TABLE[(crc ^ byte) & 255]
     return crc ^ 0xffffffff
 
 def block_at(data, location, budget=None):
