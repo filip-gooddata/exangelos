@@ -1,0 +1,31 @@
+connectors/slack/README.md
+  s_572e2c49a9a228::t_0bc3e9582fe5a0 124-129
+connectors/slack/direct/ledger.py
+  s_572e2c49a9a228::t_42b76ff7b7606a 354-355,360-362,369-370,393-394
+connectors/slack/direct/observation.py
+  s_572e2c49a9a228::t_b9cb08dd9befd2 454
+connectors/slack/direct/source.py
+  s_572e2c49a9a228::t_9ba3e68a6689cd 93
+connectors/slack/direct/test_direct.py
+  s_572e2c49a9a228::t_53d08090bafd17 201
+connectors/slack/direct/test_ledger.py
+  s_572e2c49a9a228::t_f1bab24cd3a0a1 159-177
+connectors/slack/src/Source.ts
+  s_572e2c49a9a228::t_b434c91e5dd17b 44
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "308ffb08cf603261a2df28af6e8d811c2d1de8dd",
+  "prompts": {},
+  "sessions": {
+    "s_572e2c49a9a228": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2136b-c5e1-75d2-983f-c5636e797b3e",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
