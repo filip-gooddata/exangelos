@@ -403,9 +403,11 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
             if eligible and message.get('subtype') in (None, 'file_share'):
                 files = list(visible_files(message))
             if not files:
-                if hidden or not isinstance(fallback, str):
+                if not eligible:
                     continue
                 unavailable = True
+                if fallback is None:
+                    fallback = ''
             elif fallback:
                 # Keep the 0.6.1 raw marker for same-generation cursor validation.
                 legacy_body = token(key, 'body', fallback, message.get('edited'))

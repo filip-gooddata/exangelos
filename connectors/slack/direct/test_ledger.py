@@ -175,6 +175,32 @@ class LedgerTests(unittest.TestCase):
         visible = dict(message(2, reactions=['wave']), fileShare=True)
         self.assertEqual(self.call(snapshot(3, [visible]), result['cursor'])['events'], [])
 
+    def test_projected_unavailable_file_reactions_with_empty_or_absent_text(self):
+        from test_direct import CHANNEL, TIME, RX, SELECTION, KEY, fixture, encode
+        import observation
+        import projection
+
+        for text in ({}, {'text': ''}):
+            with self.subTest(text=text):
+                data = fixture()
+                msg = data['messages'][CHANNEL][TIME]
+                del msg['text']
+                msg.update(text, subtype='file_share', files=[dict(id='F0000001', name='fixture.txt')])
+
+                def read(generation):
+                    state = projection.project(b'\xff\x10' + encode(data), [CHANNEL], file_names=True)
+                    selected = observation.snapshot(state, SELECTION, KEY, include_preview=True)
+                    self.assertTrue(selected['complete'])
+                    return snapshot(generation, selected['messages'])
+
+                cursor = self.call(read(1))['cursor']
+                msg['files'][0]['file_access'] = 'check_file_info'
+                data['reactions'][RX].append(dict(name='star', count=1, users=['U0000002']))
+                current = read(2)
+                reaction, = self.call(current, cursor, includePreview=True)['events']
+                self.assertEqual(reaction['type'], 'reaction.added')
+                self.assertNotIn('fixture.txt', json.dumps(reaction))
+
     def test_cache_first_preview_enrichment_in_same_generation(self):
         cursor = self.call(snapshot(1, []))['cursor']
         row = message(2)
