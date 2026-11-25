@@ -10,7 +10,7 @@ Can the github-pr connector take its token from `gh auth token` at configure tim
 
 The CLI already does this for any secret field. `exangelos configure` takes `--secret-command key=<shell command>` (`apps/cli/src/commands/Management.ts:154-157`). The CLI runs the command with `sh -c`, reads its stdout, drains stderr, strips one final newline, and fails with the exit code if the command fails (`apps/cli/src/commands/Secrets.ts:35-58`). The value goes to the daemon in `ConfigureConnector`, and the daemon stores secret fields in the keychain as service `exangelos.<connector>`, account `<field>` (`adapters/secrets/src/SecretStores.ts:9`). The spec names this case: an agent configures a secret "by naming a command or a file, such as `gh auth token`" (`docs/spec.md:55`, `docs/spec.md:222`).
 
-github-pr declares a `token` secret and an optional `host` for GitHub Enterprise (`connectors/github-pr/src/GithubPr.ts:85-87`). Configure checks the token against GitHub before accepting it.
+github-pr declares a `token` secret and an optional `host` for GitHub Enterprise (`connectors/github-pr/src/GithubPr.ts:85-87`). Configure checks the token against GitHub before accepting it (`connectors/github-pr/src/GithubPr.ts:92-106`).
 
 For github.com:
 
@@ -29,7 +29,7 @@ exangelos configure github-pr host=ghe.example.com \
 
 - **Scope.** `gh auth login` asks for `repo`, `read:org` and `gist` by default, and more if the user added scopes. That is much more than reading pull requests needs. A fine-grained token limited to the watched repositories with read-only permissions is narrower. Using gh's token is a convenience trade the user makes knowingly.
 - **Stale copy.** The keychain holds a copy taken at configure time. If gh later replaces or revokes its token (`gh auth logout`, `gh auth refresh`, a new `gh auth login`), the stored copy stops working. Polls then fail with 401, github-pr reports `CredentialsRejected` (`connectors/github-pr/src/GithubPr.ts:128-129`), and the connector shows as Rejected. Running the same configure command again fixes it. Nothing refreshes it automatically.
-- **Host matching.** Without `--hostname`, `gh auth token` returns the github.com token. For Enterprise the command must name the same host as the `host` field, or configure fails its check against GitHub. Changing `host` later requires the secrets again (`packages/domain/src/ConnectorRules.ts:88-94`).
+- **Host matching.** Without `--hostname`, `gh auth token` returns the github.com token. For Enterprise the command must name the same host as the `host` field, or configure fails its check against GitHub. Changing `host` later requires the secrets again (`packages/domain/src/ConnectorRules.ts:87-94`).
 - **Environment.** `sh -c` inherits the CLI's environment. If `GH_TOKEN` or `GITHUB_TOKEN` is set there, gh uses it, so the stored token may not be the user's gh login.
 - **Printing.** The CLI never echoes the value. An agent must run the configure command and must not run `gh auth token` on its own, or the token lands in its transcript.
 - **Which process runs gh.** The CLI runs the command in the user's shell session, where gh and its login are available. The connector process runs under the daemon, which on macOS is a launchd job with a minimal PATH and no guarantee that gh is installed or logged in for that context. Running gh from the connector on each poll would avoid the stale copy, but it would mean a connector spawning programs, which the runtime does not do for any connector today, and it would bypass the keychain.

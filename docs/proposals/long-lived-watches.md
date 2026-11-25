@@ -11,7 +11,7 @@ A pull request can stay open for weeks. Every subscription expires at most 7 day
 - `limits.lifetime` defaults to 7 days (`packages/domain/src/Limits.ts:18`). The user can change it for every watch with `exangelos settings set limits.lifetime="30 days"` (`apps/cli/src/commands/Management.ts:240-256`) or in the tray (`apps/tray/src/view/Model.ts:127`).
 - Subscribe sets `expiresAt` to the earlier of `--until` and now plus the lifetime (`packages/domain/src/Lifecycle.ts:33-34`). A later `--until` is clamped, not rejected.
 - `update --until` caps at the last create or resume plus the lifetime (`packages/domain/src/Subscribe.ts:101,107`, `packages/application/src/subscriptions/useCases/update.ts:43-54`). So `update` can shorten a watch but cannot extend it past that cap.
-- `resume` accepts a Paused or Expired subscription and sets `expiresAt` to now plus the lifetime (`packages/domain/src/Lifecycle.ts:120-135`). Each resume gives another full lifetime.
+- `resume` accepts a Paused or Expired subscription and sets `expiresAt` to now plus the lifetime (`packages/domain/src/Lifecycle.ts:120-135`). Each resume gives another full lifetime. It is refused while the backlog is over its limit, so the agent may have to ack first (`packages/domain/src/Lifecycle.ts:129-131`).
 - An Expired subscription stays resumable until retention cancels it, 30 days after it expired (`packages/domain/src/Limits.ts:21`).
 - The Expired wake prints a ready-made resume line. `WakeText.command` is the literal `"exangelos"` (`packages/contracts/src/WakeText.ts:4`), the resume row is built at line 45, and the Expired case adds it at lines 60-62. The wake shows `Resume  exangelos resume <id>`.
 
@@ -24,7 +24,7 @@ So a PR watch can already live for weeks if the agent resumes it on each Expired
 - Pros: the agent opts in per watch, at the place where it knows the watch is a PR. Other watches keep 7 days. The change stays in the domain, the CLI and the contracts; connectors are untouched. Old stored subscriptions decode unchanged because the field is optional.
 - Cons: one new stored field, one new flag on two commands, one new limit.
 
-**B. Per-connector lifetime in the manifest.** Add an optional `lifetime` to `connector.json` (`packages/domain/src/Manifest.ts:22-34`). The application uses it in place of `limits.lifetime` for that connector's subscriptions, capped by `limits.maxLifetime`.
+**B. Per-connector lifetime in the manifest.** Add an optional `lifetime` to `connector.json` (`packages/contracts/src/Manifest.ts:22-33`). The application uses it in place of `limits.lifetime` for that connector's subscriptions, capped by `limits.maxLifetime`.
 
 - Pros: no agent action. Every github-pr watch gets the longer life.
 - Cons: the manifest field has to be carried through the connector directory adapter, which returns only name, version, directory, entry and digest today (`adapters/connector-directory/src/ConnectorDirectoryLive.ts:55-60`). Update and resume would need a connector lookup they don't do now. An imported third-party connector could ask for the maximum, so the cap is required. The connector author sets a policy that belongs to the user.
