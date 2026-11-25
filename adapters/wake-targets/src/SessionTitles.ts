@@ -21,7 +21,8 @@ const resolvers: Readonly<Partial<Record<Session.Harness, Resolver>>> = {
 /** Where the last title found for each session is kept, so a failed refresh or a restarted daemon still shows it. */
 export interface Memory {
   readonly load: Effect.Effect<ReadonlyArray<Session.SessionTitle>>
-  readonly save: (titles: ReadonlyArray<Session.SessionTitle>) => Effect.Effect<void>
+  /** Replaces what is kept with `titles`, answering whether that worked. */
+  readonly save: (titles: ReadonlyArray<Session.SessionTitle>) => Effect.Effect<boolean>
 }
 
 const Remembered = Schema.fromJsonString(Schema.Array(Session.SessionTitle))
@@ -48,9 +49,13 @@ export const fileMemory = (file: string): Effect.Effect<Memory, never, FileSyste
         yield* fs.makeDirectory(path.dirname(file), { recursive: true })
         yield* fs.writeFileString(temp, `${JSON.stringify(titles)}\n`)
         yield* fs.rename(temp, file)
+        return true
       }).pipe(
         Effect.catch((error) =>
-          Effect.logWarning("session titles could not be saved").pipe(Effect.annotateLogs({ file, reason: error.message }))
+          Effect.logWarning("session titles could not be saved").pipe(
+            Effect.annotateLogs({ file, reason: error.message }),
+            Effect.as(false)
+          )
         )
       )
     return { load, save }
@@ -72,8 +77,6 @@ export interface Options {
 }
 
 const separator = "\u0000"
-
-const capacity = 1024
 
 const keyOf = (session: Session.Target) => `${session.harness}${separator}${session.sessionId}`
 
@@ -123,16 +126,23 @@ export const make = (
         return { harness, sessionId, title }
       })
 
+    let unsaved = false
     const remember = (key: string, title: string) =>
       Effect.suspend(() => {
-        if (last.get(key) === title) return Effect.void
-        last.delete(key)
+        if (last.get(key) === title && !unsaved) return Effect.void
         last.set(key, title)
-        for (const oldest of last.keys()) {
-          if (last.size <= capacity) break
-          last.delete(oldest)
-        }
-        return memory === undefined ? Effect.void : Semaphore.withPermit(writes, Effect.suspend(() => memory.save(snapshot())))
+        if (memory === undefined) return Effect.void
+        unsaved = true
+        return Semaphore.withPermit(
+          writes,
+          Effect.suspend(() => {
+            if (!unsaved) return Effect.void
+            unsaved = false
+            return memory.save(snapshot()).pipe(Effect.map((saved) => {
+              if (!saved) unsaved = true
+            }))
+          })
+        )
       })
 
     const lastTitle = (session: Session.Target) => Option.fromUndefinedOr(last.get(keyOf(session)))

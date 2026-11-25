@@ -100,7 +100,7 @@ describe("session titles", () => {
       let answer: Answer = { exitCode: 0, stdout: shown("Tray") }
       const runner = yield* recordingSpawner(() => answer)
       const saved = yield* Ref.make<ReadonlyArray<Session.SessionTitle>>([])
-      const memory: SessionTitles.Memory = { load: Ref.get(saved), save: (all) => Ref.set(saved, all) }
+      const memory: SessionTitles.Memory = { load: Ref.get(saved), save: (all) => Ref.set(saved, all).pipe(Effect.as(true)) }
       const start = SessionTitles.make({ lookup: () => fakeBin, memory }).pipe(Effect.provide(runner.layer))
       const service = yield* start
       yield* service.lookup([thread])
@@ -113,5 +113,23 @@ describe("session titles", () => {
       expect(yield* runner.spawned).toHaveLength(2)
       const restarted = yield* start
       expect(yield* restarted.titles([thread])).toEqual([{ ...thread, title: "Tray" }])
+    })))
+
+  it.effect("saves a title again after a failed save, even when it hasn't changed", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const runner = yield* recordingSpawner({ exitCode: 0, stdout: shown("Tray") })
+      const saved = yield* Ref.make<ReadonlyArray<Session.SessionTitle>>([])
+      const writable = yield* Ref.make(false)
+      const memory: SessionTitles.Memory = {
+        load: Ref.get(saved),
+        save: (all) => Effect.flatMap(Ref.get(writable), (ok) => ok ? Ref.set(saved, all).pipe(Effect.as(true)) : Effect.succeed(false))
+      }
+      const service = yield* SessionTitles.make({ lookup: () => fakeBin, memory }).pipe(Effect.provide(runner.layer))
+      yield* service.lookup([thread])
+      expect(yield* Ref.get(saved)).toEqual([])
+      yield* Ref.set(writable, true)
+      yield* TestClock.adjust("11 minutes")
+      yield* service.lookup([thread])
+      expect(yield* Ref.get(saved)).toEqual([{ ...thread, title: "Tray" }])
     })))
 })
