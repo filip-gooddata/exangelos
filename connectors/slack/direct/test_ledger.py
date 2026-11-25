@@ -156,6 +156,25 @@ class LedgerTests(unittest.TestCase):
         edit, = self.call(snapshot(3, [dict(canonical, body=token('edit timestamp'))]), empty['cursor'])['events']
         self.assertEqual(edit['type'], 'message.edited')
 
+    def test_upgrade_when_fallback_changed_before_first_read(self):
+        old = message(2, body=' ')
+        caption = message(3, body='caption')
+        cursor = self.call(snapshot(1, [old, caption]))['cursor']
+        current = [dict(row, body=token(''), fileShare=True, legacySpaceBody=token(' ')) for row in (old, caption)]
+        edit, = self.call(snapshot(2, current), cursor)['events']
+        self.assertEqual((edit['type'], edit['payload']['messageTs']), ('message.edited', caption['messageTs']))
+
+    def test_known_unavailable_file_retains_reactions(self):
+        original = message(2)
+        cursor = self.call(snapshot(1, [original]))['cursor']
+        unavailable = dict(message(2, body='', reactions=['wave']), fileUnavailable=True)
+        result = self.call(snapshot(2, [unavailable]), cursor)
+        reaction, = result['events']
+        self.assertEqual(reaction['type'], 'reaction.added')
+        self.assertNotIn('preview', reaction['payload'])
+        visible = dict(message(2, reactions=['wave']), fileShare=True)
+        self.assertEqual(self.call(snapshot(3, [visible]), result['cursor'])['events'], [])
+
     def test_cache_first_preview_enrichment_in_same_generation(self):
         cursor = self.call(snapshot(1, []))['cursor']
         row = message(2)

@@ -198,6 +198,7 @@ class DirectTests(unittest.TestCase):
         with mock.patch.dict('os.environ', {'FIXTURE_SECRET': 'fixture-secret'}):
             share, = selected()
             self.assertTrue(share['fileShare'])
+            self.assertEqual(share['legacySpaceBody'], observation.token(KEY, 'body', ' ', None))
             self.assertEqual(share['preview'], '[redacted].pdf, agenda.txt')
         self.assertNotIn('preview', selected(False)[0])
         msg['text'] = ''

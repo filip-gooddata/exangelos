@@ -121,6 +121,12 @@ With the accompanying host update, disabling previews hides previously
 committed file-share excerpts in `events` and `show`, as well as in wakes
 and `wait`. The original stored event and its identity are preserved.
 
+New file-only observations treat blank fallback text as one body identity.
+On upgrade, 0.6.2 recognizes an old empty or single-space fallback, or the
+same whitespace still present in the cache. If a different whitespace-only
+fallback changed before the first upgraded read, the old keyed body marker
+can be indistinguishable from a changed caption and may produce an edit.
+
 The connector prefers visible block and attachment text to a notification
 fallback. Scoped app and bot messages can omit that fallback when their
 layout contains supported visible text. An absent or undefined fallback uses

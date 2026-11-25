@@ -351,18 +351,23 @@ def reconcile(request, path=None):
             changes = []
             waiting = False
             context = delivery[message['id']]
-            if context.get('fileUnavailable'):
+            unavailable = context.get('fileUnavailable') is True
+            if unavailable and old is None:
                 continue
             raw_body = message['body']
             if 'legacyBody' in context:
                 message = dict(message, body=context['body'])
+            if unavailable:
+                # Retain the last visible body, but reconcile a known message's reactions.
+                message = dict(message, body=old['body'])
             if previous:
                 kind = 'thread.reply' if message['reply'] else 'message.new'
                 key = lineage, message['id']
                 pending = db.execute('SELECT reply,receipted FROM pending_details WHERE lineage=? AND message=?', key).fetchone()
                 arrival = pending is not None or (kind in request.get('arrivals', ('thread.reply', 'message.new')) and
                                                   old is None and Decimal(message['messageTs']) >= start)
-                if arrival:
+                waiting = unavailable and pending is not None
+                if arrival and not unavailable:
                     reply, receipted = pending or (message['reply'], False)
                     if reply is None:
                         reply = legacy_receipt_is_reply(db, lineage, snapshot['scope'], message['id'])
@@ -385,7 +390,8 @@ def reconcile(request, path=None):
                 if old is not None:
                     require(old['reply'] == message['reply'])
                     hydration = arrival and old['body'] == snapshot.get('emptyBody') and not context.get('edited')
-                    if old['body'] not in (message['body'], raw_body) and not hydration:
+                    previous_spellings = (message['body'], raw_body, context.get('legacySpaceBody'))
+                    if old['body'] not in previous_spellings and not hydration:
                         changes.append(('message.edited', message['body']))
                     if old['reactionsComplete'] and message['reactionsComplete']:
                         changes.extend(('reaction.added', r) for r in message['reactions'] if r not in old['reactions'])

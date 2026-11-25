@@ -90,7 +90,7 @@ def acquire(request):
     marker_rows = []
     for message in messages:
         marker = {k: v for k, v in message.items() if k not in (
-            'preview', 'memberSender', 'memberPeer', 'edited', 'fileShare', 'fileUnavailable', 'legacyBody')}
+            'preview', 'memberSender', 'memberPeer', 'edited', 'fileShare', 'fileUnavailable', 'legacyBody', 'legacySpaceBody')}
         marker['body'] = message.get('legacyBody', message['body'])
         marker_rows.append(marker)
     return {'scope': scope, 'complete': True, 'messages': messages, 'generation': str(generation),
