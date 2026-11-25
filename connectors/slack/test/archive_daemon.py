@@ -60,6 +60,21 @@ def daemon_delivery(binary, archive, home):
             raise AssertionError((r.stderr or r.stdout).decode())
         return json.loads(r.stdout) if r.returncode == 0 else None
 
+    def subscribe_after_restart(*args):
+        # The socket can accept commands before the connector process is attached.
+        def subscribe():
+            result = subprocess.run([binary, '--json', 'subscribe', 'slack', *args], env=env,
+                                    capture_output=True, timeout=15)
+            if result.returncode == 0:
+                return json.loads(result.stdout)
+            detail = (result.stderr or result.stdout).decode()
+            error = json.loads(detail).get('error', {})
+            if (error.get('_tag'), error.get('connector'), error.get('problem')) == (
+                    'ConnectorUnavailable', 'slack', 'it is not running'):
+                return None
+            raise AssertionError(detail)
+        return until(subscribe)
+
     @contextmanager
     def daemon():
         with (home / 'daemon.log').open('ab') as output:
@@ -197,7 +212,7 @@ def daemon_delivery(binary, archive, home):
         asset = home / FILE_SECRET
         asset.write_text(FILE_SECRET)
         os.utime(asset, ns=(1000000000, 1000000000))
-        watch = cli('subscribe', 'slack', channel, '--types', 'message.new', '--intent', 'Watch fixture posts',
+        watch = subscribe_after_restart(channel, '--types', 'message.new', '--intent', 'Watch fixture posts',
                     '--target', 'capture:post')['id']
         until(lambda: cli('show', watch)['subscription'].get('cursor'))
         await_log_reader()
@@ -244,7 +259,7 @@ def daemon_delivery(binary, archive, home):
     with daemon():
         check_projected_history()
         session = 'reply'
-        watch = cli('subscribe', 'slack', f'{channel}:{post}', 'scope=replies', '--types', 'thread.reply',
+        watch = subscribe_after_restart(f'{channel}:{post}', 'scope=replies', '--types', 'thread.reply',
                     '--once', '--intent', 'Watch fixture replies', '--target', 'capture:reply')['id']
         until(lambda: cli('show', watch)['subscription'].get('cursor'))
         unrelated = stamp()
