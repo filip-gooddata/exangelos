@@ -9,7 +9,7 @@
  * wrong token) succeeds, 1 when one of them fails, and 2 when the input is missing or unreadable.
  */
 import { BunServices } from "@effect/platform-bun"
-import { Config, Effect, FileSystem, Layer, Redacted } from "effect"
+import { Config, DateTime, Effect, FileSystem, Layer, Redacted } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { diffIssue } from "../src/Diff.ts"
 import { JiraClient, layer } from "../src/JiraClient.ts"
@@ -231,7 +231,7 @@ const connectorPath = Effect.gen(function*() {
   const client = yield* JiraClient
   const routed = yield* client.checkSite(site)
   const snapshot = yield* client.readIssue({ site: routed, key, position: undefined })
-  const { cursor, events } = diffIssue({ siteUrl: routed.url, previous: undefined, snapshot })
+  const { cursor, events } = diffIssue({ siteUrl: routed.url, previous: undefined, snapshot, observedAt: yield* DateTime.now })
   return {
     route: routed.api === routed.url ? "site" : "gateway",
     events: events.length,

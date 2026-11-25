@@ -8,6 +8,7 @@ import type { Comment, FieldChange, History, IssueSnapshot, JqlSnapshot, ListPos
 export const eventTypes = {
   statusChanged: "status.changed",
   commentAdded: "comment.added",
+  commentDeleted: "comment.deleted",
   assigneeChanged: "assignee.changed",
   fieldChanged: "field.changed",
   issueEntered: "issue.entered",
@@ -163,10 +164,10 @@ export const diffIssue = (input: {
   readonly siteUrl: string
   readonly previous: IssueCursor | undefined
   readonly snapshot: IssueSnapshot
-  /** The `fields` option: which fields field.changed reports; undefined reports all. */
   readonly fields?: ReadonlyArray<string> | undefined
+  readonly observedAt: DateTime.Utc
 }): IssuePoll => {
-  const { fields, previous, siteUrl, snapshot } = input
+  const { fields, observedAt, previous, siteUrl, snapshot } = input
   const link = browseLink(siteUrl, snapshot.key)
   const known = previous?.issueId === snapshot.id ? previous : undefined
   const changelog = advance(known?.changelog, snapshot.changelog)
@@ -175,6 +176,21 @@ export const diffIssue = (input: {
     ...changelog.fresh.flatMap((history) => historyEvents(snapshot, link, history, fields)),
     ...comments.fresh.map((comment) => commentEvent(snapshot, siteUrl, comment))
   ].sort((a, b) => DateTime.toEpochMillis(a.occurredAt) - DateTime.toEpochMillis(b.occurredAt))
+  if (known !== undefined) {
+    const before = known.comments.consumed
+    const after = comments.position.consumed
+    const removed = before + comments.fresh.length - after
+    if (removed > 0) {
+      events.push({
+        type: eventTypes.commentDeleted,
+        occurredAt: observedAt,
+        summary: `${snapshot.key}: ${removed === 1 ? "a comment was" : `${removed} comments were`} deleted (${after} left)`,
+        payload: { issue: { id: snapshot.id, key: snapshot.key, summary: snapshot.summary }, removed, count: after },
+        link,
+        dedupeKey: `${snapshot.id}:comments-deleted:${known.comments.recent.at(-1) ?? ""}:${before}:${after}`
+      })
+    }
+  }
   return {
     events,
     cursor: {

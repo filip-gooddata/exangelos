@@ -42,11 +42,13 @@ const fakeGitHub = (state: {
   releases: ReadonlyArray<Release>
   containing: ReadonlyArray<string>
   missingTags?: ReadonlyArray<string>
+  shaGone?: boolean
 }) => {
   const asked = { releases: 0, compared: [] as Array<string>, since: [] as Array<string> }
   const github: GitHub["Service"] = {
     checkRepository: () => Effect.void,
-    checkCommit: () => Effect.void,
+    checkCommit: (_token, _repo, sha) =>
+      state.shaGone === true ? Effect.fail(new GitHubNotFound({ path: `/repos/acme/app/commits/${sha}` })) : Effect.void,
     searchPullRequests: () => Effect.sync(() => state.pullRequests),
     commits: (_token, _repo, _path, since) => Effect.sync(() => (asked.since.push(since), state.commits)),
     releases: () => Effect.sync(() => (asked.releases += 1, state.releases)),
@@ -118,7 +120,7 @@ describe("GitHub signals", () => {
       expect(asked.releases).toBe(1)
     }))
 
-  it.effect("compares each release once, and again a release whose tag does not exist yet", () =>
+  it.effect("compares every listed release on each poll, so a missing or moved tag is seen later", () =>
     Effect.gen(function*() {
       const state = {
         pullRequests: [],
@@ -129,13 +131,29 @@ describe("GitHub signals", () => {
       }
       const { asked, github } = fakeGitHub(state)
       const first = yield* poll(github, null, { paths: [] })
-      expect(first.cursor.release).toEqual({ sha: "abc1234", checked: ["v1.0.0"], tag: null })
+      expect(first.cursor.release).toEqual({ sha: "abc1234", tag: null })
 
       state.missingTags = []
-      state.containing = ["v2.0.0-draft"]
+      state.containing = ["v1.0.0"]
       const second = yield* poll(github, first.cursor, { paths: [] })
-      expect(second.events.map((event) => event.type)).toEqual(["release.found"])
-      expect(asked.compared).toEqual(["v2.0.0-draft", "v1.0.0", "v2.0.0-draft"])
+      expect(second.events.map((event) => [event.type, event.payload])).toEqual([
+        ["release.found", expect.objectContaining({ tag: "v1.0.0" })]
+      ])
+      expect(asked.compared).toEqual(["v2.0.0-draft", "v1.0.0", "v2.0.0-draft", "v1.0.0"])
+    }))
+
+  it.effect("fails with the missing commit when sha is gone from the repository", () =>
+    Effect.gen(function*() {
+      const { github } = fakeGitHub({
+        pullRequests: [],
+        commits: [],
+        releases: [release("v1.0.0")],
+        containing: [],
+        missingTags: ["v1.0.0"],
+        shaGone: true
+      })
+      const failure = yield* poll(github, null, { paths: [] }).pipe(Effect.flip)
+      expect(failure).toEqual(new GitHubNotFound({ path: "/repos/acme/app/commits/abc1234" }))
     }))
 
   it.effect("starts pull requests from a new baseline when the search changes", () =>

@@ -36,14 +36,12 @@ interface Poll {
 const rebaseline = ({ reason }: InvalidCursor) =>
   Effect.logWarning(`${reason} Starting again from the current state.`).pipe(Effect.as(undefined))
 
-/** Everything one subscription's polls read with. */
 interface Watched {
   readonly client: JiraClient["Service"]
   readonly github: GitHub["Service"]
   readonly site: JiraSite
   readonly target: Target
   readonly options: Options
-  /** The configured GitHub token; the connector refuses GitHub signals without one. */
   readonly githubToken: Redacted.Redacted<string> | undefined
 }
 
@@ -52,11 +50,6 @@ type GitHubOutcome =
   | { readonly _tag: "Skipped" }
   | { readonly _tag: "Unavailable"; readonly reason: string }
 
-/**
- * A GitHub failure never fails the poll, so Jira events keep flowing. A refused token or a missing
- * repository or commit makes the signals unavailable; a rate limit or a transient failure skips
- * them until the next poll.
- */
 const githubOutcome = (repo: string, error: GitHubError): Effect.Effect<GitHubOutcome> => {
   switch (error._tag) {
     case "GitHubRejected":
@@ -97,7 +90,7 @@ const read = (watched: Watched, site: JiraSite, cursor: string | undefined) =>
     if (target.kind === "issue") {
       const previous = cursor === undefined ? undefined : yield* decodeIssueCursor(cursor).pipe(Effect.catch(rebaseline))
       const snapshot = yield* client.readIssue({ site, key: target.key, position: issuePosition(previous) })
-      const jira = diffIssue({ siteUrl: site.url, previous, snapshot, fields: options.fields })
+      const jira = diffIssue({ siteUrl: site.url, previous, snapshot, fields: options.fields, observedAt: yield* DateTime.now })
       const signals = options.github
       if (signals === undefined) {
         return { events: jira.events, cursor: { ...jira.cursor, github: null, githubFailure: null } }
@@ -210,10 +203,24 @@ const poll = (watched: Watched, state: PollState) => {
       CredentialRejected: ({ status }) =>
         Effect.fail(new Connector.CredentialsRejected({ reason: `Jira rejected the email and API token (HTTP ${status}).` })),
       UnsupportedSite: ({ reason }) => Effect.fail(new Connector.SourceFailed({ reason })),
-      HttpFailure: ({ reason, status }) =>
-        target.kind === "jql" && status === 400
-          ? Effect.succeed(ended(state, "Jira refused the JQL query (HTTP 400). Check the query and subscribe again."))
-          : Effect.fail(new Connector.SourceFailed({ reason: status === undefined ? reason : `HTTP ${status}: ${reason}` })),
+      HttpFailure: ({ reason, status }) => {
+        if (target.kind === "jql" && status === 400) {
+          return Effect.succeed(ended(state, "Jira refused the JQL query (HTTP 400). Check the query and subscribe again."))
+        }
+        const failed = new Connector.SourceFailed({ reason: status === undefined ? reason : `HTTP ${status}: ${reason}` })
+        if (status !== 403) return Effect.fail(failed)
+        return client.resolveRoute(site).pipe(
+          Effect.matchEffect({
+            onSuccess: () => Effect.fail(failed),
+            onFailure: (error) =>
+              Effect.fail(
+                error._tag === "CredentialRejected"
+                  ? new Connector.CredentialsRejected({ reason: `Jira rejected the email and API token (HTTP ${error.status}).` })
+                  : failed
+              )
+          })
+        )
+      },
       DecodeFailure: ({ reason }) => Effect.fail(new Connector.SourceFailed({ reason: `Unexpected Jira response: ${reason}` }))
     })
   )

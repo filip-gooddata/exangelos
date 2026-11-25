@@ -79,6 +79,7 @@ describe("Jira connector", () => {
       expect(catalogue.eventTypes.map((eventType) => eventType.type)).toEqual([
         "status.changed",
         "comment.added",
+        "comment.deleted",
         "assignee.changed",
         "field.changed",
         "issue.entered",
@@ -89,7 +90,7 @@ describe("Jira connector", () => {
         "release.found",
         "github.unavailable"
       ])
-      expect(catalogue.eventTypes[4]?.description).toContain("enters and leaves the result between two polls is never seen")
+      expect(catalogue.eventTypes[5]?.description).toContain("enters and leaves the result between two polls is never seen")
       expect(catalogue.parameters.main).toBe("target")
       expect(catalogue.configuration.map((field) => [field._tag, field.key])).toEqual([
         ["Text", "site"],
@@ -203,6 +204,24 @@ describe("Jira connector", () => {
         Effect.flip
       )
       expect(failure).toMatchObject({ _tag: "CredentialsRejected" })
+    }).pipe(Effect.scoped))
+
+  it.effect("calls a gateway 403 on /myself a rejected credential, at configure and while watching", () =>
+    Effect.gen(function*() {
+      let denied = false
+      const client = yield* jira((call) =>
+        denied && call.path.startsWith(gateway) ? { status: 403, body: { message: "Forbidden" } } : scoped(call)
+      )
+      yield* client.Configure({ values })
+      denied = true
+      const failure = yield* client.Watch({ parameters: { target: "DEMO-7" }, eventTypes: [] }).pipe(
+        Stream.runCollect,
+        Effect.flip
+      )
+      expect(failure).toEqual(
+        expect.objectContaining({ _tag: "CredentialsRejected", reason: "Jira rejected the email and API token (HTTP 403)." })
+      )
+      expect(yield* client.Configure({ values })).toMatchObject({ _tag: "Rejected", reason: expect.stringContaining("HTTP 403") })
     }).pipe(Effect.scoped))
 
   it.effect("does not call a credential rejected when the site cannot tell its cloud id", () =>

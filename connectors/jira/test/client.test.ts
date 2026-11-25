@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Effect, Redacted } from "effect"
+import { DateTime, Effect, Redacted } from "effect"
 import { decodeIssueCursor, encodeCursor, issuePosition } from "../src/Cursor.ts"
 import { diffIssue } from "../src/Diff.ts"
 import { JiraClient } from "../src/JiraClient.ts"
@@ -9,6 +9,7 @@ import type { StubCall } from "./stubJira.ts"
 
 const token = "ATATT-not-a-real-token-7f3a"
 const site = makeSite({ url: "https://acme.atlassian.net/", email: "dev@example.com", token: Redacted.make(token) })
+const observedAt = DateTime.makeUnsafe("2026-11-12T11:00:00Z")
 
 const statusChange = (from: string, to: string) => ({
   field: "status",
@@ -70,7 +71,7 @@ describe("JiraClient", () => {
       }))
 
       const snapshot = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: issuePosition(stored) })
-      const poll = diffIssue({ siteUrl: jiraSite.url, previous: stored, snapshot })
+      const poll = diffIssue({ siteUrl: jiraSite.url, previous: stored, snapshot, observedAt })
       expect(poll.events.map((event) => event.dedupeKey)).toEqual([
         "10042:history:10002:0",
         "10042:history:10003:0",
@@ -87,7 +88,7 @@ describe("JiraClient", () => {
       expect(calls.filter((call) => call.path.endsWith("/changelog")).map((call) => call.param("startAt"))).toEqual(startAts)
 
       const again = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: issuePosition(poll.cursor) })
-      expect(diffIssue({ siteUrl: jiraSite.url, previous: poll.cursor, snapshot: again }).events).toEqual([])
+      expect(diffIssue({ siteUrl: jiraSite.url, previous: poll.cursor, snapshot: again, observedAt }).events).toEqual([])
     }).pipe(Effect.provide(jiraWith(issueServer(calls))))
   })
 

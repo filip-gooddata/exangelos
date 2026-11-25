@@ -273,15 +273,23 @@ export const layer = Layer.effect(
       error._tag === "DecodeFailure" ||
       (error._tag === "HttpFailure" && error.status !== undefined && error.status < 500)
 
+    const myself = (site: JiraSite) =>
+      get(site, "/rest/api/3/myself", {}, MyselfWire).pipe(
+        Effect.catchIf(
+          (error) => error._tag === "HttpFailure" && error.status === 403,
+          () => Effect.fail(new CredentialRejected({ status: 403 }))
+        )
+      )
+
     const resolveRoute = (site: JiraSite): Effect.Effect<JiraSite, JiraError> => {
       const direct = { ...site, api: site.url }
-      return get(direct, "/rest/api/3/myself", {}, MyselfWire).pipe(
+      return myself(direct).pipe(
         Effect.as(direct),
         Effect.catchTag("CredentialRejected", (rejected) =>
           cloudId(site).pipe(
             Effect.catchIf(isAnswer, () => Effect.fail(rejected)),
             Effect.map((id) => ({ ...site, api: gatewayApi(id) })),
-            Effect.tap((gateway) => get(gateway, "/rest/api/3/myself", {}, MyselfWire))
+            Effect.tap(myself)
           ))
       )
     }

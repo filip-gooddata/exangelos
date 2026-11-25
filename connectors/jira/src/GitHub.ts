@@ -2,11 +2,6 @@ import { Context, Effect, Layer, Option, Redacted, Schema } from "effect"
 import { Headers, HttpClient, HttpClientRequest } from "effect/http"
 import type { HttpClientResponse } from "effect/http"
 
-/**
- * The GitHub REST calls behind a subscription's GitHub signals: pull requests that mention the
- * issue, new commits to watched paths, and releases that contain a commit. Requests go to
- * api.github.com with the configured `githubToken`.
- */
 
 const api = "https://api.github.com"
 
@@ -55,7 +50,6 @@ export interface Release {
   readonly publishedAt: string | null
 }
 
-/** How many of the newest releases a poll looks at, as watch-jira.sh does. */
 export const releasesChecked = 5
 
 export class GitHub extends Context.Service<GitHub, {

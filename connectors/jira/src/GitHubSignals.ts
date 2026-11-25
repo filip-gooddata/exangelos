@@ -3,7 +3,7 @@ import type { Redacted } from "effect"
 import type { GitHubCursor } from "./Cursor.ts"
 import { eventTypes } from "./Diff.ts"
 import type { JiraEvent } from "./Diff.ts"
-import type { Commit, GitHub, GitHubError, PullRequest } from "./GitHub.ts"
+import type { Commit, GitHub, GitHubError, PullRequest, Release } from "./GitHub.ts"
 import type { GitHubSignals } from "./Options.ts"
 
 export interface IssueRef {
@@ -35,12 +35,22 @@ const pullRequestPayload = (issue: IssueRef, repo: string, pr: PullRequest) => (
   author: pr.author
 })
 
-/**
- * Reads the GitHub signals and diffs them against what the cursor saw. Pull requests and commits
- * have a baseline: the first read, or the first after `githubRepo`, `githubSearch` or `since`
- * changed, reports none of them. A release that contains `sha` is reported on the first read too,
- * once; after that no release is read again for that commit.
- */
+const releaseContaining = (
+  github: GitHub["Service"],
+  token: Redacted.Redacted<string>,
+  repo: string,
+  sha: string
+): Effect.Effect<Release | undefined, GitHubError> =>
+  Effect.gen(function*() {
+    for (const candidate of yield* github.releases(token, repo)) {
+      const contains = yield* github.contains(token, repo, sha, candidate.tag).pipe(
+        Effect.catchTag("GitHubNotFound", () => github.checkCommit(token, repo, sha).pipe(Effect.as(false)))
+      )
+      if (contains) return candidate
+    }
+    return undefined
+  })
+
 export const pollGitHub = (input: {
   readonly github: GitHub["Service"]
   readonly token: Redacted.Redacted<string>
@@ -94,7 +104,6 @@ export const pollGitHub = (input: {
 
     const sameSince = sameRepo !== null && sameRepo.since === since ? sameRepo : null
     const paths: Array<GitHubCursor["paths"][number]> = []
-    /** New commits by sha, oldest first, with every watched path each one touched. */
     const fresh = new Map<string, { readonly commit: Commit; readonly paths: Array<string> }>()
     for (const path of signals.paths) {
       const commits = yield* github.commits(token, repo, path, since)
@@ -124,32 +133,11 @@ export const pollGitHub = (input: {
     if (signals.sha !== undefined) {
       const sha = signals.sha
       const before = sameRepo?.release?.sha === sha ? sameRepo.release : null
-      release = before ?? { sha, checked: [], tag: null }
+      release = before ?? { sha, tag: null }
       if (release.tag === null) {
-        const checked = new Set(release.checked)
-        const releases = yield* github.releases(token, repo)
-        const stillListed: Array<string> = []
-        let found: (typeof releases)[number] | undefined
-        for (const candidate of releases) {
-          if (checked.has(candidate.tag)) {
-            stillListed.push(candidate.tag)
-            continue
-          }
-          const contains = yield* github.contains(token, repo, sha, candidate.tag).pipe(
-            Effect.map((yes) => yes ? "yes" as const : "no" as const),
-            // A draft release can name a tag that does not exist yet: look again on the next poll.
-            Effect.catchTag("GitHubNotFound", () => Effect.succeed("unknown" as const))
-          )
-          if (contains === "yes") {
-            found = candidate
-            break
-          }
-          if (contains === "no") stillListed.push(candidate.tag)
-        }
-        if (found === undefined) {
-          release = { sha, checked: stillListed, tag: null }
-        } else {
-          release = { sha, checked: [], tag: found.tag }
+        const found = yield* releaseContaining(github, token, repo, sha)
+        if (found !== undefined) {
+          release = { sha, tag: found.tag }
           events.push({
             type: eventTypes.releaseFound,
             occurredAt: timeOr(found.publishedAt, observedAt),

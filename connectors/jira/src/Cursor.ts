@@ -9,22 +9,13 @@ const Position = Schema.Struct({
   atLast: Schema.Array(Schema.String)
 })
 
-/**
- * What the GitHub signals have seen. `repo`, `search` and `since` are the ones the state was read
- * with: when a parameter changes, the part it governs starts again from a baseline.
- */
 export const GitHubCursor = Schema.Struct({
   repo: Schema.String,
   search: Schema.String,
   since: Schema.String,
   pullRequests: Schema.Array(Schema.Struct({ number: Schema.Finite, state: Schema.String })),
   paths: Schema.Array(Schema.Struct({ path: Schema.String, seen: Schema.Array(Schema.String) })),
-  /** The commit release.found looks for, the release tags already known not to contain it, and the tag that does. */
-  release: Schema.NullOr(Schema.Struct({
-    sha: Schema.String,
-    checked: Schema.Array(Schema.String),
-    tag: Schema.NullOr(Schema.String)
-  }))
+  release: Schema.NullOr(Schema.Struct({ sha: Schema.String, tag: Schema.NullOr(Schema.String) }))
 })
 export type GitHubCursor = typeof GitHubCursor.Type
 
@@ -43,9 +34,7 @@ export const IssueCursor = Schema.Struct({
   changelog: Position,
   comments: Position,
   github: Schema.NullOr(GitHubCursor),
-  /** Why the GitHub signals cannot be read, while they cannot; null when they can. */
   githubFailure: Schema.NullOr(Schema.String),
-  /** How many times the GitHub signals became unavailable; numbers the github.unavailable events. */
   githubFailures: Schema.Int
 })
 export type IssueCursor = typeof IssueCursor.Type
@@ -68,7 +57,6 @@ export const encodeCursor = (cursor: IssueCursor | JqlCursor): string =>
     ? Schema.encodeSync(IssueCursorJson)(cursor)
     : Schema.encodeSync(JqlCursorJson)(cursor)
 
-/** Reads a version 2 cursor, or a version 1 cursor as one whose GitHub signals have seen nothing yet. */
 export const decodeIssueCursor = (cursor: string): Effect.Effect<IssueCursor, InvalidCursor> =>
   Schema.decodeEffect(AnyIssueCursorJson)(cursor).pipe(
     Effect.map((decoded): IssueCursor => decoded.v === 2 ? decoded : { ...decoded, v: 2, github: null, githubFailure: null, githubFailures: 0 }),

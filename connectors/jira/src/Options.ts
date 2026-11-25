@@ -2,19 +2,15 @@ import { DateTime, Effect, Option } from "effect"
 import type { Parameters, Target } from "./Target.ts"
 import { TargetInvalid } from "./Target.ts"
 
-/** The GitHub signals a subscription watches next to its issue. */
 export interface GitHubSignals {
   readonly repo: string
-  /** The pull request search text; the issue key when the parameter is absent. */
   readonly search: string
   readonly paths: ReadonlyArray<string>
-  /** The commit cutoff as ISO; undefined means the time of the first poll, kept in the cursor. */
   readonly since: string | undefined
   readonly sha: string | undefined
 }
 
 export interface Options {
-  /** The field ids or names field.changed reports, lowercased; undefined reports every field. */
   readonly fields: ReadonlyArray<string> | undefined
   readonly github: GitHubSignals | undefined
 }
@@ -22,7 +18,6 @@ export interface Options {
 const Repo = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/
 const Sha = /^[0-9a-f]{7,40}$/
 
-/** A JSON array of strings, or undefined for anything else. */
 const jsonList = (value: string): ReadonlyArray<string> | undefined => {
   if (!value.trim().startsWith("[")) return undefined
   try {
@@ -68,7 +63,6 @@ export const parseOptions = (parameters: Parameters, target: Target): Effect.Eff
     return { fields, github: { repo, search: search ?? target.key, paths, since, sha } }
   })
 
-/** The option parameters Describe hands back, spelled as they are watched. */
 export const normaliseOptions = (parameters: Parameters, options: Options): Partial<Parameters> => {
   const github = options.github
   return {
@@ -83,7 +77,6 @@ export const normaliseOptions = (parameters: Parameters, options: Options): Part
   }
 }
 
-/** Whether field.changed reports this change under the `fields` option. */
 export const reportsField = (
   fields: ReadonlyArray<string> | undefined,
   change: { readonly field: string; readonly fieldId: string | null }

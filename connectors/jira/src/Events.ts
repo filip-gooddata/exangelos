@@ -41,6 +41,11 @@ export const commentAdded = Catalogue.event(eventTypes.commentAdded, {
   })
 })
 
+export const commentDeleted = Catalogue.event(eventTypes.commentDeleted, {
+  description: "Comments were deleted from the issue: the comment count fell. Comments deleted and added between two polls can offset each other.",
+  payload: Schema.Struct({ issue: Issue, removed: Schema.Finite, count: Schema.Finite })
+})
+
 export const assigneeChanged = Catalogue.event(eventTypes.assigneeChanged, {
   description: "The issue was assigned to someone else, or unassigned.",
   payload: Change
@@ -110,6 +115,7 @@ export const githubUnavailable = Catalogue.event(eventTypes.githubUnavailable, {
 export const all = [
   statusChanged,
   commentAdded,
+  commentDeleted,
   assigneeChanged,
   fieldChanged,
   issueEntered,
@@ -126,6 +132,7 @@ export type WatchItem = ReturnType<typeof Connector.end>
 const byType: Record<JiraEventType, Catalogue.EventType<any>> = {
   [eventTypes.statusChanged]: statusChanged,
   [eventTypes.commentAdded]: commentAdded,
+  [eventTypes.commentDeleted]: commentDeleted,
   [eventTypes.assigneeChanged]: assigneeChanged,
   [eventTypes.fieldChanged]: fieldChanged,
   [eventTypes.issueEntered]: issueEntered,

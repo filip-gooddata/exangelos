@@ -55,7 +55,7 @@ const seenUpTo100: IssueCursor = {
 
 describe("diffIssue", () => {
   it("emits nothing on the first poll and positions the cursor at the end", () => {
-    const poll = diffIssue({ siteUrl, previous: undefined, snapshot })
+    const poll = diffIssue({ siteUrl, previous: undefined, snapshot, observedAt: at(9) })
     expect(poll.events).toEqual([])
     expect(poll.cursor.changelog).toEqual({
       consumed: 3,
@@ -83,7 +83,7 @@ describe("diffIssue", () => {
       }
     }
     const types = (fields: ReadonlyArray<string> | undefined) =>
-      diffIssue({ siteUrl, previous: seenUpTo100, snapshot: relabelled, fields }).events
+      diffIssue({ siteUrl, previous: seenUpTo100, snapshot: relabelled, fields, observedAt: at(9) }).events
         .filter((event) => event.type === "field.changed")
         .map((event) => event.dedupeKey)
     expect(types(undefined)).toEqual(["10042:history:102:1", "10042:history:103:0"])
@@ -92,7 +92,7 @@ describe("diffIssue", () => {
   })
 
   it("maps each change and comment to its event type, oldest first", () => {
-    const poll = diffIssue({ siteUrl, previous: seenUpTo100, snapshot })
+    const poll = diffIssue({ siteUrl, previous: seenUpTo100, snapshot, observedAt: at(9) })
     expect(poll.events.map((event) => [event.type, event.dedupeKey])).toEqual([
       ["status.changed", "10042:history:101:0"],
       ["comment.added", "10042:comment:201"],
@@ -107,12 +107,12 @@ describe("diffIssue", () => {
   })
 
   it("emits nothing when the issue has not changed since the cursor", () => {
-    const first = diffIssue({ siteUrl, previous: seenUpTo100, snapshot })
-    const again = diffIssue({ siteUrl, previous: first.cursor, snapshot })
+    const first = diffIssue({ siteUrl, previous: seenUpTo100, snapshot, observedAt: at(9) })
+    const again = diffIssue({ siteUrl, previous: first.cursor, snapshot, observedAt: at(9) })
     expect(again.events).toEqual([])
     expect(again.cursor).toEqual(first.cursor)
 
-    const otherIssue = diffIssue({ siteUrl, previous: { ...seenUpTo100, issueId: "99" }, snapshot })
+    const otherIssue = diffIssue({ siteUrl, previous: { ...seenUpTo100, issueId: "99" }, snapshot, observedAt: at(9) })
     expect(otherIssue.events).toEqual([])
   })
 
@@ -122,17 +122,17 @@ describe("diffIssue", () => {
       changelog: { start: 0, items: [] },
       comments: { start: 0, items: [{ id: "202", created: at(0), author: mia, body: null }] }
     }
-    const poll = diffIssue({ siteUrl, previous: seenUpTo100, snapshot: deletedAnchor })
-    expect(poll.events.map((event) => event.dedupeKey)).toEqual(["10042:comment:202"])
+    const poll = diffIssue({ siteUrl, previous: seenUpTo100, snapshot: deletedAnchor, observedAt: at(9) })
+    expect(poll.events.map((event) => event.dedupeKey)).toEqual(["10042:comment:202", "10042:comments-deleted:200:1:1"])
   })
 
   it("tells seen from unseen comments sharing a time after the remembered ones are deleted", () => {
     const sameTime = Array.from({ length: 51 }, (_, index) => ({ id: String(300 + index), created: at(4), author: mia, body: null }))
     const withComments = (items: typeof sameTime) => ({ ...snapshot, comments: { start: 0, items } })
-    const baseline = diffIssue({ siteUrl, previous: undefined, snapshot: withComments(sameTime) })
+    const baseline = diffIssue({ siteUrl, previous: undefined, snapshot: withComments(sameTime), observedAt: at(9) })
     const survivors = [sameTime[0]!, { id: "999", created: at(4), author: mia, body: null }]
-    const poll = diffIssue({ siteUrl, previous: baseline.cursor, snapshot: withComments(survivors) })
-    expect(poll.events.map((event) => event.dedupeKey)).toEqual(["10042:comment:999"])
+    const poll = diffIssue({ siteUrl, previous: baseline.cursor, snapshot: withComments(survivors), observedAt: at(9) })
+    expect(poll.events.map((event) => event.dedupeKey)).toEqual(["10042:comment:999", "10042:comments-deleted:350:51:2"])
   })
 })
 
