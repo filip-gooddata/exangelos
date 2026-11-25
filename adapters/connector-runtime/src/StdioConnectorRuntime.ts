@@ -156,7 +156,11 @@ export const make = Effect.fnUntraced(function*(options?: Options) {
         client.Watch(request).pipe(Stream.mapError((error) => {
           switch (error._tag) {
             case "RpcClientError":
-              return lost(error)
+              // A frame that does not decode fails the calls in flight but leaves the connection up: the watch
+              // fails like an observation and the supervisor retries it on the same process.
+              return error.reason._tag === "RpcClientDefect"
+                ? new ConnectorRuntime.SourceFailed({ connector, reason: error.message, category: "invalid-data" })
+                : lost(error)
             case "CredentialsRejected":
               return new ConnectorRuntime.CredentialsRejected({ connector, reason: error.reason })
             case "SourceFailed":

@@ -136,11 +136,17 @@ describe("StdioConnectorRuntime", { timeout: 30_000 }, () => {
       expect(yield* silent.isRunning).toBe(true)
     }).pipe(Effect.scoped, Effect.provide(watchfulRuntime)))
 
-  it.live("keeps a connector running after an answer that does not decode", () =>
+  it.live("keeps a connector and its watches running after a frame that does not decode", () =>
     Effect.gen(function*() {
       const connector = yield* start(launch(`${import.meta.dirname}/fixture`, "garbled.ts"))
       yield* Effect.ignore(connector.configure({}))
       expect(yield* connector.configure({})).toEqual({ _tag: "Accepted" })
+
+      const first = yield* Stream.toPull(connector.watch(watchTicks(1)))
+      expect(yield* first).toMatchObject([{ _tag: "Cursor", cursor: "1" }])
+      expect(yield* Effect.flip(first)).toMatchObject({ _tag: "SourceFailed", connector: "template", category: "invalid-data" })
+      const again = yield* Stream.runCollect(connector.watch(watchTicks(1)))
+      expect(again.map((item) => item._tag)).toEqual(["Cursor", "End"])
       expect(yield* connector.exited.pipe(Effect.timeoutOption("1 second"))).toEqual(Option.none())
     }).pipe(Effect.scoped, Effect.provide(runtime)))
 

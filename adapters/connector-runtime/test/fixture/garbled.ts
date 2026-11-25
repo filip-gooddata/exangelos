@@ -5,8 +5,12 @@ import { writeSync } from "node:fs"
 import { ConnectorProtocol } from "@exangelos/contracts"
 import { Template } from "@exangelos/connector-template"
 
-/** Writes one line that is not JSON before its first Configure answer, then answers normally. */
+/**
+ * Writes one line that is not JSON before its first Configure answer, and another during its first Watch, which
+ * then stays open; it answers everything else normally.
+ */
 let configured = 0
+let watched = 0
 setInterval(() => {}, 1 << 30)
 
 const handlers = ConnectorProtocol.ConnectorProtocol.toLayer({
@@ -18,7 +22,13 @@ const handlers = ConnectorProtocol.ConnectorProtocol.toLayer({
     }),
   Describe: () => Effect.die("unused"),
   Icon: () => Effect.succeed({ _tag: "None" } as const),
-  Watch: () => Stream.die("unused")
+  Watch: () =>
+    watched++ === 0
+      ? Stream.concat(
+        Stream.make({ _tag: "Cursor" as const, cursor: "1" }),
+        Stream.fromEffect(Effect.sync(() => writeSync(1, "not json\n"))).pipe(Stream.drain, Stream.concat(Stream.never))
+      )
+      : Stream.make({ _tag: "Cursor" as const, cursor: "2" }, { _tag: "End" as const, reason: "done" })
 })
 
 RpcServer.layer(ConnectorProtocol.ConnectorProtocol).pipe(
