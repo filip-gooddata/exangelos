@@ -1,0 +1,19 @@
+.github/workflows/build-release.yml
+  s_ce961e453dfe29::t_9029f08e410763 234-255
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e7ab5917bc2a4be9d89bb0f8e85eb6c013b1e743",
+  "prompts": {},
+  "sessions": {
+    "s_ce961e453dfe29": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3c3ae6e-ab9d-4a15-ad3f-81c8c0493434",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
