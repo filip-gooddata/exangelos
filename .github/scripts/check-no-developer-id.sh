@@ -18,44 +18,49 @@ files=0
 signed=0
 found=0
 
-# Prints the signature details of a file, nothing for a file that is not signed, and fails on any other codesign error.
-# codesign shows only the host's slice of a universal binary, so each slice of one is read on its own.
+# Prints the signature details of one file or one slice of it (codesign arguments such as `--arch x86_64` follow the
+# path), nothing when it is not signed, and fails on any other codesign error.
 details_of() {
-  local archs arch
-  if archs=$(lipo -archs "$1" 2> /dev/null) && [ "$(wc -w <<< "$archs")" -gt 1 ]; then
-    for arch in $archs; do
-      details_of_slice "$1" --arch "$arch"
-    done
-  else
-    details_of_slice "$1"
-  fi
-}
-
-details_of_slice() {
   local details
   if details=$(codesign -dvv "${@:2}" "$1" 2>&1); then
     printf '%s\n' "$details"
   elif [ "$details" != "$1: code object is not signed at all" ]; then
-    echo "codesign could not read $1: $details" >&2
+    echo "codesign could not read $1 ${*:2}: $details" >&2
     return 1
   fi
 }
 
+# Checks a file slice by slice: codesign shows only the host's slice of a universal binary, so each slice of one is
+# read on its own.
 check_file() {
-  local details
-  details=$(details_of "$1")
+  local archs arch details problem=false any=false
+  local -a slices=("")
+  if archs=$(lipo -archs "$1" 2> /dev/null) && [ "$(wc -w <<< "$archs")" -gt 1 ]; then
+    slices=()
+    for arch in $archs; do slices+=("$arch"); done
+  fi
   files=$((files + 1))
-  if $adhoc && { ! grep -qx 'Signature=adhoc' <<< "$details" || grep -q '^Authority=' <<< "$details"; }; then
-    echo "$2 has no ad hoc signature" >&2
-    found=$((found + 1))
-  fi
-  test -n "$details" || return 0
-  signed=$((signed + 1))
-  if grep -q '^Authority=' <<< "$details"; then
-    echo "$2 carries a signature from a signing identity:" >&2
-    grep -E '^(Authority|TeamIdentifier)=' <<< "$details" >&2
-    found=$((found + 1))
-  fi
+  for arch in "${slices[@]}"; do
+    if [ -n "$arch" ]; then
+      details=$(details_of "$1" --arch "$arch") || exit 1
+    else
+      details=$(details_of "$1") || exit 1
+    fi
+    if $adhoc && ! grep -qx 'Signature=adhoc' <<< "$details"; then
+      echo "$2${arch:+ ($arch)} has no ad hoc signature" >&2
+      problem=true
+    fi
+    test -n "$details" || continue
+    any=true
+    if grep -q '^Authority=' <<< "$details"; then
+      echo "$2${arch:+ ($arch)} carries a signature from a signing identity:" >&2
+      grep -E '^(Authority|TeamIdentifier)=' <<< "$details" >&2
+      problem=true
+    fi
+  done
+  if $any; then signed=$((signed + 1)); fi
+  if $problem; then found=$((found + 1)); fi
+  return 0
 }
 
 check_tree() {
