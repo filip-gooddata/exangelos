@@ -157,13 +157,15 @@ describe("declared files that overlap or overflow", () => {
   it.effect("refuses an archive with more entries than an import takes", () =>
     Effect.gen(function*() {
       const directory = prebuilt("extras-many")
-      for (let index = 0; index <= limits.entries / 2; index++) {
+      const within = { ...limits, entries: 40 }
+      for (let index = 0; index <= within.entries / 2; index++) {
         mkdirSync(join(directory, "assets", `${index}`), { recursive: true })
         writeFileSync(join(directory, "assets", `${index}`, "a"), "")
       }
       writeConnector(directory, ["assets"], "true")
-      const error = yield* Effect.flip(buildConnectorArchive(directory, directory))
+      const error = yield* Effect.flip(buildConnectorArchive(directory, directory, within))
       expect(error.message).toContain("would be refused on import")
+      expect(error.message).toContain(`more than ${within.entries}`)
     }).pipe(withRealPrograms))
 })
 

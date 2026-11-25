@@ -80,24 +80,38 @@ describe("file-watch connector", () => {
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
       const connector = yield* client
-      const firstEvent = (wakeWindow: Duration.Duration) =>
-        Effect.scoped(Effect.gen(function*() {
+      const watching = (wakeWindow: Duration.Duration) =>
+        Effect.gen(function*() {
           const root = yield* fs.makeTempDirectoryScoped({ prefix: "file-watch-" })
           const items = yield* Stream.toQueue(
             connector.Watch({ parameters: { path: `${root}/**` }, eventTypes: [], wakeWindow }),
             { capacity: 64 }
           )
-          const next = Queue.take(items).pipe(Effect.timeout(Duration.seconds(5)))
-          yield* next
-          yield* fs.writeFileString(`${root}/build.log`, "started")
-          yield* Effect.sleep(Duration.millis(800))
-          yield* fs.writeFileString(`${root}/build.log`, "started, done")
-          const item = yield* next
-          return item._tag === "Event" ? item.event.payload : item
-        }))
+          const next = Queue.take(items).pipe(
+            Effect.timeout(Duration.seconds(5)),
+            Effect.map((item) => item._tag === "Event" ? { type: item.event.type, ...item.event.payload } : item)
+          )
+          expect((yield* next)._tag).toBe("Cursor")
+          return { log: `${root}/build.log`, next }
+        })
 
-      expect(yield* firstEvent(Duration.millis(300))).toMatchObject({ size: 7 })
-      expect(yield* firstEvent(Duration.seconds(2))).toMatchObject({ size: 13 })
+      // A write after the first event has gone out is outside its window and makes an event of its own.
+      yield* Effect.scoped(Effect.gen(function*() {
+        const { log, next } = yield* watching(Duration.millis(300))
+        yield* fs.writeFileString(log, "started")
+        expect(yield* next).toMatchObject({ type: "file.created", size: 7 })
+        yield* fs.writeFileString(log, "started, done")
+        expect(yield* next).toMatchObject({ type: "file.changed", size: 13 })
+      }))
+
+      // A write well inside the window joins the first event.
+      yield* Effect.scoped(Effect.gen(function*() {
+        const { log, next } = yield* watching(Duration.seconds(2))
+        yield* fs.writeFileString(log, "started")
+        yield* Effect.sleep(Duration.millis(800))
+        yield* fs.writeFileString(log, "started, done")
+        expect(yield* next).toMatchObject({ type: "file.created", size: 13 })
+      }))
     }).pipe(Effect.provide(BunFileSystem.layer)))
 
   it("declares a manifest that validates and names the bundle the build writes", () => {

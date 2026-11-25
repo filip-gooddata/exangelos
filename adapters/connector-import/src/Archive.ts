@@ -4,7 +4,7 @@ import * as Path from "node:path"
 import { pipeline } from "node:stream/promises"
 import * as Tar from "tar"
 import * as Yauzl from "yauzl"
-import { type Entry, type Kind, preflight, Refused } from "./Entries.ts"
+import { type Entry, type Kind, type Limits, limits, preflight, Refused } from "./Entries.ts"
 
 const tarKind = (type: string): Kind => {
   switch (type) {
@@ -22,7 +22,7 @@ const tarKind = (type: string): Kind => {
   }
 }
 
-const unpackTarGz = async (file: string, target: string) => {
+const unpackTarGz = async (file: string, target: string, within: Limits) => {
   const entries: Array<Entry> = []
   await Tar.t({
     file,
@@ -31,7 +31,7 @@ const unpackTarGz = async (file: string, target: string) => {
       entries.push({ path: entry.path, kind: tarKind(entry.type), size: entry.size ?? 0 })
     }
   })
-  preflight(entries)
+  preflight(entries, within)
   await Tar.x({
     file,
     cwd: target,
@@ -78,7 +78,7 @@ const eachZipEntry = async (file: string, visit: (zip: Yauzl.ZipFile, entry: Yau
   })
 }
 
-const unpackZip = async (file: string, target: string) => {
+const unpackZip = async (file: string, target: string, within: Limits) => {
   const entries: Array<Yauzl.Entry> = []
   await eachZipEntry(file, async (_zip, entry) => {
     entries.push(entry)
@@ -86,7 +86,7 @@ const unpackZip = async (file: string, target: string) => {
     if (error instanceof Refused) throw error
     throw new Refused({ reason: `the zip archive is refused: ${error instanceof Error ? error.message : String(error)}` })
   })
-  const checked = preflight(entries.map((entry) => ({ path: entry.fileName, kind: zipKind(entry), size: entry.uncompressedSize })))
+  const checked = preflight(entries.map((entry) => ({ path: entry.fileName, kind: zipKind(entry), size: entry.uncompressedSize })), within)
   const wanted = new Map(checked.map((entry, index) => [entries[index]!.fileName, entry]))
 
   await eachZipEntry(file, async (zip, raw) => {
@@ -107,7 +107,7 @@ const unpackZip = async (file: string, target: string) => {
 }
 
 /** Unpacks a zip or tar.gz archive into the empty target after every entry passes the preflight. */
-export const unpack = async (file: string, target: string): Promise<void> => {
+export const unpack = async (file: string, target: string, within: Limits = limits): Promise<void> => {
   const handle = await Fs.open(file, "r")
   const head = Buffer.alloc(4)
   try {
@@ -116,7 +116,7 @@ export const unpack = async (file: string, target: string): Promise<void> => {
     await handle.close()
   }
   await Fs.mkdir(target, { recursive: true })
-  if (head[0] === 0x1f && head[1] === 0x8b) return unpackTarGz(file, target)
-  if (head[0] === 0x50 && head[1] === 0x4b) return unpackZip(file, target)
+  if (head[0] === 0x1f && head[1] === 0x8b) return unpackTarGz(file, target, within)
+  if (head[0] === 0x50 && head[1] === 0x4b) return unpackZip(file, target, within)
   throw new Refused({ reason: "the file is not a zip or tar.gz archive" })
 }
