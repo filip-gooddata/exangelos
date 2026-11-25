@@ -103,6 +103,31 @@ class LedgerTests(unittest.TestCase):
         ready = self.call(snapshot(3, [message(2, body='second text')]), pending['cursor'])
         self.assertEqual([event['type'] for event in ready['events']], ['message.new', 'message.edited'])
 
+    def test_pending_changes_release_after_creation_with_stable_order_across_pages(self):
+        cursor = self.call(snapshot(1, []))['cursor']
+        row = message(2)
+        del row['sender']
+        for generation, body, reactions in [(2, 'first', []), (3, 'second', [token('wave')]), (4, 'third', [])]:
+            row.update(body=token(body), reactions=reactions)
+            result = self.call(snapshot(generation, [row]), cursor)
+            self.assertEqual(result['events'], [])
+            cursor = result['cursor']
+        row.update(sender='Fixture Author', preview='final visible text')
+        ready = snapshot(5, [row])
+        with patch.object(ledger, 'MAX_BATCH', 2):
+            events = []
+            page = self.call(ready, cursor, includePreview=True)
+            while True:
+                events.extend(page['events'])
+                if not page.get('retryObservation'):
+                    break
+                page = self.call(ready, page['cursor'], includePreview=True)
+        self.assertEqual([e['type'] for e in events], ['message.new', 'message.edited', 'reaction.added',
+                                                       'message.edited', 'reaction.removed'])
+        self.assertEqual(len({e['dedupeKey'] for e in events}), len(events))
+        self.assertTrue(all('preview' not in e['payload'] for e in events[1:]))
+        self.assertEqual(self.count('deferred_changes'), 0)
+
     def test_pending_status_follows_subscription_and_preview_choice(self):
         cursor = self.call(snapshot(1, []))['cursor']
         row = message(1)
@@ -187,6 +212,33 @@ class LedgerTests(unittest.TestCase):
                 db.execute('INSERT INTO pending_details VALUES (?,?,1,1,1)', (lineage, row['id']))
             db.execute(f'PRAGMA user_version={version}')
         return row, early
+
+    def test_read_only_status_keeps_one_snapshot_during_migration(self):
+        _, receipt = self.migrated_receipt()
+        connection = sqlite3.connect(self.path)
+        self.addCleanup(connection.close)
+        connection.execute('PRAGMA journal_mode=WAL')
+        connection.execute('SELECT count(*) FROM commits').fetchone()
+        connect = sqlite3.connect
+        path = self.path
+
+        class MigratingReader(sqlite3.Connection):
+            def execute(self, sql, *args):
+                if 'sqlite_master' in sql:
+                    with closing(ledger.open_ledger(path, True)) as writer:
+                        writer.commit()
+                return super().execute(sql, *args)
+
+        def connect_with_migration(database, **kwargs):
+            if kwargs.get('uri'):
+                kwargs['factory'] = MigratingReader
+            return connect(database, **kwargs)
+
+        with patch.object(sqlite3, 'connect', connect_with_migration):
+            during = ledger.pending_status(receipt['cursor'], path)
+        self.assertEqual(during, [dict(delivery='legacy details', fieldsRecorded=False, messages=1)])
+        after, = ledger.pending_status(receipt['cursor'], path)
+        self.assertEqual((after['delivery'], after['messages']), ('legacy details', 1))
 
     def test_v6_pending_receipt_gets_one_actionable_details_event(self):
         row, early = self.migrated_receipt(6)
@@ -385,6 +437,7 @@ class LedgerTests(unittest.TestCase):
         frozen = dict(tip, events=[{'type': 'message.new', 'occurredAt': 1000,
                                     'dedupeKey': 'slack:' + token('legacy')}])
         with closing(sqlite3.connect(self.path)) as db, db:
+            db.execute('DROP TABLE deferred_changes')
             db.execute('DROP TABLE watch_starts')
             db.execute('DROP TABLE pending_details')
             db.execute('PRAGMA user_version=4')

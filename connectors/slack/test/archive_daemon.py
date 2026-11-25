@@ -148,7 +148,7 @@ def daemon_delivery(binary, archive, home):
 
         channel, session = once_channel, 'once'
         watch = cli('subscribe', 'slack', channel, '--intent', 'Wait for one actionable message',
-                    '--types', 'message.new', '--once', '--target', 'capture:once')['id']
+                    '--types', 'message.new,message.edited', '--once', '--target', 'capture:once')['id']
         until(lambda: cli('show', watch)['subscription'].get('cursor'))
         third = stamp()
         cursor = cli('show', watch)['subscription']['cursor']
@@ -157,8 +157,13 @@ def daemon_delivery(binary, archive, home):
         counts(0, 0)
         assert cli('show', watch)['subscription']['state']['_tag'] == 'Active'
         report_pending('author', ['author'])
-        message(third, 60, user=peer, text='Synthetic one-shot message')
-        delivery(third, 'Synthetic one-shot message', 1)
+        cursor = cli('show', watch)['subscription']['cursor']
+        message(third, 55, text='Revised one-shot message')
+        until(lambda: cli('show', watch)['subscription']['cursor'] != cursor)
+        counts(0, 0)
+        assert cli('show', watch)['subscription']['state']['_tag'] == 'Active'
+        message(third, 60, user=peer, text='Revised one-shot message')
+        delivery(third, 'Revised one-shot message', 1)
         counts(1, 0)
         assert cli('show', watch)['subscription']['state'] == {'_tag': 'Ended', 'reason': {'_tag': 'MaxEvents'}}
         assert 'It reached its number of events.' in received()[0]

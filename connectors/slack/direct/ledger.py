@@ -22,6 +22,7 @@ ERROR = 'Slack observation or cursor is incomplete, unsupported, or inconsistent
 TOKEN = re.compile(r'[a-f0-9]{64}\Z')
 GENERATION = re.compile(r'(0|[1-9][0-9]{0,19})\Z')
 CURSOR = re.compile(r'4:([a-f0-9]{32}):([a-f0-9]{32})\Z')
+MAX_BATCH = 101000
 SCHEMA = (
     'CREATE TABLE commits (lineage TEXT, id TEXT, scope TEXT NOT NULL, generation TEXT NOT NULL, snapshot TEXT NOT NULL, digest TEXT NOT NULL, PRIMARY KEY(lineage,id))',
     'CREATE TABLE versions (sequence INTEGER PRIMARY KEY, lineage TEXT NOT NULL, message TEXT NOT NULL, commit_id TEXT NOT NULL, metadata TEXT NOT NULL, revision INTEGER NOT NULL)',
@@ -212,7 +213,7 @@ def open_ledger(path, resume, *, check_integrity=True):
             version = 0
         else:
             version = db.execute('PRAGMA user_version').fetchone()[0]
-            require(version in (4, 5, 6, 7))
+            require(version in (4, 5, 6, 7, 8))
             if check_integrity:
                 require(db.execute('PRAGMA quick_check').fetchall() == [('ok',)])
             for table, columns in (('commits', 'lineage,id,scope,generation,snapshot,digest'),
@@ -230,7 +231,11 @@ def open_ledger(path, resume, *, check_integrity=True):
         if version < 7:
             db.execute('ALTER TABLE pending_details ADD COLUMN receipted INTEGER NOT NULL DEFAULT 1')
             db.execute('ALTER TABLE pending_details ADD COLUMN need_permalink INTEGER NOT NULL DEFAULT 1')
-            db.execute('PRAGMA user_version=7')
+        if version < 8:
+            db.execute('CREATE TABLE deferred_changes (lineage TEXT, message TEXT, revision INTEGER, '
+                       'ordinal INTEGER, kind TEXT NOT NULL, event_key TEXT NOT NULL, observed_at INTEGER NOT NULL, '
+                       'PRIMARY KEY(lineage,message,revision,ordinal))')
+            db.execute('PRAGMA user_version=8')
         return db
     except BaseException:
         db.close()
@@ -310,12 +315,30 @@ def reconcile(request, path=None):
         delivery = {row['id']: row for row in snapshot['messages']}
         commit = uuid.uuid4().hex
         result = {'events': [], 'cursor': f'4:{lineage}:{commit}'}
+        first_page = None
+        commit_metadata = (snapshot['scope'], snapshot['generation'], snapshot['snapshot'], '2:' + digest)
+
+        def emit(event):
+            nonlocal source, result, first_page
+            # Deferred history may span more than one bounded wire response.
+            if len(result['events']) == MAX_BATCH:
+                page = uuid.uuid4().hex
+                result.update(cursor=f'4:{lineage}:{page}', retryObservation=True)
+                db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)', (lineage, page, *commit_metadata))
+                db.execute('INSERT INTO edges VALUES (?,?,?)', (lineage, source, packed(result)))
+                if first_page is None:
+                    first_page = result
+                source = page
+                result = dict(events=[], cursor=f'4:{lineage}:{commit}')
+            result['events'].append(event)
+
         version_changed = False
         # snapshot_metadata supplies message-id order for equal numeric times.
         for message in sorted(messages, key=lambda entry: Decimal(entry['messageTs'])):
             row = db.execute('SELECT metadata,revision FROM versions WHERE lineage=? AND message=? ORDER BY sequence DESC LIMIT 1', (lineage, message['id'])).fetchone()
             old, revision = (json.loads(row[0]), row[1]) if row else (None, 0)
             changes = []
+            waiting = False
             context = delivery[message['id']]
             if previous:
                 kind = 'thread.reply' if message['reply'] else 'message.new'
@@ -333,7 +356,8 @@ def reconcile(request, path=None):
                     need_sender = not (context.get('memberSender') or context.get('sender'))
                     need_preview = previews and 'preview' not in context
                     need_permalink = not archive_permalink(context)
-                    if need_sender or need_preview or need_permalink:
+                    waiting = need_sender or need_preview or need_permalink
+                    if waiting:
                         db.execute('INSERT INTO pending_details VALUES (?,?,?,?,?,?,?) ON CONFLICT(lineage,message) '
                                    'DO UPDATE SET need_sender=excluded.need_sender, need_preview=excluded.need_preview, '
                                    'need_permalink=excluded.need_permalink WHERE (need_sender,need_preview,need_permalink) '
@@ -350,7 +374,12 @@ def reconcile(request, path=None):
                     if old['reactionsComplete'] and message['reactionsComplete']:
                         changes.extend(('reaction.added', r) for r in message['reactions'] if r not in old['reactions'])
                         changes.extend(('reaction.removed', r) for r in old['reactions'] if r not in message['reactions'])
-            for kind, transition in changes:
+            for ordinal, (kind, transition) in enumerate(changes):
+                identity = event_key(lineage, snapshot['scope'], message['id'], revision, kind, transition)
+                if waiting:
+                    db.execute('INSERT INTO deferred_changes VALUES (?,?,?,?,?,?,?)',
+                               (*key, revision, ordinal, kind, identity, observed_at))
+                    continue
                 payload = {field: message[field] for field in ('messageTs', 'conversationLabel', 'permalink', 'sender')
                            if field in message}
                 if 'memberSender' in context:
@@ -362,9 +391,18 @@ def reconcile(request, path=None):
                 if transition == 'details':
                     original = event_key(lineage, snapshot['scope'], message['id'], 0, kind, 'created')
                     payload.update(delivery='details', detailsFor=original)
-                result['events'].append({'type': kind, 'occurredAt': observed_at, 'summary': wake_summary(kind, payload, observed_at),
-                                         'dedupeKey': event_key(lineage, snapshot['scope'], message['id'], revision, kind, transition),
-                                         'payload': dict(payload, version=1, count=0 if transition == 'details' else 1)})
+                emit({'type': kind, 'occurredAt': observed_at, 'summary': wake_summary(kind, payload, observed_at),
+                      'dedupeKey': identity, 'payload': dict(payload, version=1, count=0 if transition == 'details' else 1)})
+                if transition in ('created', 'details'):
+                    # An earlier edit may describe a different body. Only reuse stable message context.
+                    stable = {field: payload[field] for field in ('messageTs', 'sender', 'conversationLabel', 'permalink')}
+                    deferred = db.execute('SELECT kind,event_key,observed_at FROM deferred_changes '
+                                          'WHERE lineage=? AND message=? ORDER BY revision,ordinal', key)
+                    for earlier_kind, earlier_key, earlier_time in deferred:
+                        emit(dict(type=earlier_kind, occurredAt=earlier_time, dedupeKey=earlier_key,
+                                  payload=dict(stable, version=1, count=1),
+                                  summary=wake_summary(earlier_kind, stable, earlier_time)))
+                    db.execute('DELETE FROM deferred_changes WHERE lineage=? AND message=?', key)
             revision += bool(changes)
             require(revision < 9007199254740990)
             if old != message or changes:
@@ -373,11 +411,11 @@ def reconcile(request, path=None):
         if same_generation and not version_changed:
             db.commit()
             return dict(events=[], cursor=cursor)
-        db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)', (lineage, commit, snapshot['scope'], snapshot['generation'], snapshot['snapshot'], '2:' + digest))
+        db.execute('INSERT INTO commits VALUES (?,?,?,?,?,?)', (lineage, commit, *commit_metadata))
         if source:
             db.execute('INSERT INTO edges VALUES (?,?,?)', (lineage, source, packed(result)))
         db.commit()
-        return result
+        return first_page or result
     finally:
         db.close()
 
@@ -387,9 +425,10 @@ def pending_status(cursor, path):
     require(match is not None and not path.is_symlink())
     db = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
     try:
+        db.execute('BEGIN')
         require(db.execute('SELECT 1 FROM commits WHERE lineage=? AND id=?', match.groups()).fetchone())
         version, = db.execute('PRAGMA user_version').fetchone()
-        require(version in (4, 5, 6, 7))
+        require(version in (4, 5, 6, 7, 8))
         if version < 6:
             if not db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='early'").fetchone():
                 return []

@@ -276,7 +276,11 @@ A new notification-enabled watch first returns its startup cursor. The daemon
 saves that cursor and reopens the watch before the connector accepts hints.
 Slack Desktop redacted the author, body and launch URL in sampled log records.
 A notice or incomplete cache row consumes no host event, wake, backlog slot or
-one-shot allowance. Pending markers survive restarts and log rotation. The
+one-shot allowance. Edits and reaction changes observed while that arrival
+is incomplete stay queued. The connector emits the actionable arrival first,
+then those changes in observation order. Queued changes retain their original
+observation times and omit excerpts that could belong to a later body.
+Pending markers survive restarts and log rotation. The
 connector checks outstanding arrivals on each configured poll, including when
 the cache generation is unchanged. `notificationLog=disabled` uses cache polling
 alone. Revoking cache access stops the watch.
