@@ -1,0 +1,33 @@
+apps/cli/src/commands/Management.ts
+  s_38969d375a251d::t_4e60753ea52317 139-142,146
+apps/cli/test/harness.ts
+  s_38969d375a251d::t_4b537f56b4b6ac 39
+connectors/github-pr/README.md
+  s_38969d375a251d::t_8de161821082b5 14
+connectors/jira/README.md
+  s_38969d375a251d::t_eb875c0f1df197 16,24-38,114
+connectors/jira/connector.json
+  s_38969d375a251d::t_8c7be9ebe02846 3
+connectors/jira/src/JiraClient.ts
+  s_38969d375a251d::t_140f5ea4f31b29 46-50,295-296,303-306,315
+connectors/jira/src/Watch.ts
+  s_38969d375a251d::t_ab39c55a5a0970 169-170,173-178,235-241
+connectors/jira/test/connector.test.ts
+  s_38969d375a251d::t_e4a9df98ef78cf 54-57,61-63,203-205,217,235-245,411
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e78b85532d061437152d95975226543dd90e7da5",
+  "prompts": {},
+  "sessions": {
+    "s_38969d375a251d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "4f4dbe12-110d-4459-8dfa-c637bb8ffeb4",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
