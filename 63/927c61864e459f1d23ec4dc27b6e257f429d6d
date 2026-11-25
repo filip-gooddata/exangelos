@@ -1,0 +1,41 @@
+connectors/jira/README.md
+  s_efc60de4232a1c::t_fdf402f52d30a5 50,73,79,88,95,108,111-113,115-117,120-123,126-128
+connectors/jira/scripts/live-check.ts
+  s_efc60de4232a1c::t_6a1124f6d7f075 12,234
+connectors/jira/src/Cursor.ts
+  s_efc60de4232a1c::t_55f51550f7b60e 18
+connectors/jira/src/Diff.ts
+  s_efc60de4232a1c::t_2ba3eca3d3e233 11,168,170,179-193
+connectors/jira/src/Events.ts
+  s_efc60de4232a1c::t_115255e88db7f2 44-48,118,135
+connectors/jira/src/GitHubSignals.ts
+  s_efc60de4232a1c::t_15fe8596d3f4d2 6,38-53,136,138-140
+connectors/jira/src/JiraClient.ts
+  s_efc60de4232a1c::t_e1d6703fc7c682 276-283,286,292
+connectors/jira/src/Watch.ts
+  s_efc60de4232a1c::t_c3be07ebe6ee56 93,206-223
+connectors/jira/test/client.test.ts
+  s_efc60de4232a1c::t_4f3291af0fe914 2,12,74,91
+connectors/jira/test/connector.test.ts
+  s_efc60de4232a1c::t_5808c17c66ccc4 82,93,209-226
+connectors/jira/test/diff.test.ts
+  s_efc60de4232a1c::t_e4d08f8ff94bbb 58,86,95,110-111,115,125-126,132,134-135
+connectors/jira/test/github.test.ts
+  s_efc60de4232a1c::t_a3487485532d63 45,50-51,123,134,137,139-156
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63927c61864e459f1d23ec4dc27b6e257f429d6d",
+  "prompts": {},
+  "sessions": {
+    "s_efc60de4232a1c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5e1519fc-1035-4aeb-a9ca-86fe69d9735c",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
