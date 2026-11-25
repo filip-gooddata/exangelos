@@ -118,20 +118,31 @@ describe("file-watch connector", () => {
           while ((yield* Ref.get(pulls)) <= sent) yield* Effect.yieldNow
         })
       const observed = yield* Ref.make<ReadonlyArray<number>>([])
+      const ticked = yield* Ref.make<ReadonlyArray<number>>([])
+      const record = (times: Ref.Ref<ReadonlyArray<number>>) =>
+        Clock.currentTimeMillis.pipe(Effect.flatMap((now) => Ref.update(times, (earlier) => [...earlier, now])))
       const fileSystem = Layer.effect(
         FileSystem.FileSystem,
         Effect.map(FileSystem.FileSystem, (fs) =>
           FileSystem.FileSystem.of({
             ...fs,
-            realPath: (path) =>
-              Clock.currentTimeMillis.pipe(
-                Effect.flatMap((now) => Ref.update(observed, (times) => [...times, now])),
-                Effect.andThen(fs.realPath(path))
-              )
+            realPath: (path) => record(observed).pipe(Effect.andThen(fs.realPath(path))),
+            lstat: (path) => fs.lstat(path).pipe(Effect.ensuring(record(ticked)))
           }))
       ).pipe(Layer.provide(BunFileSystem.layer.pipe(Layer.provide(Layer.succeed(FileSystem.WatchBackend, backend)))))
       const breather = Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
       const step = Duration.millis(500)
+      const tickedAt = (at: number) =>
+        Effect.gen(function*() {
+          for (let round = 0; round < 50; round++) {
+            if ((yield* Ref.get(ticked)).includes(at)) {
+              for (let turn = 0; turn < 10; turn++) yield* Effect.yieldNow
+              return true
+            }
+            yield* breather
+          }
+          return false
+        })
 
       yield* Effect.gen(function*() {
         const fs = yield* FileSystem.FileSystem
@@ -147,10 +158,13 @@ describe("file-watch connector", () => {
 
         yield* fs.writeFileString(log, "started")
         yield* notice({ _tag: "Create", path: log })
-        for (let round = 0; round < 3; round++) {
-          yield* TestClock.adjust(step)
-          yield* breather
+        let held = false
+        for (let round = 0; round < 6 && !held; round++) {
+          yield* TestClock.adjust(Duration.millis(250))
+          held = yield* tickedAt(yield* Clock.currentTimeMillis)
         }
+        expect(held).toBe(true)
+        expect(yield* Ref.get(observed)).toEqual([])
         expect(Option.isNone(yield* Queue.poll(items))).toBe(true)
 
         yield* fs.writeFileString(log, "started, done")
