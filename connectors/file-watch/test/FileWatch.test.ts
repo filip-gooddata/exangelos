@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "@effect/vitest"
-import { Duration, Effect, FileSystem, Queue, Schema, Stream } from "effect"
+import { Clock, Duration, Effect, FileSystem, Layer, Option, Queue, Ref, Schema, Stream } from "effect"
+import { TestClock } from "effect/testing"
 import * as BunFileSystem from "@effect/platform-bun/BunFileSystem"
 import { Manifest } from "@exangelos/contracts"
 import { ConnectorTest } from "@exangelos/connector-sdk"
@@ -76,29 +77,137 @@ describe("file-watch connector", () => {
       ])
     }).pipe(Effect.provide(BunFileSystem.layer)))
 
-  it.live("gathers the writes to one file inside the wake window into one event", () =>
+  it.live("makes another event for a write after the wake window has closed", () =>
     Effect.gen(function*() {
       const fs = yield* FileSystem.FileSystem
-      const connector = yield* client
-      const firstEvent = (wakeWindow: Duration.Duration) =>
-        Effect.scoped(Effect.gen(function*() {
-          const root = yield* fs.makeTempDirectoryScoped({ prefix: "file-watch-" })
-          const items = yield* Stream.toQueue(
-            connector.Watch({ parameters: { path: `${root}/**` }, eventTypes: [], wakeWindow }),
-            { capacity: 64 }
-          )
-          const next = Queue.take(items).pipe(Effect.timeout(Duration.seconds(5)))
-          yield* next
-          yield* fs.writeFileString(`${root}/build.log`, "started")
-          yield* Effect.sleep(Duration.millis(800))
-          yield* fs.writeFileString(`${root}/build.log`, "started, done")
-          const item = yield* next
-          return item._tag === "Event" ? item.event.payload : item
-        }))
+      const root = yield* fs.makeTempDirectoryScoped({ prefix: "file-watch-" })
+      const items = yield* Stream.toQueue(
+        (yield* client).Watch({ parameters: { path: `${root}/**` }, eventTypes: [], wakeWindow: Duration.millis(300) }),
+        { capacity: 64 }
+      )
+      const next = Queue.take(items).pipe(Effect.timeout(Duration.seconds(5)))
+      expect((yield* next)._tag).toBe("Cursor")
+      yield* fs.writeFileString(`${root}/build.log`, "started")
+      const first = yield* next
+      yield* fs.writeFileString(`${root}/build.log`, "started, done")
+      const second = yield* next
+      expect([first, second].map((item) => item._tag === "Event" ? [item.event.type, item.event.payload] : item._tag)).toEqual([
+        ["file.created", expect.objectContaining({ size: 7 })],
+        ["file.changed", expect.objectContaining({ size: 13 })]
+      ])
+    }).pipe(Effect.scoped, Effect.provide(BunFileSystem.layer)))
 
-      expect(yield* firstEvent(Duration.millis(300))).toMatchObject({ size: 7 })
-      expect(yield* firstEvent(Duration.seconds(2))).toMatchObject({ size: 13 })
-    }).pipe(Effect.provide(BunFileSystem.layer)))
+  it.effect("gathers the writes to one file inside the wake window into one event", () =>
+    Effect.gen(function*() {
+      const notices = yield* Queue.unbounded<FileSystem.WatchEvent>()
+      const pulls = yield* Ref.make(0)
+      const backend = FileSystem.WatchBackend.of({
+        register: (_path, _stat, options) =>
+          Option.some(
+            Stream.fromEffect(Effect.sync(() => options?.onReady?.())).pipe(
+              Stream.drain,
+              Stream.concat(Stream.fromEffectRepeat(Ref.update(pulls, (count) => count + 1).pipe(Effect.andThen(Queue.take(notices)))))
+            )
+          )
+      })
+      let sent = 0
+      const notice = (event: FileSystem.WatchEvent) =>
+        Effect.gen(function*() {
+          sent += 1
+          yield* Queue.offer(notices, event)
+          while ((yield* Ref.get(pulls)) <= sent) yield* Effect.yieldNow
+        })
+      const observed = yield* Ref.make<ReadonlyArray<number>>([])
+      const checked = yield* Ref.make<ReadonlyArray<number>>([])
+      const ticked = yield* Ref.make<ReadonlyArray<number>>([])
+      const base = yield* Ref.make(Option.none<{ readonly path: string; readonly info: FileSystem.File.Info }>())
+      const record = (times: Ref.Ref<ReadonlyArray<number>>) =>
+        Clock.currentTimeMillis.pipe(Effect.flatMap((now) => Ref.update(times, (earlier) => [...earlier, now])))
+      const fileSystem = Layer.effect(
+        FileSystem.FileSystem,
+        Effect.map(FileSystem.FileSystem, (fs) =>
+          FileSystem.FileSystem.of({
+            ...fs,
+            realPath: (path) => record(observed).pipe(Effect.andThen(fs.realPath(path))),
+            lstat: (path) =>
+              record(checked).pipe(
+                Effect.andThen(Ref.get(base)),
+                Effect.flatMap((known) =>
+                  Option.isSome(known) && known.value.path === path
+                    ? record(ticked).pipe(Effect.as(known.value.info))
+                    : fs.lstat(path)
+                )
+              )
+          }))
+      ).pipe(Layer.provide(BunFileSystem.layer.pipe(Layer.provide(Layer.succeed(FileSystem.WatchBackend, backend)))))
+      const breather = Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
+      const step = Duration.millis(500)
+      const tickedAt = (at: number) =>
+        Effect.gen(function*() {
+          for (let round = 0; round < 50; round++) {
+            if ((yield* Ref.get(ticked)).includes(at)) {
+              for (let turn = 0; turn < 10; turn++) yield* Effect.yieldNow
+              return true
+            }
+            yield* breather
+          }
+          return false
+        })
+
+      yield* Effect.gen(function*() {
+        const fs = yield* FileSystem.FileSystem
+        const root = yield* fs.makeTempDirectoryScoped({ prefix: "file-watch-" })
+        const log = `${root}/build.log`
+        yield* Ref.set(base, Option.some({ path: root, info: yield* fs.lstat(root) }))
+        const items = yield* Stream.toQueue(
+          (yield* client).Watch({ parameters: { path: `${root}/**` }, eventTypes: [], wakeWindow: Duration.seconds(2) }),
+          { capacity: 64 }
+        )
+        expect((yield* Queue.take(items))._tag).toBe("Cursor")
+        const started = yield* Clock.currentTimeMillis
+        yield* Ref.set(observed, [])
+        yield* Ref.set(checked, [])
+
+        yield* fs.writeFileString(log, "started")
+        yield* notice({ _tag: "Create", path: log })
+        let held = false
+        for (let round = 0; round < 6 && !held; round++) {
+          yield* TestClock.adjust(Duration.millis(250))
+          held = yield* tickedAt(yield* Clock.currentTimeMillis)
+        }
+        expect(held).toBe(true)
+        const checks = yield* Ref.get(checked)
+        expect(checks.length).toBeGreaterThan(0)
+        expect(new Set(checks).size).toBe(checks.length)
+        expect(yield* Ref.get(observed)).toEqual([])
+        expect(Option.isNone(yield* Queue.poll(items))).toBe(true)
+
+        yield* fs.writeFileString(log, "started, done")
+        yield* notice({ _tag: "Update", path: log })
+        let item = yield* Queue.poll(items)
+        while (Option.isNone(item)) {
+          yield* TestClock.adjust(step)
+          yield* breather
+          item = yield* Queue.poll(items)
+        }
+        const observations = (yield* Ref.get(observed)).map((at) => at - started)
+        expect(observations.length).toBeGreaterThan(0)
+        expect(Math.min(...observations)).toBeGreaterThanOrEqual(2000)
+        const event = item.value
+        expect(event._tag === "Event" ? [event.event.type, event.event.payload] : event._tag).toEqual(
+          ["file.created", expect.objectContaining({ size: 13 })]
+        )
+
+        for (let round = 0; round < 8; round++) {
+          yield* TestClock.adjust(step)
+          yield* breather
+        }
+        expect(Option.isNone(yield* Queue.poll(items))).toBe(true)
+      }).pipe(
+        Effect.scoped,
+        Effect.provide(fileSystem)
+      )
+    }))
 
   it("declares a manifest that validates and names the bundle the build writes", () => {
     const manifest = Schema.decodeUnknownSync(Manifest.Manifest)(

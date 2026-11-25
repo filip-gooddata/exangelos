@@ -2,7 +2,7 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSyn
 import { tmpdir } from "node:os"
 import { dirname, isAbsolute, join, posix, relative, resolve, sep } from "node:path"
 import { digestDirectory } from "@exangelos/connector-directory"
-import { inspectTree, unpack } from "@exangelos/connector-import"
+import { inspectTree, limits, unpack } from "@exangelos/connector-import"
 import { Data, Effect } from "effect"
 import { run } from "./command.ts"
 import { clearReleaseFiles, connectorArchiveName, writeChecksums } from "./release-files.ts"
@@ -94,7 +94,7 @@ const workDirectory = (name: string) =>
     (work) => Effect.sync(() => rmSync(work, { recursive: true, force: true }))
   )
 
-export const buildConnectorArchive = (connectorDirectory: string, outDirectory: string) =>
+export const buildConnectorArchive = (connectorDirectory: string, outDirectory: string, within: typeof limits = limits) =>
   Effect.gen(function*() {
     const manifest = yield* readManifest(connectorDirectory)
     if (manifest.entry._tag !== "Bundle") {
@@ -117,7 +117,7 @@ export const buildConnectorArchive = (connectorDirectory: string, outDirectory: 
     yield* createTarGz(archive, stage, entries)
     const unpacked = join(work, "unpacked")
     yield* Effect.tryPromise({
-      try: () => unpack(archive, unpacked).then(() => inspectTree(unpacked)),
+      try: () => unpack(archive, unpacked, within).then(() => inspectTree(unpacked, within)),
       catch: (error) =>
         new ConnectorManifestInvalid({
           message: `${manifest.name}: the archive would be refused on import: ${

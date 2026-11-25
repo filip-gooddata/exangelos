@@ -4,10 +4,15 @@
 # stays out of the tap.
 #
 # Usage: publish-homebrew-tap.sh <rendered tap directory> <version>
+# Every network call is tried again when it fails, and a rerun is safe: a formula and cask the tap already has are not
+# committed again.
+#
 # Environment: HOMEBREW_TAP_DEPLOY_KEY, the private half of the tap's write deploy key.
+#              GH_TOKEN, optional, to read GitHub's SSH host keys without the unauthenticated rate limit.
 #              TAP_REPOSITORY, owner/name of the tap (default filip-gooddata/homebrew-exangelos).
 #              DRY_RUN=true runs `git push --dry-run` instead of pushing.
 set -euo pipefail
+. "$(dirname "$0")/github.sh"
 
 rendered=$(realpath "$1")
 version=$2
@@ -18,11 +23,17 @@ test -n "${HOMEBREW_TAP_DEPLOY_KEY:-}" || { echo "HOMEBREW_TAP_DEPLOY_KEY is not
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT
 (umask 077 && printf '%s\n' "$HOMEBREW_TAP_DEPLOY_KEY" > "$work/key")
-curl -fsSL https://api.github.com/meta | jq -r '.ssh_keys[] | "github.com " + .' > "$work/known_hosts"
+auth=()
+if [ -n "${GH_TOKEN:-}" ]; then
+  (umask 077 && printf 'Authorization: Bearer %s\n' "$GH_TOKEN" > "$work/auth")
+  auth=(-H "@$work/auth")
+fi
+retry curl -fsSL ${auth[@]+"${auth[@]}"} -o "$work/meta.json" https://api.github.com/meta
+jq -r '.ssh_keys[] | "github.com " + .' "$work/meta.json" > "$work/known_hosts"
 test -s "$work/known_hosts"
 export GIT_SSH_COMMAND="ssh -i $work/key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$work/known_hosts"
 
-git clone --depth 1 "git@github.com:$tap.git" "$work/tap"
+retry git clone --quiet --depth 1 "git@github.com:$tap.git" "$work/tap"
 cd "$work/tap"
 mkdir -p Formula
 if [ -f Formula/exangelos.rb ]; then
@@ -49,7 +60,7 @@ fi
 git -c user.name="github-actions[bot]" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" \
   commit -q -m "exangelos $version"
 if [ "${DRY_RUN:-false}" = true ]; then
-  git push --dry-run origin HEAD:main
+  retry git push --dry-run origin HEAD:main
 else
-  git push origin HEAD:main
+  retry git push origin HEAD:main
 fi

@@ -3,11 +3,17 @@ import * as Path from "node:path"
 import { Schema } from "effect"
 
 /** Limits on what one import may bring in. */
-export const limits = {
+export interface Limits {
+  readonly downloadBytes: number
+  readonly extractedBytes: number
+  readonly entries: number
+}
+
+export const limits: Limits = {
   downloadBytes: 64 * 1024 * 1024,
   extractedBytes: 256 * 1024 * 1024,
   entries: 10_000
-} as const
+}
 
 /** A refusal: the reason is shown to the owner as is. */
 export class Refused extends Schema.TaggedError<Refused>()("Refused", { reason: Schema.String }) {}
@@ -40,8 +46,8 @@ const collisionKey = (path: string) => path.normalize("NFC").toLowerCase()
  * Checks every entry before anything is written: only files and directories, within the limits,
  * no path twice under case and Unicode folding, and no entry below a file.
  */
-export const preflight = (entries: ReadonlyArray<Entry>): ReadonlyArray<Entry> => {
-  if (entries.length > limits.entries) throw new Refused({ reason: `the archive has more than ${limits.entries} entries` })
+export const preflight = (entries: ReadonlyArray<Entry>, within: Limits = limits): ReadonlyArray<Entry> => {
+  if (entries.length > within.entries) throw new Refused({ reason: `the archive has more than ${within.entries} entries` })
   const seen = new Map<string, Kind>()
   let total = 0
   const checked = entries.map((entry) => {
@@ -50,7 +56,7 @@ export const preflight = (entries: ReadonlyArray<Entry>): ReadonlyArray<Entry> =
     if (entry.kind === "link") throw new Refused({ reason: `the entry ${path} is a link, and links are refused` })
     if (entry.kind === "special") throw new Refused({ reason: `the entry ${path} is a device or another special file` })
     total += entry.size
-    if (total > limits.extractedBytes) throw new Refused({ reason: `the archive unpacks to more than ${limits.extractedBytes} bytes` })
+    if (total > within.extractedBytes) throw new Refused({ reason: `the archive unpacks to more than ${within.extractedBytes} bytes` })
     const key = collisionKey(path)
     const earlier = seen.get(key)
     if (earlier !== undefined && (earlier === "file" || entry.kind === "file")) {
@@ -72,16 +78,16 @@ export const preflight = (entries: ReadonlyArray<Entry>): ReadonlyArray<Entry> =
 }
 
 /** Counts files and bytes against the limits while a tree is copied or walked. */
-const budget = () => {
+const budget = (within: Limits) => {
   let count = 0
   let total = 0
   return {
     entry: () => {
-      if (++count > limits.entries) throw new Refused({ reason: `the connector has more than ${limits.entries} files` })
+      if (++count > within.entries) throw new Refused({ reason: `the connector has more than ${within.entries} files` })
     },
     bytes: (size: number) => {
       total += size
-      if (total > limits.extractedBytes) throw new Refused({ reason: `the connector is larger than ${limits.extractedBytes} bytes` })
+      if (total > within.extractedBytes) throw new Refused({ reason: `the connector is larger than ${within.extractedBytes} bytes` })
     }
   }
 }
@@ -91,8 +97,8 @@ const budget = () => {
  * limits, and sets modes to 0755 for directories and executables and 0644 for other files. Every
  * source passes this before its files move into the connector directory.
  */
-export const inspectTree = async (root: string): Promise<void> => {
-  const limit = budget()
+export const inspectTree = async (root: string, within: Limits = limits): Promise<void> => {
+  const limit = budget(within)
   const visit = async (relative: string): Promise<void> => {
     for (const name of await Fs.readdir(Path.join(root, relative))) {
       const path = relative === "" ? name : `${relative}/${name}`
@@ -119,7 +125,7 @@ export const inspectTree = async (root: string): Promise<void> => {
 export const copyTree = async (source: string, target: string): Promise<void> => {
   const stat = await Fs.lstat(source).catch(() => undefined)
   if (stat === undefined || !stat.isDirectory()) throw new Refused({ reason: `${source} is not a directory` })
-  const limit = budget()
+  const limit = budget(limits)
   const copy = async (from: string, to: string): Promise<void> => {
     await Fs.mkdir(to, { recursive: true })
     for (const name of await Fs.readdir(from)) {
