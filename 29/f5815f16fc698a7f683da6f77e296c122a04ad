@@ -1,0 +1,35 @@
+.github/scripts/claim-version.sh
+  s_ce961e453dfe29::t_4687c4b04af0de 1-64
+.github/scripts/github.sh
+  s_ce961e453dfe29::t_de2ebbecf1fbb9 1-37
+.github/scripts/publish-homebrew-tap.sh
+  s_ce961e453dfe29::t_9510cda07c13dd 7-9,11,15,26-29,33,60,62
+.github/scripts/publish-release.sh
+  s_ce961e453dfe29::t_8da8a965d8bca7 1-49
+.github/workflows/release.yml
+  s_364a56c521ba21::t_5fa5794b3160cb 6-12,31-32,42-44,68,77,83,104-105,109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "29f5815f16fc698a7f683da6f77e296c122a04ad",
+  "prompts": {},
+  "sessions": {
+    "s_364a56c521ba21": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21453-7187-7233-b6e7-8e58942487e6",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_ce961e453dfe29": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c3c3ae6e-ab9d-4a15-ad3f-81c8c0493434",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
