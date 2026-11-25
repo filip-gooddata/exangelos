@@ -1,0 +1,61 @@
+connectors/slack/README.md
+  s_74d0e4316043f9::t_cf2803b6c5c571 5,192-193,263-303
+connectors/slack/connector.json
+  s_74d0e4316043f9::t_c478a18c16c215 3
+connectors/slack/direct/ledger.py
+  s_74d0e4316043f9::t_2289a89a7e6194 116,123-129,215,230-233,264,273-274,288,293-296,298,300,303,306-308,313,323-327,333-343,345,347,367,370,372-375,384-398,402-404
+connectors/slack/direct/observation.py
+  s_74d0e4316043f9::t_5b1aeb9c5a4135 417
+connectors/slack/direct/source.py
+  s_74d0e4316043f9::t_0a2cb94832c2d9 90
+connectors/slack/direct/test_ledger.py
+  s_74d0e4316043f9::t_2d0722febe6810 39-40,67-69,71-113,116-133,135-155,157-163,165-180,183-197,226-227,265,360-361
+connectors/slack/direct/test_setup.py
+  s_74d0e4316043f9::t_05a90b5d6ee761 22
+connectors/slack/src/Reconcile.ts
+  s_74d0e4316043f9::t_232206dcf2ed04 22,37,46
+connectors/slack/src/Slack.ts
+  s_74d0e4316043f9::t_23be8edb314543 35,105,107-109,113,123,126,136,138
+connectors/slack/src/Source.ts
+  s_74d0e4316043f9::t_e7a6d488ae4be8 40
+connectors/slack/test/README.md
+  s_8dda56cc70d7fc::t_a6629fa74c85e9 10-11
+connectors/slack/test/Reconcile.test.ts
+  s_c09996e226d9dd::t_f5017a88daabec 19-43
+connectors/slack/test/archive_daemon.py
+  s_8dda56cc70d7fc::t_d3f00764df54aa 1-164
+connectors/slack/test/archive_validation.py
+  s_8dda56cc70d7fc::t_72d10a7936c92a 179,474,478-479,488-489,500-501,506,517-519,621-622,628,636,653-657,676,678-679,686-695,730-734,741-745,748,779-787,790-791
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a9faeefdf937151873d4c38c8234596fe427e618",
+  "prompts": {},
+  "sessions": {
+    "s_74d0e4316043f9": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2124b-70ee-7411-a04d-ac1882584c16",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_8dda56cc70d7fc": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2124c-4e23-7d10-9675-f5719af41405",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_c09996e226d9dd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2124c-956a-7fc3-a2ac-33dd7c7cf0b3",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
