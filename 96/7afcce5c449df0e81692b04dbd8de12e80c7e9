@@ -1,0 +1,23 @@
+adapters/wake-targets/src/T3.ts
+  s_055df27291b0ef::t_cdc4d4d628a8a0 20-21,30-33
+adapters/wake-targets/src/WakeTargets.ts
+  s_055df27291b0ef::t_a8c6fffdba1f71 63
+adapters/wake-targets/test/harnesses.test.ts
+  s_055df27291b0ef::t_d56ac39a323d0c 36-39,49,63-64
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "967afcce5c449df0e81692b04dbd8de12e80c7e9",
+  "prompts": {},
+  "sessions": {
+    "s_055df27291b0ef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c2f8c046-71a7-4132-947f-8524780e6649",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
