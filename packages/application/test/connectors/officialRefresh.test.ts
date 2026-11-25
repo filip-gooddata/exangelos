@@ -103,6 +103,33 @@ describe("an official connector the upgraded binary carries in another version",
       ports
     ))
 
+  it.effect("is replaced at daemon start when the installed copy rejected its configuration, which the new one accepts", () =>
+    Effect.provide(
+      Effect.gen(function*() {
+        yield* seed(
+          stored({ catalogue: catalogue(), configuration: { _tag: "Rejected", reason: "HTTP 401" } }),
+          { catalogue: catalogue(), start: { _tag: "Slow", duration: "1 second" } }
+        )
+        yield* (yield* ConnectorFilesFake).publish(installed("github-pr", officialDigest))
+
+        yield* daemonRun(Effect.gen(function*() {
+          yield* settle
+          yield* TestClock.adjust("1 second")
+          yield* settle
+          yield* TestClock.adjust("1 second")
+          yield* settle
+        }))
+
+        expect(yield* connectorOf("github-pr")).toMatchObject({
+          version: "1.0.0",
+          digest: officialDigest,
+          configuration: { _tag: "Set" }
+        })
+        expect(yield* filesDigest).toBe(officialDigest)
+      }),
+      ports
+    ))
+
   it.effect("is left alone when the installed copy is already the carried one", () =>
     Effect.provide(
       Effect.gen(function*() {

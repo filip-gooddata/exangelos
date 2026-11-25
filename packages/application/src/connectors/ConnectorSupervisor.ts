@@ -565,12 +565,17 @@ export const layerConnectorSupervisor: Layer.Layer<
       return configuration
     })
 
-  /** Still starting: trusted, not failing, and either without a catalogue yet or not running yet. */
-  const starting = (connector: Connector.Connector) =>
+  /**
+   * Still starting: trusted, not failing, and either without a catalogue yet or not running yet. A
+   * rejected configuration counts as settled, except while a run just begun has yet to send it again:
+   * that rejection came from an earlier process, maybe of an earlier version.
+   */
+  const starting = (connector: Connector.Connector, supervised: boolean) =>
     connector.trust !== "inert" &&
     connector.process !== "failing" &&
     (connector.catalogue === undefined ||
-      (connector.configuration._tag !== "Rejected" && connector.process !== "running"))
+      (connector.process !== "running" &&
+        (connector.configuration._tag !== "Rejected" || (supervised && connector.process === "stopped"))))
 
   const ready = (name: Ids.ConnectorName) =>
     Effect.gen(function*() {
@@ -582,7 +587,7 @@ export const layerConnectorSupervisor: Layer.Layer<
         }
         const running = (yield* Ref.get(processes)).get(name)
         if (ConnectorRules.isAvailable(connector.value) && running !== undefined) return running
-        if (!starting(connector.value)) {
+        if (!starting(connector.value, yield* FiberMap.has(runs, name))) {
           const reason = Option.getOrElse(ConnectorRules.problem(connector.value), () => "it is not running")
           return yield* new Refusal.ConnectorUnavailable({ connector: name, problem: reason })
         }
