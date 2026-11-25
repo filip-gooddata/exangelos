@@ -1,0 +1,19 @@
+docs/proposals/github-token-from-gh.md
+  s_a2806d77c1af45::t_3bdbcf809a4978 13,36-38,58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "51c8253519bb19ec44a579e22233f883fe175008",
+  "prompts": {},
+  "sessions": {
+    "s_a2806d77c1af45": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "76bcc883-6ca5-4144-beaf-5792e63cd9fd",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
