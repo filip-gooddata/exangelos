@@ -1,0 +1,19 @@
+gap/rpc-stdio/test/RpcStdio.test.ts
+  s_934f7636e560c5::t_8b557bb81682b2 6,10-13,25-26,29-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1643bed28a346efa07e5349e83cd96865ffaa375",
+  "prompts": {},
+  "sessions": {
+    "s_934f7636e560c5": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "01c174ed-c6ab-4cab-ac9b-3f94b0edfa66",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
