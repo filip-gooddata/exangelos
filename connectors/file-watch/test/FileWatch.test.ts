@@ -120,6 +120,7 @@ describe("file-watch connector", () => {
       const observed = yield* Ref.make<ReadonlyArray<number>>([])
       const checked = yield* Ref.make<ReadonlyArray<number>>([])
       const ticked = yield* Ref.make<ReadonlyArray<number>>([])
+      const base = yield* Ref.make(Option.none<{ readonly path: string; readonly info: FileSystem.File.Info }>())
       const record = (times: Ref.Ref<ReadonlyArray<number>>) =>
         Clock.currentTimeMillis.pipe(Effect.flatMap((now) => Ref.update(times, (earlier) => [...earlier, now])))
       const fileSystem = Layer.effect(
@@ -128,7 +129,15 @@ describe("file-watch connector", () => {
           FileSystem.FileSystem.of({
             ...fs,
             realPath: (path) => record(observed).pipe(Effect.andThen(fs.realPath(path))),
-            lstat: (path) => record(checked).pipe(Effect.andThen(fs.lstat(path)), Effect.ensuring(record(ticked)))
+            lstat: (path) =>
+              record(checked).pipe(
+                Effect.andThen(Ref.get(base)),
+                Effect.flatMap((known) =>
+                  Option.isSome(known) && known.value.path === path
+                    ? record(ticked).pipe(Effect.as(known.value.info))
+                    : fs.lstat(path)
+                )
+              )
           }))
       ).pipe(Layer.provide(BunFileSystem.layer.pipe(Layer.provide(Layer.succeed(FileSystem.WatchBackend, backend)))))
       const breather = Effect.promise(() => new Promise<void>((resolve) => setTimeout(resolve, 10)))
@@ -149,6 +158,7 @@ describe("file-watch connector", () => {
         const fs = yield* FileSystem.FileSystem
         const root = yield* fs.makeTempDirectoryScoped({ prefix: "file-watch-" })
         const log = `${root}/build.log`
+        yield* Ref.set(base, Option.some({ path: root, info: yield* fs.lstat(root) }))
         const items = yield* Stream.toQueue(
           (yield* client).Watch({ parameters: { path: `${root}/**` }, eventTypes: [], wakeWindow: Duration.seconds(2) }),
           { capacity: 64 }
