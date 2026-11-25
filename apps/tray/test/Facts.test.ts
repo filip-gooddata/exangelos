@@ -45,6 +45,13 @@ describe("Facts", () => {
     expect(Facts.filledValues(fields, { mode: " left " })).toEqual({ mode: " left " })
     expect(Facts.filledValues(fields, { mode: " ", site: "  " })).toEqual({ mode: " " })
   })
+  it("hides only secret fields, not the text fields that say where secrets go", () => {
+    expect(Facts.isSecretField({ _tag: "Secret", key: "token", label: "Token", required: true })).toBe(true)
+    expect(Facts.isSecretField({ _tag: "Text", key: "site", label: "Site", required: true, secretDestination: true }))
+      .toBe(false)
+    expect(Facts.isSecretField({ _tag: "Text", key: "email", label: "Email", required: true, secretDestination: false }))
+      .toBe(false)
+  })
   it("names the event to acknowledge through when resume is over the backlog limit", () => {
     const over = (reason: "count" | "age") => Facts.refusalText(new DaemonContract.BacklogOverLimit({ pending: 25, limit: 20, through: 41, reason }))
     expect(over("count")).toBe("The backlog holds 25 pending events, over the limit of 20. Acknowledge through event 41, then resume.")

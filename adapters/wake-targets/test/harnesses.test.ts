@@ -1,5 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Duration, Effect, Exit, Layer } from "effect"
+import { Duration, Effect, Exit, Fiber, Layer } from "effect"
+import { TestClock } from "effect/testing"
 import { WakeTarget } from "@exangelos/application"
 import { layerSettingsStore } from "@exangelos/application/testing"
 import { WakeText } from "@exangelos/contracts"
@@ -32,7 +33,10 @@ describe("T3 Code", () => {
       _tag: "Failed",
       reason: "t3 exited with 1: Thread t1 is archived and cannot receive messages."
     })
-    expect(T3.interpret(timedOut)).toEqual({ _tag: "Failed", reason: "t3 did not finish within 30s" })
+    expect(T3.interpret(timedOut)).toEqual({
+      _tag: "Delivered",
+      note: "t3 did not finish within 30s; the wake may not have arrived and is not resent"
+    })
   })
 
   it.effect("passes an id that starts with a dash after --, with the text on stdin", () =>
@@ -40,6 +44,24 @@ describe("T3 Code", () => {
       const { exit, spawned } = yield* deliverTo({ harness: "t3", sessionId: "-x:1" })
       expect(Exit.isSuccess(exit)).toBe(true)
       expect(spawned).toEqual([{ program: "/fake/bin/t3", args: ["thread", "send", "--", "-x:1", "-"], stdin: text }])
+    }))
+
+  it.effect("gives a slow t3 two minutes, then counts the wake as sent rather than resend it", () =>
+    Effect.gen(function*() {
+      const runner = yield* recordingSpawner({ exitCode: 0, hangs: true })
+      const fiber = yield* Effect.gen(function*() {
+        yield* (yield* WakeTarget.WakeTarget).deliver({ harness: "t3", sessionId: "t1" }, content)
+      }).pipe(
+        Effect.provide(layer({ lookup: () => fakeBin }).pipe(Layer.provide([runner.layer, layerSettingsStore()]))),
+        Effect.exit,
+        Effect.forkChild
+      )
+      yield* TestClock.adjust("1 minute")
+      expect(fiber.pollUnsafe()).toBeUndefined()
+      yield* TestClock.adjust("1 minute")
+      const exit = yield* Fiber.join(fiber)
+      expect(Exit.isSuccess(exit)).toBe(true)
+      expect(yield* runner.spawned).toHaveLength(1)
     }))
 })
 

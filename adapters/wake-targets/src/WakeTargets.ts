@@ -12,7 +12,7 @@ import * as Executable from "./Executable.ts"
 import * as T3 from "./T3.ts"
 
 export interface Options {
-  /** How long one attempt may run before it counts as failed. Default 30 seconds. */
+  /** How long one attempt may run before it counts as failed, for every harness. Default per harness. */
   readonly limit?: Duration.Input
   /** Where the harness CLIs are looked up, read at each wake. Default the daemon's environment and file system. */
   readonly lookup?: () => Executable.Lookup
@@ -29,7 +29,7 @@ const refuse = (reason: string, logged: string = reason): Effect.Effect<never, W
 interface Runner {
   readonly spawner: ChildProcessSpawner.ChildProcessSpawner["Service"]
   readonly lookup: () => Executable.Lookup
-  readonly limit: Duration.Duration
+  readonly limit: Duration.Duration | undefined
 }
 
 const runner = (options: Options): Effect.Effect<Runner, never, ChildProcessSpawner.ChildProcessSpawner> =>
@@ -37,7 +37,7 @@ const runner = (options: Options): Effect.Effect<Runner, never, ChildProcessSpaw
     return {
       spawner: yield* ChildProcessSpawner.ChildProcessSpawner,
       lookup: options.lookup ?? Executable.system,
-      limit: Duration.fromInputUnsafe(options.limit ?? defaultLimit)
+      limit: options.limit === undefined ? undefined : Duration.fromInputUnsafe(options.limit)
     }
   })
 
@@ -45,11 +45,12 @@ const attempt = (
   { limit, lookup, spawner }: Runner,
   planned: Invocation,
   interpret: (outcome: Outcome) => Verdict,
-  label: string
+  label: string,
+  harnessLimit: Duration.Duration = defaultLimit
 ): Effect.Effect<void, WakeTarget.DeliveryFailed> =>
   Effect.gen(function*() {
     const located = Executable.locate(planned, lookup())
-    const outcome = "_tag" in located ? located : yield* run(spawner, located, limit)
+    const outcome = "_tag" in located ? located : yield* run(spawner, located, limit ?? harnessLimit)
     const verdict = interpret(outcome)
     const annotations = { command: label, result: outcome._tag }
     if (verdict._tag === "Failed") {
@@ -100,7 +101,7 @@ export const layer = (
         const session = target
         switch (session.harness) {
           case "t3":
-            return attempt(run, T3.invocation(session.sessionId, WakeText.render(content)), T3.interpret, "t3")
+            return attempt(run, T3.invocation(session.sessionId, WakeText.render(content)), T3.interpret, "t3", T3.limit)
           case "codex":
             return attempt(run, Codex.invocation(session.sessionId, WakeText.render(content)), Codex.interpret, "codex")
           case "claude-code":
