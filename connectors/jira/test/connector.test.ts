@@ -376,8 +376,12 @@ describe("Jira connector", () => {
       expect(JSON.parse(healthy)).toMatchObject({ githubFailure: null, githubFailures: 1, github: { repo: "acme/app" } })
 
       refused = true
-      const again = yield* client.Watch({ parameters, eventTypes: [], cursor: healthy }).pipe(Stream.take(1), Stream.runCollect)
+      const again = yield* client.Watch({ parameters, eventTypes: [], cursor: healthy }).pipe(Stream.take(2), Stream.runCollect)
       expect(again[0]).toMatchObject({ event: { type: "github.unavailable", dedupeKey: "10042:github:unavailable:2" } })
+      const stillFailing = again[1]?._tag === "Cursor" ? again[1].cursor : ""
+      const moved = yield* client.Watch({ parameters: { ...parameters, githubRepo: "acme/other" }, eventTypes: [], cursor: stillFailing })
+        .pipe(Stream.take(1), Stream.runCollect)
+      expect(moved[0]).toMatchObject({ event: { type: "github.unavailable", dedupeKey: "10042:github:unavailable:3" } })
     }).pipe(Effect.scoped))
 
   it("declares an entry the manifest schema accepts", () => {

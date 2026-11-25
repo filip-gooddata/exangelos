@@ -45,6 +45,8 @@ interface Watched {
   readonly githubToken: Redacted.Redacted<string> | undefined
 }
 
+const githubDeadline = Duration.seconds(30)
+
 type GitHubOutcome =
   | { readonly _tag: "Read"; readonly poll: GitHubPoll }
   | { readonly _tag: "Skipped" }
@@ -108,7 +110,14 @@ const read = (watched: Watched, site: JiraSite, cursor: string | undefined) =>
           observedAt: yield* DateTime.now
         }).pipe(
           Effect.map((poll): GitHubOutcome => ({ _tag: "Read", poll })),
-          Effect.catch((error) => githubOutcome(signals.repo, error))
+          Effect.catch((error) => githubOutcome(signals.repo, error)),
+          Effect.timeoutOrElse({
+            duration: githubDeadline,
+            orElse: () =>
+              Effect.logWarning("GitHub signals took too long; skipped this poll").pipe(
+                Effect.as<GitHubOutcome>({ _tag: "Skipped" })
+              )
+          })
         ))
       switch (outcome._tag) {
         case "Read":
@@ -119,11 +128,13 @@ const read = (watched: Watched, site: JiraSite, cursor: string | undefined) =>
         case "Skipped":
           return jira
         case "Unavailable": {
-          if (jira.cursor.githubFailure !== null) return { ...jira, cursor: { ...jira.cursor, githubFailure: outcome.reason } }
+          const scope = [signals.repo, signals.search, signals.sha ?? ""].join(" ")
+          const failure = { scope, reason: outcome.reason }
+          if (jira.cursor.githubFailure?.scope === scope) return { ...jira, cursor: { ...jira.cursor, githubFailure: failure } }
           const episode = jira.cursor.githubFailures + 1
           return {
             events: [...jira.events, unavailableEvent({ issue, repo: signals.repo, reason: outcome.reason, episode, siteUrl: site.url, at: yield* DateTime.now })],
-            cursor: { ...jira.cursor, githubFailure: outcome.reason, githubFailures: episode }
+            cursor: { ...jira.cursor, githubFailure: failure, githubFailures: episode }
           }
         }
       }

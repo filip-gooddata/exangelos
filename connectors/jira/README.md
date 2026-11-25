@@ -64,7 +64,7 @@ Jira events come from the issue's changelog and comments, so a change and its re
 
 Changing `githubRepo`, `githubSearch` or `since` starts that part again from a baseline.
 
-A GitHub failure never holds back the Jira events. When GitHub refuses `githubToken`, `githubRepo` or the `sha` commit is gone, or no `githubToken` is configured, the subscription reports `github.unavailable` with the reason, once per outage, and keeps trying GitHub on every poll; after the signals recover, it reports the next outage again. A rate limit or any other GitHub failure skips the GitHub signals for that poll only, without an event. Keep `github.unavailable` in `--types`, or a broken token goes unnoticed.
+A GitHub failure never holds back the Jira events. When GitHub refuses `githubToken`, `githubRepo` or the `sha` commit is gone, or no `githubToken` is configured, the subscription reports `github.unavailable` with the reason, once per outage, and keeps trying GitHub on every poll. An outage ends when the signals recover or when `githubRepo`, `githubSearch` or `sha` changes; the next one is reported again. A rate limit, a GitHub step that takes longer than 30 seconds, or any other GitHub failure skips the GitHub signals for that poll only, without an event. Keep `github.unavailable` in `--types`, or a broken token goes unnoticed.
 
 The watch ends when the issue is gone or the account can no longer see it, and when a JQL query fails or matches more than 1,000 issues.
 

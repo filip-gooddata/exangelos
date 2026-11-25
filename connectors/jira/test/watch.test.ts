@@ -1,7 +1,7 @@
-import type { GitHub } from "../src/GitHub.ts"
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Fiber, Redacted, Stream } from "effect"
 import { TestClock } from "effect/testing"
+import type { GitHub } from "../src/GitHub.ts"
 import type { JiraClient } from "../src/JiraClient.ts"
 import { CredentialRejected, RateLimited } from "../src/JiraError.ts"
 import type { JiraSite } from "../src/Site.ts"
@@ -67,5 +67,29 @@ describe("Watch", () => {
       const failure = yield* Fiber.join(fiber)
       expect(failure._tag).toBe("CredentialsRejected")
       expect(resolutions).toBe(2)
+    }))
+
+  it.effect("moves the Jira cursor when GitHub does not answer in time", () =>
+    Effect.gen(function*() {
+      const client: JiraClient["Service"] = {
+        checkSite: () => Effect.succeed(site),
+        resolveRoute: () => Effect.succeed(site),
+        readIssue: () => Effect.succeed(snapshot),
+        readJql: () => Effect.die("unused"),
+        checkJql: () => Effect.die("unused")
+      }
+      const fiber = yield* watch({
+        client,
+        github: { ...unusedGitHub, searchPullRequests: () => Effect.never },
+        site,
+        target: { kind: "issue", key: "DEMO-7" },
+        options: { fields: undefined, github: { repo: "acme/app", search: "DEMO-7", paths: [], since: undefined, sha: undefined } },
+        githubToken: Redacted.make("ghp-not-a-real-token"),
+        cursor: undefined
+      }).pipe(Stream.take(1), Stream.runCollect, Effect.forkChild)
+      yield* TestClock.adjust("30 seconds")
+      const items = yield* Fiber.join(fiber)
+      const cursor = items[0]?._tag === "Cursor" ? JSON.parse(items[0].cursor) : undefined
+      expect(cursor).toMatchObject({ issueId: "10042", github: null, githubFailure: null })
     }))
 })
