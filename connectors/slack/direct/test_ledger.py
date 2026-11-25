@@ -143,6 +143,19 @@ class LedgerTests(unittest.TestCase):
         self.assertNotIn('preview', event['payload'])
         self.assertEqual(ledger.pending_status(disabled['cursor'], self.path), [])
 
+    def test_upgrade_whitespace_file_marker_without_synthetic_edits(self):
+        old = message(2, body=' ')
+        snap = snapshot(1, [old])
+        cursor = self.call(snap)['cursor']
+        canonical = dict(old, body=token(''), fileShare=True)
+        upgraded = dict(snap, messages=[dict(canonical, legacyBody=old['body'])])
+        migration = self.call(upgraded, cursor)
+        self.assertEqual(migration['events'], [])
+        empty = self.call(snapshot(2, [canonical]), migration['cursor'])
+        self.assertEqual(empty['events'], [])
+        edit, = self.call(snapshot(3, [dict(canonical, body=token('edit timestamp'))]), empty['cursor'])['events']
+        self.assertEqual(edit['type'], 'message.edited')
+
     def test_cache_first_preview_enrichment_in_same_generation(self):
         cursor = self.call(snapshot(1, []))['cursor']
         row = message(2)

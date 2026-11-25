@@ -168,6 +168,9 @@ def snapshot_metadata(snapshot):
         entry = {field: message[field] for field in fields}
         if 'sender' in message:
             entry['sender'] = message['sender']
+        if 'legacyBody' in message:
+            require(token(message['legacyBody']))
+            entry['body'] = message['legacyBody']
         entry['reactions'] = sorted(reactions)
         normalized.append(entry)
     normalized.sort(key=lambda m: m['id'])
@@ -315,7 +318,8 @@ def reconcile(request, path=None):
             if same_generation:
                 unchanged = snapshot['snapshot'] == previous[2] and previous[3] in (digest, '2:' + digest)
                 require(unchanged or legacy_context_matches(db, lineage, messages, previous[3]))
-                if not db.execute('SELECT 1 FROM pending_details WHERE lineage=? LIMIT 1', (lineage,)).fetchone():
+                if (not any('legacyBody' in row for row in snapshot['messages']) and
+                        not db.execute('SELECT 1 FROM pending_details WHERE lineage=? LIMIT 1', (lineage,)).fetchone()):
                     db.commit()
                     return {'events': [], 'cursor': cursor}
         # Previews belong only to eligible delivery edges, never to baselines or version history.
@@ -347,6 +351,11 @@ def reconcile(request, path=None):
             changes = []
             waiting = False
             context = delivery[message['id']]
+            if context.get('fileUnavailable'):
+                continue
+            raw_body = message['body']
+            if 'legacyBody' in context:
+                message = dict(message, body=context['body'])
             if previous:
                 kind = 'thread.reply' if message['reply'] else 'message.new'
                 key = lineage, message['id']
@@ -376,7 +385,7 @@ def reconcile(request, path=None):
                 if old is not None:
                     require(old['reply'] == message['reply'])
                     hydration = arrival and old['body'] == snapshot.get('emptyBody') and not context.get('edited')
-                    if old['body'] != message['body'] and not hydration:
+                    if old['body'] not in (message['body'], raw_body) and not hydration:
                         changes.append(('message.edited', message['body']))
                     if old['reactionsComplete'] and message['reactionsComplete']:
                         changes.extend(('reaction.added', r) for r in message['reactions'] if r not in old['reactions'])

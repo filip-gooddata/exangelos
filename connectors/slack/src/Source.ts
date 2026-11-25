@@ -39,6 +39,8 @@ export const Snapshot = Schema.Struct({
   complete: Schema.Literal(true),
   messages: Schema.Array(Schema.Struct({
     ...MessageContext.fields,
+    fileUnavailable: Schema.optionalKey(Schema.Literal(true)),
+    legacyBody: Schema.optionalKey(Token),
     edited: Schema.optionalKey(Schema.Literal(true)),
     memberSender: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160))),
     memberPeer: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160))),

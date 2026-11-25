@@ -549,6 +549,23 @@ def exercise(installed, home):
     check(FILE_SECRET not in json.dumps(file_batch), 'file metadata excluded from RPC output')
     check(resume(conversation, 'enabled') == file_batch, 'exact installed file-share replay')
     check(resume(conversation, 'disabled') == without_previews(file_batch), 'file-share replay after opt-out')
+    cursors[conversation] = file_batch[-1]['cursor']
+    messages[file_ts]['text'] = ' '
+    unavailable_ts = current_timestamp()
+    add(unavailable_ts)
+    messages[unavailable_ts].update(text='', **shared_file(home / FILE_SECRET))
+    messages[unavailable_ts]['files'][0]['file_access'] = 'check_file_info'
+    caption_ts = current_timestamp()
+    add(caption_ts)
+    messages[caption_ts].update(text='', blocks=[dict(type='header', text=dict(type='plain_text', text='Fixture caption'))],
+                                **shared_file(home / FILE_SECRET))
+    database(app, state, sequence=69)
+    caption_event, = [item['event'] for item in resume(conversation, 'enabled')]
+    caption = caption_event['payload']
+    check(caption_event['type'] == 'message.new' and caption['messageTs'] == caption_ts
+          and caption['preview'] == 'Fixture caption' and 'fileShare' not in caption,
+          'only captioned arrival alongside an unavailable file and a blank fallback update')
+    check(FILE_NAME not in json.dumps(caption_event), 'caption retains precedence over filename')
     with Wire(installed, home) as wire:
         wire.configure(config)
         dm_handle = describe(wire, dm)

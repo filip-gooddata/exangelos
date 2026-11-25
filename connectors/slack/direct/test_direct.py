@@ -192,7 +192,8 @@ class DirectTests(unittest.TestCase):
             self.assertNotIn('forbidden', repr(projected_files))
             if not previews:
                 self.assertNotIn('name', repr(projected_files))
-            return observation.snapshot(state, SELECTION, KEY, include_preview=previews)['messages']
+            rows = observation.snapshot(state, SELECTION, KEY, include_preview=previews)['messages']
+            return [row for row in rows if not row.get('fileUnavailable')]
 
         with mock.patch.dict('os.environ', {'FIXTURE_SECRET': 'fixture-secret'}):
             share, = selected()

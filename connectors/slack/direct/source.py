@@ -87,7 +87,12 @@ def acquire(request):
         if len(messages) > MAX_MESSAGES:
             raise ValueError('limit')
     messages.sort(key=lambda message: message['id'])
-    marker_rows = [{k: v for k, v in message.items() if k not in ('preview', 'memberSender', 'memberPeer', 'edited', 'fileShare')} for message in messages]
+    marker_rows = []
+    for message in messages:
+        marker = {k: v for k, v in message.items() if k not in (
+            'preview', 'memberSender', 'memberPeer', 'edited', 'fileShare', 'fileUnavailable', 'legacyBody')}
+        marker['body'] = message.get('legacyBody', message['body'])
+        marker_rows.append(marker)
     return {'scope': scope, 'complete': True, 'messages': messages, 'generation': str(generation),
             'emptyBody': observation.token(key, 'body', '', None),
             'snapshot': observation.token(key, 'selected-snapshot-v1', scope, marker_rows)}

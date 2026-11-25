@@ -391,20 +391,27 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
                 continue
         fallback = message.get('text')
         eligible = not hidden and same_team(message, workspace) and excerpt_eligible(message)
-        files = []
         no_caption = 'text' not in message or isinstance(fallback, str) and not fallback.strip()
-        if no_caption and (message.get('files') or message.get('subtype') == 'file_share'):
+        file_candidate = no_caption and (message.get('files') or message.get('subtype') == 'file_share')
+        missing_app_text = 'text' not in message and app_message(message)
+        layout = visible_layout(message) if eligible and (include_preview or missing_app_text or file_candidate) else ''
+        has_layout = any(c.isprintable() and not c.isspace() for c in layout)
+        files = []
+        unavailable = False
+        legacy_body = None
+        if file_candidate and not has_layout:
             if eligible and message.get('subtype') in (None, 'file_share'):
                 files = list(visible_files(message))
             if not files:
-                complete = False
-                continue
-            if fallback is None:
+                if hidden or not isinstance(fallback, str):
+                    continue
+                unavailable = True
+            elif fallback:
+                # Keep the 0.6.1 raw marker for same-generation cursor validation.
+                legacy_body = token(key, 'body', fallback, message.get('edited'))
+            if files:
                 fallback = ''
-        missing_app_text = 'text' not in message and app_message(message)
-        layout = visible_layout(message) if eligible and not files and (include_preview or missing_app_text) else ''
-        if missing_app_text and any(c.isprintable() and not c.isspace() for c in layout):
-            # Slack's optional notification fallback uses the existing empty-text body marker.
+        elif 'text' not in message and has_layout and (missing_app_text or file_candidate):
             fallback = ''
         if hidden or not isinstance(fallback, str):
             complete = False
@@ -445,6 +452,8 @@ def snapshot(state, selection, key, *, require_reactions=True, thread_root=None,
             **({'memberSender': sender_name} if sender_name else {}),
             **({'memberPeer': peer_name} if peer_name else {}),
             **({'fileShare': True} if files else {}),
+            **({'fileUnavailable': True} if unavailable else {}),
+            **({'legacyBody': legacy_body} if legacy_body else {}),
             **({'preview': preview} if preview else {}),
             **({'edited': True} if message.get('edited') else {}),
             'id': token(key, 'message', *selection, timestamp),
