@@ -1,9 +1,9 @@
 import { DaemonContract, SessionHeaders } from "@exangelos/contracts"
 import type { Alert, Connector, Session, Settings, Subscription } from "@exangelos/domain"
-import { Context, Effect, Layer, Predicate, Result, Schema } from "effect"
+import { Context, Effect, Layer, Predicate, Result, Schedule, Schema } from "effect"
 import { type Rpc, RpcClient, RpcSerialization } from "effect/rpc"
 import type { RpcClientError } from "effect/rpc/RpcClientError"
-import type { Socket } from "effect/socket"
+import { Socket } from "effect/socket"
 
 export class DaemonClient extends Context.Service<
   DaemonClient,
@@ -71,11 +71,20 @@ const describeDefect = (defect: unknown): string => {
 
 const isClientError = (error: unknown): error is RpcClientError => Predicate.isTagged(error, "RpcClientError")
 
+// A connection the daemon closed or that stopped answering fails every call
+// in flight on it, and a write that races the close dies with the socket
+// error; the client reconnects on its own within about a second.
+const isDropped = (error: unknown) =>
+  Socket.isSocketError(error) ||
+  (isClientError(error) && (error.reason._tag === "SocketCloseError" || error.reason._tag === "SocketReadError"))
+
 const section = <A, E>(
   operation: string,
   call: Effect.Effect<A, E | RpcClientError>
 ): Effect.Effect<Section<A>, DaemonNotRunning> =>
   call.pipe(
+    Effect.catchDefect((defect) => Socket.isSocketError(defect) ? Effect.fail(defect) : Effect.die(defect)),
+    Effect.retry({ while: isDropped, schedule: Schedule.exponential("100 millis"), times: 5 }),
     Effect.map(Result.succeed),
     Effect.catch((error) =>
       isClientError(error) && error.reason._tag === "SocketOpenError"
@@ -127,7 +136,7 @@ const listed = (client: DaemonClient["Service"]) =>
       }
     }))
 
-/** Loads every subscription, closed ones included, with the details of each, the titles of the sessions they wake, the connectors with their trust alerts, the settings and the service status. A call that fails or that the daemon answers with a defect fails only its own section; the details fail with the first failing `Show`, or with `List`. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */
+/** Loads every subscription, closed ones included, with the details of each, the titles of the sessions they wake, the connectors with their trust alerts, the settings and the service status. A call whose connection drops is retried for about three seconds. A call that fails or that the daemon answers with a defect fails only its own section; the details fail with the first failing `Show`, or with `List`. Fails with {@link DaemonNotRunning} when the socket cannot be opened. */
 export const snapshot: Effect.Effect<Snapshot, DaemonNotRunning, DaemonClient> = Effect.flatMap(
   DaemonClient,
   (client) =>
