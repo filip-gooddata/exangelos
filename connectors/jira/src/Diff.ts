@@ -1,5 +1,6 @@
 import { DateTime } from "effect"
 import type { IssueCursor, JqlCursor } from "./Cursor.ts"
+import { reportsField } from "./Options.ts"
 import { overlap } from "./Snapshot.ts"
 import { browseLink } from "./Site.ts"
 import type { Comment, FieldChange, History, IssueSnapshot, JqlSnapshot, ListPosition, ListTail, Person } from "./Snapshot.ts"
@@ -10,7 +11,11 @@ export const eventTypes = {
   assigneeChanged: "assignee.changed",
   fieldChanged: "field.changed",
   issueEntered: "issue.entered",
-  issueLeft: "issue.left"
+  issueLeft: "issue.left",
+  pullRequestFound: "pull_request.found",
+  pullRequestChanged: "pull_request.changed",
+  commitAdded: "commit.added",
+  releaseFound: "release.found"
 } as const
 export type JiraEventType = typeof eventTypes[keyof typeof eventTypes]
 
@@ -96,11 +101,19 @@ const typeOfChange = (change: FieldChange): JiraEventType => {
   }
 }
 
-const historyEvents = (snapshot: IssueSnapshot, link: string, history: History): ReadonlyArray<JiraEvent> =>
-  history.items.map((change, index) => {
+const historyEvents = (
+  snapshot: IssueSnapshot,
+  link: string,
+  history: History,
+  fields: ReadonlyArray<string> | undefined
+): ReadonlyArray<JiraEvent> =>
+  history.items.flatMap((change, index) => {
     const type = typeOfChange(change)
+    if (type === eventTypes.fieldChanged && !reportsField(fields, { field: change.field, fieldId: change.fieldId ?? null })) {
+      return []
+    }
     const what = type === eventTypes.fieldChanged ? change.field : type === eventTypes.statusChanged ? "status" : "assignee"
-    return {
+    return [{
       type,
       occurredAt: history.created,
       summary: `${snapshot.key}: ${what} ${shown(change.fromString)} → ${shown(change.toString)} by ${
@@ -119,7 +132,7 @@ const historyEvents = (snapshot: IssueSnapshot, link: string, history: History):
       },
       link,
       dedupeKey: `${snapshot.id}:history:${history.id}:${index}`
-    }
+    }]
   })
 
 const commentEvent = (snapshot: IssueSnapshot, siteUrl: string, comment: Comment): JiraEvent => {
@@ -149,24 +162,27 @@ export const diffIssue = (input: {
   readonly siteUrl: string
   readonly previous: IssueCursor | undefined
   readonly snapshot: IssueSnapshot
+  /** The `fields` option: which fields field.changed reports; undefined reports all. */
+  readonly fields?: ReadonlyArray<string> | undefined
 }): IssuePoll => {
-  const { previous, siteUrl, snapshot } = input
+  const { fields, previous, siteUrl, snapshot } = input
   const link = browseLink(siteUrl, snapshot.key)
   const known = previous?.issueId === snapshot.id ? previous : undefined
   const changelog = advance(known?.changelog, snapshot.changelog)
   const comments = advance(known?.comments, snapshot.comments)
   const events = [
-    ...changelog.fresh.flatMap((history) => historyEvents(snapshot, link, history)),
+    ...changelog.fresh.flatMap((history) => historyEvents(snapshot, link, history, fields)),
     ...comments.fresh.map((comment) => commentEvent(snapshot, siteUrl, comment))
   ].sort((a, b) => DateTime.toEpochMillis(a.occurredAt) - DateTime.toEpochMillis(b.occurredAt))
   return {
     events,
     cursor: {
-      v: 1,
+      v: 2,
       target: "issue",
       issueId: snapshot.id,
       changelog: changelog.position,
-      comments: comments.position
+      comments: comments.position,
+      github: known?.github ?? null
     }
   }
 }

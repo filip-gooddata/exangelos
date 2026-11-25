@@ -9,12 +9,40 @@ const Position = Schema.Struct({
   atLast: Schema.Array(Schema.String)
 })
 
-export const IssueCursor = Schema.Struct({
+/**
+ * What the GitHub signals have seen. `repo`, `search` and `since` are the ones the state was read
+ * with: when a parameter changes, the part it governs starts again from a baseline.
+ */
+export const GitHubCursor = Schema.Struct({
+  repo: Schema.String,
+  search: Schema.String,
+  since: Schema.String,
+  pullRequests: Schema.Array(Schema.Struct({ number: Schema.Finite, state: Schema.String })),
+  paths: Schema.Array(Schema.Struct({ path: Schema.String, seen: Schema.Array(Schema.String) })),
+  /** The commit release.found looks for, the release tags already known not to contain it, and the tag that does. */
+  release: Schema.NullOr(Schema.Struct({
+    sha: Schema.String,
+    checked: Schema.Array(Schema.String),
+    tag: Schema.NullOr(Schema.String)
+  }))
+})
+export type GitHubCursor = typeof GitHubCursor.Type
+
+const IssueCursorV1 = Schema.Struct({
   v: Schema.Literal(1),
   target: Schema.Literal("issue"),
   issueId: Schema.String,
   changelog: Position,
   comments: Position
+})
+
+export const IssueCursor = Schema.Struct({
+  v: Schema.Literal(2),
+  target: Schema.Literal("issue"),
+  issueId: Schema.String,
+  changelog: Position,
+  comments: Position,
+  github: Schema.NullOr(GitHubCursor)
 })
 export type IssueCursor = typeof IssueCursor.Type
 
@@ -28,6 +56,7 @@ export const JqlCursor = Schema.Struct({
 export type JqlCursor = typeof JqlCursor.Type
 
 const IssueCursorJson = Schema.fromJsonString(IssueCursor)
+const AnyIssueCursorJson = Schema.fromJsonString(Schema.Union([IssueCursor, IssueCursorV1]))
 const JqlCursorJson = Schema.fromJsonString(JqlCursor)
 
 export const encodeCursor = (cursor: IssueCursor | JqlCursor): string =>
@@ -35,9 +64,11 @@ export const encodeCursor = (cursor: IssueCursor | JqlCursor): string =>
     ? Schema.encodeSync(IssueCursorJson)(cursor)
     : Schema.encodeSync(JqlCursorJson)(cursor)
 
+/** Reads a version 2 cursor, or a version 1 cursor as one whose GitHub signals have seen nothing yet. */
 export const decodeIssueCursor = (cursor: string): Effect.Effect<IssueCursor, InvalidCursor> =>
-  Schema.decodeEffect(IssueCursorJson)(cursor).pipe(
-    Effect.mapError(() => new InvalidCursor({ reason: "The cursor is not an issue cursor of version 1." }))
+  Schema.decodeEffect(AnyIssueCursorJson)(cursor).pipe(
+    Effect.map((decoded): IssueCursor => decoded.v === 2 ? decoded : { ...decoded, v: 2, github: null }),
+    Effect.mapError(() => new InvalidCursor({ reason: "The cursor is not an issue cursor of version 1 or 2." }))
   )
 
 export const decodeJqlCursor = (cursor: string): Effect.Effect<JqlCursor, InvalidCursor> =>

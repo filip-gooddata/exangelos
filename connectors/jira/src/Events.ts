@@ -47,7 +47,7 @@ export const assigneeChanged = Catalogue.event(eventTypes.assigneeChanged, {
 })
 
 export const fieldChanged = Catalogue.event(eventTypes.fieldChanged, {
-  description: "A field other than status or assignee changed.",
+  description: "A field other than status or assignee changed. With fields, only the fields it names.",
   payload: Change
 })
 
@@ -61,7 +61,58 @@ export const issueLeft = Catalogue.event(eventTypes.issueLeft, {
   payload: Schema.Struct({ issue: Schema.Struct({ id: Schema.String, key: Schema.String }), jql: Schema.String })
 })
 
-export const all = [statusChanged, commentAdded, assigneeChanged, fieldChanged, issueEntered, issueLeft] as const
+const PullRequest = {
+  issue: Issue,
+  repo: Schema.String,
+  number: Schema.Finite,
+  title: Schema.String,
+  state: Schema.Literals(["open", "closed", "merged"]),
+  url: Schema.String,
+  author: Schema.NullOr(Schema.String)
+}
+
+const fromGitHub = "Emitted only with githubRepo. Polled with the issue, once a minute."
+
+export const pullRequestFound = Catalogue.event(eventTypes.pullRequestFound, {
+  description: `A pull request in githubRepo started matching githubSearch (default the issue key). ${fromGitHub}`,
+  payload: Schema.Struct(PullRequest)
+})
+
+export const pullRequestChanged = Catalogue.event(eventTypes.pullRequestChanged, {
+  description: `A matching pull request was closed, merged or reopened. ${fromGitHub}`,
+  payload: Schema.Struct({ ...PullRequest, from: Schema.String })
+})
+
+export const commitAdded = Catalogue.event(eventTypes.commitAdded, {
+  description: `A new commit in githubRepo touched one of githubPaths. ${fromGitHub}`,
+  payload: Schema.Struct({
+    issue: Issue,
+    repo: Schema.String,
+    path: Schema.String,
+    sha: Schema.String,
+    message: Schema.String,
+    url: Schema.String,
+    author: Schema.NullOr(Schema.String)
+  })
+})
+
+export const releaseFound = Catalogue.event(eventTypes.releaseFound, {
+  description: `One of the newest five releases of githubRepo contains sha. Reported once, on the first poll too. ${fromGitHub}`,
+  payload: Schema.Struct({ issue: Issue, repo: Schema.String, sha: Schema.String, tag: Schema.String, url: Schema.String })
+})
+
+export const all = [
+  statusChanged,
+  commentAdded,
+  assigneeChanged,
+  fieldChanged,
+  issueEntered,
+  issueLeft,
+  pullRequestFound,
+  pullRequestChanged,
+  commitAdded,
+  releaseFound
+] as const
 
 export type WatchItem = ReturnType<typeof Connector.end>
 
@@ -71,7 +122,11 @@ const byType: Record<JiraEventType, Catalogue.EventType<any>> = {
   [eventTypes.assigneeChanged]: assigneeChanged,
   [eventTypes.fieldChanged]: fieldChanged,
   [eventTypes.issueEntered]: issueEntered,
-  [eventTypes.issueLeft]: issueLeft
+  [eventTypes.issueLeft]: issueLeft,
+  [eventTypes.pullRequestFound]: pullRequestFound,
+  [eventTypes.pullRequestChanged]: pullRequestChanged,
+  [eventTypes.commitAdded]: commitAdded,
+  [eventTypes.releaseFound]: releaseFound
 }
 
 /** The watch item for a diffed event; its payload is checked against the catalogue as it is encoded. */

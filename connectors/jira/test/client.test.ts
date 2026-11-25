@@ -59,11 +59,12 @@ describe("JiraClient", () => {
       const jira = yield* JiraClient
       const jiraSite = yield* site
       const stored = yield* decodeIssueCursor(encodeCursor({
-        v: 1,
+        v: 2,
         target: "issue",
         issueId: "10042",
         changelog: { consumed, recent: ["10001"], lastCreated: "2026-11-12T09:00:00.000Z", atLast: ["10001"] },
-        comments: { consumed: 1, recent: ["20001"], lastCreated: "2026-11-12T09:05:00.000Z", atLast: ["20001"] }
+        comments: { consumed: 1, recent: ["20001"], lastCreated: "2026-11-12T09:05:00.000Z", atLast: ["20001"] },
+        github: null
       }))
 
       const snapshot = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: issuePosition(stored) })

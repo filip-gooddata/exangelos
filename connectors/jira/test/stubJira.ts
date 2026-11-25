@@ -1,4 +1,5 @@
 import { Effect, Layer, Option } from "effect"
+import { layer as githubLayer } from "../src/GitHub.ts"
 import { layer } from "../src/JiraClient.ts"
 import { HttpClient, HttpClientResponse, UrlParams } from "effect/http"
 import type { HttpClientRequest } from "effect/http"
@@ -50,5 +51,6 @@ export const comment = (id: number, created: string, text: string) => ({
 export const page = <A>(all: ReadonlyArray<A>, startAt: number, pageSize: number) =>
   ({ startAt, total: all.length, items: all.slice(startAt, startAt + pageSize) })
 
-/** The real JiraClient over the stub. */
-export const jiraWith = (answer: (call: StubCall) => StubAnswer) => Layer.provide(layer, stubJira(answer))
+/** The real JiraClient and GitHub client over the stub. Jira and GitHub paths do not overlap. */
+export const jiraWith = (answer: (call: StubCall) => StubAnswer) =>
+  Layer.provide(Layer.merge(layer, githubLayer), stubJira(answer))

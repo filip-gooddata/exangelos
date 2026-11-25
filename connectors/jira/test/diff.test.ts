@@ -43,11 +43,12 @@ const snapshot: IssueSnapshot = {
 }
 
 const seenUpTo100: IssueCursor = {
-  v: 1,
+  v: 2,
   target: "issue",
   issueId: "10042",
   changelog: { consumed: 1, recent: ["100"], lastCreated: "2026-11-12T10:00:00.000Z", atLast: ["100"] },
-  comments: { consumed: 1, recent: ["200"], lastCreated: "2026-11-12T10:00:00.000Z", atLast: ["200"] }
+  comments: { consumed: 1, recent: ["200"], lastCreated: "2026-11-12T10:00:00.000Z", atLast: ["200"] },
+  github: null
 }
 
 describe("diffIssue", () => {
@@ -66,6 +67,26 @@ describe("diffIssue", () => {
       lastCreated: "2026-11-12T10:02:00.000Z",
       atLast: ["201"]
     })
+  })
+
+  it("reports only the fields the fields option names, by id or by name", () => {
+    const relabelled = {
+      ...snapshot,
+      changelog: {
+        start: 0,
+        items: [
+          ...histories,
+          { id: "103", created: at(4), author: mia, items: [{ ...change("fixVersions", null, "1.2"), field: "Fix Version" }] }
+        ]
+      }
+    }
+    const types = (fields: ReadonlyArray<string> | undefined) =>
+      diffIssue({ siteUrl, previous: seenUpTo100, snapshot: relabelled, fields }).events
+        .filter((event) => event.type === "field.changed")
+        .map((event) => event.dedupeKey)
+    expect(types(undefined)).toEqual(["10042:history:102:1", "10042:history:103:0"])
+    expect(types(["resolution", "fixversions"])).toEqual(["10042:history:103:0"])
+    expect(types(["fix version"])).toEqual(["10042:history:103:0"])
   })
 
   it("maps each change and comment to its event type, oldest first", () => {

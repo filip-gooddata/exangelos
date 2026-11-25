@@ -1,3 +1,4 @@
+import type { GitHub } from "../src/GitHub.ts"
 import { describe, expect, it } from "@effect/vitest"
 import { Effect, Fiber, Redacted, Stream } from "effect"
 import { TestClock } from "effect/testing"
@@ -22,6 +23,15 @@ const snapshot: IssueSnapshot = {
   comments: { start: 0, items: [] }
 }
 
+const unusedGitHub: GitHub["Service"] = {
+  checkRepository: () => Effect.die("unused"),
+  checkCommit: () => Effect.die("unused"),
+  searchPullRequests: () => Effect.die("unused"),
+  commits: () => Effect.die("unused"),
+  releases: () => Effect.die("unused"),
+  contains: () => Effect.die("unused")
+}
+
 describe("Watch", () => {
   it.effect("re-resolves the route once per run, even across a Retry-After wait", () =>
     Effect.gen(function*() {
@@ -39,7 +49,15 @@ describe("Watch", () => {
         readJql: () => Effect.die("unused"),
         checkJql: () => Effect.die("unused")
       }
-      const fiber = yield* watch({ client, site, target: { kind: "issue", key: "DEMO-7" }, cursor: undefined }).pipe(
+      const fiber = yield* watch({
+        client,
+        github: unusedGitHub,
+        site,
+        target: { kind: "issue", key: "DEMO-7" },
+        options: { fields: undefined, github: undefined },
+        githubToken: undefined,
+        cursor: undefined
+      }).pipe(
         Stream.runCollect,
         Effect.flip,
         Effect.forkChild
