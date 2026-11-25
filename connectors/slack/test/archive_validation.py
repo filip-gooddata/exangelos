@@ -125,8 +125,8 @@ class Wire:
             payload['cursor'] = cursor
         return self.request('Watch', payload)
 
-    def chunk(self, identity):
-        answer = self.receive()
+    def chunk(self, identity, timeout=12):
+        answer = self.receive(timeout)
         check(answer['_tag'] == 'Chunk' and str(answer['requestId']) == identity, 'watch chunk')
         self.send(dict(_tag='Ack', requestId=identity))
         return answer['values']
@@ -365,10 +365,10 @@ def exercise(installed, home):
     add(outside_ts, other)
     database(app, state, sequence=30)
 
-    def resume(handle, previews=None):
+    def resume(handle, previews=None, timeout=12):
         with Wire(installed, home) as wire:
             wire.configure(config if previews is None else dict(config, messagePreviews=previews))
-            return wire.chunk(wire.watch(handle, cursors[handle]))
+            return wire.chunk(wire.watch(handle, cursors[handle]), timeout)
 
     outside = resume(replies)
     check(len(outside) == 1 and outside[0]['_tag'] == 'Cursor', 'unrelated reply filtered')
@@ -534,6 +534,38 @@ def exercise(installed, home):
     check_wake(edited_layout[0]['event'], conversation, home,
                'Message edited (message author: "Fixture Jira") in "Slack #fixture"', 'New heading')
     check(resume(conversation, 'disabled') == without_previews(edited_layout), 'layout-only edit replay honors current preview setting')
+    from archive_daemon import FILE_NAME, FILE_SECRET, shared_file
+    cursors[conversation] = edited_layout[-1]['cursor']
+    file_ts = current_timestamp()
+    add(file_ts)
+    del messages[file_ts]['text']
+    messages[file_ts].update(shared_file(home / FILE_SECRET))
+    database(app, state, sequence=68)
+    file_batch = resume(conversation, 'enabled')
+    file_event, = [item['event'] for item in file_batch]
+    check(file_event['type'] == 'message.new' and file_event['payload']['messageTs'] == file_ts
+          and file_event['payload']['preview'] == FILE_NAME and file_event['payload']['count'] == 1
+          and file_event['payload']['fileShare'] is True, 'committed file share')
+    check(FILE_SECRET not in json.dumps(file_batch), 'file metadata excluded from RPC output')
+    check(resume(conversation, 'enabled') == file_batch, 'exact installed file-share replay')
+    check(resume(conversation, 'disabled') == without_previews(file_batch), 'file-share replay after opt-out')
+    cursors[conversation] = file_batch[-1]['cursor']
+    messages[file_ts]['text'] = ' '
+    unavailable_ts = current_timestamp()
+    add(unavailable_ts)
+    messages[unavailable_ts].update(text='', **shared_file(home / FILE_SECRET))
+    messages[unavailable_ts]['files'][0]['file_access'] = 'check_file_info'
+    caption_ts = current_timestamp()
+    add(caption_ts)
+    messages[caption_ts].update(text='', blocks=[dict(type='header', text=dict(type='plain_text', text='Fixture caption'))],
+                                **shared_file(home / FILE_SECRET))
+    database(app, state, sequence=69)
+    caption_event, = [item['event'] for item in resume(conversation, 'enabled')]
+    caption = caption_event['payload']
+    check(caption_event['type'] == 'message.new' and caption['messageTs'] == caption_ts
+          and caption['preview'] == 'Fixture caption' and 'fileShare' not in caption,
+          'only captioned arrival alongside an unavailable file and a blank fallback update')
+    check(FILE_NAME not in json.dumps(caption_event), 'caption retains precedence over filename')
     with Wire(installed, home) as wire:
         wire.configure(config)
         dm_handle = describe(wire, dm)
@@ -608,7 +640,7 @@ def exercise(installed, home):
         state['reactions'][f'message-{ts}-{dm}'] = [{'name': 'wave', 'users': users, 'count': 100}]
     state['messages'][dm][fresh[0]]['text'] = 'edited synthetic DM'
     database(app, state, sequence=110)
-    boundary = resume(dm_handle, 'enabled')
+    boundary = resume(dm_handle, 'enabled', timeout=60)
     check(len(boundary) == 1 and boundary[0]['event']['type'] == 'message.edited'
           and boundary[0]['event']['payload']['sender'] == name
           and boundary[0]['event']['payload']['conversationLabel'] == 'Slack DM with ' + name,

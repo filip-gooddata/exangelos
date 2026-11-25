@@ -103,7 +103,13 @@ def wake_summary(kind, payload, observed_at):
     quote = lambda value: json.dumps(value, ensure_ascii=False)
     author = quote(payload['sender']) if 'sender' in payload else 'unknown author'
     if kind in ('message.new', 'thread.reply'):
-        if payload.get('delivery') == 'details':
+        if payload.get('fileShare'):
+            action = f'{author} shared a file'
+            if kind == 'thread.reply':
+                action += ' in a thread reply'
+            if payload.get('delivery') == 'details':
+                action = 'Details for earlier arrival: ' + action
+        elif payload.get('delivery') == 'details':
             subject = 'thread reply' if kind == 'thread.reply' else 'message'
             action = f'Details for earlier {subject} by {author}'
         else:
@@ -144,6 +150,7 @@ def snapshot_metadata(snapshot):
         require(isinstance(reactions, list) and len(reactions) <= 100 and all(token(r) for r in reactions))
         require(len(set(reactions)) == len(reactions) and message['id'] not in seen)
         seen.add(message['id'])
+        require(message.get('fileShare', True) is True)
         if 'preview' in message:
             preview = message['preview']
             require(isinstance(preview, str) and 0 < len(preview) <= 160 and preview.isprintable())
@@ -161,6 +168,9 @@ def snapshot_metadata(snapshot):
         entry = {field: message[field] for field in fields}
         if 'sender' in message:
             entry['sender'] = message['sender']
+        if 'legacyBody' in message:
+            require(token(message['legacyBody']))
+            entry['body'] = message['legacyBody']
         entry['reactions'] = sorted(reactions)
         normalized.append(entry)
     normalized.sort(key=lambda m: m['id'])
@@ -308,7 +318,8 @@ def reconcile(request, path=None):
             if same_generation:
                 unchanged = snapshot['snapshot'] == previous[2] and previous[3] in (digest, '2:' + digest)
                 require(unchanged or legacy_context_matches(db, lineage, messages, previous[3]))
-                if not db.execute('SELECT 1 FROM pending_details WHERE lineage=? LIMIT 1', (lineage,)).fetchone():
+                if (not any('legacyBody' in row for row in snapshot['messages']) and
+                        not db.execute('SELECT 1 FROM pending_details WHERE lineage=? LIMIT 1', (lineage,)).fetchone()):
                     db.commit()
                     return {'events': [], 'cursor': cursor}
         # Previews belong only to eligible delivery edges, never to baselines or version history.
@@ -340,13 +351,23 @@ def reconcile(request, path=None):
             changes = []
             waiting = False
             context = delivery[message['id']]
+            unavailable = context.get('fileUnavailable') is True
+            if context.get('fileUnavailable') == 'suppressed' or (unavailable and old is None):
+                continue
+            raw_body = message['body']
+            if 'legacyBody' in context:
+                message = dict(message, body=context['body'])
+            if unavailable:
+                # Retain the last visible body, but reconcile a known message's reactions.
+                message = dict(message, body=old['body'])
             if previous:
                 kind = 'thread.reply' if message['reply'] else 'message.new'
                 key = lineage, message['id']
                 pending = db.execute('SELECT reply,receipted FROM pending_details WHERE lineage=? AND message=?', key).fetchone()
                 arrival = pending is not None or (kind in request.get('arrivals', ('thread.reply', 'message.new')) and
                                                   old is None and Decimal(message['messageTs']) >= start)
-                if arrival:
+                waiting = unavailable and pending is not None
+                if arrival and not unavailable:
                     reply, receipted = pending or (message['reply'], False)
                     if reply is None:
                         reply = legacy_receipt_is_reply(db, lineage, snapshot['scope'], message['id'])
@@ -354,7 +375,7 @@ def reconcile(request, path=None):
                     if reply != message['reply']:
                         continue
                     need_sender = not (context.get('memberSender') or context.get('sender'))
-                    need_preview = previews and 'preview' not in context
+                    need_preview = previews and 'preview' not in context and not context.get('fileShare')
                     need_permalink = not archive_permalink(context)
                     waiting = need_sender or need_preview or need_permalink
                     if waiting:
@@ -369,7 +390,8 @@ def reconcile(request, path=None):
                 if old is not None:
                     require(old['reply'] == message['reply'])
                     hydration = arrival and old['body'] == snapshot.get('emptyBody') and not context.get('edited')
-                    if old['body'] != message['body'] and not hydration:
+                    previous_spellings = (message['body'], raw_body, context.get('legacySpaceBody'))
+                    if old['body'] not in previous_spellings and not hydration:
                         changes.append(('message.edited', message['body']))
                     if old['reactionsComplete'] and message['reactionsComplete']:
                         changes.extend(('reaction.added', r) for r in message['reactions'] if r not in old['reactions'])
@@ -386,8 +408,11 @@ def reconcile(request, path=None):
                     payload['sender'] = context['memberSender']
                 if 'memberPeer' in context:
                     payload['conversationLabel'] = 'Slack DM with ' + context['memberPeer']
-                if previews and kind in ('message.new', 'thread.reply', 'message.edited') and 'preview' in context:
+                show_preview = kind in ('message.new', 'thread.reply') or (kind == 'message.edited' and not context.get('fileShare'))
+                if previews and show_preview and 'preview' in context:
                     payload['preview'] = context['preview']
+                if context.get('fileShare') and kind in ('message.new', 'thread.reply'):
+                    payload['fileShare'] = True
                 if transition == 'details':
                     original = event_key(lineage, snapshot['scope'], message['id'], 0, kind, 'created')
                     payload.update(delivery='details', detailsFor=original)

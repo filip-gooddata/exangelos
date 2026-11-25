@@ -6,6 +6,8 @@ ABSENT_PROFILE = object()
 UNDEFINED_TEXT = object()
 # Project display layout only in the selected conversations.
 LAYOUT_OBJECTS = {
+    'file': {'id': 'fileField', 'name': 'fileField', 'mode': 'fileField', 'file_access': 'fileField',
+             'is_deleted': 'bool', 'deleted': 'bool', 'hidden': 'bool', 'is_tombstoned': 'bool'},
     'block': {'title': 'textObject', 'type': 'layoutString', 'text': 'textObject', 'fields': 'textObjects', 'elements': 'textObjects'},
     'textObject': {'type': 'layoutString', 'text': 'textOrObject', 'elements': 'richRuns'},
     'richRun': {'type': 'layoutString', 'text': 'layoutString', 'url': 'layoutString', 'elements': 'richRuns'},
@@ -13,7 +15,7 @@ LAYOUT_OBJECTS = {
                    'blocks': 'blocks', 'fields': 'attachmentFields', 'mrkdwn_in': 'formatNames'},
     'attachmentField': {'title': 'layoutString', 'value': 'layoutString'},
 }
-LAYOUT_LISTS = {'blocks': 'block', 'attachments': 'attachment', 'textObjects': 'textObject',
+LAYOUT_LISTS = {'files': 'file', 'blocks': 'block', 'attachments': 'attachment', 'textObjects': 'textObject',
                 'attachmentFields': 'attachmentField', 'formatNames': 'layoutString', 'richRuns': 'richRun'}
 
 class Reader(skip_v8.Reader):
@@ -38,7 +40,7 @@ class Reader(skip_v8.Reader):
             except UnicodeError:return None
             return key if re.fullmatch('[0-9]{1,3}',key) else None
         if role=='layoutMessage':
-            for key in ('blocks','attachments','app_id','mrkdwn'):
+            for key in ('blocks','attachments','files','app_id','mrkdwn'):
                 if span==key.encode(field_v8._ENCODINGS[tag]):return key
             role='message'
         if role=='layoutContainer':role='container'
@@ -56,7 +58,9 @@ class Reader(skip_v8.Reader):
           'container':('messages','replies','data'),
         }.get(role,LAYOUT_OBJECTS.get(role,()))
         for k in allowed:
-            if span==k.encode(field_v8._ENCODINGS[tag]):return k
+            if span==k.encode(field_v8._ENCODINGS[tag]):
+                if role=='file' and k=='name' and not self.file_names:return None
+                return k
         if role in ('messages','threads','channels','container','reactions','users','reactionStore','teams','accountUsers'):
             try:s=str(span,field_v8._ENCODINGS[tag])
             except UnicodeError:
@@ -74,7 +78,7 @@ class Reader(skip_v8.Reader):
         if role=='messages' and key in self.layout_channels:return 'layoutContainer'
         if role=='layoutContainer':return 'layoutContainer' if key in ('messages','replies','data') else 'layoutMessage'
         if role=='layoutMessage':
-            if key in ('blocks','attachments'):return key
+            if key in ('blocks','attachments','files'):return key
             if key=='mrkdwn':return 'bool'
             if key=='text':return 'fallbackText'
             role='message'
@@ -107,6 +111,13 @@ class Reader(skip_v8.Reader):
             try:return str(span,field_v8._ENCODINGS[tag])
             except UnicodeError:return None
         if role=='textOrObject':role='textObject' if tag==ord('o') else 'layoutString'
+        if role=='fileField' and tag in field_v8._ENCODINGS:
+            span=self.string_span(tag)
+            if len(span)>1024:return None
+            try:return str(span,field_v8._ENCODINGS[tag])
+            except UnicodeError:return None
+        if role=='fileField':
+            self.pos=start;self.value(depth,'skip');return None
         if role=='layoutString':
             if tag in field_v8._ENCODINGS:
                 span=self.string_span(tag)
@@ -174,8 +185,9 @@ class Reader(skip_v8.Reader):
             return out
         self.pos=start;self.value(depth,'skip');return None
 
-def project(data, layout_channels=()):
+def project(data, layout_channels=(), file_names=False):
     reader=Reader(data,field_v8.Limits(max_bytes=16*1024*1024,max_nodes=1000000))
+    reader.file_names=file_names
     reader.layout_channels=frozenset(layout_channels)
     return reader.select(data)
 

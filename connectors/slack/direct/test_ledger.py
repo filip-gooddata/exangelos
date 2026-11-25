@@ -143,6 +143,64 @@ class LedgerTests(unittest.TestCase):
         self.assertNotIn('preview', event['payload'])
         self.assertEqual(ledger.pending_status(disabled['cursor'], self.path), [])
 
+    def test_upgrade_whitespace_file_marker_without_synthetic_edits(self):
+        old = message(2, body=' ')
+        snap = snapshot(1, [old])
+        cursor = self.call(snap)['cursor']
+        canonical = dict(old, body=token(''), fileShare=True)
+        upgraded = dict(snap, messages=[dict(canonical, legacyBody=old['body'])])
+        migration = self.call(upgraded, cursor)
+        self.assertEqual(migration['events'], [])
+        empty = self.call(snapshot(2, [canonical]), migration['cursor'])
+        self.assertEqual(empty['events'], [])
+        edit, = self.call(snapshot(3, [dict(canonical, body=token('edit timestamp'))]), empty['cursor'])['events']
+        self.assertEqual(edit['type'], 'message.edited')
+
+    def test_upgrade_when_fallback_changed_before_first_read(self):
+        old = message(2, body=' ')
+        caption = message(3, body='caption')
+        cursor = self.call(snapshot(1, [old, caption]))['cursor']
+        current = [dict(row, body=token(''), fileShare=True, legacySpaceBody=token(' ')) for row in (old, caption)]
+        edit, = self.call(snapshot(2, current), cursor)['events']
+        self.assertEqual((edit['type'], edit['payload']['messageTs']), ('message.edited', caption['messageTs']))
+
+    def test_known_unavailable_file_retains_reactions(self):
+        original = message(2)
+        cursor = self.call(snapshot(1, [original]))['cursor']
+        unavailable = dict(message(2, body='', reactions=['wave']), fileUnavailable=True)
+        result = self.call(snapshot(2, [unavailable]), cursor)
+        reaction, = result['events']
+        self.assertEqual(reaction['type'], 'reaction.added')
+        self.assertNotIn('preview', reaction['payload'])
+        visible = dict(message(2, reactions=['wave']), fileShare=True)
+        self.assertEqual(self.call(snapshot(3, [visible]), result['cursor'])['events'], [])
+
+    def test_projected_unavailable_file_reactions_with_empty_or_absent_text(self):
+        from test_direct import CHANNEL, TIME, RX, SELECTION, KEY, fixture, encode
+        import observation
+        import projection
+
+        for text in ({}, {'text': ''}):
+            with self.subTest(text=text):
+                data = fixture()
+                msg = data['messages'][CHANNEL][TIME]
+                del msg['text']
+                msg.update(text, subtype='file_share', files=[dict(id='F0000001', name='fixture.txt')])
+
+                def read(generation):
+                    state = projection.project(b'\xff\x10' + encode(data), [CHANNEL], file_names=True)
+                    selected = observation.snapshot(state, SELECTION, KEY, include_preview=True)
+                    self.assertTrue(selected['complete'])
+                    return snapshot(generation, selected['messages'])
+
+                cursor = self.call(read(1))['cursor']
+                msg['files'][0]['file_access'] = 'check_file_info'
+                data['reactions'][RX].append(dict(name='star', count=1, users=['U0000002']))
+                current = read(2)
+                reaction, = self.call(current, cursor, includePreview=True)['events']
+                self.assertEqual(reaction['type'], 'reaction.added')
+                self.assertNotIn('fixture.txt', json.dumps(reaction))
+
     def test_cache_first_preview_enrichment_in_same_generation(self):
         cursor = self.call(snapshot(1, []))['cursor']
         row = message(2)

@@ -1,7 +1,7 @@
 import { Array as Arr, Cause, Clock, DateTime, Duration, Effect, Option } from "effect"
 import { Delivery, Lifecycle, ConnectorRules } from "@exangelos/domain"
 import type { Event, Ids, Limits, Connector, Session, Subscription, Wake } from "@exangelos/domain"
-import { eventsForWake } from "../wakePreviews.ts"
+import { eventsForDisplay } from "../eventPreviews.ts"
 import { EventRepository } from "../../ports/EventRepository.ts"
 import { ConnectorRepository } from "../../ports/ConnectorRepository.ts"
 import type { SettingsStore } from "../../ports/SettingsStore.ts"
@@ -116,7 +116,7 @@ const claim = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
         if (Option.isNone(latest) || subscription.wakeTarget === undefined) return Option.none<Claim>()
         const wake = latest.value
         const events = yield* EventRepository
-        const pending = yield* eventsForWake(subscription.connector, yield* events.list(subscription.id, subscription.ackedThrough))
+        const pending = yield* eventsForDisplay(subscription.connector, yield* events.list(subscription.id, subscription.ackedThrough), "wake")
         const decision = yield* decide(wake, subscription, pending, now, limits)
         const wakes = yield* WakeRepository
         if (decision._tag === "Wait") return Option.none<Claim>()
