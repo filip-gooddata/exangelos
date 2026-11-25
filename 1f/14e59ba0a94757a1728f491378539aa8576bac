@@ -1,0 +1,85 @@
+.github/scripts/check-no-developer-id.sh
+  s_7dda3e3cd2283f::t_f274bba25d6a2a 1-44
+.github/workflows/build-release.yml
+  s_7dda3e3cd2283f::t_0f9224443546ad 4-8,10-13,24,59-60,114,124-127,130
+.github/workflows/release-check.yml
+  s_406c2bac0efb01::t_4a1775ed2fa8a9 8
+.github/workflows/release.yml
+  s_e003fa2c3f4346::t_86510f9857a5a3 1-3
+apps/tray/src-tauri/src/lib.rs
+  s_85dc69d817a3f7::t_e457abcb15107e 127,138
+apps/tray/src-tauri/src/sidecar.rs
+  s_85dc69d817a3f7::t_ccb1b039e43fab 1-3,9,16-79,82-88,90,151-155,160-165
+apps/tray/src-tauri/tests/sidecar.rs
+  s_85dc69d817a3f7::t_c21b0547bbe76c 8-12,128-175
+docs/spec.md
+  s_d6c354a97fefb0::t_b717f06dc58c5b 418,456,484,488
+packaging/src/binaries.ts
+  s_406c2bac0efb01::t_0e3c9d22234665 2,26-27,54
+packaging/src/cli/build-release.ts
+  s_406c2bac0efb01::t_6539f522ac7ffc 43
+packaging/src/homebrew.ts
+  s_f03abd33d61dc8::t_d8a997859556f2 88
+packaging/src/release.ts
+  s_406c2bac0efb01::t_117e5b64b02ab8 46
+packaging/test/homebrew.test.ts
+  s_f03abd33d61dc8::t_d08b153ea5e88a 34,38-40
+packaging/test/workflow.test.ts
+  s_406c2bac0efb01::t_5392017f1f7679 82,86-93,96-105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1a5c9f828a29a2cbc4504d040c048724b3b1cf7d",
+  "prompts": {},
+  "sessions": {
+    "s_406c2bac0efb01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e73e21c9-1cbb-4ec0-9f3f-b8eb5b2137f0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_7dda3e3cd2283f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2135a-3e4a-76a2-8c16-2ef2067713e4",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_85dc69d817a3f7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2134c-1a56-7432-acbf-0db1aa01d9f9",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_d6c354a97fefb0": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21359-9d42-76e2-919c-ba6d8d4df45c",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_e003fa2c3f4346": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2135b-a883-74e2-9102-f0b6303e1528",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_f03abd33d61dc8": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "db83bef3-6316-4601-9672-c66c11077eba",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}

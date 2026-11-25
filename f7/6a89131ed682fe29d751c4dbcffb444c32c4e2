@@ -1,0 +1,37 @@
+.github/scripts/check-no-developer-id.sh
+  s_6e003fe9d9df35::t_9cebcef465f24a 4-5,7,10-14,17-18,21-31,34-41,50-51,54,58-61,67,69-71,75
+.github/workflows/build-release.yml
+  s_6e003fe9d9df35::t_20277faaf8a395 60-62
+docs/spec.md
+  s_6e003fe9d9df35::t_c60a5e9cbf91ce 488
+packaging/src/homebrew.ts
+  s_6e003fe9d9df35::t_1c88e9d4718508 91-98
+packaging/test/homebrew.test.ts
+  s_ad3e4f4b2f8523::t_b6949084b07c9f 39,41
+packaging/test/workflow.test.ts
+  s_6e003fe9d9df35::t_c9718c55c18332 102-104
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "99c263d27fcaded9182e9256fe7464ac3c2813e0",
+  "prompts": {},
+  "sessions": {
+    "s_6e003fe9d9df35": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21374-179e-7ee1-abd7-1600d62c8a58",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_ad3e4f4b2f8523": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2135c-e0db-7af3-a9c5-0155a776afc2",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}

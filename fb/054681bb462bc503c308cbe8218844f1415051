@@ -1,0 +1,45 @@
+.github/scripts/check-no-developer-id.sh
+  s_771035f2a3762e::t_52e71bbcf07afb 22,24-34,36,48
+.github/workflows/build-release.yml
+  s_406c2bac0efb01::t_b1e81ecd82b2d4 28-36,126-133,150
+.github/workflows/release.yml
+  s_406c2bac0efb01::t_f23e00419960f2 73-76
+docs/spec.md
+  s_196cca77d68c65::t_dc41a3542fde78 488
+packaging/test/signature-check.test.ts
+  s_771035f2a3762e::t_899dabb8aeeff5 1-50
+packaging/test/workflow.test.ts
+  s_196cca77d68c65::t_5ead025e181ae2 83-89,112-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "509423645c86646d3cbef945fa702101cdf74b2f",
+  "prompts": {},
+  "sessions": {
+    "s_196cca77d68c65": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2137f-011d-76c0-ade3-a32e43dd85ac",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_406c2bac0efb01": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e73e21c9-1cbb-4ec0-9f3f-b8eb5b2137f0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_771035f2a3762e": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2137d-41af-7143-8da7-7eb33d0a2bcf",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
