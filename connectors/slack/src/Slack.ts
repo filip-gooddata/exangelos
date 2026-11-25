@@ -59,7 +59,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
       return { request, label }
     })
     return {
-      icon: Effect.promise(() => localAppIcon(["com.tinyspeck.slackmacgap"], Connector.maxIconBytes)),
+      icon: Effect.promise((signal) => localAppIcon(["com.tinyspeck.slackmacgap"], Connector.maxIconBytes, signal)),
       configure: (values) => Effect.gen(function*() {
         const previous = yield* Ref.getAndSet(configured, undefined)
         if (previous) yield* Deferred.succeed(previous.revoked, undefined)

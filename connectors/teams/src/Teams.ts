@@ -37,7 +37,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
   handlers: Effect.gen(function*() {
     const configured = yield* Ref.make<Configuration | undefined>(undefined)
     return {
-      icon: Effect.promise(() => localAppIcon(["com.microsoft.teams2", "com.microsoft.teams"], Connector.maxIconBytes)),
+      icon: Effect.promise((signal) => localAppIcon(["com.microsoft.teams2", "com.microsoft.teams"], Connector.maxIconBytes, signal)),
       configure: (values) => Effect.gen(function*() {
         yield* Ref.set(configured, undefined)
         if (values.subscriptionAccess === "disabled") return
