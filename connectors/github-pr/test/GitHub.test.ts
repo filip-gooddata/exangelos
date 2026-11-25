@@ -70,8 +70,6 @@ describe("GitHub", () => {
         reviews: null,
         comments: "2026-11-12T00:00:00Z",
         threads: null,
-        replies: {},
-        repliesSince: null,
         timeline: null
       }
       const fiber = yield* GitHub.GitHub.use((github) => github.pullRequest(connection(), ref, since, null)).pipe(
@@ -95,7 +93,7 @@ describe("GitHub", () => {
       ])
     }))
 
-  it.effect("reads older replies of a thread until it reaches the last reply seen", () =>
+  it.effect("reads every page of a thread's replies", () =>
     Effect.gen(function*() {
       const c = (id: string, minute: number) => ({ id, login: "ana", createdAt: `2026-11-12T10:${String(minute).padStart(2, "0")}:00Z` })
       const stub = yield* Stub.make([
@@ -107,8 +105,6 @@ describe("GitHub", () => {
         reviews: null,
         comments: null,
         threads: null,
-        replies: { T_1: "2026-11-12T10:03:00Z" },
-        repliesSince: null,
         timeline: null
       }
       const { snapshot } = yield* GitHub.GitHub.use((github) => github.pullRequest(connection(), ref, since, null)).pipe(
@@ -134,25 +130,24 @@ describe("GitHub", () => {
       expect((yield* stub.sent).map((s) => s.variables.threads)).toEqual([undefined, "before-T_2"])
     }))
 
-  it.effect("stops reading older replies at a page that starts at the instant last seen", () =>
+  it.effect("reads older reply pages even when they start before the last reply seen, for replies published late", () =>
     Effect.gen(function*() {
       const c = (id: string) => ({ id, login: "ana", createdAt: "2026-11-12T10:05:00Z" })
       const stub = yield* Stub.make([
-        Stub.pullRequest({ threads: [{ id: "T_1", comments: [c("R_1"), c("R_2")], olderReplies: "before-R_1" }] })
+        Stub.pullRequest({ threads: [{ id: "T_1", comments: [c("R_1"), c("R_2")], olderReplies: "before-R_1" }] }),
+        Stub.threadReplies([{ id: "R_0", login: "bo", createdAt: "2026-11-12T10:00:00Z" }], null)
       ])
       const since: GitHub.Since = {
         reviews: null,
         comments: null,
         threads: null,
-        replies: { T_1: "2026-11-12T10:05:00Z" },
-        repliesSince: null,
         timeline: null
       }
       yield* GitHub.GitHub.use((github) => github.pullRequest(connection(), ref, since, null)).pipe(
         Effect.provide(Layer.provide(GitHub.layer, stub.layer))
       )
 
-      expect(yield* stub.sent).toHaveLength(1)
+      expect(yield* stub.sent).toHaveLength(2)
     }))
 
   it.effect("reads the timeline back to the request outstanding for a reviewer it starts watching for", () =>

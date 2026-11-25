@@ -29,9 +29,6 @@ export interface Since {
   readonly reviews: string | null
   readonly comments: string | null
   readonly threads: string | null
-  /** The newest reply seen per thread id; a thread not listed falls back to `repliesSince`. */
-  readonly replies: Readonly<Record<string, string | null>>
-  readonly repliesSince: string | null
   readonly timeline: string | null
 }
 
@@ -408,17 +405,13 @@ export const layer = Layer.effect(
           next = collect(again)
         }
 
+        // Every reply of every thread is read: a comment written in a pending review is listed in the order it was
+        // written but shows only when the review is submitted, so no page can be skipped as already seen.
         const replies = new Map<string, Array<ThreadComment>>()
         for (const thread of nodes.threads) {
           const into = [...thread.replies.nodes]
           let page = thread.replies.pageInfo
-          while (
-            since !== undefined && page.hasPreviousPage && page.startCursor &&
-            !reached(
-              Object.hasOwn(since.replies, thread.id) ? since.replies[thread.id] ?? null : since.repliesSince,
-              into[0] === undefined ? null : shownAt(into[0])
-            )
-          ) {
+          while (page.hasPreviousPage && page.startCursor) {
             yield* waitForQuota
             const more = yield* retrying(
               post(connection, ThreadRepliesData, Query.threadReplies, { id: thread.id, before: page.startCursor })

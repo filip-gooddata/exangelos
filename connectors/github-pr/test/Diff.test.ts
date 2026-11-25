@@ -324,6 +324,18 @@ describe("step", () => {
       expect(keys([reviewed, asked], filters)).toEqual(["review.rerequested/q1"])
     })
 
+    it("counts a review and a request in the same second as review first, in either order", () => {
+      const quiet = snapshot()
+      const tie = (requestFirst: boolean) =>
+        snapshot({
+          reviews: [review("r1", "vera", "2026-11-12T10:00:00Z")],
+          reviewRequests: [request(requestFirst ? "q0" : "q1", "vera", "2026-11-12T10:00:00Z")]
+        })
+
+      expect(keys([quiet, tie(false)], filters)).toContain("review.rerequested/q1")
+      expect(keys([quiet, tie(true)], filters)).toContain("review.rerequested/q0")
+    })
+
     it("matches a bot reviewer whether or not GitHub writes [bot] after its login", () => {
       const bot = { ...noFilters, reviewer: "copilot-reviewer[bot]" }
       const reviewed = snapshot({ reviews: [review("r1", "copilot-reviewer[bot]", "2026-11-12T10:00:00Z", "COMMENTED")] })

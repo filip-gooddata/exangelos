@@ -324,8 +324,10 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
     const reviewedAt = earliest([before?.reviewedAt ?? null, snapshot.reviewerFirstReviewAt, ...mine.map((r) => r.submittedAt)])
     reviewer = { login, reviewedAt }
 
+    // GitHub times events to the second. A review and a request in the same second count as review first: a
+    // needless wake is cheaper than a request to review again that is never reported.
     const rerequested = (id: string, at: string) => {
-      const answered = mine.filter((r) => r.submittedAt < at).map((r) => r.submittedAt).sort().at(-1) ?? reviewedAt!
+      const answered = mine.filter((r) => r.submittedAt <= at).map((r) => r.submittedAt).sort().at(-1) ?? reviewedAt!
       emit({
         type: "review.rerequested",
         occurredAt: at,
@@ -340,15 +342,12 @@ export const step = (previous: Memory | undefined, snapshot: Snapshot, filters: 
       const outstanding = snapshot.requestedReviewers.some(same)
       if (outstanding && reviewedAt !== null) {
         if (asked === undefined) rerequested(`${login}/outstanding`, now)
-        else if (reviewedAt < asked.createdAt) rerequested(asked.id, asked.createdAt)
+        else if (reviewedAt <= asked.createdAt) rerequested(asked.id, asked.createdAt)
       }
     } else {
       for (const item of timeline.items) {
         if (!("reviewer" in item) || !same(item.reviewer)) continue
-        // A review seen on an earlier poll came before a request first seen now, even at the same instant.
-        const earlier = reviewedAt !== null &&
-          (reviewedAt < item.createdAt || (before.reviewedAt !== null && before.reviewedAt <= item.createdAt))
-        if (earlier) rerequested(item.id, item.createdAt)
+        if (reviewedAt !== null && reviewedAt <= item.createdAt) rerequested(item.id, item.createdAt)
       }
     }
 

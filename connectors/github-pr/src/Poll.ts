@@ -34,8 +34,6 @@ const since = (memory: Memory | undefined): Since | undefined =>
     reviews: memory.reviews.at,
     comments: memory.comments.at,
     threads: memory.threads.at,
-    replies: Object.fromEntries(Object.entries(memory.replies.threads).map(([id, mark]) => [id, mark.at])),
-    repliesSince: memory.replies.since,
     timeline: memory.timeline.at
   }
 
