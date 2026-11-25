@@ -1,0 +1,29 @@
+adapters/connector-import/src/Archive.ts
+  s_055df27291b0ef::t_531a32a12bfc06 7,25,34,81,89,110,119-120
+adapters/connector-import/src/Entries.ts
+  s_055df27291b0ef::t_9c0b3eb596fa26 6-12,16,49-50,59,81,86,90,100-101,128
+adapters/connector-import/src/index.ts
+  s_055df27291b0ef::t_cf0623cc89c086 2
+connectors/file-watch/test/FileWatch.test.ts
+  s_055df27291b0ef::t_a3fdfaaeea5649 83-84,90-105,107-114
+packaging/src/connector-archives.ts
+  s_055df27291b0ef::t_d6b70778c6c829 5,97,120
+packaging/test/connector-archives.test.ts
+  s_055df27291b0ef::t_216bcb70ddfe1b 160-161,166,168
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db09e6193a9288899d247b0bd675209ea9385943",
+  "prompts": {},
+  "sessions": {
+    "s_055df27291b0ef": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "c2f8c046-71a7-4132-947f-8524780e6649",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
