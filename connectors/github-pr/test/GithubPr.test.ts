@@ -134,7 +134,7 @@ describe("github-pr connector", () => {
       expect((yield* sent).map((s) => s.url)).toEqual(Array(4).fill("https://github.acme.dev/api/graphql"))
     }).pipe(Effect.scoped))
 
-  it.effect("wakes once for a reply, not again for the review GitHub files it under", () =>
+  const replyAndWrapper = (types: ReadonlyArray<keyof typeof GithubPr.events>) =>
     Effect.gen(function*() {
       const opened = { id: "C_1", login: "ana", createdAt: "2026-11-12T12:00:00Z", review: "R_1" }
       const first = {
@@ -151,7 +151,14 @@ describe("github-pr connector", () => {
             { id: "R_3", login: "olga", body: "", submittedAt: "2026-11-12T12:01:30Z" }
           ],
           threads: [
-            { id: "T_1", comments: [opened, { id: "C_2", login: "olga", createdAt: "2026-11-12T12:01:00Z", review: "R_2" }] },
+            {
+              id: "T_1",
+              comments: [
+                opened,
+                { id: "C_2", login: "olga", createdAt: "2026-11-12T12:01:00Z", review: "R_2" },
+                { id: "C_4", login: "olga", createdAt: "2026-11-12T12:01:30Z", review: "R_3" }
+              ]
+            },
             { id: "T_2", comments: [{ id: "C_3", login: "olga", createdAt: "2026-11-12T12:01:30Z", review: "R_3" }] }
           ]
         }),
@@ -159,16 +166,27 @@ describe("github-pr connector", () => {
       ])
       yield* connector.Configure({ values: { token } })
 
-      const fiber = yield* connector.Watch({ parameters: { pullRequest: "acme/api#7" }, eventTypes: [] }).pipe(
+      const fiber = yield* connector.Watch({
+        parameters: { pullRequest: "acme/api#7" },
+        eventTypes: types.map((type) => GithubPr.events[type].type)
+      }).pipe(
         Stream.runCollect,
         Effect.forkChild
       )
       yield* TestClock.adjust("3 minutes")
       const items = yield* Fiber.join(fiber)
+      return items.flatMap((item) => item._tag === "Event" ? [item.event.dedupeKey] : item._tag === "End" ? ["End"] : [])
+    }).pipe(Effect.scoped)
 
-      const reported = items.flatMap((item) =>
-        item._tag === "Event" ? [item.event.dedupeKey] : item._tag === "End" ? ["End"] : []
-      )
-      expect(reported).toEqual(["review.thread/T_2", "review.reply/C_2", "review.submitted/R_3", "End"])
-    }).pipe(Effect.scoped))
+  it.effect("wakes once for a reply, not again for the review GitHub files it under", () =>
+    Effect.gen(function*() {
+      expect(yield* replyAndWrapper([])).toEqual([
+        "review.thread/T_2",
+        "review.reply/C_2",
+        "review.reply/C_4",
+        "review.submitted/R_3",
+        "End"
+      ])
+      expect(yield* replyAndWrapper(["review.submitted"])).toEqual(["review.submitted/R_3", "End"])
+    }))
 })

@@ -117,8 +117,7 @@ const read = (p: Parameters) =>
       reviewStates,
       reviewer,
       baseHead,
-      existingThreads: p.reportExistingThreads === true || p.reportExistingThreads === "true",
-      repliesReported: true
+      existingThreads: p.reportExistingThreads === true || p.reportExistingThreads === "true"
     }
     const normalised: Parameters = {
       ...p,
@@ -200,7 +199,7 @@ export const connector = Connector.make({
             return { subject, label: `Pull request ${subject}`, parameters: { ...normalised, pullRequest: subject } }
           })
         ),
-      watch: ({ cursor, eventTypes, parameters: p }) =>
+      watch: ({ cursor, parameters: p }) =>
         Stream.unwrap(Effect.gen(function*() {
           const connection = yield* Ref.get(configured).pipe(
             Effect.flatMap(Effect.fromOption),
@@ -208,8 +207,7 @@ export const connector = Connector.make({
           )
           const { filters, ref } = yield* read(p).pipe(Effect.mapError((reason) => new Connector.SourceFailed({ reason })))
           let last = cursor
-          const repliesReported = eventTypes.length === 0 || eventTypes.some((type) => type === "review.reply")
-          return Poll.watch(connection, ref, { ...filters, repliesReported }, cursor).pipe(
+          return Poll.watch(connection, ref, filters, cursor).pipe(
             Stream.mapError((error) => {
               switch (error._tag) {
                 case "Unauthorized":
