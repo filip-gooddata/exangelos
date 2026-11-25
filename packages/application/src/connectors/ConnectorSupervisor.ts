@@ -338,12 +338,12 @@ export const layerConnectorSupervisor: Layer.Layer<
     Effect.gen(function*() {
       const configured = yield* generation(name)
       let failures = 0
-      let recoveryOwed = true
+      let firstItemOfAttempt = false
       const recover = Effect.suspend(() => {
         observationFailures.delete(id)
         readSince.add(id)
-        if (!recoveryOwed) return Effect.void
-        recoveryOwed = false
+        if (!firstItemOfAttempt) return Effect.void
+        firstItemOfAttempt = false
         return intake.observationRecovered(id)
       })
       while (true) {
@@ -351,6 +351,7 @@ export const layerConnectorSupervisor: Layer.Layer<
         if (Option.isNone(found) || found.value.state._tag !== "Active") return
         const subscription = found.value
         let stop = false
+        firstItemOfAttempt = true
         // A settings refresh during the read sees no recorded wake window and rewatches the stream.
         yield* recordWakeWindow(id, undefined)
         const { wakeWindow } = yield* limits
@@ -407,7 +408,6 @@ export const layerConnectorSupervisor: Layer.Layer<
               })
             )
           }
-          recoveryOwed = true
           yield* intake.observationFailing(id, { category, reason, since })
         }
         failures++
