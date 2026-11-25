@@ -139,9 +139,13 @@ describe("Jira connector", () => {
 
   it.effect("rejects a credential Jira answers 401 to, without repeating the token", () =>
     Effect.gen(function*() {
-      const client = yield* jira((call) =>
-        call.path === "/rest/api/3/myself" ? { status: 401, body: { message: "Client must be authenticated" } } : cloud
-      )
+      const client = yield* jira((call) => {
+        if (call.path === "/_edge/tenant_info") return { status: 200, body: { cloudId: "cloud-1" } }
+        if (call.path === "/rest/api/3/myself" || call.path.startsWith(gateway)) {
+          return { status: 401, body: { message: "Client must be authenticated" } }
+        }
+        return cloud
+      })
       const result = yield* client.Configure({ values })
       expect(result).toMatchObject({ _tag: "Rejected", reason: expect.stringContaining("rejected the email and API token") })
       expect(JSON.stringify(result)).not.toContain(token)
@@ -180,6 +184,9 @@ describe("Jira connector", () => {
       expect(calls.filter((call) => call.path.includes("/issue/")).every((call) => call.path.startsWith(rest))).toBe(true)
       expect(calls.filter((call) => call.path === "/_edge/tenant_info").map((call) => call.request.headers.authorization))
         .toEqual(answer === scoped ? [undefined, undefined] : [])
+      const gatewayChecks = calls.filter((call) => call.path === `${gateway}/rest/api/3/serverInfo`)
+      expect(gatewayChecks.length).toBe(answer === scoped ? 2 : 0)
+      expect(gatewayChecks.every((call) => call.request.headers.authorization?.startsWith("Basic "))).toBe(true)
     }).pipe(Effect.scoped)
   })
 
@@ -243,11 +250,44 @@ describe("Jira connector", () => {
       expect(failure).toMatchObject({ _tag: "CredentialsRejected", reason: expect.stringContaining("lacks a read scope") })
     }).pipe(Effect.scoped))
 
-  it.effect("does not call a credential rejected when the site cannot tell its cloud id", () =>
+  it.effect.each([
+    { answer: { status: 503 }, reason: "HTTP 503" },
+    { answer: { status: 404 }, reason: "HTTP 404" },
+    { answer: { status: 200, body: { tenant: "none" } }, reason: "unexpected shape" }
+  ])("does not call a credential rejected when the site cannot tell its cloud id ($reason)", ({ answer, reason }) =>
     Effect.gen(function*() {
-      const client = yield* jira((call) => call.path === "/_edge/tenant_info" ? { status: 503 } : scoped(call))
+      const client = yield* jira((call) => call.path === "/_edge/tenant_info" ? answer : scoped(call))
       const result = yield* client.Configure({ values })
-      expect(result).toMatchObject({ _tag: "Rejected", reason: expect.stringContaining("HTTP 503") })
+      expect(result).toMatchObject({ _tag: "Rejected", reason: expect.stringContaining(reason) })
+      expect(JSON.stringify(result)).not.toContain("rejected the email")
+    }).pipe(Effect.scoped))
+
+  it.effect("checks and polls a JQL subscription through the gateway with a scoped token", () => {
+    const calls: Array<StubCall> = []
+    return Effect.gen(function*() {
+      const client = yield* jira((call) => {
+        calls.push(call)
+        if (call.path === `${gateway}/rest/api/3/search/jql`) {
+          return { status: 200, body: { issues: [{ id: "10042", key: "DEMO-7", fields: { summary: "Fix login" } }], isLast: true } }
+        }
+        return scoped(call)
+      })
+      expect(yield* client.Configure({ values })).toEqual({ _tag: "Accepted" })
+      const parameters = { target: "project = DEMO", kind: "jql" }
+      expect(yield* client.Describe({ parameters })).toMatchObject({ _tag: "Described" })
+      yield* client.Watch({ parameters, eventTypes: [] }).pipe(Stream.take(1), Stream.runCollect)
+      const searches = calls.filter((call) => call.path.endsWith("/rest/api/3/search/jql"))
+      expect(searches.length).toBeGreaterThanOrEqual(2)
+      expect(searches.every((call) => call.path.startsWith(gateway))).toBe(true)
+    }).pipe(Effect.scoped)
+  })
+
+  it.effect("names a missing scope when the gateway refuses the JQL check at subscribe", () =>
+    Effect.gen(function*() {
+      const client = yield* jira((call) => call.path === `${gateway}/rest/api/3/search/jql` ? { status: 401 } : scoped(call))
+      expect(yield* client.Configure({ values })).toEqual({ _tag: "Accepted" })
+      const described = yield* client.Describe({ parameters: { target: "project = DEMO", kind: "jql" } })
+      expect(described).toMatchObject({ _tag: "Invalid", reason: expect.stringContaining("lacks a read scope") })
     }).pipe(Effect.scoped))
 
   it.effect("ends when Jira refuses the JQL query", () =>

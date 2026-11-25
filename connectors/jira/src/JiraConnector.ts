@@ -4,6 +4,7 @@ import * as Events from "./Events.ts"
 import { GitHub } from "./GitHub.ts"
 import type { GitHubError } from "./GitHub.ts"
 import { JiraClient } from "./JiraClient.ts"
+import { missingScopeReason } from "./JiraError.ts"
 import type { JiraError } from "./JiraError.ts"
 import { normaliseOptions, parseOptions } from "./Options.ts"
 import { makeSite } from "./Site.ts"
@@ -44,6 +45,7 @@ const githubRefusal = (repo: string, error: GitHubError): string => {
 const refusal = (site: JiraSite, error: JiraError): string => {
   switch (error._tag) {
     case "CredentialRejected":
+      if (site.api !== site.url && error.status === 401) return missingScopeReason(error.status)
       return `Jira rejected the email and API token (HTTP ${error.status}). Check both, and that the token is not revoked.`
     case "UnsupportedSite":
       return error.reason

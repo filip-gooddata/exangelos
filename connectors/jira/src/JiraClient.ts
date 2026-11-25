@@ -46,8 +46,8 @@ export class JiraClient extends Context.Service<JiraClient, {
    * site URL, which answers 401 to anything else. Then the cloud id from the unauthenticated
    * /_edge/tenant_info leads to the Atlassian gateway, where a scoped API token reads
    * /rest/api/3/serverInfo. That needs no scope, yet the gateway answers 401 to a credential it does
-   * not accept, so a token without read:jira-user passes. Fails with CredentialRejected when neither
-   * accepts it.
+   * not accept, so a token without read:jira-user passes. Fails with CredentialRejected only when the
+   * gateway refuses it too; when the cloud id cannot be read, fails with that error instead.
    */
   readonly resolveRoute: (site: JiraSite) => Effect.Effect<JiraSite, JiraError>
   /**
@@ -276,7 +276,8 @@ export const layer = Layer.effect(
           return yield* new RateLimited(seconds === undefined ? {} : { retryAfterSeconds: seconds })
         }
         if (response.status !== 200) {
-          return yield* new HttpFailure({ status: response.status, reason: "The site did not tell its cloud id." })
+          // No status: a JQL watch reads HTTP 400 as Jira refusing its query, which this is not.
+          return yield* new HttpFailure({ reason: `The site did not tell its cloud id (HTTP ${response.status}).` })
         }
         const body = yield* response.json.pipe(
           Effect.mapError(() => new DecodeFailure({ reason: "The site sent a cloud id body that is not JSON." }))
@@ -286,11 +287,6 @@ export const layer = Layer.effect(
         )
         return info.cloudId
       })
-
-    /** The site gave a definite answer without a cloud id, so the gateway is out of reach for this credential. */
-    const isAnswer = (error: JiraError) =>
-      error._tag === "DecodeFailure" ||
-      (error._tag === "HttpFailure" && error.status !== undefined && error.status < 500)
 
     const refusing403 = <A>(probe: Effect.Effect<A, JiraError>) =>
       probe.pipe(
@@ -308,9 +304,8 @@ export const layer = Layer.effect(
       const direct = { ...site, api: site.url }
       return myself(direct).pipe(
         Effect.as(direct),
-        Effect.catchTag("CredentialRejected", (rejected) =>
+        Effect.catchTag("CredentialRejected", () =>
           cloudId(site).pipe(
-            Effect.catchIf(isAnswer, () => Effect.fail(rejected)),
             Effect.map((id) => ({ ...site, api: gatewayApi(id) })),
             Effect.tap(gatewayAccepts)
           ))

@@ -6,6 +6,7 @@ import { toItem } from "./Events.ts"
 import type { WatchItem } from "./Events.ts"
 import { defaultPollInterval } from "./JiraClient.ts"
 import type { JiraClient } from "./JiraClient.ts"
+import { missingScopeReason } from "./JiraError.ts"
 import type { InvalidCursor } from "./JiraError.ts"
 import { diffIssue, diffJql, eventTypes } from "./Diff.ts"
 import type { JiraEvent } from "./Diff.ts"
@@ -235,7 +236,7 @@ const poll = (watched: Watched, state: PollState) => {
         Effect.fail(
           new Connector.CredentialsRejected({
             reason: gatewayAccepted
-              ? `Jira refused a read with the scoped API token (HTTP ${status}). The gateway accepts the token, so it most likely lacks a read scope; the jira connector's README lists them.`
+              ? missingScopeReason(status)
               : `Jira rejected the email and API token (HTTP ${status}).`
           })
         ),

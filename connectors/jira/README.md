@@ -23,7 +23,7 @@ macOS asks once whether `security` may read the item. The stored copies do not f
 
 ### Scopes for a scoped API token
 
-A classic API token acts with all of the account's permissions, and the connector checks it on the site with `/rest/api/3/myself`. A scoped token is checked through the gateway with `/rest/api/3/serverInfo`, which needs no scope, so the connector never needs `read:jira-user`. A scoped token missing a read scope is accepted at configure, and the first read that needs it suspends the subscription with a reason that names a missing scope.
+A classic API token acts with all of the account's permissions, and the connector checks it on the site with `/rest/api/3/myself`. A scoped token is checked through the gateway with `/rest/api/3/serverInfo`, which needs no scope, so the connector never needs `read:jira-user`. A scoped token missing a read scope is accepted at configure. A JQL subscription that needs it is then refused when you subscribe, and an issue subscription is suspended at its first poll; both reasons name a missing scope.
 
 The classic scope `read:jira-work` covers every read. With granular scopes, give the token those of each feature you use (from Atlassian's [Jira REST API v3](https://developer.atlassian.com/cloud/jira/platform/rest/v3/) reference):
 
