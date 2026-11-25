@@ -1,0 +1,23 @@
+apps/cli/e2e/binary.test.ts
+  s_141444718f1f91::t_f6cdcd3540eb42 479-492
+apps/cli/src/commands/Skill.ts
+  s_141444718f1f91::t_ee4adb5cdd2e7d 46-48,52,58-62,102
+skills/exangelos/SKILL.md
+  s_141444718f1f91::t_156329e53e1db1 61
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "26808287702beea0db51915a9b4588ce7da06da9",
+  "prompts": {},
+  "sessions": {
+    "s_141444718f1f91": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e216c8fa-700c-4273-a8ae-3af07587c3d0",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
