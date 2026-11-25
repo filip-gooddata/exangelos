@@ -1,0 +1,29 @@
+.github/scripts/check-no-developer-id.sh
+  s_d97cc6416c87de::t_450a440890ca00 21-22,28,33-34,36-40,42-63
+packaging/test/signature-check.test.ts
+  s_4d5667574dbcec::t_54f0d332d8a542 2,49-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a0ec6bdd53d1f4606addb0dc417b16c942642d9d",
+  "prompts": {},
+  "sessions": {
+    "s_4d5667574dbcec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21387-3255-7761-953d-ae516bc3b7f4",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_d97cc6416c87de": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2138b-dcc7-79b3-9e2b-ee1b2891df8d",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
