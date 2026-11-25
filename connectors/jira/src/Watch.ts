@@ -2,15 +2,18 @@ import { DateTime, Duration, Effect, Stream } from "effect"
 import type { Redacted } from "effect"
 import { Connector } from "@exangelos/connector-sdk"
 import { decodeIssueCursor, decodeJqlCursor, encodeCursor, issuePosition } from "./Cursor.ts"
-import { diffIssue, diffJql } from "./Diff.ts"
 import { toItem } from "./Events.ts"
 import type { WatchItem } from "./Events.ts"
 import { defaultPollInterval } from "./JiraClient.ts"
 import type { JiraClient } from "./JiraClient.ts"
 import type { InvalidCursor } from "./JiraError.ts"
-import type { GitHub } from "./GitHub.ts"
+import { diffIssue, diffJql, eventTypes } from "./Diff.ts"
+import type { JiraEvent } from "./Diff.ts"
+import type { GitHub, GitHubError } from "./GitHub.ts"
 import { pollGitHub } from "./GitHubSignals.ts"
+import type { GitHubPoll, IssueRef } from "./GitHubSignals.ts"
 import type { Options } from "./Options.ts"
+import { browseLink } from "./Site.ts"
 import type { JiraSite } from "./Site.ts"
 import type { Target } from "./Target.ts"
 
@@ -44,9 +47,49 @@ interface Watched {
   readonly githubToken: Redacted.Redacted<string> | undefined
 }
 
-const githubRateLimited = Effect.logWarning(
-  "GitHub is rate limiting this connector; the GitHub signals wait for the next poll"
-).pipe(Effect.as(undefined))
+type GitHubOutcome =
+  | { readonly _tag: "Read"; readonly poll: GitHubPoll }
+  | { readonly _tag: "Skipped" }
+  | { readonly _tag: "Unavailable"; readonly reason: string }
+
+/**
+ * A GitHub failure never fails the poll, so Jira events keep flowing. A refused token or a missing
+ * repository or commit makes the signals unavailable; a rate limit or a transient failure skips
+ * them until the next poll.
+ */
+const githubOutcome = (repo: string, error: GitHubError): Effect.Effect<GitHubOutcome> => {
+  switch (error._tag) {
+    case "GitHubRejected":
+      return Effect.succeed({
+        _tag: "Unavailable",
+        reason: `GitHub rejected githubToken (HTTP ${error.status}). Configure a token that can read ${repo}.`
+      })
+    case "GitHubNotFound":
+      return Effect.succeed({ _tag: "Unavailable", reason: `GitHub has no ${error.path}, or githubToken cannot read it.` })
+    case "GitHubRateLimited":
+      return Effect.logWarning("GitHub is rate limiting githubToken; the GitHub signals wait for the next poll").pipe(
+        Effect.as({ _tag: "Skipped" })
+      )
+    case "GitHubFailure":
+      return Effect.logWarning(`GitHub signals skipped this poll: ${error.reason}`).pipe(Effect.as({ _tag: "Skipped" }))
+  }
+}
+
+const unavailableEvent = (input: {
+  readonly issue: IssueRef
+  readonly repo: string
+  readonly reason: string
+  readonly episode: number
+  readonly siteUrl: string
+  readonly at: DateTime.Utc
+}): JiraEvent => ({
+  type: eventTypes.githubUnavailable,
+  occurredAt: input.at,
+  summary: `${input.issue.key}: GitHub signals for ${input.repo} stopped: ${input.reason}`,
+  payload: { issue: input.issue, repo: input.repo, reason: input.reason },
+  link: browseLink(input.siteUrl, input.issue.key),
+  dedupeKey: `${input.issue.id}:github:unavailable:${input.episode}`
+})
 
 const read = (watched: Watched, site: JiraSite, cursor: string | undefined) =>
   Effect.gen(function*() {
@@ -56,19 +99,41 @@ const read = (watched: Watched, site: JiraSite, cursor: string | undefined) =>
       const snapshot = yield* client.readIssue({ site, key: target.key, position: issuePosition(previous) })
       const jira = diffIssue({ siteUrl: site.url, previous, snapshot, fields: options.fields })
       const signals = options.github
-      if (signals === undefined || watched.githubToken === undefined) {
-        return { events: jira.events, cursor: { ...jira.cursor, github: null } }
+      if (signals === undefined) {
+        return { events: jira.events, cursor: { ...jira.cursor, github: null, githubFailure: null } }
       }
-      const github = yield* pollGitHub({
-        github: watched.github,
-        token: watched.githubToken,
-        signals,
-        issue: { id: snapshot.id, key: snapshot.key, summary: snapshot.summary },
-        previous: jira.cursor.github,
-        observedAt: yield* DateTime.now
-      }).pipe(Effect.catchTag("GitHubRateLimited", () => githubRateLimited))
-      if (github === undefined) return jira
-      return { events: [...jira.events, ...github.events], cursor: { ...jira.cursor, github: github.cursor } }
+      const issue = { id: snapshot.id, key: snapshot.key, summary: snapshot.summary }
+      const token = watched.githubToken
+      const outcome = yield* (token === undefined
+        ? Effect.succeed<GitHubOutcome>({ _tag: "Unavailable", reason: "No githubToken is configured for the jira connector." })
+        : pollGitHub({
+          github: watched.github,
+          token,
+          signals,
+          issue,
+          previous: jira.cursor.github,
+          observedAt: yield* DateTime.now
+        }).pipe(
+          Effect.map((poll): GitHubOutcome => ({ _tag: "Read", poll })),
+          Effect.catch((error) => githubOutcome(signals.repo, error))
+        ))
+      switch (outcome._tag) {
+        case "Read":
+          return {
+            events: [...jira.events, ...outcome.poll.events],
+            cursor: { ...jira.cursor, github: outcome.poll.cursor, githubFailure: null }
+          }
+        case "Skipped":
+          return jira
+        case "Unavailable": {
+          if (jira.cursor.githubFailure !== null) return { ...jira, cursor: { ...jira.cursor, githubFailure: outcome.reason } }
+          const episode = jira.cursor.githubFailures + 1
+          return {
+            events: [...jira.events, unavailableEvent({ issue, repo: signals.repo, reason: outcome.reason, episode, siteUrl: site.url, at: yield* DateTime.now })],
+            cursor: { ...jira.cursor, githubFailure: outcome.reason, githubFailures: episode }
+          }
+        }
+      }
     }
     const previous = cursor === undefined ? undefined : yield* decodeJqlCursor(cursor).pipe(Effect.catch(rebaseline))
     const snapshot = yield* client.readJql({ site, jql: target.jql })
@@ -149,16 +214,7 @@ const poll = (watched: Watched, state: PollState) => {
         target.kind === "jql" && status === 400
           ? Effect.succeed(ended(state, "Jira refused the JQL query (HTTP 400). Check the query and subscribe again."))
           : Effect.fail(new Connector.SourceFailed({ reason: status === undefined ? reason : `HTTP ${status}: ${reason}` })),
-      DecodeFailure: ({ reason }) => Effect.fail(new Connector.SourceFailed({ reason: `Unexpected Jira response: ${reason}` })),
-      GitHubRejected: ({ status }) =>
-        Effect.fail(
-          new Connector.CredentialsRejected({
-            reason: `GitHub rejected githubToken (HTTP ${status}). Configure a token that can read the repository.`
-          })
-        ),
-      GitHubNotFound: ({ path }) =>
-        Effect.fail(new Connector.SourceFailed({ reason: `GitHub has no ${path}, or githubToken cannot read it.` })),
-      GitHubFailure: ({ reason }) => Effect.fail(new Connector.SourceFailed({ reason }))
+      DecodeFailure: ({ reason }) => Effect.fail(new Connector.SourceFailed({ reason: `Unexpected Jira response: ${reason}` }))
     })
   )
 }

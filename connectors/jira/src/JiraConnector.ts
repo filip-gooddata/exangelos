@@ -141,11 +141,6 @@ export const connector = Connector.make({
           const options = yield* parseOptions(input, target).pipe(
             Effect.mapError(({ reason }) => new Connector.SourceFailed({ reason }))
           )
-          if (options.github !== undefined && githubToken === undefined) {
-            return yield* new Connector.CredentialsRejected({
-              reason: "githubRepo needs a GitHub token: configure the jira connector with githubToken."
-            })
-          }
           return watch({ client, github, site, target, options, githubToken, cursor })
         }))
     }

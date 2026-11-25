@@ -3,7 +3,7 @@ import type { Redacted } from "effect"
 import type { GitHubCursor } from "./Cursor.ts"
 import { eventTypes } from "./Diff.ts"
 import type { JiraEvent } from "./Diff.ts"
-import type { GitHub, GitHubError, PullRequest } from "./GitHub.ts"
+import type { Commit, GitHub, GitHubError, PullRequest } from "./GitHub.ts"
 import type { GitHubSignals } from "./Options.ts"
 
 export interface IssueRef {
@@ -77,7 +77,7 @@ export const pollGitHub = (input: {
               dedupeKey: `${keyPrefix}#${pr.number}:found`
             }
             : {
-              type: eventTypes.pullRequestChanged,
+              type: eventTypes.pullRequestStateChanged,
               occurredAt,
               summary: `${issue.key}: ${repo}#${pr.number} ${before} → ${pr.state}: ${clip(pr.title, 100)}`,
               payload: { ...pullRequestPayload(issue, repo, pr), from: before },
@@ -94,23 +94,30 @@ export const pollGitHub = (input: {
 
     const sameSince = sameRepo !== null && sameRepo.since === since ? sameRepo : null
     const paths: Array<GitHubCursor["paths"][number]> = []
+    /** New commits by sha, oldest first, with every watched path each one touched. */
+    const fresh = new Map<string, { readonly commit: Commit; readonly paths: Array<string> }>()
     for (const path of signals.paths) {
       const commits = yield* github.commits(token, repo, path, since)
       const seen = sameSince?.paths.find((entry) => entry.path === path)?.seen
       if (seen !== undefined) {
         const old = new Set(seen)
         for (const commit of commits.filter((commit) => !old.has(commit.sha)).reverse()) {
-          events.push({
-            type: eventTypes.commitAdded,
-            occurredAt: timeOr(commit.date, observedAt),
-            summary: `${issue.key}: commit ${commit.sha.slice(0, 10)} to ${path} in ${repo}: ${clip(commit.message, 100)}`,
-            payload: { issue, repo, path, sha: commit.sha, message: commit.message, url: commit.url, author: commit.author },
-            link: commit.url,
-            dedupeKey: `${keyPrefix}:${path}:${commit.sha}`
-          })
+          const entry = fresh.get(commit.sha)
+          if (entry === undefined) fresh.set(commit.sha, { commit, paths: [path] })
+          else entry.paths.push(path)
         }
       }
       paths.push({ path, seen: commits.map((commit) => commit.sha) })
+    }
+    for (const { commit, paths: touched } of fresh.values()) {
+      events.push({
+        type: eventTypes.commitAdded,
+        occurredAt: timeOr(commit.date, observedAt),
+        summary: `${issue.key}: commit ${commit.sha.slice(0, 10)} to ${touched.join(", ")} in ${repo}: ${clip(commit.message, 100)}`,
+        payload: { issue, repo, paths: touched, sha: commit.sha, message: commit.message, url: commit.url, author: commit.author },
+        link: commit.url,
+        dedupeKey: `${keyPrefix}:commit:${commit.sha}`
+      })
     }
 
     let release: GitHubCursor["release"] = null

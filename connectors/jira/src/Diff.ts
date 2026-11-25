@@ -13,9 +13,10 @@ export const eventTypes = {
   issueEntered: "issue.entered",
   issueLeft: "issue.left",
   pullRequestFound: "pull_request.found",
-  pullRequestChanged: "pull_request.changed",
+  pullRequestStateChanged: "pull_request.state_changed",
   commitAdded: "commit.added",
-  releaseFound: "release.found"
+  releaseFound: "release.found",
+  githubUnavailable: "github.unavailable"
 } as const
 export type JiraEventType = typeof eventTypes[keyof typeof eventTypes]
 
@@ -182,7 +183,9 @@ export const diffIssue = (input: {
       issueId: snapshot.id,
       changelog: changelog.position,
       comments: comments.position,
-      github: known?.github ?? null
+      github: known?.github ?? null,
+      githubFailure: known?.githubFailure ?? null,
+      githubFailures: known?.githubFailures ?? 0
     }
   }
 }

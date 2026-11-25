@@ -48,7 +48,9 @@ const seenUpTo100: IssueCursor = {
   issueId: "10042",
   changelog: { consumed: 1, recent: ["100"], lastCreated: "2026-11-12T10:00:00.000Z", atLast: ["100"] },
   comments: { consumed: 1, recent: ["200"], lastCreated: "2026-11-12T10:00:00.000Z", atLast: ["200"] },
-  github: null
+  github: null,
+  githubFailure: null,
+  githubFailures: 0
 }
 
 describe("diffIssue", () => {

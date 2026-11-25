@@ -84,9 +84,10 @@ describe("Jira connector", () => {
         "issue.entered",
         "issue.left",
         "pull_request.found",
-        "pull_request.changed",
+        "pull_request.state_changed",
         "commit.added",
-        "release.found"
+        "release.found",
+        "github.unavailable"
       ])
       expect(catalogue.eventTypes[4]?.description).toContain("enters and leaves the result between two polls is never seen")
       expect(catalogue.parameters.main).toBe("target")
@@ -312,7 +313,7 @@ describe("Jira connector", () => {
       const second = yield* client.Watch({ parameters, eventTypes: [], cursor }).pipe(Stream.take(2), Stream.runCollect)
       expect(second[0]).toMatchObject({
         _tag: "Event",
-        event: { type: "pull_request.changed", summary: "DEMO-7: acme/app#5 open → merged: DEMO-7 fix login" }
+        event: { type: "pull_request.state_changed", summary: "DEMO-7: acme/app#5 open → merged: DEMO-7 fix login" }
       })
       const search = calls.find((call) => call.path === "/search/issues")
       expect(search?.param("q")).toBe("DEMO-7 repo:acme/app is:pr")
@@ -324,17 +325,40 @@ describe("Jira connector", () => {
     }).pipe(Effect.scoped)
   })
 
-  it.effect("calls a GitHub token GitHub refuses a rejected credential", () =>
+  it.effect("keeps reporting Jira when GitHub refuses githubToken, and says so once per outage", () =>
     Effect.gen(function*() {
-      const client = yield* jira((call) =>
-        call.request.url.startsWith("https://api.github.com/") ? { status: 401, body: { message: "Bad credentials" } } : site(call)
-      )
+      let refused = true
+      const client = yield* jira((call) => {
+        if (!call.request.url.startsWith("https://api.github.com/")) return site(call)
+        if (refused) return { status: 401, body: { message: "Bad credentials" } }
+        return { status: 200, body: { items: [] } }
+      })
       yield* client.Configure({ values: { ...values, githubToken: "ghp-revoked" } })
-      const failure = yield* client.Watch({ parameters: { target: "DEMO-7", githubRepo: "acme/app" }, eventTypes: [] }).pipe(
-        Stream.runCollect,
-        Effect.flip
-      )
-      expect(failure).toMatchObject({ _tag: "CredentialsRejected", reason: expect.stringContaining("GitHub rejected githubToken") })
+      const parameters = { target: "DEMO-7", githubRepo: "acme/app" }
+      const first = yield* client.Watch({ parameters, eventTypes: [], cursor: before }).pipe(Stream.take(5), Stream.runCollect)
+      expect(first.map((item) => item._tag === "Event" ? item.event.type : item._tag)).toEqual([
+        "status.changed",
+        "comment.added",
+        "assignee.changed",
+        "github.unavailable",
+        "Cursor"
+      ])
+      expect(first[3]).toMatchObject({
+        event: {
+          summary: "DEMO-7: GitHub signals for acme/app stopped: GitHub rejected githubToken (HTTP 401). Configure a token that can read acme/app.",
+          dedupeKey: "10042:github:unavailable:1"
+        }
+      })
+      const failing = first[4]?._tag === "Cursor" ? first[4].cursor : ""
+
+      refused = false
+      const recovered = yield* client.Watch({ parameters, eventTypes: [], cursor: failing }).pipe(Stream.take(1), Stream.runCollect)
+      const healthy = recovered[0]?._tag === "Cursor" ? recovered[0].cursor : ""
+      expect(JSON.parse(healthy)).toMatchObject({ githubFailure: null, githubFailures: 1, github: { repo: "acme/app" } })
+
+      refused = true
+      const again = yield* client.Watch({ parameters, eventTypes: [], cursor: healthy }).pipe(Stream.take(1), Stream.runCollect)
+      expect(again[0]).toMatchObject({ event: { type: "github.unavailable", dedupeKey: "10042:github:unavailable:2" } })
     }).pipe(Effect.scoped))
 
   it("declares an entry the manifest schema accepts", () => {

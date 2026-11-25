@@ -64,7 +64,9 @@ describe("JiraClient", () => {
         issueId: "10042",
         changelog: { consumed, recent: ["10001"], lastCreated: "2026-11-12T09:00:00.000Z", atLast: ["10001"] },
         comments: { consumed: 1, recent: ["20001"], lastCreated: "2026-11-12T09:05:00.000Z", atLast: ["20001"] },
-        github: null
+        github: null,
+        githubFailure: null,
+        githubFailures: 0
       }))
 
       const snapshot = yield* jira.readIssue({ site: jiraSite, key: "DEMO-7", position: issuePosition(stored) })

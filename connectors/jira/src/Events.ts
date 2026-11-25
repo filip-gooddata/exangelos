@@ -78,17 +78,17 @@ export const pullRequestFound = Catalogue.event(eventTypes.pullRequestFound, {
   payload: Schema.Struct(PullRequest)
 })
 
-export const pullRequestChanged = Catalogue.event(eventTypes.pullRequestChanged, {
+export const pullRequestStateChanged = Catalogue.event(eventTypes.pullRequestStateChanged, {
   description: `A matching pull request was closed, merged or reopened. ${fromGitHub}`,
   payload: Schema.Struct({ ...PullRequest, from: Schema.String })
 })
 
 export const commitAdded = Catalogue.event(eventTypes.commitAdded, {
-  description: `A new commit in githubRepo touched one of githubPaths. ${fromGitHub}`,
+  description: `A new commit in githubRepo touched githubPaths; paths lists the ones it touched. ${fromGitHub}`,
   payload: Schema.Struct({
     issue: Issue,
     repo: Schema.String,
-    path: Schema.String,
+    paths: Schema.Array(Schema.String),
     sha: Schema.String,
     message: Schema.String,
     url: Schema.String,
@@ -101,6 +101,12 @@ export const releaseFound = Catalogue.event(eventTypes.releaseFound, {
   payload: Schema.Struct({ issue: Issue, repo: Schema.String, sha: Schema.String, tag: Schema.String, url: Schema.String })
 })
 
+export const githubUnavailable = Catalogue.event(eventTypes.githubUnavailable, {
+  description:
+    "GitHub refused githubToken, githubRepo or sha is gone, or no githubToken is configured. Jira events continue; the GitHub signals are retried every poll and this fires again only after they recover and fail anew.",
+  payload: Schema.Struct({ issue: Issue, repo: Schema.String, reason: Schema.String })
+})
+
 export const all = [
   statusChanged,
   commentAdded,
@@ -109,9 +115,10 @@ export const all = [
   issueEntered,
   issueLeft,
   pullRequestFound,
-  pullRequestChanged,
+  pullRequestStateChanged,
   commitAdded,
-  releaseFound
+  releaseFound,
+  githubUnavailable
 ] as const
 
 export type WatchItem = ReturnType<typeof Connector.end>
@@ -124,9 +131,10 @@ const byType: Record<JiraEventType, Catalogue.EventType<any>> = {
   [eventTypes.issueEntered]: issueEntered,
   [eventTypes.issueLeft]: issueLeft,
   [eventTypes.pullRequestFound]: pullRequestFound,
-  [eventTypes.pullRequestChanged]: pullRequestChanged,
+  [eventTypes.pullRequestStateChanged]: pullRequestStateChanged,
   [eventTypes.commitAdded]: commitAdded,
-  [eventTypes.releaseFound]: releaseFound
+  [eventTypes.releaseFound]: releaseFound,
+  [eventTypes.githubUnavailable]: githubUnavailable
 }
 
 /** The watch item for a diffed event; its payload is checked against the catalogue as it is encoded. */

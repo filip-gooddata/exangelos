@@ -31,7 +31,7 @@ With an issue target only:
 
 - `githubRepo`: `owner/repo`. Turns on the GitHub signals and reports pull requests that the search matches.
 - `githubSearch`: the pull request search text. Default: the issue key.
-- `githubPaths`: paths in `githubRepo`. `commit.added` reports each new commit to one of them.
+- `githubPaths`: paths in `githubRepo`. `commit.added` reports each new commit that touches one of them, once, with every watched path it touched.
 - `since`: an ISO time. Commits to `githubPaths` are read from it on. Default: the first poll.
 - `sha`: a commit SHA. `release.found` reports the newest of the latest five releases that contains it.
 
@@ -50,17 +50,20 @@ None of these parameters change the subject, so `exangelos update` can change th
 | `issue.entered` | JQL only |
 | `issue.left` | JQL only |
 | `pull_request.found` | `<issue id>:github:<repo>#<number>:found` |
-| `pull_request.changed` | `<issue id>:github:<repo>#<number>:<state>:<updated at>` |
-| `commit.added` | `<issue id>:github:<repo>:<path>:<sha>` |
+| `pull_request.state_changed` | `<issue id>:github:<repo>#<number>:<state>:<updated at>` |
+| `commit.added` | `<issue id>:github:<repo>:commit:<sha>` |
 | `release.found` | `<issue id>:github:<repo>:release:<sha>` |
+| `github.unavailable` | `<issue id>:github:unavailable:<outage number>` |
 
 Jira events come from the issue's changelog and comments, so a change and its reversal between two polls are both reported. The first poll reports no history.
 
-- `pull_request.found` and `pull_request.changed` report the pull requests the search matched at the first poll as the baseline, then each new match and each change between `open`, `closed` and `merged`. A search finds at most 100 pull requests.
-- `commit.added` reports the commits at the first poll as the baseline, then each new one. It reads the newest 100 commits to each path since `since`.
+- `pull_request.found` and `pull_request.state_changed` report the pull requests the search matched at the first poll as the baseline, then each new match and each change between `open`, `closed` and `merged`. A search finds at most 100 pull requests.
+- `commit.added` reports the commits at the first poll as the baseline, then each new one. It reads the newest 100 commits to each path since `since`; when more than 100 land between two polls, the older ones are missed.
 - `release.found` fires once per `sha`, on the first poll too. After it, the connector stops reading releases for that commit.
 
 Changing `githubRepo`, `githubSearch` or `since` starts that part again from a baseline.
+
+A GitHub failure never holds back the Jira events. When GitHub refuses `githubToken`, `githubRepo` or the `sha` commit is gone, or no `githubToken` is configured, the subscription reports `github.unavailable` with the reason, once per outage, and keeps trying GitHub on every poll; after the signals recover, it reports the next outage again. A rate limit or any other GitHub failure skips the GitHub signals for that poll only, without an event. Keep `github.unavailable` in `--types`, or a broken token goes unnoticed.
 
 The watch ends when the issue is gone or the account can no longer see it, and when a JQL query fails or matches more than 1,000 issues.
 
@@ -72,7 +75,7 @@ When Jira rate limits, the connector waits as long as `Retry-After` asks. When G
 
 ## Cursor
 
-The issue cursor is JSON with `v: 2`. It holds the changelog and comment positions and, with `githubRepo`, the repository, search and `since` it read with, each matched pull request's state, the commits seen per path, and the releases already checked for `sha`. A `v: 1` cursor carries over: the issue events continue where it stopped, and the GitHub signals start from a baseline. A cursor of an unknown version starts a new baseline.
+The issue cursor is JSON with `v: 2`. It holds the changelog and comment positions and, with `githubRepo`, the repository, search and `since` it read with, each matched pull request's state, the commits seen per path, and the releases already checked for `sha`. It also records whether the GitHub signals are unavailable and how many outages there were. A `v: 1` cursor carries over: the issue events continue where it stopped, and the GitHub signals start from a baseline. A cursor of an unknown version starts a new baseline, so going back to a 0.1 connector restarts the subscription from the current state and misses what changed in between.
 
 ## Moving from watch-jira.sh
 
@@ -83,13 +86,13 @@ The issue cursor is JSON with `v: 2`. It holds the changelog and comment positio
 | `CHANGED` on `jira.resolution`, `jira.fixVersions` | `field.changed` with `fields='["resolution","fixVersions"]'` |
 | `CHANGED` on `jira.comments` (the count) | `comment.added`, one per comment. A deleted comment wakes nothing |
 | `--fields LIST` | `fields` for `field.changed`, and `--types` for status, assignee and comments |
-| `--gh-repo OWNER/REPO` | `githubRepo`, with `pull_request.found` and `pull_request.changed` |
+| `--gh-repo OWNER/REPO` | `githubRepo`, with `pull_request.found` and `pull_request.state_changed` |
 | `--gh-pr-search QUERY` | `githubSearch` |
 | `--gh-path PATH` (repeatable) | `githubPaths`, with `commit.added` |
 | `--since ISO` | `since` |
 | `--sha SHA` | `sha`, with `release.found`. It also fires when a release already contains the commit at the first poll |
-| `AUTH_FAIL` | No count. Jira refusing the token, or GitHub refusing `githubToken`, makes the connector unavailable, which suspends the subscription and wakes |
-| `ERROR` | No wake for a failed poll: the daemon logs it and retries with backoff. An issue that is gone ends the subscription with that reason |
+| `AUTH_FAIL` | No count. Jira refusing the token makes the connector unavailable, which suspends the subscription and wakes. GitHub refusing `githubToken` reports `github.unavailable` and Jira events continue |
+| `ERROR` | No wake for a failed Jira poll: the daemon logs it and retries with backoff. An issue that is gone ends the subscription with that reason. A GitHub repository or commit that is gone reports `github.unavailable` |
 | One-shot exit and re-arm | A subscription keeps watching after each event and dedupes by the keys above. `--max-events 1` ends it after the first event |
 | `--site`, `--cloud-id`, `--keychain-item` | `site`, `email` and `token` from `exangelos connector configure`. The gateway route and cloud id are found from the site |
 | `--interval SEC` | No equivalent. Polls run once a minute |
@@ -112,12 +115,12 @@ exangelos subscribe jira KEY fields='["resolution","fixVersions"]' \
 # launch KEY --gh-repo owner/repo --gh-path src/file.tsx --since 2026-11-23T00:00:00Z
 exangelos subscribe jira KEY fields='["resolution","fixVersions"]' \
   githubRepo=owner/repo githubPaths=src/file.tsx since=2026-11-23T00:00:00Z \
-  --types status.changed,assignee.changed,comment.added,field.changed,pull_request.found,pull_request.changed,commit.added \
+  --types status.changed,assignee.changed,comment.added,field.changed,pull_request.found,pull_request.state_changed,commit.added,github.unavailable \
   --intent "Follow KEY and the code that fixes it"
 
 # launch KEY --gh-repo owner/repo --sha SHA
 exangelos subscribe jira KEY fields='["resolution","fixVersions"]' githubRepo=owner/repo sha=SHA \
-  --types status.changed,assignee.changed,comment.added,field.changed,pull_request.found,pull_request.changed,release.found \
+  --types status.changed,assignee.changed,comment.added,field.changed,pull_request.found,pull_request.state_changed,release.found,github.unavailable \
   --intent "Tell KEY's reporter when a release ships SHA"
 ```
 

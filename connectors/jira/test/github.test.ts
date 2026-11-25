@@ -89,9 +89,9 @@ describe("GitHub signals", () => {
       state.commits = [commit("c2"), commit("c1")]
       const second = yield* poll(github, first.cursor)
       expect(second.events.map((event) => [event.type, event.dedupeKey])).toEqual([
-        ["pull_request.changed", "10042:github:acme/app#5:merged:2026-11-20T09:40:00Z"],
+        ["pull_request.state_changed", "10042:github:acme/app#5:merged:2026-11-20T09:40:00Z"],
         ["pull_request.found", "10042:github:acme/app#6:found"],
-        ["commit.added", "10042:github:acme/app:src/login.ts:c2"]
+        ["commit.added", "10042:github:acme/app:commit:c2"]
       ])
       expect(second.events[0]?.summary).toBe("DEMO-7: acme/app#5 open → merged: DEMO-7 change 5")
       expect(second.events[0]?.payload).toMatchObject({ from: "open", state: "merged", number: 5 })
@@ -147,5 +147,18 @@ describe("GitHub signals", () => {
       const second = yield* poll(github, first.cursor, { paths: [], sha: undefined, search: "login" })
       expect(second.events).toEqual([])
       expect(second.cursor.search).toBe("login")
+    }))
+
+  it.effect("reports a new commit once, with every watched path it touched", () =>
+    Effect.gen(function*() {
+      const state = { pullRequests: [], commits: [commit("c1")], releases: [], containing: [] }
+      const { github } = fakeGitHub(state)
+      const paths = ["src/login.ts", "src/auth.ts"]
+      const first = yield* poll(github, null, { paths, sha: undefined })
+      state.commits = [commit("c2"), commit("c1")]
+      const second = yield* poll(github, first.cursor, { paths, sha: undefined })
+      expect(second.events.map((event) => [event.dedupeKey, event.payload])).toEqual([
+        ["10042:github:acme/app:commit:c2", expect.objectContaining({ paths: ["src/login.ts", "src/auth.ts"], sha: "c2" })]
+      ])
     }))
 })
