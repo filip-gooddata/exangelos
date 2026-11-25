@@ -1,0 +1,21 @@
+apps/tray/src/daemon/DaemonClient.ts
+  s_018d18a65bc861::t_8400379a1451f7 3,6,74-80,86-87,139
+apps/tray/test/DaemonClient.test.ts
+  s_018d18a65bc861::t_1f0c1e8199f03d 6,11,68-112,128-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "acb1c01475d661522b0bad68fd3a85b365a6009a",
+  "prompts": {},
+  "sessions": {
+    "s_018d18a65bc861": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "8e262a4f-b2e4-488e-ae6c-3a20f2f171a8",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
