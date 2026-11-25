@@ -279,7 +279,7 @@ The second group is offered to the CLI and the tray only, never to the MCP serve
 - Dev link and unlink.
 - Read and change settings.
 - Service status (daemon running, version, start method).
-- Session titles: the human title of each given session, such as a T3 Code thread's title, so the panel can show it in place of the session id. The daemon asks the harness CLI (`t3 thread show --json --messages 0`; Codex and Claude Code have no lookup yet) with a 5 second limit, keeps a found title for 10 minutes and a missing one for 2 minutes in memory, and leaves out every session it can't name instead of failing. It answers at once from what it already knows and looks up the other sessions in the background, so the panel's poll never waits on a harness CLI; a new session shows its id until a later poll.
+- Session titles: the human title of each given session, such as a T3 Code thread's title, so the panel can show it in place of the session id. The daemon asks the harness CLI (`t3 thread show --json --messages 0`; Codex and Claude Code have no lookup yet) with a 15 second limit and at most 2 lookups at once, keeps a found title for 10 minutes and a missing one for 2 minutes in memory, and leaves out every session it has never named instead of failing. The last title found for each session stays shown when a later lookup fails or times out, and is kept in `session-titles.json` in the state directory so a restarted daemon shows it too. It answers at once from what it already knows and looks up the other sessions in the background, so the panel's poll never waits on a harness CLI; a new session shows its id until a later poll.
 
 The third group runs inside the daemon:
 

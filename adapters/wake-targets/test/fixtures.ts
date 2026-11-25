@@ -22,21 +22,29 @@ export interface Spawned {
   readonly stdin: string
 }
 
-/** A command runner that records each command and answers with the given exit code and output. */
-export const recordingSpawner = (answer: { readonly exitCode: number; readonly stdout?: string }) =>
+/** How a fake command ends: with an exit code and output, or never when it `hangs`. */
+export interface Answer {
+  readonly exitCode: number
+  readonly stdout?: string
+  readonly hangs?: boolean
+}
+
+/** A command runner that records each command and answers with the given answer, read at each run. */
+export const recordingSpawner = (answerOf: Answer | (() => Answer)) =>
   Effect.gen(function*() {
     const spawned = yield* Ref.make<ReadonlyArray<Spawned>>([])
     const environments = yield* Ref.make<ReadonlyArray<Readonly<Record<string, unknown>> | undefined>>([])
     const spawn = (command: ChildProcess.Command) =>
       Effect.gen(function*() {
         if (command._tag !== "StandardCommand") return yield* Effect.die("piped commands are not expected")
+        const answer = typeof answerOf === "function" ? answerOf() : answerOf
         const input = command.options.stdin
         const stdin = Stream.isStream(input) ? yield* Stream.mkString(Stream.decodeText(input)) : ""
         yield* Ref.update(spawned, (all) => [...all, { program: command.command, args: command.args.map(String), stdin }])
         yield* Ref.update(environments, (all) => [...all, command.options.env])
         return ChildProcessSpawner.makeHandle({
           pid: ChildProcessSpawner.ProcessId(1),
-          exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(answer.exitCode)),
+          exitCode: answer.hangs === true ? Effect.never : Effect.succeed(ChildProcessSpawner.ExitCode(answer.exitCode)),
           isRunning: Effect.succeed(false),
           kill: () => Effect.void,
           stdin: Sink.drain,
