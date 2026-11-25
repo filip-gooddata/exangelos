@@ -1,0 +1,65 @@
+.github/scripts/import-signing-certificate.sh
+  s_32011db55120fc::t_4589915fd273d6 1-34
+.github/scripts/publish-homebrew-tap.sh
+  s_32011db55120fc::t_9999f8f3c7e5d6 2-4,6,12,15,36,38-44,46
+.github/scripts/verify-macos-signature.sh
+  s_32011db55120fc::t_906ba0be04bafd 1-17
+.github/workflows/build-release.yml
+  s_7a5f206029bf3c::t_60a2fcd52333c2 4-10,20-24,35,49-55,57-58,66-75,86-168,236,248,252
+.github/workflows/release.yml
+  s_7a5f206029bf3c::t_466541f251636a 1-3,72,95-96,114,122,126
+docs/spec.md
+  s_4815f36964b9f7::t_5d001831eeef39 486-489,536
+packaging/macos/entitlements.plist
+  s_32011db55120fc::t_e0a3baa939c474 1-8
+packaging/src/binaries.ts
+  s_6d88874573a580::t_f78f6d91a12edc 2,17,27-37,64
+packaging/src/cli/build-release.ts
+  s_6d88874573a580::t_e4e2d26d89345d 43-44
+packaging/src/release.ts
+  s_6d88874573a580::t_5e2de2f10ca6be 28,47-48
+packaging/test/release.test.ts
+  s_32011db55120fc::t_48bbe5e597863c 7,118-135
+packaging/test/workflow.test.ts
+  s_32011db55120fc::t_57e9ac31fe2324 16-21,24,28-29,38,68,78,81-93
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bac76f0045df4a9354a07c994457764b0faa6794",
+  "prompts": {},
+  "sessions": {
+    "s_32011db55120fc": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "80d9530d-f76e-420f-8918-c46fb39565bc",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_4815f36964b9f7": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21344-0b5c-7f63-b8a3-22b6ae130b12",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_6d88874573a580": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a2133f-f51d-7aa2-9fcc-e25b52d0b4bd",
+        "model": "gpt-6.2-sol"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_7a5f206029bf3c": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e0c5ad0-b60d-4fc0-90cb-dc59fe8b91ca",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
