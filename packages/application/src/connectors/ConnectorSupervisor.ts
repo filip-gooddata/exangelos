@@ -378,6 +378,7 @@ export const layerConnectorSupervisor: Layer.Layer<
           ),
           Effect.result
         )
+        readSince.delete(id)
         if (stop) return
         if (result._tag === "Failure") {
           const error = result.failure
@@ -395,7 +396,6 @@ export const layerConnectorSupervisor: Layer.Layer<
             ? previous.reason
             : yield* observationReason(name, process, error.reason)
           observationFailures.set(id, { name, category, reason, since, raw: error.reason })
-          readSince.delete(id)
           if (previous?.category !== category) {
             yield* Effect.logWarning("watch observation failed").pipe(
               Effect.annotateLogs({

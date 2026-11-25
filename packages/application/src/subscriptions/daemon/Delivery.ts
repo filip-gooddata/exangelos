@@ -132,11 +132,17 @@ const claim = (listed: Wake.Wake, now: DateTime.Utc, limits: Limits.Limits) =>
     Option.flatten
   )
 
-/** Under the subscription's lock: stores the outcome while the wake is still being sent; a newer wake or a drop wins. */
+/**
+ * Under the subscription's lock: stores the outcome while the wake is still being sent; a newer wake
+ * or a drop wins, except that a wake replaced while it was sent still records that it arrived.
+ */
 const settle = (wake: Wake.Wake) =>
   withSubscription(wake.subscription, () =>
     Effect.gen(function*() {
-      if (!Option.exists(yield* findWake(wake.subscription, wake.id), (current) => current.state === "sending")) return
+      const current = yield* findWake(wake.subscription, wake.id)
+      const recordable = Option.exists(current, (found) =>
+        found.state === "sending" || (found.state === "replaced" && wake.state === "delivered"))
+      if (!recordable) return
       const wakes = yield* WakeRepository
       yield* wakes.update(wake)
     }))

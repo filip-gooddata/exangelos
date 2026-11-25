@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { DateTime, Effect } from "effect"
+import { DateTime, Effect, Fiber } from "effect"
 import { TestClock } from "effect/testing"
 import { Ids } from "@exangelos/domain"
 import type { Catalogue, Connector, Session } from "@exangelos/domain"
@@ -152,5 +152,45 @@ describe("a subscription end to end", () => {
       yield* deliverDue
       yield* deliverDue
       expect(yield* whys).toEqual(["Events", "Failing", "Events", "Recovered"])
+    }).pipe(Effect.provide(layer)))
+
+  it.effect("a failing wake replaced by an event while it is sent still counts, and recovery wakes once", () =>
+    Effect.gen(function*() {
+      yield* (yield* ConnectorRepository).store(connector("github-pr"))
+      const access = yield* ConnectorAccessFake
+      yield* access.define(prs, {
+        catalogue,
+        describe: (parameters: Catalogue.Parameters) =>
+          Effect.succeed({ catalogue, parameters, subject: "pr 7", label: "PR" })
+      })
+      const subscription = yield* subscribe({ _tag: "Session", session: own }, {
+        connector: prs,
+        parameters: { pr: 7 },
+        intent: "Merge once CI is green",
+        target: { _tag: "Caller" },
+        similarOk: []
+      }, [own])
+      const intake = yield* SubscriptionIntake
+      const target = yield* WakeTargetFake
+      const whys = Effect.map(target.delivered, (all) => all.map((content) => content.why._tag))
+      const failure: Connector.ObservationFailure = { category: "unavailable", reason: "socket closed", since: yield* DateTime.now }
+      yield* access.observe(subscription.id, failure)
+      yield* TestClock.adjust("6 minutes")
+      yield* intake.observationFailing(subscription.id, failure)
+
+      yield* target.hold
+      const sending = yield* Effect.forkChild(deliverDue)
+      yield* Effect.yieldNow
+      expect(yield* intake.ingest(subscription.id, { _tag: "Event", event: reported("ci") })).toBe("continue")
+      yield* access.observe(subscription.id, undefined)
+      yield* intake.observationRecovered(subscription.id)
+      yield* target.release
+      yield* Fiber.join(sending)
+      yield* TestClock.adjust("5 seconds")
+      yield* deliverDue
+      yield* deliverDue
+      yield* intake.observationRecovered(subscription.id)
+      yield* deliverDue
+      expect(yield* whys).toEqual(["Failing", "Events", "Recovered"])
     }).pipe(Effect.provide(layer)))
 })
