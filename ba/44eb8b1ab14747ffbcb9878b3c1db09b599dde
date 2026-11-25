@@ -1,0 +1,19 @@
+packages/application/src/connectors/ConnectorSupervisor.ts
+  s_27b248d3935c6d::t_6999f49a86edc0 382
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ba44eb8b1ab14747ffbcb9878b3c1db09b599dde",
+  "prompts": {},
+  "sessions": {
+    "s_27b248d3935c6d": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5f2e284c-325b-46cd-a694-f73bcb74b18f",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
