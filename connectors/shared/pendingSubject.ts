@@ -1,5 +1,3 @@
-// Only contiguous successful observations in this Watch instance earn credit.
-// A new instance deliberately forgets its previous wall-clock sample.
 export const observationBudget = 2 * 60 * 60 * 1000
 
 export const observedMillis = (elapsed: number, previous: number | undefined, now: number, poll: number) => {

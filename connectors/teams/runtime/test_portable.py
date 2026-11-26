@@ -166,7 +166,6 @@ class PortableTests(unittest.TestCase):
             pin = self.call(selection=links[0], scope='replies')['scope']
             self.assertEqual(pin, self.call(selection=links[1], scope='replies')['scope'])
             data = view([chain(channel,mid,[message(mid),message('999')])])
-            # Expose the message store before the conversation metadata store.
             self.install({k:v for k,v in data.items() if k[:4] != bytes((0,2,1,1))})
             for link in links:
                 self.assertEqual(pin, self.call(selection=link, scope='replies')['scope'])
@@ -227,6 +226,17 @@ class PortableTests(unittest.TestCase):
         self.assertEqual(len(self.call('configured-snapshot',scope=guarded,includeMessagePreview=True)['messages']),1)
         self.assertEqual(self.call(selection=CHANNEL)['scope'],plain)
         self.assertEqual(self.call(selection=url,scope='conversation')['scope'],guarded)
+
+    def test_independent_plain_channel_survives_an_unrelated_wrong_permalink_group(self):
+        plain = self.call(selection=CHANNEL)['scope']
+        link = 'https://teams.microsoft.com/l/message/'+CHANNEL+'/101?parentMessageId=100&groupId='+USER
+        guarded = self.call(selection=link,scope='conversation')['scope']
+        self.install(view([chain(CHANNEL,rows=[message('101')])]))
+        bad = self.call('configured-snapshot',scope=guarded,includeMessagePreview=True)
+        self.assertTrue(bad['groupMismatch'])
+        self.assertEqual(bad['messages'],[])
+        self.assertEqual(self.call(selection=CHANNEL)['scope'],plain)
+        self.assertEqual(len(self.call('configured-snapshot',scope=plain,includeMessagePreview=True)['messages']),1)
 
     def test_plain_reference_cannot_escape_a_contradicted_pending_group(self):
         from test_bridge import GROUP

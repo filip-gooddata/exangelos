@@ -233,14 +233,16 @@ def message_parent(fd, key, pin, message, parent=None):
 
 
 def group_constraint(fd, key, pin, verified_group, explicit_group):
-    # A channel belongs to one group, even when two links name different
-    # messages in it. Resolve aliases under the same physical account lock.
+    if not explicit_group:
+        original = saved_scope(fd, key, dict(pin, group=None))
+        if original:
+            required = binding(fd, key, 'group', original)
+            native.check(not required or not verified_group or required == verified_group, 35)
+            return None
     channel = native.token(key, 'channel-v1', pin['cache'], pin['physical'], pin['partition'], pin['chat'])
     requested = pin['group']
     first = binding(fd, key, 'channel-group', channel, requested)
     if first and requested and first != requested:
-        # Repeating an unqualified reference must not switch to the group that
-        # contradicted the link it previously inherited.
         native.check(explicit_group or not verified_group, 35)
         binding(fd, key, 'multiple-groups', channel, True)
     if not requested:
@@ -324,15 +326,12 @@ def saved_scope(fd, key, pin):
 def selection_handle(fd, key, pin, reference, cache, account):
     _, mid, replies, _, _, hint = reference
     if replies and 'message' in pin:
-        # A canonical root recorded by an older release can outlive its rows.
         old = {k:v for k,v in pin.items() if k not in ('message','parentHint')}
         old['root'] = mid
         if saved_scope(fd, key, old):
             native.check(not hint or hint == mid, 36)
             pin = old
 
-    # Prefer the original reference's existing watch even when another watch
-    # independently acquired its eventual root or conversation.
     if mid and (replies or hint) and 'message' not in pin:
         early = dict(pin, root=(hint or mid) if replies else None, message=mid, parentHint=hint)
         for candidate in (early, dict(early, group=None)) if pin['group'] else (early,):
