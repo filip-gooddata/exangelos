@@ -187,3 +187,20 @@ it("credits only adjacent successful polls up to the configured interval", () =>
   expect(observedMillis(before, 100000, 101000, 1000)).toBe(observationBudget)
   expect(observedMillis(before, 100000, 300000, 1000)).toBe(before)
 })
+
+it.effect("keeps the first successful Watch cutoff when an older daemon reopens its cursor", () => Effect.gen(function*() {
+  yield* TestClock.adjust("10 seconds")
+  let current: typeof Snapshot.Type = { ...baseline, missing: true, messages: [] }
+  const client = yield* ConnectorTest.makeClient(make({ setup, read: () => Effect.sync(() => current) }))
+  yield* client.Configure({ values: consent })
+  const request = { parameters, eventTypes: [] }
+  const [saved] = yield* client.Watch(request).pipe(Stream.take(1), Stream.runCollect)
+  if (saved?._tag !== "Cursor") throw new Error("Expected an older daemon to receive the waiting cursor")
+  yield* TestClock.adjust("1 minute")
+  current = { ...baseline, generation: "2", snapshot: token(20), messages: [
+    { ...message, id: token(7), messageTs: "9.999999", permalink: "https://fixture.slack.com/archives/C0000001/p9999999", reply: true },
+    { ...message, id: token(8), messageTs: "10.000000", permalink: "https://fixture.slack.com/archives/C0000001/p10000000", reply: true }
+  ] }
+  const [arrival] = yield* client.Watch({ ...request, cursor: saved.cursor }).pipe(Stream.take(1), Stream.runCollect)
+  expect(arrival).toMatchObject({ _tag: "Event", event: { payload: { messageTs: "10.000000" } } })
+}).pipe(Effect.provide(ledgerProcess), Effect.scoped), ledgerTestTimeout)
