@@ -346,7 +346,6 @@ export const layerConnectorSupervisor: Layer.Layer<
         if (item._tag !== "Pending" && item._tag !== "End") return Effect.succeed(item)
         if (lastReason?.raw === item.reason) return Effect.succeed({ ...item, reason: lastReason.reason })
         return Effect.map(observationReason(name, process, item.reason), (reason) => {
-          // A secret that could not be read this time may be readable for the next item.
           lastReason = reason === withheldReason ? undefined : { raw: item.reason, reason }
           return { ...item, reason }
         })

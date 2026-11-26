@@ -117,7 +117,6 @@ const apply = (before: Subscription.Subscription, item: Event.WatchItem) =>
         if (item.cursor === before.cursor && item.reason === before.waiting) return unchanged(before)
         const subscription = { ...before, cursor: item.cursor, waiting: item.reason }
         yield* commit(Option.some(before), { subscription, wake: Option.none() })
-        // The reason is the connector's own text, so it stays out of the log like a failure's.
         if (before.waiting === undefined) yield* Effect.logInfo("watch waiting for its subject")
         return unchanged(subscription)
       }

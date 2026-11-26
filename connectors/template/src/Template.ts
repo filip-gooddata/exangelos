@@ -54,7 +54,6 @@ export const connector = Connector.make({
               Effect.flatMap(Effect.fromOption),
               Effect.mapError(() => new Connector.CredentialsRejected({ reason: "The template connector is not configured" }))
             )
-            // Nothing to count yet: wait without an event or a failure, as for a subject not there yet.
             if (ticks === 0) return Stream.concat(Stream.make(Connector.pending("No ticks requested yet", cursor ?? "0")), Stream.never)
             const remaining = Stream.range(resumeAfter(cursor) + 1, ticks).pipe(
               Stream.mapEffect((index) =>
