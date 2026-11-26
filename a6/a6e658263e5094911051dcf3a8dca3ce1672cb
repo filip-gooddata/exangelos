@@ -1,0 +1,21 @@
+connectors/teams/src/Source.ts
+  s_8e2d7bd4181561::t_c750cfec4c2803 26
+connectors/teams/src/Teams.ts
+  s_8e2d7bd4181561::t_2763d813c64e2f 56
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a6a6e658263e5094911051dcf3a8dca3ce1672cb",
+  "prompts": {},
+  "sessions": {
+    "s_8e2d7bd4181561": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21806-d096-76b0-8c12-84441d973b8b",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
