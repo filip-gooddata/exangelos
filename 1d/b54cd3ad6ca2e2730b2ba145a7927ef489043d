@@ -1,0 +1,38 @@
+connectors/shared/pendingSubject.ts
+  h_a04b70fbb6cbfb 1-19
+connectors/teams/README.md
+  h_a04b70fbb6cbfb 21-27,41,47
+connectors/teams/connector.json
+  h_a04b70fbb6cbfb 3
+connectors/teams/runtime/bridge.py
+  h_a04b70fbb6cbfb 161,164,172-174,176-183,185-188,191-200,203-256,267,269-366,418-420,427-429,431-433,436-437
+connectors/teams/runtime/ledger.py
+  h_a04b70fbb6cbfb 185-188,192-193,196-199
+connectors/teams/runtime/test_bridge.py
+  h_a04b70fbb6cbfb 42
+connectors/teams/runtime/test_portable.py
+  h_a04b70fbb6cbfb 103,106-243,305-306,391-392
+connectors/teams/scripts/validate-release.py
+  h_a04b70fbb6cbfb 62
+connectors/teams/src/Reconcile.ts
+  h_a04b70fbb6cbfb 22-24,34
+connectors/teams/src/Source.ts
+  h_a04b70fbb6cbfb 23-26,30-36,38
+connectors/teams/src/Teams.ts
+  h_a04b70fbb6cbfb 4,56,75,81-85,92-99,101,105-114,120-122
+connectors/teams/test/Teams.test.ts
+  h_a04b70fbb6cbfb 7-8,10,14,244-310
+connectors/teams/validation/native_cache.py
+  h_a04b70fbb6cbfb 2,183,186-192,200,206-207,211,324,354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1db54cd3ad6ca2e2730b2ba145a7927ef489043d",
+  "prompts": {},
+  "humans": {
+    "h_a04b70fbb6cbfb": {
+      "author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
