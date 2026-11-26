@@ -1,0 +1,49 @@
+connectors/github-repo/README.md
+  s_1e9f776e0415b4::t_ee4f659e174c2a 3,32,36,40-41,45,63,66,72-73,80
+connectors/github-repo/src/Cursor.ts
+  s_aab10bf0dec36a::t_a0186d8ad174f9 2,4-8,12-22,27-39,44-49
+connectors/github-repo/src/Events.ts
+  s_1e9f776e0415b4::t_537132cdaa9379 3-14,22,28-29,41
+connectors/github-repo/src/GitHub.ts
+  s_1e9f776e0415b4::t_5d4fac4c63e517 31,46,87,117,155-156,162,200,211-212,215-216,221-222,227,234
+connectors/github-repo/src/GithubRepo.ts
+  s_1e9f776e0415b4::t_ea15e8189a4dc9 20,35,112
+connectors/github-repo/src/Poll.ts
+  s_1e9f776e0415b4::t_3feedbc7503678 62,66
+connectors/github-repo/src/Snapshot.ts
+  s_aab10bf0dec36a::t_9a518439aa10fc 2,5,19,33
+connectors/github-repo/test/Diff.test.ts
+  s_aab10bf0dec36a::t_f25bb4e1d5366c 17-29,31,36,41,46-47,52,79,103-115,120,123,126,132-135,138,142,144-145,147,150-154,158-161,165-169
+connectors/github-repo/test/GithubRepo.test.ts
+  s_1e9f776e0415b4::t_6b82125fdbb4ee 43,129,135-138,148-149,152,154-165,167-178
+connectors/github-repo/test/stubGitHub.ts
+  s_1e9f776e0415b4::t_a8b5cdcef034e1 25-30,56,64,82,96
+skills/exangelos/SKILL.md
+  s_1e9f776e0415b4::t_280135c5053917 39,57
+connectors/github-repo/src/Diff.ts
+  s_1e9f776e0415b4::t_d9044170dd3645 19-20,22-37,43-44,68,74-75,97-98,112,115,118,123-124,127-131,141,144-156,160,162-166,168-193,217,219-220,222,227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a875698f0811c593b070379825fcfd01fab9127",
+  "prompts": {},
+  "sessions": {
+    "s_1e9f776e0415b4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ccd77d56-ba94-4181-ac48-0f5c6a34d95a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_aab10bf0dec36a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21537-9c16-7722-b3f8-8d49baefc219",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
