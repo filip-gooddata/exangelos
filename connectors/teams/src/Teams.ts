@@ -95,7 +95,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
             payload: event.payload, dedupeKey: event.dedupeKey,
             ...(i === result.events.length - 1 ? { cursor: result.cursor } : {})
           }))
-          if (items.length === 0 && state.cursor !== result.cursor) items.push(Connector.cursor(result.cursor))
+          if (items.length === 0 && (state.first || state.cursor !== result.cursor)) items.push(Connector.cursor(result.cursor))
           return [items, Option.some({ cursor: result.cursor as string | undefined, first: false })] as const
         }).pipe(Effect.mapError((error) => new Connector.SourceFailed({ reason: error.reason }))))
       }))
