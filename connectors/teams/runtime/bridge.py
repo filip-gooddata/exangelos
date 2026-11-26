@@ -31,6 +31,14 @@ def require(ok):
         raise ValueError()
 
 
+class ReadDeadline(BaseException):
+    pass
+
+
+def read_deadline(*_):
+    raise ReadDeadline()
+
+
 def limits():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     caps = [(resource.RLIMIT_CPU, 30), (resource.RLIMIT_NOFILE, 128)]
@@ -42,7 +50,7 @@ def limits():
         soft, hard = resource.getrlimit(kind)
         ceiling = cap if hard == resource.RLIM_INFINITY else min(cap, hard)
         resource.setrlimit(kind, (ceiling, ceiling))
-    signal.signal(signal.SIGALRM, lambda *_: (_ for _ in ()).throw(ValueError()))
+    signal.signal(signal.SIGALRM, read_deadline)
     signal.alarm(40)
 
 
@@ -281,6 +289,10 @@ def main():
         return 0
     except native.Refusal as exc:
         return exc.code
+    except ReadDeadline:
+        return 34
+    except current_store.ReadFailure as exc:
+        return {'manifest': 30, 'tables': 31, 'wal': 32, 'stability': 33}[exc.stage]
     except BaseException:
         return 21
 

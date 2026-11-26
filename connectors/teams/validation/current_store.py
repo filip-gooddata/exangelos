@@ -4,6 +4,7 @@ Rejects unsupported comparators and unstable/incomplete input. Stability means
 unchanged inode/size/mtime/ctime across a complete read interval, not a writer lock.
 Bytewise and the supported Chromium IndexedDB coding scheme are supported.
 """
+from collections import deque
 import os
 import re
 import stat
@@ -18,6 +19,12 @@ ORIGINS = frozenset(("https_teams.microsoft.com_0.indexeddb.leveldb",
                      "https_teams.cloud.microsoft_0.indexeddb.leveldb"))
 class Invalid(Exception):
     pass
+
+
+class ReadFailure(Invalid):
+    def __init__(self, stage):
+        super().__init__('unavailable')
+        self.stage = stage
 
 def require(ok):
     if not ok:
@@ -371,14 +378,44 @@ class Snapshot:
 
 
 def _current_view(path, expected_directory=None):
+    stage = 'stability'
     snap = Snapshot(path)
     try:
         require(expected_directory is None or snap.start[:2] == expected_directory)
         names = snap.names()
+        stage = 'manifest'
         current = snap.read('CURRENT')
         require(re.fullmatch(rb'MANIFEST-[0-9]+\n', current) is not None)
         require(len(current) <= 64)
         files, fields, edits = manifest(snap.read(current[:-1].decode('ascii')))
+        stage = 'tables'
+        tables = deque()
+        for number, (_, size, low, high) in files.items():
+            candidates = [n for n in names if re.fullmatch(r'[0-9]+\.(ldb|sst)', n) and int(n.split('.')[0]) == number]
+            require(len(candidates) == 1)
+            data = snap.read(candidates[0])
+            require(len(data) == size)
+            tables.append((data, low, high))
+        stage = 'wal'
+        logs = {}
+        for name in names:
+            if re.fullmatch(r'[0-9]+\.log', name):
+                number = int(name.split('.')[0])
+                if number >= fields[2] or number == fields.get(9, 0):
+                    require(number not in logs)
+                    logs[number] = name
+        require(not fields[2] or fields[2] in logs)
+        require(not fields.get(9, 0) or fields[9] in logs)
+        log_data = deque(snap.read(logs[number]) for number in sorted(logs))
+        stage = 'stability'
+        snap.verify(names)
+
+        fd = open_directory(path)
+        try:
+            require(signature(os.fstat(fd)) == snap.start)
+        finally:
+            os.close(fd)
+
         user_order = comparator(fields[1])
         latest, versions = {}, {}
         count = 0
@@ -399,11 +436,9 @@ def _current_view(path, expected_directory=None):
             if logical not in latest or latest[logical][0] < seq:
                 latest[logical] = seq, kind, value, user
 
-        for number, (_, size, low, high) in files.items():
-            candidates = [n for n in names if re.fullmatch(r'[0-9]+\.(ldb|sst)', n) and int(n.split('.')[0]) == number]
-            require(len(candidates) == 1)
-            data = snap.read(candidates[0])
-            require(len(data) == size)
+        stage = 'tables'
+        while tables:
+            data, low, high = tables.popleft()
             first = last = None
             for key, value in table_entries(data, expansion_budget, user_order):
                 require(last is None or order(last, user_order) < order(key, user_order))
@@ -414,39 +449,28 @@ def _current_view(path, expected_directory=None):
                 accept(user, seq, kind, value)
             require(first is not None and order(first, user_order) == order(low, user_order)
                     and order(last, user_order) == order(high, user_order))
-        logs = {}
-        for name in names:
-            if re.fullmatch(r'[0-9]+\.log', name):
-                number = int(name.split('.')[0])
-                if number >= fields[2] or number == fields.get(9, 0):
-                    require(number not in logs)
-                    logs[number] = name
-        require(not fields[2] or fields[2] in logs)
-        require(not fields.get(9, 0) or fields[9] in logs)
+        stage = 'wal'
         batches = 0
-        for number in sorted(logs):
+        while log_data:
+            data = log_data.popleft()
             previous = -1
-            for record in records(snap.read(logs[number])):
+            for record in records(data):
                 batches += 1
                 require(batches <= ENTRY_LIMIT)
                 for user, seq, kind, value in batch(record):
                     require(seq > previous)
                     previous = seq
                     accept(user, seq, kind, value)
-        snap.verify(names)
-
-        fd = open_directory(path)
-        try:
-            require(signature(os.fstat(fd)) == snap.start)
-        finally:
-            os.close(fd)
         result = {user: v for _, kind, v, user in latest.values() if kind}
         return result, {'stable': True, 'checksums_verified': True,
                         'tables': len(files), 'logs': len(logs), 'manifest_edits': edits,
                         'batches': batches, 'records': count, 'current_keys': len(result),
                         'tombstones': len(latest) - len(result), 'bytes_read': snap.total}
+    except Exception:
+        pass
     finally:
         os.close(snap.fd)
+    raise ReadFailure(stage) from None
 
 
 def current_view(path, expected_directory=None):
@@ -458,6 +482,8 @@ def current_view(path, expected_directory=None):
     """
     try:
         return _current_view(path, expected_directory)
+    except ReadFailure:
+        raise
     except Exception:
         pass
     raise Invalid('unavailable') from None

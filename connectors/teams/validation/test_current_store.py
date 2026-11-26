@@ -211,6 +211,27 @@ class StoreTests(unittest.TestCase):
             return original(snapshot, names)
         with patch.object(s.Snapshot, 'verify', changed): self.reject()
 
+    def test_write_during_decode_is_visible_on_the_next_read(self):
+        self.fixture([(ik(b'a', 3), b'old')])
+        original = s.table_entries
+        def append(*args):
+            (self.path / '000003.log').write_bytes(log(batch(11, [(b'a', 1, b'new')])))
+            return original(*args)
+        with patch.object(s, 'table_entries', append):
+            self.assertEqual(s.current_view(self.path)[0], {b'a': b'old'})
+        self.assertEqual(s.current_view(self.path)[0], {b'a': b'new'})
+
+    def test_compaction_after_capture_does_not_invalidate_the_read(self):
+        self.fixture([(ik(b'a', 3), b'old')])
+        original = s.table_entries
+        def compact(*args):
+            (self.path / '000002.ldb').unlink()
+            self.fixture(wal=batch(11, [(b'a', 1, b'new')]))
+            return original(*args)
+        with patch.object(s, 'table_entries', compact):
+            self.assertEqual(s.current_view(self.path)[0], {b'a': b'old'})
+        self.assertEqual(s.current_view(self.path)[0], {b'a': b'new'})
+
     def test_limit(self):
         self.fixture()
         with patch.object(s, 'TOTAL_LIMIT', 1): self.reject()

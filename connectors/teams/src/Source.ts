@@ -23,7 +23,12 @@ const reasons: Readonly<Record<number, string>> = {
   24: "Saved Teams selection no longer matches. Check the account and cachePath, then subscribe again with the original reference",
   27: "Choose scope=conversation for the whole conversation or scope=replies for its thread",
   28: "A reply thread cannot be verified for this reference. Use a supported channel thread or explicitly choose scope=conversation",
-  29: "Copy a Teams message link containing its conversation ID and choose scope=conversation or scope=replies"
+  29: "Copy a Teams message link containing its conversation ID and choose scope=conversation or scope=replies",
+  30: "Teams cache manifest could not be read or validated",
+  31: "Teams cache table files could not be read or validated",
+  32: "Teams cache write-ahead log could not be read or validated",
+  33: "Teams cache changed or became inaccessible during snapshot verification",
+  34: "Teams cache inspection exceeded its time limit"
 }
 const unavailable = () => new SourceUnavailable({ reason: "Unable to verify Teams cache or private state. Check cachePath, access and Python 3 availability" })
 
