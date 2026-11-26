@@ -1,0 +1,19 @@
+connectors/slack/test/Slack.test.ts
+  s_792cf20ed3ffee::t_00a888e79d726e 190-206
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5d00f5bf485ad8c33ece1da1c57fbd274d310bed",
+  "prompts": {},
+  "sessions": {
+    "s_792cf20ed3ffee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21764-0a1a-7de2-9106-46f5bf64da74",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
