@@ -1,0 +1,19 @@
+connectors/teams/test/Teams.test.ts
+  s_792cf20ed3ffee::t_49d0477f060930 280-296
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "709f5edb77c66d035d4b6a798a48417082a574b6",
+  "prompts": {},
+  "sessions": {
+    "s_792cf20ed3ffee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21764-0a1a-7de2-9106-46f5bf64da74",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
