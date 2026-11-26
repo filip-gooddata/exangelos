@@ -1,0 +1,53 @@
+connectors/slack/README.md
+  s_200b6e89b939c6::t_7ae002fb124336 224
+connectors/slack/direct/ledger.py
+  s_200b6e89b939c6::t_c6d7d7e78e8aae 291-292,295-298,491
+connectors/slack/direct/setup.py
+  s_73de08cfde11bd::t_cda63d8ce4e5f4 292-293,318-320
+connectors/slack/src/Reconcile.ts
+  s_200b6e89b939c6::t_1bd2aa3e0431ad 22
+connectors/slack/src/Slack.ts
+  s_200b6e89b939c6::t_6785dbd3d1b105 143,165
+connectors/slack/test/Slack.test.ts
+  s_200b6e89b939c6::t_563840fa527559 161-164,166
+connectors/teams/README.md
+  s_200b6e89b939c6::t_a9f1aad780f5a4 41
+connectors/teams/runtime/bridge.py
+  s_73de08cfde11bd::t_d1bd13a44a8d85 178,220,350-352
+connectors/teams/runtime/ledger.py
+  s_200b6e89b939c6::t_987c63e674c0d4 185-186,192-193,196-199
+connectors/teams/runtime/test_portable.py
+  s_73de08cfde11bd::t_8b78f7973566b9 103,131
+connectors/teams/src/Reconcile.ts
+  s_200b6e89b939c6::t_72d54f1e78f33b 23,34
+connectors/teams/src/Source.ts
+  s_73de08cfde11bd::t_2122b508f2881e 31-32
+connectors/teams/src/Teams.ts
+  s_200b6e89b939c6::t_167dff131f4a01 104
+connectors/teams/test/Teams.test.ts
+  s_200b6e89b939c6::t_1aa27828daf7cc 260-263,265
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c7a2c9379b18f45cf80f34655aa04c8ea5fd90a",
+  "prompts": {},
+  "sessions": {
+    "s_200b6e89b939c6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "d36ef368-eb66-40c6-8275-b41ac57e8468",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_73de08cfde11bd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a217a3-bc47-7b63-89dc-0b75ebaa0e01",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
