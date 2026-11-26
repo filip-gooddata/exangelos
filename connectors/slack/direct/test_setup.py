@@ -335,6 +335,27 @@ class SetupTests(unittest.TestCase):
             self.assertEqual(self.resolve(CHANNEL)['expectedScope'], channel['expectedScope'])
             self.assertEqual(self.resolve(link, scope='conversation')['expectedScope'], guarded['expectedScope'])
 
+    def test_migrated_pending_reply_keeps_its_root_alias_after_renumber_and_eviction(self):
+        channel = 'C9000001'
+        with mock.patch.object(setup.sys, 'platform', 'linux'):
+            waiting = self.resolve(f'{channel}:{REPLY}', scope='replies')
+            add_message(self.state, REPLY, TIME, channel)
+            database(self.root, self.state, sequence=25)
+            self.assertEqual(source.acquire({k:v for k,v in waiting.items() if k != 'label'})['resolvedThread'],TIME)
+        with mock.patch.object(setup.sys, 'platform', 'darwin'), mock.patch.object(source, 'volume_uuid', return_value='b'*32):
+            self.resolve('scope-'+waiting['expectedScope'])
+            self.state['messages'][channel].clear()
+            database(self.root, self.state, sequence=30)
+            stat_fd = os.fstat
+            class Renumbered:
+                def __init__(self, fd):
+                    self.info = stat_fd(fd)
+                    self.st_dev = self.info.st_dev + 1
+                def __getattr__(self, name):
+                    return getattr(self.info, name)
+            with mock.patch.object(os, 'fstat', Renumbered):
+                self.assertEqual(self.resolve(f'{channel}:{TIME}', scope='replies')['expectedScope'], waiting['expectedScope'])
+
     def test_restart_after_device_renumbering_preserves_verified_volume_and_cursor(self):
         # Run on POSIX CI with synthetic volume identities and a changed mount device number.
         with mock.patch.object(source, 'volume_uuid', return_value='1' * 32) as uuid:

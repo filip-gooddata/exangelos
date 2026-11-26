@@ -373,6 +373,10 @@ def setup(values):
             existing = equivalent_pin(directory, Path(request['root']), secret_bytes, request)
         if existing is None and selected_thread and 'message' not in selection and not exact_path.exists():
             alias = optional(directory / ('thread-alias-' + request['expectedScope'] + '.json'))
+            if alias is None and portable:
+                previous = optional(previous_epoch_path(directory, secret_bytes, epoch)) or source.directory_epoch(Path(request['root']))
+                _, legacy_root = source.subscription_identity(secret_bytes, previous, selection)
+                alias = optional(directory / ('thread-alias-' + legacy_root + '.json'))
             if alias:
                 existing = verified_alias(directory, roots, alias, selection)
         if existing is None:
