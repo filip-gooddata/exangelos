@@ -14,29 +14,42 @@ const filters = (f: Partial<Record<keyof Filters, ReadonlyArray<string>>>): Filt
   workflows: f.workflows ?? []
 })
 
-const snapshot = (s: Partial<Snapshot>): Snapshot => ({ tags: null, branches: null, releases: null, workflows: {}, ...s })
+const refs = (entries: Record<string, string>) => new Map(Object.entries(entries))
 
-const release = (id: string, tag: string, publishedAt: string | null, draft = false): Release => ({
+const snapshot = (s: {
+  readonly tags?: Record<string, string>
+  readonly branches?: Record<string, string>
+  readonly releases?: ReadonlyArray<Release>
+  readonly workflows?: Record<string, ReadonlyArray<Run> | null>
+}): Snapshot => ({
+  tags: s.tags === undefined ? null : refs(s.tags),
+  branches: s.branches === undefined ? null : refs(s.branches),
+  releases: s.releases ?? null,
+  workflows: new Map(Object.entries(s.workflows ?? {}))
+})
+
+const release = (id: number, tag: string, publishedAt: string | null): Release => ({
   id,
   tag,
   name: null,
   prerelease: false,
-  draft,
+  draft: publishedAt === null,
   publishedAt,
   url: `https://github.com/acme/api/releases/tag/${tag}`
 })
 
-const run = (id: number, updatedAt: string, attempt = 1): Run => ({
+const run = (id: number, completed: boolean, attempt = 1): Run => ({
   id,
   attempt,
   runNumber: id,
   name: "Publish",
-  conclusion: "success",
+  completed,
+  conclusion: completed ? "success" : null,
   branch: "release/mic/4.45",
   sha: sha("c"),
   event: "workflow_dispatch",
   url: `https://github.com/acme/api/actions/runs/${id}`,
-  updatedAt
+  updatedAt: "2026-11-26T00:00:00Z"
 })
 
 const keys = (result: { readonly events: ReadonlyArray<{ readonly dedupeKey: string }> }) =>
@@ -63,7 +76,7 @@ describe("step", () => {
       branches: { "release/mic/4.44": sha("3"), "release/mic/4.45": sha("4"), main: sha("5") }
     }), f, site, "2026-11-26T10:00:00.000Z")
     expect(first.events).toEqual([])
-    expect(first.memory.tags?.refs).toEqual({ "mic-lib-v4.45.0-rc": sha("2") })
+    expect([...first.memory.tags!.refs]).toEqual([["mic-lib-v4.45.0-rc", sha("2")]])
 
     const second = step(first.memory, snapshot({
       tags: { "mic-lib-v4.45.0-rc": sha("6"), "mic-lib-v4.45.0": sha("7") },
@@ -87,55 +100,73 @@ describe("step", () => {
     }), f, site, "2026-11-26T10:02:00.000Z").events).toEqual([])
   })
 
+  it("treats ref names such as constructor and __proto__ as names, through the cursor too", () => {
+    const all = filters({ branches: ["*"] })
+    const first = step(undefined, snapshot({ branches: JSON.parse(`{"__proto__":"${sha("1")}"}`) }), all, site, "t")
+    const resumed = Cursor.decode(Cursor.encode(first.memory))
+    expect([...resumed!.branches!.refs]).toEqual([["__proto__", sha("1")]])
+
+    const second = step(resumed, snapshot({ branches: { constructor: sha("2") } }), all, site, "t")
+    expect(keys(second)).toEqual([`branch.created/constructor/${sha("2")}`, `branch.deleted/__proto__/${sha("1")}`])
+    expect(keys(step(second.memory, snapshot({ branches: {} }), all, site, "t"))).toEqual([
+      `branch.deleted/constructor/${sha("2")}`
+    ])
+  })
+
   it("takes a fresh silent baseline when the patterns change", () => {
     const first = step(undefined, snapshot({ tags: { "v1": sha("1") } }), filters({ tags: ["v1*"] }), site, "t")
     const changed = step(first.memory, snapshot({ tags: { "v1": sha("1"), "v2": sha("2") } }), filters({ tags: ["v*"] }), site, "t")
     expect(changed.events).toEqual([])
-    expect(changed.memory.tags).toEqual({ patterns: ["v*"], refs: { "v1": sha("1"), "v2": sha("2") } })
+    expect(changed.memory.tags?.patterns).toEqual(["v*"])
   })
 
-  it("reports a published release once, skipping drafts and releases that slide into the window", () => {
+  it("reports a new or newly published release once, and not an older one a deletion brings into the list", () => {
     const rf = filters({ releases: ["mic-lib-*"] })
     const first = step(undefined, snapshot({
-      releases: [release("R3", "mic-lib-v4.44.1", "2026-11-20T00:00:00Z"), release("R2", "mic-lib-v4.44.0", "2026-11-10T00:00:00Z")]
+      releases: [release(30, "mic-lib-v4.45.0", null), release(20, "mic-lib-v4.44.1", "2026-11-20T00:00:00Z")]
     }), rf, site, "t")
     expect(first.events).toEqual([])
 
     const second = step(first.memory, snapshot({
       releases: [
-        release("R5", "mic-lib-v4.45.0", null, true),
-        release("R4", "mic-lib-v4.45.0", "2026-11-26T00:00:00Z"),
-        release("R9", "other-v1", "2026-11-26T00:00:00Z"),
-        release("R3", "mic-lib-v4.44.1", "2026-11-20T00:00:00Z"),
-        release("R1", "mic-lib-v4.43.0", "2026-11-01T00:00:00Z")
+        release(40, "mic-lib-v4.45.1", "2026-11-26T00:00:00Z"),
+        release(35, "other-v1", "2026-11-26T00:00:00Z"),
+        release(30, "mic-lib-v4.45.0", "2026-11-26T00:00:00Z"),
+        release(10, "mic-lib-v4.43.0", "2026-11-20T00:00:00Z")
       ]
     }), rf, site, "t")
-    expect(keys(second)).toEqual(["release.published/R4"])
+    expect(keys(second)).toEqual(["release.published/30", "release.published/40"])
     expect(second.events[0]).toMatchObject({ occurredAt: "2026-11-26T00:00:00Z", payload: { tag: "mic-lib-v4.45.0" } })
   })
 
-  it("reports each completed run attempt once, and keeps the last list when GitHub says it did not change", () => {
+  it("reports a run when it starts and when it completes, once per attempt, and keeps the list GitHub did not change", () => {
     const wf = filters({ workflows: ["mic-release-publish.yaml"] })
-    const first = step(undefined, snapshot({ workflows: { "mic-release-publish.yaml": [run(10, "2026-11-25T00:00:00Z")] } }), wf, site, "t")
+    const at = (runs: ReadonlyArray<Run> | null) => snapshot({ workflows: { "mic-release-publish.yaml": runs } })
+    const first = step(undefined, at([run(10, true)]), wf, site, "t")
     expect(first.events).toEqual([])
-    const unchanged = step(first.memory, snapshot({ workflows: { "mic-release-publish.yaml": null } }), wf, site, "t")
+    const unchanged = step(first.memory, at(null), wf, site, "t")
     expect(unchanged.memory).toEqual(first.memory)
 
-    const second = step(unchanged.memory, snapshot({
-      workflows: {
-        "mic-release-publish.yaml": [run(11, "2026-11-26T00:00:00Z"), run(10, "2026-11-26T00:05:00Z", 2)]
-      }
-    }), wf, site, "t")
-    expect(keys(second)).toEqual(["workflow.completed/10/2", "workflow.completed/11/1"])
-    expect(second.events[1]).toMatchObject({
+    const started = step(unchanged.memory, at([run(11, false), run(10, true)]), wf, site, "t")
+    expect(keys(started)).toEqual(["workflow.started/11/1"])
+    const finished = step(started.memory, at([run(11, true), run(10, true)]), wf, site, "t")
+    expect(keys(finished)).toEqual(["workflow.completed/11/1"])
+    expect(finished.events[0]).toMatchObject({
       summary: "Publish run #11 on release/mic/4.45 finished: success",
       payload: { workflow: "mic-release-publish.yaml", conclusion: "success", runId: 11 }
     })
+    expect(keys(step(finished.memory, at([run(12, true), run(11, true, 2), run(9, true)]), wf, site, "t"))).toEqual([
+      "workflow.completed/11/2",
+      "workflow.completed/12/1"
+    ])
   })
 
   it("keeps its memory through the cursor, and starts a new baseline from a cursor it cannot read", () => {
-    const memory = step(undefined, snapshot({ tags: { "v1": sha("1") }, workflows: { "a.yaml": [run(1, "x")] } }),
-      filters({ tags: ["v*"], workflows: ["a.yaml"] }), site, "t").memory
+    const memory = step(undefined, snapshot({
+      tags: { "v1": sha("1") },
+      releases: [release(3, "v1", null)],
+      workflows: { "a.yaml": [run(1, false)] }
+    }), filters({ tags: ["v*"], releases: ["*"], workflows: ["a.yaml"] }), site, "t").memory
     expect(Cursor.encode(memory)).toContain(`"v":1`)
     expect(Cursor.decode(Cursor.encode(memory))).toEqual(memory)
     expect(Cursor.decode(`{"v":9}`)).toBeUndefined()

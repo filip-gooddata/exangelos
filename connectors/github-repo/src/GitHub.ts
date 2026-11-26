@@ -28,7 +28,7 @@ const RefConnection = Schema.Struct({
 })
 
 const ReleaseNode = Schema.Struct({
-  id: Schema.String,
+  databaseId: Schema.Finite,
   tagName: Schema.String,
   name: Schema.NullOr(Schema.String),
   url: Schema.String,
@@ -43,6 +43,7 @@ const RunsBody = Schema.Struct({
     run_attempt: Schema.optionalKey(Schema.Finite),
     run_number: Schema.Finite,
     name: Schema.NullOr(Schema.String),
+    status: Schema.String,
     conclusion: Schema.NullOr(Schema.String),
     head_branch: Schema.NullOr(Schema.String),
     head_sha: Schema.String,
@@ -68,7 +69,6 @@ export const listings = (filters: Filters): ReadonlyArray<Listing> => {
   const out: Array<Listing> = []
   for (const kind of ["tags", "branches"] as const) {
     const queries = [...new Set(filters[kind].map((glob) => glob.prefix))]
-    // An empty prefix lists every ref of the kind, which covers every other prefix.
     const chosen = queries.includes("") ? [""] : queries
     chosen.forEach((query, i) => out.push({ alias: `${kind === "tags" ? "t" : "b"}${i}`, kind, query }))
   }
@@ -84,7 +84,7 @@ export const snapshotQuery = (all: ReadonlyArray<Listing>, releases: boolean) =>
   )
   if (releases) {
     parts.push(`releases(first: ${releaseWindow}, orderBy: { field: CREATED_AT, direction: DESC }) {
-      nodes { id tagName name url isDraft isPrerelease publishedAt }
+      nodes { databaseId tagName name url isDraft isPrerelease publishedAt }
     }`)
   }
   return `query Snapshot($owner: String!, $name: String!${variables}) {
@@ -114,7 +114,7 @@ const RefsPageData = Schema.Struct({
 const Releases = Schema.Struct({ nodes: Schema.Array(ReleaseNode) })
 
 /** ETags of the last run lists, by workflow. */
-export type Etags = Readonly<Record<string, string>>
+export type Etags = ReadonlyMap<string, string>
 
 export interface Fetched {
   readonly snapshot: Snapshot
@@ -152,14 +152,14 @@ export const layer = Layer.effect(
         const all = listings(filters)
         const wantReleases = filters.releases.length > 0
         let quota = Option.none<Quota>()
-        const tags: Record<string, string> | null = filters.tags.length > 0 ? {} : null
-        const branches: Record<string, string> | null = filters.branches.length > 0 ? {} : null
+        const tags = filters.tags.length > 0 ? new Map<string, string>() : null
+        const branches = filters.branches.length > 0 ? new Map<string, string>() : null
         let releases: ReadonlyArray<Release> | null = null
 
         const take = (kind: "tags" | "branches", page: typeof RefConnection.Type) => {
           const into = kind === "tags" ? tags : branches
           for (const node of page.nodes) {
-            if (node.target !== null && into !== null) into[node.name] = node.target.target?.oid ?? node.target.oid
+            if (node.target !== null && into !== null) into.set(node.name, node.target.target?.oid ?? node.target.oid)
           }
         }
 
@@ -197,7 +197,7 @@ export const layer = Layer.effect(
           if (wantReleases) {
             const listed = yield* Schema.decodeUnknownEffect(Releases)(data["releases"]).pipe(Effect.mapError(unreadable))
             releases = listed.nodes.map((r) => ({
-              id: r.id,
+              id: r.databaseId,
               tag: r.tagName,
               name: r.name,
               prerelease: r.isPrerelease,
@@ -208,29 +208,30 @@ export const layer = Layer.effect(
           }
         }
 
-        const workflows: Record<string, ReadonlyArray<Run> | null> = {}
-        const nextEtags: Record<string, string> = {}
+        const workflows = new Map<string, ReadonlyArray<Run> | null>()
+        const nextEtags = new Map<string, string>()
         for (const workflow of filters.workflows) {
           const path = `/repos/${encodeURIComponent(repository.owner)}/${encodeURIComponent(repository.name)}` +
-            `/actions/workflows/${encodeURIComponent(workflow)}/runs?status=completed&per_page=${runWindow}`
-          const answered = yield* transport.rest(connection, RunsBody, path, etags[workflow] ?? null).pipe(
+            `/actions/workflows/${encodeURIComponent(workflow)}/runs?per_page=${runWindow}`
+          const answered = yield* transport.rest(connection, RunsBody, path, etags.get(workflow) ?? null).pipe(
             Effect.catchTag("NotFound", () =>
               Effect.fail(new Transport.NotFound({ reason: `No workflow ${workflow} in ${repo}, or the token cannot see it` })))
           )
           quota = lower(quota, answered.quota)
-          if (answered.etag !== null) nextEtags[workflow] = answered.etag
-          workflows[workflow] = answered.data === null ? null : answered.data.workflow_runs.map((run) => ({
+          if (answered.etag !== null) nextEtags.set(workflow, answered.etag)
+          workflows.set(workflow, answered.data === null ? null : answered.data.workflow_runs.map((run) => ({
             id: run.id,
             attempt: run.run_attempt ?? 1,
             runNumber: run.run_number,
             name: run.name ?? workflow,
+            completed: run.status === "completed",
             conclusion: run.conclusion,
             branch: run.head_branch,
             sha: run.head_sha,
             event: run.event,
             url: run.html_url,
             updatedAt: run.updated_at
-          }))
+          })))
         }
 
         const result: Snapshot = { tags, branches, releases, workflows }

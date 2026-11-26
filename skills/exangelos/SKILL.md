@@ -36,7 +36,7 @@ exangelos subscribe github-pr 'owner/repo#N' reviewer=LOGIN \
 
 # A release: a tag or branch appears or moves, or the publish workflow finishes
 exangelos subscribe github-repo owner/repo tags='v4.45*' branches='release/4.45' workflows=release.yaml \
-  --types tag.created,tag.moved,branch.created,branch.moved,branch.deleted,workflow.completed \
+  --types workflow.started,tag.created,tag.moved,branch.created,branch.moved,branch.deleted,workflow.completed \
   --intent "Act on the 4.45 release before it publishes"
 
 # A Jira issue
@@ -54,7 +54,7 @@ exangelos subscribe jira KEY githubRepo=owner/repo sha=SHA \
 ```
 
 - Slack and Teams: `exangelos connectors slack` and `exangelos connectors teams` list their subjects and parameters.
-- github-repo patterns are globs: `*` matches any run of characters, `/` included. Its first poll is a silent baseline, so tags and branches that already exist do not wake you. `releases='*'` reports every published release. It shares the github-pr token setup: configure `github-repo` the same way.
+- github-repo patterns are globs: `*` matches any run of characters, `/` included. Its first poll is a silent baseline, so tags and branches that already exist do not wake you. `releases='*'` reports every published release. A workflow that pushes its tag and publishes right after leaves no time to act on `tag.created`; `workflow.started` on that workflow is the early signal. It shares the github-pr token setup: configure `github-repo` the same way.
 - On a PR into a busy trunk, leave `base.changed` out, or every push to the trunk wakes you.
 - `wakeOnCheckPass='["RE"]'` with `check.passed` wakes when a matching check succeeds. `ignoreChecks`, `ignoreAuthors`, `ignoreComments` (regexes) and `ignoreIds` (thread, comment or review URLs) quiet notifications.
 - `--once` or `--max-events N` ends the subscription after that many events. `--until <ISO time>` ends it earlier than the default expiry.

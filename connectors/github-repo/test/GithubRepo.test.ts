@@ -40,6 +40,7 @@ describe("github-repo connector", () => {
         "branch.moved",
         "branch.deleted",
         "release.published",
+        "workflow.started",
         "workflow.completed"
       ])
       expect(catalogue.parameters.main).toBe("repository")
@@ -125,12 +126,16 @@ describe("github-repo connector", () => {
       expect((yield* sent)[2]!.variables).toMatchObject({ prefix: "refs/tags/", query: "v", after: "c1" })
     }).pipe(Effect.scoped))
 
-  it.effect("asks for workflow runs with the last ETag and reports a run that completes", () =>
+  it.effect("asks for workflow runs with the last ETag and reports a run that starts and completes", () =>
     Effect.gen(function*() {
       const { client: connector, sent } = yield* client([
         Stub.viewer,
         Stub.runs([{ id: 10, conclusion: "success", updatedAt: "2026-11-25T00:00:00Z" }]),
         Stub.notModified,
+        Stub.runs([
+          { id: 11, conclusion: null, updatedAt: "2026-11-26T00:00:00Z" },
+          { id: 10, conclusion: "success", updatedAt: "2026-11-25T00:00:00Z" }
+        ]),
         Stub.runs([
           { id: 11, conclusion: "failure", updatedAt: "2026-11-26T00:00:00Z" },
           { id: 10, conclusion: "success", updatedAt: "2026-11-25T00:00:00Z" }
@@ -140,29 +145,37 @@ describe("github-repo connector", () => {
       const fiber = yield* connector.Watch({
         parameters: { repository: "acme/api", workflows: "mic-release-publish.yaml" },
         eventTypes: []
-      }).pipe(Stream.take(2), Stream.runCollect, Effect.forkChild)
-      yield* TestClock.adjust("2 minutes")
+      }).pipe(Stream.take(3), Stream.runCollect, Effect.forkChild)
+      yield* TestClock.adjust("3 minutes")
       const items = yield* Fiber.join(fiber)
 
-      expect(dedupeKeys(items)).toEqual(["Cursor", "workflow.completed/11/1"])
+      expect(dedupeKeys(items)).toEqual(["Cursor", "workflow.started/11/1", "workflow.completed/11/1"])
       const requests = (yield* sent).slice(1)
-      expect(requests.map((r) => [r.method, r.url, r.ifNoneMatch])).toEqual([
-        [
-          "GET",
-          "https://github.acme.dev/api/v3/repos/acme/api/actions/workflows/mic-release-publish.yaml/runs?status=completed&per_page=20",
-          undefined
-        ],
-        [
-          "GET",
-          "https://github.acme.dev/api/v3/repos/acme/api/actions/workflows/mic-release-publish.yaml/runs?status=completed&per_page=20",
-          `"e10"`
-        ],
-        [
-          "GET",
-          "https://github.acme.dev/api/v3/repos/acme/api/actions/workflows/mic-release-publish.yaml/runs?status=completed&per_page=20",
-          `"e10"`
-        ]
+      const url = "https://github.acme.dev/api/v3/repos/acme/api/actions/workflows/mic-release-publish.yaml/runs?per_page=20"
+      expect(requests.map((r) => [r.method, r.url])).toEqual(Array(4).fill(["GET", url]))
+      expect(requests.map((r) => r.ifNoneMatch)).toEqual([undefined, `"e10"`, `"e10"`, `"e11-10"`])
+    }).pipe(Effect.scoped))
+
+  it.effect("waits as long as a secondary rate limit asks, then polls again", () =>
+    Effect.gen(function*() {
+      const { client: connector, sent } = yield* client([
+        Stub.viewer,
+        Stub.secondaryLimit,
+        Stub.repository({ t0: Stub.refs({}) }),
+        Stub.repository({ t0: Stub.refs({ "v1": sha("1") }) })
       ])
+      yield* connector.Configure({ values: { token } })
+      const fiber = yield* connector.Watch({ parameters: { repository: "acme/api", tags: "v*" }, eventTypes: [] }).pipe(
+        Stream.take(2),
+        Stream.runCollect,
+        Effect.forkChild
+      )
+      yield* TestClock.adjust("29 seconds")
+      expect(yield* sent).toHaveLength(2)
+      yield* TestClock.adjust("1 second")
+      expect(yield* sent).toHaveLength(3)
+      yield* TestClock.adjust("1 minute")
+      expect(dedupeKeys(yield* Fiber.join(fiber))).toEqual(["Cursor", `tag.created/v1/${sha("1")}`])
     }).pipe(Effect.scoped))
 
   it.effect("fails the watch with the repository named when GitHub cannot find it", () =>

@@ -16,19 +16,32 @@ export interface RefMemory {
 }
 
 /**
- * The newest releases or runs the last poll listed. `floor` is the oldest time among them: something the list shows
- * later that is older than the floor moved up because a newer one was deleted, and is not new.
+ * GitHub numbers releases in creation order, so one above `newest` is new. `drafts` are the drafts the last poll saw,
+ * which are new when they are published.
  */
-export interface Window {
-  readonly seen: ReadonlyArray<string>
-  readonly floor: string | null
+export interface ReleaseMemory {
+  readonly patterns: ReadonlyArray<string>
+  readonly newest: number
+  readonly drafts: ReadonlyArray<number>
+}
+
+export interface RunMark {
+  readonly id: number
+  readonly attempt: number
+  readonly completed: boolean
+}
+
+/** GitHub numbers runs in creation order, so one above `newest` is new; `runs` are the runs the last poll listed. */
+export interface RunMemory {
+  readonly newest: number
+  readonly runs: ReadonlyArray<RunMark>
 }
 
 export interface Memory {
   readonly tags: RefMemory | null
   readonly branches: RefMemory | null
-  readonly releases: (Window & { readonly patterns: ReadonlyArray<string> }) | null
-  readonly workflows: Readonly<Record<string, Window>>
+  readonly releases: ReleaseMemory | null
+  readonly workflows: ReadonlyMap<string, RunMemory>
 }
 
 /** Where links point: the web root of the host and the repository's path on it. */
@@ -52,15 +65,14 @@ const diffRefs = (
 ): { readonly events: ReadonlyArray<Emitted>; readonly memory: RefMemory | null } => {
   if (current === null) return { events: [], memory: null }
   const patterns = globs.map((glob) => glob.source)
-  const refs: Record<string, string> = {}
-  for (const [name, sha] of Object.entries(current)) if (matchesAny(globs, name)) refs[name] = sha
+  const refs = new Map([...current].filter(([name]) => matchesAny(globs, name)))
   const memory = { patterns, refs }
   if (previous === null || !samePatterns(previous.patterns, patterns)) return { events: [], memory }
   const root = `${site.web}/${site.repository}`
   const label = kind === "tag" ? "Tag" : "Branch"
   const events: Array<Emitted> = []
-  for (const [name, sha] of Object.entries(refs)) {
-    const before = previous.refs[name]
+  for (const [name, sha] of refs) {
+    const before = previous.refs.get(name)
     if (before === undefined) {
       events.push({
         type: `${kind}.created`,
@@ -82,8 +94,8 @@ const diffRefs = (
     }
   }
   if (kind === "branch") {
-    for (const [name, before] of Object.entries(previous.refs)) {
-      if (refs[name] !== undefined) continue
+    for (const [name, before] of previous.refs) {
+      if (refs.has(name)) continue
       events.push({
         type: "branch.deleted",
         occurredAt: now,
@@ -97,27 +109,26 @@ const diffRefs = (
   return { events, memory }
 }
 
-const oldest = (times: ReadonlyArray<string>) => times.length === 0 ? null : times.reduce((a, b) => (a < b ? a : b))
-
-const isNew = (window: Window, key: string, at: string) =>
-  !window.seen.includes(key) && (window.floor === null || at >= window.floor)
+const newestOf = (ids: ReadonlyArray<number>, floor: number) => ids.reduce((a, b) => (a > b ? a : b), floor)
 
 const diffReleases = (
-  previous: Memory["releases"],
+  previous: ReleaseMemory | null,
   current: ReadonlyArray<Release> | null,
   globs: ReadonlyArray<Glob>
-): { readonly events: ReadonlyArray<Emitted>; readonly memory: Memory["releases"] } => {
+): { readonly events: ReadonlyArray<Emitted>; readonly memory: ReleaseMemory | null } => {
   if (current === null) return { events: [], memory: null }
-  const published = current.filter((r): r is Release & { publishedAt: string } => !r.draft && r.publishedAt !== null)
   const patterns = globs.map((glob) => glob.source)
   const memory = {
     patterns,
-    seen: published.map((r) => r.id),
-    floor: oldest(published.map((r) => r.publishedAt))
+    newest: newestOf(current.map((r) => r.id), previous?.newest ?? 0),
+    drafts: current.filter((r) => r.draft).map((r) => r.id)
   }
   if (previous === null || !samePatterns(previous.patterns, patterns)) return { events: [], memory }
-  const events: Array<Emitted> = published
-    .filter((r) => matchesAny(globs, r.tag) && isNew(previous, r.id, r.publishedAt))
+  const events: Array<Emitted> = current
+    .filter((r): r is Release & { publishedAt: string } =>
+      !r.draft && r.publishedAt !== null && matchesAny(globs, r.tag) &&
+      (r.id > previous.newest || previous.drafts.includes(r.id))
+    )
     .reverse()
     .map((r) => ({
       type: "release.published",
@@ -127,42 +138,59 @@ const diffReleases = (
       link: r.url,
       dedupeKey: `release.published/${r.id}`
     }))
-  return { events, memory: { ...memory, floor: memory.floor ?? previous.floor } }
+  return { events, memory }
 }
 
-const runKey = (run: Run) => `${run.id}/${run.attempt}`
+const runPayload = (workflow: string, run: Run) => ({
+  workflow,
+  name: run.name,
+  runId: run.id,
+  attempt: run.attempt,
+  runNumber: run.runNumber,
+  branch: run.branch,
+  sha: run.sha,
+  event: run.event,
+  url: run.url
+})
+
+const where = (run: Run) => `${run.name} run #${run.runNumber}${run.branch === null ? "" : ` on ${run.branch}`}`
 
 const diffRuns = (
   workflow: string,
-  previous: Window | undefined,
+  previous: RunMemory | undefined,
   current: ReadonlyArray<Run>
-): { readonly events: ReadonlyArray<Emitted>; readonly memory: Window } => {
-  const memory = { seen: current.map(runKey), floor: oldest(current.map((run) => run.updatedAt)) ?? previous?.floor ?? null }
+): { readonly events: ReadonlyArray<Emitted>; readonly memory: RunMemory } => {
+  const memory = {
+    newest: newestOf(current.map((run) => run.id), previous?.newest ?? 0),
+    runs: current.map((run) => ({ id: run.id, attempt: run.attempt, completed: run.completed }))
+  }
   if (previous === undefined) return { events: [], memory }
-  const events: Array<Emitted> = current
-    .filter((run) => isNew(previous, runKey(run), run.updatedAt))
-    .reverse()
-    .map((run) => ({
-      type: "workflow.completed",
-      occurredAt: run.updatedAt,
-      summary: `${run.name} run #${run.runNumber}${run.branch === null ? "" : ` on ${run.branch}`} finished: ${
-        run.conclusion ?? "no conclusion"
-      }`,
-      payload: {
-        workflow,
-        name: run.name,
-        runId: run.id,
-        attempt: run.attempt,
-        runNumber: run.runNumber,
-        conclusion: run.conclusion,
-        branch: run.branch,
-        sha: run.sha,
-        event: run.event,
-        url: run.url
-      },
-      link: run.url,
-      dedupeKey: `workflow.completed/${run.id}/${run.attempt}`
-    }))
+  const events: Array<Emitted> = []
+  for (const run of [...current].reverse()) {
+    const before = previous.runs.find((mark) => mark.id === run.id)
+    if (before === undefined && run.id <= previous.newest) continue
+    const newAttempt = before === undefined || run.attempt > before.attempt
+    if (newAttempt && !run.completed) {
+      events.push({
+        type: "workflow.started",
+        occurredAt: run.updatedAt,
+        summary: `${where(run)} started`,
+        payload: runPayload(workflow, run),
+        link: run.url,
+        dedupeKey: `workflow.started/${run.id}/${run.attempt}`
+      })
+    }
+    if (run.completed && (newAttempt || !before.completed)) {
+      events.push({
+        type: "workflow.completed",
+        occurredAt: run.updatedAt,
+        summary: `${where(run)} finished: ${run.conclusion ?? "no conclusion"}`,
+        payload: { ...runPayload(workflow, run), conclusion: run.conclusion },
+        link: run.url,
+        dedupeKey: `workflow.completed/${run.id}/${run.attempt}`
+      })
+    }
+  }
   return { events, memory }
 }
 
@@ -186,17 +214,17 @@ export const step = (
   const branches = diffRefs("branch", memory?.branches ?? null, snapshot.branches, filters.branches, site, now)
   const releases = diffReleases(memory?.releases ?? null, snapshot.releases, filters.releases)
   const events: Array<Emitted> = [...tags.events, ...branches.events, ...releases.events]
-  const workflows: Record<string, Window> = {}
+  const workflows = new Map<string, RunMemory>()
   for (const workflow of filters.workflows) {
-    const before = memory?.workflows[workflow]
-    const runs = snapshot.workflows[workflow]
+    const before = memory?.workflows.get(workflow)
+    const runs = snapshot.workflows.get(workflow)
     if (runs == null) {
-      if (before !== undefined) workflows[workflow] = before
+      if (before !== undefined) workflows.set(workflow, before)
       continue
     }
     const diffed = diffRuns(workflow, before, runs)
     events.push(...diffed.events)
-    workflows[workflow] = diffed.memory
+    workflows.set(workflow, diffed.memory)
   }
   return {
     events,

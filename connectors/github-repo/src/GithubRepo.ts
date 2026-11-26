@@ -17,6 +17,7 @@ export const events = {
   "branch.moved": declare("branch.moved"),
   "branch.deleted": declare("branch.deleted"),
   "release.published": declare("release.published"),
+  "workflow.started": declare("workflow.started"),
   "workflow.completed": declare("workflow.completed")
 }
 
@@ -31,7 +32,7 @@ const parameters = Catalogue.parameters({
     tags: List("Tag name patterns; * matches any run of characters, ? one character"),
     branches: List("Branch name patterns; * matches any run of characters, / included, ? one character"),
     releases: List("Tag name patterns of the releases release.published reports; * for every release"),
-    workflows: List("Workflow file names or ids, such as release.yaml, whose completed runs to report")
+    workflows: List("Workflow file names or ids, such as release.yaml, whose runs to report")
   })
 })
 
@@ -108,6 +109,7 @@ export const connector = Connector.make({
     events["branch.moved"],
     events["branch.deleted"],
     events["release.published"],
+    events["workflow.started"],
     events["workflow.completed"]
   ],
   parameters,

@@ -1,8 +1,8 @@
 /** Ref name to the commit it points at; an annotated tag is peeled to its commit. */
-export type Refs = Readonly<Record<string, string>>
+export type Refs = ReadonlyMap<string, string>
 
 export interface Release {
-  readonly id: string
+  readonly id: number
   readonly tag: string
   readonly name: string | null
   readonly prerelease: boolean
@@ -16,6 +16,7 @@ export interface Run {
   readonly attempt: number
   readonly runNumber: number
   readonly name: string
+  readonly completed: boolean
   readonly conclusion: string | null
   readonly branch: string | null
   readonly sha: string
@@ -29,5 +30,5 @@ export interface Snapshot {
   readonly tags: Refs | null
   readonly branches: Refs | null
   readonly releases: ReadonlyArray<Release> | null
-  readonly workflows: Readonly<Record<string, ReadonlyArray<Run> | null>>
+  readonly workflows: ReadonlyMap<string, ReadonlyArray<Run> | null>
 }

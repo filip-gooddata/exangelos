@@ -59,12 +59,11 @@ export const watch = (
         })
       )
 
-    const first: State = { memory: Cursor.decode(cursor), etags: {}, delay: Duration.zero }
+    const first: State = { memory: Cursor.decode(cursor), etags: new Map(), delay: Duration.zero }
     return Stream.paginate(first, ({ delay, etags, memory }) =>
       Effect.gen(function*() {
         yield* Effect.sleep(delay)
-        // Without a memory of the workflow lists, a 304 would leave nothing to compare with.
-        const fetched = yield* fetch(memory === undefined ? {} : etags, 0, 0)
+        const fetched = yield* fetch(memory === undefined ? new Map() : etags, 0, 0)
         const now = yield* Clock.currentTimeMillis
         const result = step(memory, fetched.snapshot, filters, site, new Date(now).toISOString())
         const polled: Polled = { events: result.events, cursor: Cursor.encode(result.memory) }

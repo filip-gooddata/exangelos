@@ -22,6 +22,12 @@ export const ok = (data: unknown): Answer => ({ status: 200, body: { data }, hea
 
 export const viewer = ok({ viewer: { login: "octocat" } })
 
+export const secondaryLimit: Answer = {
+  status: 403,
+  headers: { "retry-after": "30" },
+  body: { message: "You have exceeded a secondary rate limit. Please wait a few minutes before you try again." }
+}
+
 export const badCredentials: Answer = { status: 401, body: { message: "Bad credentials" } }
 
 export const notFound: Answer = {
@@ -47,7 +53,7 @@ export const refs = (
 })
 
 export interface ReleaseFields {
-  readonly id: string
+  readonly id: number
   readonly tag: string
   readonly publishedAt: string | null
   readonly draft?: boolean
@@ -55,7 +61,7 @@ export interface ReleaseFields {
 
 export const releases = (list: ReadonlyArray<ReleaseFields>) => ({
   nodes: list.map((r) => ({
-    id: r.id,
+    databaseId: r.id,
     tagName: r.tag,
     name: null,
     url: `https://github.com/acme/api/releases/tag/${r.tag}`,
@@ -73,7 +79,7 @@ export const refsPage = (page: unknown) => ok({ repository: { refs: page } })
 export interface RunFields {
   readonly id: number
   readonly attempt?: number
-  readonly conclusion: string
+  readonly conclusion: string | null
   readonly updatedAt: string
 }
 
@@ -87,7 +93,7 @@ export const runs = (list: ReadonlyArray<RunFields>, etag = `"e${list.map((r) =>
       run_attempt: r.attempt ?? 1,
       run_number: r.id,
       name: "Publish",
-      status: "completed",
+      status: r.conclusion === null ? "in_progress" : "completed",
       conclusion: r.conclusion,
       head_branch: "release/mic/4.45",
       head_sha: "c".repeat(40),
