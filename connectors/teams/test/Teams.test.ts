@@ -1,3 +1,7 @@
+import { mkdtempSync, readFileSync, realpathSync, rmSync, statSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
+import { vi } from "vitest"
 import { ledgerProcess, ledgerTestTimeout } from "./LedgerProcess.ts"
 import { ChildProcessSpawner } from "effect/process"
 import { localSource } from "../src/Source.ts"
@@ -146,18 +150,28 @@ it.effect("real Python ledger: polls after the wake delay and cancels with the S
 }).pipe(Effect.provide(ledgerProcess), Effect.scoped), ledgerTestTimeout)
 
 it.effect("real Python ledger: process failures and oversized output remain sanitized observation gaps", () => Effect.gen(function*() {
-  for (const [code, text] of [[1, "synthetic private diagnostic"], [0, "x".repeat(5_000_001)]] as const) {
-    const output = Stream.make(new TextEncoder().encode(text))
-    const layer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.make(() =>
-      Effect.succeed(ChildProcessSpawner.makeHandle({
-        pid: ChildProcessSpawner.ProcessId(1), exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(code)),
-        isRunning: Effect.succeed(false), kill: () => Effect.void, stdin: Sink.drain,
-        stdout: output, stderr: Stream.empty, all: output, getInputFd: () => Sink.drain,
-        getOutputFd: () => Stream.empty, unref: Effect.succeed(Effect.void)
-      }))))
-    const error = yield* localSource.read({ scope, includeMessagePreview: false }).pipe(Effect.provide(layer), Effect.flip)
-    expect(["ObservationGap", "SourceUnavailable"]).toContain(error._tag)
-    expect(JSON.stringify(error)).not.toContain(text)
+  const home = realpathSync(mkdtempSync(join(tmpdir(), "teams-diagnostic-test-")))
+  vi.stubEnv("EXANGELOS_HOME", home)
+  try {
+    for (const [code, text] of [[1, "synthetic private diagnostic"], [0, "x".repeat(5_000_001)]] as const) {
+      const output = Stream.make(new TextEncoder().encode(text))
+      const layer = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner, ChildProcessSpawner.make(() =>
+        Effect.succeed(ChildProcessSpawner.makeHandle({
+          pid: ChildProcessSpawner.ProcessId(1), exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(code)),
+          isRunning: Effect.succeed(false), kill: () => Effect.void, stdin: Sink.drain,
+          stdout: output, stderr: Stream.empty, all: output, getInputFd: () => Sink.drain,
+          getOutputFd: () => Stream.empty, unref: Effect.succeed(Effect.void)
+        }))))
+      const error = yield* localSource.read({ scope, includeMessagePreview: false }).pipe(Effect.provide(layer), Effect.flip)
+      expect(["ObservationGap", "SourceUnavailable"]).toContain(error._tag)
+      expect(JSON.stringify(error)).not.toContain(text)
+    }
+    const path = join(home, "connector-state/teams/last-error.json")
+    expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({ operation: "configured-snapshot", stage: "output-limit" })
+    expect(statSync(path).mode & 0o777).toBe(0o600)
+  } finally {
+    vi.unstubAllEnvs()
+    rmSync(home, { recursive: true, force: true })
   }
 }).pipe(Effect.provide(ledgerProcess)))
 

@@ -280,6 +280,11 @@ try {
     yield* consent(c)
     assert.equal((yield* c.describe({ selection: channel }))._tag, "Invalid")
   }))
+  const lastError = join(baseEnv.EXANGELOS_HOME, "connector-state/teams/last-error.json")
+  const spawnFailure = JSON.parse(readFileSync(lastError, "utf8"))
+  assert.equal(spawnFailure.stage, "spawn")
+  assert.equal(spawnFailure.errno, "ENOENT")
+  assert.equal(lstatSync(lastError).mode & 0o777, 0o600)
   await run("portable-and-stale-pin", { ...baseEnv, HOME: join(scratch, "other user"), EXANGELOS_HOME: join(scratch, "other state") }, (c) => Effect.gen(function*() {
     yield* consent(c, false, moved)
     assert.equal((yield* c.describe({ selection: conversation }))._tag, "Invalid")
