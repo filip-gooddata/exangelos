@@ -61,6 +61,8 @@ const waitOf = (headers: Readonly<Record<string, string | undefined>>, now: numb
 export interface Answered<A> {
   readonly data: A
   readonly quota: Option.Option<Quota>
+  /** The server's time of the answer, from its `date` header. */
+  readonly date: Option.Option<number>
 }
 
 /** A REST answer, or `null` data when the server answered 304 to the ETag sent. */
@@ -150,7 +152,8 @@ export const make = (client: HttpClient.HttpClient, userAgent: string): Transpor
         return yield* new Unavailable({ reason: error.message })
       }
       if (body.data == null) return yield* new Unavailable({ reason: "GitHub sent no data" })
-      return { data: body.data, quota: quotaOf(response.headers) }
+      const date = Date.parse(response.headers["date"] ?? "")
+      return { data: body.data, quota: quotaOf(response.headers), date: Number.isNaN(date) ? Option.none() : Option.some(date) }
     })
 
   const rest: Transport["rest"] = (connection, data, path, etag) =>

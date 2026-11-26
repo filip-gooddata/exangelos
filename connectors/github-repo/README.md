@@ -63,7 +63,7 @@ exangelos subscribe github-repo owner/repo releases='*' --types release.publishe
 | `workflow.started` | A run of a workflow in `workflows`, or a new attempt of one, is queued or running | `workflow.started/<run id>/<attempt>` |
 | `workflow.completed` | A run of a workflow in `workflows` completes; the payload has its `conclusion` | `workflow.completed/<run id>/<attempt>` |
 
-The first poll is a silent baseline: tags, branches, releases and runs that exist then are not reported. A move is keyed by the ref and the commit it moved to, so a ref that returns to a commit it was already reported at, such as a branch going A to B to C and back to B, does not wake again. An annotated tag is reported at the commit it points to, so recreating it on the same commit is not a move. Tag deletions are not reported. A release is reported when it is published after the last poll, a draft created long before included, while it is among the 20 newest releases; an older release that a deletion brings into the list is not. A run that starts and finishes between two polls is reported only as completed. A re-run is a new attempt and is reported again, while the run is among the 20 newest. A run is new when GitHub numbered it after the newest run the last poll saw, so an older one that a deletion brings into the list is not reported.
+The first poll is a silent baseline: tags, branches, releases and runs that exist then are not reported. A move is keyed by the ref and the commit it moved to, so a ref that returns to a commit it was already reported at, such as a branch going A to B to C and back to B, does not wake again. An annotated tag is reported at the commit it points to, so recreating it on the same commit is not a move. Tag deletions are not reported. A release is reported when it is published after the last poll, by GitHub's clock, a draft created long before included, while it is among the 20 newest releases by creation; a release published earlier that a deletion brings into the list is not. A run that starts and finishes between two polls is reported only as completed. A re-run is a new attempt and is reported again, while the run is among the 20 newest. A run is new when GitHub numbered it after the newest run the last poll saw, so an older one that a deletion brings into the list is not reported.
 
 ## Polling
 
@@ -77,7 +77,7 @@ Rate limits are handled as in github-pr: when `x-ratelimit-remaining` is 0 the n
 
 ## Cursor
 
-The cursor is JSON with `v: 1`. It holds, for tags and for branches, the patterns and each matching ref's name and commit as pairs; for releases the patterns, the latest publish time seen and the ids of the releases published at that time; and per workflow the highest run id seen and the id, attempt and completion of each run the last poll listed. A cursor of an unknown version starts a new baseline.
+The cursor is JSON with `v: 1`. It holds, for tags and for branches, the patterns and each matching ref's name and commit as pairs; for releases the patterns, GitHub's time of the last poll (from its `date` header) and the ids of the published releases it listed; and per workflow the highest run id seen and the id, attempt and completion of each run the last poll listed. A cursor of an unknown version starts a new baseline.
 
 ## Long-lived watches
 

@@ -16,12 +16,13 @@ export interface RefMemory {
 }
 
 /**
- * `since` is the latest publish time the last poll saw and `ids` the releases published at that instant. A release
- * published later is new; one published earlier that shows up now was pushed into the list by a deletion.
+ * `since` is GitHub's time of the last poll and `ids` the published releases it listed. A release it did not list that
+ * was published since is new; one published earlier that shows up now was pushed into the list by a deletion. The
+ * margin covers the second the `date` header rounds away.
  */
 export interface ReleaseMemory {
   readonly patterns: ReadonlyArray<string>
-  readonly since: string | null
+  readonly since: string
   readonly ids: ReadonlyArray<number>
 }
 
@@ -114,30 +115,23 @@ const diffRefs = (
 
 const newestOf = (ids: ReadonlyArray<number>, floor: number) => ids.reduce((a, b) => (a > b ? a : b), floor)
 
+const margin = 2_000
+
 const diffReleases = (
   previous: ReleaseMemory | null,
   current: ReadonlyArray<Release> | null,
-  globs: ReadonlyArray<Glob>
+  globs: ReadonlyArray<Glob>,
+  now: string
 ): { readonly events: ReadonlyArray<Emitted>; readonly memory: ReleaseMemory | null } => {
   if (current === null) return { events: [], memory: null }
   const patterns = globs.map((glob) => glob.source)
   const published = current.filter((r): r is Release & { publishedAt: string } => !r.draft && r.publishedAt !== null)
-  const latest = published.reduce<string | null>(
-    (at, r) => (at === null || r.publishedAt > at ? r.publishedAt : at),
-    previous?.since ?? null
-  )
-  const ids = [
-    ...(latest === previous?.since ? previous.ids : []),
-    ...published.filter((r) => r.publishedAt === latest).map((r) => r.id)
-  ]
-  const memory = { patterns, since: latest, ids: [...new Set(ids)] }
+  const memory = { patterns, since: now, ids: published.map((r) => r.id) }
   if (previous === null || !samePatterns(previous.patterns, patterns)) return { events: [], memory }
-  const isNew = (r: Release & { publishedAt: string }) =>
-    previous.since === null || r.publishedAt > previous.since ||
-    (r.publishedAt === previous.since && !previous.ids.includes(r.id))
+  const boundary = Date.parse(previous.since) - margin
   const events: Array<Emitted> = published
-    .filter((r) => matchesAny(globs, r.tag) && isNew(r))
-    .sort((a, b) => (a.publishedAt < b.publishedAt ? -1 : a.publishedAt > b.publishedAt ? 1 : a.id - b.id))
+    .filter((r) => matchesAny(globs, r.tag) && !previous.ids.includes(r.id) && Date.parse(r.publishedAt) >= boundary)
+    .sort((a, b) => Date.parse(a.publishedAt) - Date.parse(b.publishedAt) || a.id - b.id)
     .map((r) => ({
       type: "release.published",
       occurredAt: r.publishedAt,
@@ -220,7 +214,7 @@ export const step = (
 ): Stepped => {
   const tags = diffRefs("tag", memory?.tags ?? null, snapshot.tags, filters.tags, site, now)
   const branches = diffRefs("branch", memory?.branches ?? null, snapshot.branches, filters.branches, site, now)
-  const releases = diffReleases(memory?.releases ?? null, snapshot.releases, filters.releases)
+  const releases = diffReleases(memory?.releases ?? null, snapshot.releases, filters.releases, now)
   const events: Array<Emitted> = [...tags.events, ...branches.events, ...releases.events]
   const workflows = new Map<string, RunMemory>()
   for (const workflow of filters.workflows) {

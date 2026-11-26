@@ -128,11 +128,11 @@ describe("step", () => {
     expect(keys(reordered)).toEqual([`tag.created/w1/${sha("2")}`])
   })
 
-  it("reports a release published after the last poll, a draft created before it too, and not one a deletion uncovers", () => {
+  it("reports a release published since the last poll, an old draft too, and not one a deletion uncovers", () => {
     const rf = filters({ releases: ["mic-lib-*"] })
     const first = step(undefined, snapshot({
       releases: [release(200, "mic-lib-v4.44.1", "2026-11-20T00:00:00Z"), release(150, "mic-lib-v4.44.0", "2026-11-10T00:00:00Z")]
-    }), rf, site, "t")
+    }), rf, site, "2026-11-25T00:00:00.000Z")
     expect(first.events).toEqual([])
 
     const second = step(first.memory, snapshot({
@@ -141,16 +141,16 @@ describe("step", () => {
         release(250, "other-v1", "2026-11-26T00:00:00Z"),
         release(200, "mic-lib-v4.44.1", "2026-11-20T00:00:00Z"),
         release(100, "mic-lib-v4.45.0", "2026-11-26T00:00:00Z"),
-        release(90, "mic-lib-v4.43.0", "2026-11-01T00:00:00Z")
+        release(10, "mic-lib-v4.42.9", "2026-11-22T00:00:00Z")
       ]
-    }), rf, site, "t")
+    }), rf, site, "2026-11-26T00:06:00.000Z")
     expect(keys(second)).toEqual(["release.published/100", "release.published/300"])
     expect(second.events[0]).toMatchObject({ occurredAt: "2026-11-26T00:00:00Z", payload: { tag: "mic-lib-v4.45.0" } })
 
-    const tie = step(second.memory, snapshot({
-      releases: [release(310, "mic-lib-v4.45.2", "2026-11-26T00:05:00Z"), release(300, "mic-lib-v4.45.1", "2026-11-26T00:05:00Z")]
-    }), rf, site, "t")
-    expect(keys(tie)).toEqual(["release.published/310"])
+    const sameSecond = step(second.memory, snapshot({
+      releases: [release(310, "mic-lib-v4.45.2", "2026-11-26T00:06:00Z"), release(300, "mic-lib-v4.45.1", "2026-11-26T00:05:00Z")]
+    }), rf, site, "2026-11-26T00:07:00.000Z")
+    expect(keys(sameSecond)).toEqual(["release.published/310"])
   })
 
   it("reports a run when it starts and when it completes, once per attempt, and keeps the list GitHub did not change", () => {
@@ -180,7 +180,7 @@ describe("step", () => {
       tags: { "v1": sha("1") },
       releases: [release(3, "v1", null)],
       workflows: { "a.yaml": [run(1, false)] }
-    }), filters({ tags: ["v*"], releases: ["*"], workflows: ["a.yaml"] }), site, "t").memory
+    }), filters({ tags: ["v*"], releases: ["*"], workflows: ["a.yaml"] }), site, "2026-11-26T00:00:00.000Z").memory
     expect(Cursor.encode(memory)).toContain(`"v":1`)
     expect(Cursor.decode(Cursor.encode(memory))).toEqual(memory)
     expect(Cursor.decode(`{"v":9}`)).toBeUndefined()

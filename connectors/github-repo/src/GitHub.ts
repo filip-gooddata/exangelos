@@ -124,6 +124,8 @@ export interface Fetched {
   readonly snapshot: Snapshot
   readonly etags: Etags
   readonly quota: Option.Option<Quota>
+  /** GitHub's time of the first answer of the poll. */
+  readonly observedAt: Option.Option<number>
 }
 
 const lower = (a: Option.Option<Quota>, b: Option.Option<Quota>) =>
@@ -156,6 +158,7 @@ export const layer = Layer.effect(
         const all = listings(filters)
         const wantReleases = filters.releases.length > 0
         let quota = Option.none<Quota>()
+        let observedAt = Option.none<number>()
         const tags = filters.tags.length > 0 ? new Map<string, string>() : null
         const branches = filters.branches.length > 0 ? new Map<string, string>() : null
         let releases: ReadonlyArray<Release> | null = null
@@ -172,6 +175,7 @@ export const layer = Layer.effect(
           for (const l of all) variables[l.alias] = l.query === "" ? null : l.query
           const first = yield* transport.graphql(connection, SnapshotData, snapshotQuery(all, wantReleases), variables)
           quota = first.quota
+          observedAt = first.date
           const data = first.data.repository
           if (data === null) return yield* missing
           for (const l of all) {
@@ -239,7 +243,7 @@ export const layer = Layer.effect(
         }
 
         const result: Snapshot = { tags, branches, releases, workflows }
-        return { snapshot: result, etags: nextEtags, quota }
+        return { snapshot: result, etags: nextEtags, quota, observedAt }
       })
 
     return { viewer, snapshot }

@@ -13,7 +13,7 @@ const V1 = Schema.Struct({
   branches: Schema.NullOr(Refs),
   releases: Schema.NullOr(Schema.Struct({
     patterns: Schema.Array(Schema.String),
-    since: Schema.NullOr(Schema.String),
+    since: Schema.String,
     ids: Schema.Array(Schema.Finite)
   })),
   workflows: Schema.Array(Schema.Tuple([

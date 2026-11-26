@@ -67,7 +67,8 @@ export const watch = (
         yield* Effect.sleep(delay)
         const fetched = yield* fetch(memory === undefined ? new Map() : etags, 0, 0)
         const now = yield* Clock.currentTimeMillis
-        const result = step(memory, fetched.snapshot, filters, site, new Date(now).toISOString())
+        const observed = Option.getOrElse(fetched.observedAt, () => now)
+        const result = step(memory, fetched.snapshot, filters, site, new Date(observed).toISOString())
         const polled: Polled = { events: result.events, cursor: Cursor.encode(result.memory) }
         const next: State = { memory: result.memory, etags: fetched.etags, delay: nextDelay(fetched.quota, now) }
         return [[polled], Option.some(next)] as const
