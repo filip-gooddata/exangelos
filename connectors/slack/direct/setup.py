@@ -291,6 +291,18 @@ def equivalent_pin(directory, root, secret, request):
     return existing
 
 
+def verified_alias(directory, roots, handle, selection):
+    require(isinstance(handle, str) and re.fullmatch('[a-f0-9]{64}', handle))
+    candidate, _ = reopen(directory, roots, handle)
+    saved = candidate['selection']
+    parent = source.acquire(candidate).get('resolvedThread')
+    thread = selection.get('thread')
+    if (parent and bool(saved.get('thread')) == bool(thread) and (not thread or parent == thread)
+            and all(saved[k] == selection[k] for k in ('workspace','owner','conversations'))):
+        return candidate
+    return None
+
+
 def setup(values):
     if not isinstance(values, dict) or values.get('subscriptionAccess') != 'persisted-cache':
         raise SetupRejected(26)
@@ -326,32 +338,30 @@ def setup(values):
         epoch, request, label = discover(roots, bytes.fromhex(secret), target, scope, directory)
         existing = None
         exact_path = directory / ('scope-' + request['expectedScope'] + '.json')
-        selected_thread = request['selection'].get('thread')
-        if 'message' not in request['selection']:
-            # A previous watch can have verified the containing thread already.
-            alias = None
-            if target.timestamp and (selected_thread or target.parent):
-                pending_selection = dict(request['selection'], message=target.timestamp)
-                if selected_thread:
-                    pending_selection['thread'] = target.parent or target.timestamp
-                if target.parent:
-                    pending_selection['parentHint'] = target.parent
-                _, pending_handle = source.subscription_identity(bytes.fromhex(secret), epoch, pending_selection)
-                if (directory / ('scope-' + pending_handle + '.json')).exists():
-                    alias = pending_handle
-            if not alias and not exact_path.exists():
-                alias = optional(directory / ('thread-alias-' + request['expectedScope'] + '.json'))
+        selection = request['selection']
+        selected_thread = selection.get('thread')
+        portable = request.get('volumeIdentity') == {'kind': 'volume'}
+        secret_bytes = bytes.fromhex(secret)
+        if 'message' not in selection and target.timestamp and (selected_thread or target.parent):
+            pending_selection = dict(selection, message=target.timestamp)
+            if selected_thread:
+                pending_selection['thread'] = target.parent or target.timestamp
+            if target.parent:
+                pending_selection['parentHint'] = target.parent
+            _, pending_handle = source.subscription_identity(secret_bytes, epoch, pending_selection)
+            if (directory / ('scope-' + pending_handle + '.json')).exists():
+                existing = verified_alias(directory, roots, pending_handle, selection)
+            elif portable:
+                original = equivalent_pin(directory, Path(request['root']), secret_bytes,
+                                          dict(request, selection=pending_selection, expectedScope=pending_handle))
+                if original:
+                    existing = verified_alias(directory, roots, original['expectedScope'], selection)
+        if existing is None and portable and not exact_path.exists():
+            existing = equivalent_pin(directory, Path(request['root']), secret_bytes, request)
+        if existing is None and selected_thread and 'message' not in selection and not exact_path.exists():
+            alias = optional(directory / ('thread-alias-' + request['expectedScope'] + '.json'))
             if alias:
-                require(isinstance(alias, str) and re.fullmatch('[a-f0-9]{64}', alias))
-                candidate, _ = reopen(directory, roots, alias)
-                resolved = source.acquire(candidate)
-                parent = resolved.get('resolvedThread')
-                if (parent and bool(candidate['selection'].get('thread')) == bool(selected_thread)
-                        and (not selected_thread or parent == selected_thread)
-                        and all(candidate['selection'][k] == request['selection'][k] for k in ('workspace','owner','conversations'))):
-                    existing = candidate
-        if existing is None and request.get('volumeIdentity') == {'kind': 'volume'}:
-            existing = equivalent_pin(directory, Path(request['root']), bytes.fromhex(secret), request)
+                existing = verified_alias(directory, roots, alias, selection)
         if existing is None:
             path = directory / ('scope-' + request['expectedScope'] + '.json')
             save_json(path, dict(version=2, epoch=epoch, request=request, label=label))

@@ -166,9 +166,6 @@ def acquire(request):
             saved = optional(binding_path)
             if saved and saved != parent:
                 raise ValueError('thread changed')
-            canonical = {k:v for k,v in selection.items() if k not in ('message','parentHint')}
-            if thread:
-                canonical['thread'] = thread
             secret = bytes.fromhex(read_json(directory / 'subscriptions-key.json'))
             if not saved:
                 if (reference_binding(directory, secret, epoch, selection, message_ref, parent) != parent
@@ -176,10 +173,13 @@ def acquire(request):
                     return {'scope':scope, 'threadMismatch':True, 'complete':True, 'messages':[],
                             'generation':str(generation), 'snapshot':observation.token(key,'thread-mismatch')}
                 save_json(binding_path, parent)
-            _, handle = subscription_identity(secret, epoch, canonical)
-            alias = directory / ('thread-alias-'+handle+'.json')
-            if not alias.exists():
-                save_json(alias, scope)
+            if thread:
+                canonical = {k:v for k,v in selection.items() if k not in ('message','parentHint')}
+                canonical['thread'] = thread
+                _, handle = subscription_identity(secret, epoch, canonical)
+                alias = directory / ('thread-alias-'+handle+'.json')
+                if not alias.exists():
+                    save_json(alias, scope)
         resolved = parent
     messages.sort(key=lambda message: message['id'])
     marker_rows = []

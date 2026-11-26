@@ -316,6 +316,21 @@ class SetupTests(unittest.TestCase):
         url = f'https://second.slack.com/archives/{CHANNEL}/p' + TIME.replace('.', '')
         self.assertEqual(self.resolve(url, scope='replies'), second)
 
+    def test_volume_upgrade_preserves_both_channel_and_constrained_permalink(self):
+        mid = '1700000020.000001'
+        link = f'https://fixture.slack.com/archives/{CHANNEL}/p'+mid.replace('.', '')+'?thread_ts='+TIME
+        with mock.patch.object(setup.sys, 'platform', 'linux'):
+            channel = self.resolve(CHANNEL)
+        with mock.patch.object(setup.sys, 'platform', 'darwin'), mock.patch.object(source, 'volume_uuid', return_value='b'*32):
+            guarded = self.resolve(link, scope='conversation')
+            self.assertNotEqual(guarded['expectedScope'], channel['expectedScope'])
+            add_message(self.state, mid, TIME)
+            database(self.root, self.state, sequence=30)
+            read = source.acquire({k:v for k,v in guarded.items() if k != 'label'})
+            self.assertEqual(read['resolvedThread'], TIME)
+            self.assertEqual(self.resolve(CHANNEL)['expectedScope'], channel['expectedScope'])
+            self.assertEqual(self.resolve(link, scope='conversation')['expectedScope'], guarded['expectedScope'])
+
     def test_restart_after_device_renumbering_preserves_verified_volume_and_cursor(self):
         # Run on POSIX CI with synthetic volume identities and a changed mount device number.
         with mock.patch.object(source, 'volume_uuid', return_value='1' * 32) as uuid:
