@@ -1,0 +1,29 @@
+connectors/teams/connector.json
+  s_792cf20ed3ffee::t_8b43a850e15247 3
+connectors/teams/runtime/bridge.py
+  s_792cf20ed3ffee::t_06eaaf94c2d4ac 34-41,53,292-295
+connectors/teams/runtime/test_portable.py
+  s_792cf20ed3ffee::t_7359b5d637bf5a 195-203
+connectors/teams/src/Source.ts
+  s_792cf20ed3ffee::t_cccb5cb6dc1ad3 26-31
+connectors/teams/validation/current_store.py
+  s_792cf20ed3ffee::t_6f360b34252210 7,23-28,381,390-417,438-440,451,453-454,456,468-469,472,484-485
+connectors/teams/validation/test_current_store.py
+  s_792cf20ed3ffee::t_e9c9d280e6eb8f 214-234
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "552e2332065930e5f230a6c460d27d6baa3b643b",
+  "prompts": {},
+  "sessions": {
+    "s_792cf20ed3ffee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21764-0a1a-7de2-9106-46f5bf64da74",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
