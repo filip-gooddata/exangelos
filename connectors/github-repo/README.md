@@ -55,15 +55,15 @@ exangelos subscribe github-repo owner/repo releases='*' --types release.publishe
 | Event | When | Dedupe key |
 | --- | --- | --- |
 | `tag.created` | A tag matching `tags` appears | `tag.created/<name>/<sha>` |
-| `tag.moved` | A tag matching `tags` points at another commit | `tag.moved/<name>/<previous sha>/<sha>` |
+| `tag.moved` | A tag matching `tags` points at another commit | `tag.moved/<name>/<sha>` |
 | `branch.created` | A branch matching `branches` appears | `branch.created/<name>/<sha>` |
-| `branch.moved` | The head of a matching branch changes | `branch.moved/<name>/<previous sha>/<sha>` |
+| `branch.moved` | The head of a matching branch changes | `branch.moved/<name>/<sha>` |
 | `branch.deleted` | A matching branch is deleted | `branch.deleted/<name>/<previous sha>` |
 | `release.published` | A release whose tag matches `releases` is published | `release.published/<release id>` |
 | `workflow.started` | A run of a workflow in `workflows`, or a new attempt of one, is queued or running | `workflow.started/<run id>/<attempt>` |
 | `workflow.completed` | A run of a workflow in `workflows` completes; the payload has its `conclusion` | `workflow.completed/<run id>/<attempt>` |
 
-The first poll is a silent baseline: tags, branches, releases and runs that exist then are not reported. A move is keyed by both commits, so each distinct transition wakes once: a branch that goes A to B, then to C, then back to B wakes three times, but a second A to B after B to A does not. An annotated tag is reported at the commit it points to, so recreating it on the same commit is not a move. Tag deletions are not reported. A draft release the token can see is reported when it is published, while it is among the 20 newest releases. A run that starts and finishes between two polls is reported only as completed. A re-run is a new attempt and is reported again, while the run is among the 20 newest. Releases and runs are new when GitHub numbered them after the newest one the last poll saw, so an older one that a deletion brings into the list is not reported.
+The first poll is a silent baseline: tags, branches, releases and runs that exist then are not reported. A move is keyed by the ref and the commit it moved to, so a ref that returns to a commit it was already reported at, such as a branch going A to B to C and back to B, does not wake again. An annotated tag is reported at the commit it points to, so recreating it on the same commit is not a move. Tag deletions are not reported. A release is reported when it is published after the last poll, a draft created long before included, while it is among the 20 newest releases; an older release that a deletion brings into the list is not. A run that starts and finishes between two polls is reported only as completed. A re-run is a new attempt and is reported again, while the run is among the 20 newest. A run is new when GitHub numbered it after the newest run the last poll saw, so an older one that a deletion brings into the list is not reported.
 
 ## Polling
 
@@ -77,7 +77,7 @@ Rate limits are handled as in github-pr: when `x-ratelimit-remaining` is 0 the n
 
 ## Cursor
 
-The cursor is JSON with `v: 1`. It holds, for tags and for branches, the patterns and each matching ref's name and commit as pairs; for releases the patterns, the highest release id seen and the ids of the drafts the last poll saw; and per workflow the highest run id seen and the id, attempt and completion of each run the last poll listed. A cursor of an unknown version starts a new baseline.
+The cursor is JSON with `v: 1`. It holds, for tags and for branches, the patterns and each matching ref's name and commit as pairs; for releases the patterns, the latest publish time seen and the ids of the releases published at that time; and per workflow the highest run id seen and the id, attempt and completion of each run the last poll listed. A cursor of an unknown version starts a new baseline.
 
 ## Long-lived watches
 

@@ -83,9 +83,9 @@ describe("step", () => {
       branches: { "release/mic/4.45": sha("8"), "release/mic/4.46": sha("9"), main: sha("a") }
     }), f, site, "2026-11-26T10:01:00.000Z")
     expect(keys(second)).toEqual([
-      `tag.moved/mic-lib-v4.45.0-rc/${sha("2")}/${sha("6")}`,
+      `tag.moved/mic-lib-v4.45.0-rc/${sha("6")}`,
       `tag.created/mic-lib-v4.45.0/${sha("7")}`,
-      `branch.moved/release/mic/4.45/${sha("4")}/${sha("8")}`,
+      `branch.moved/release/mic/4.45/${sha("8")}`,
       `branch.created/release/mic/4.46/${sha("9")}`,
       `branch.deleted/release/mic/4.44/${sha("3")}`
     ])
@@ -128,23 +128,29 @@ describe("step", () => {
     expect(keys(reordered)).toEqual([`tag.created/w1/${sha("2")}`])
   })
 
-  it("reports a new or newly published release once, and not an older one a deletion brings into the list", () => {
+  it("reports a release published after the last poll, a draft created before it too, and not one a deletion uncovers", () => {
     const rf = filters({ releases: ["mic-lib-*"] })
     const first = step(undefined, snapshot({
-      releases: [release(30, "mic-lib-v4.45.0", null), release(20, "mic-lib-v4.44.1", "2026-11-20T00:00:00Z")]
+      releases: [release(200, "mic-lib-v4.44.1", "2026-11-20T00:00:00Z"), release(150, "mic-lib-v4.44.0", "2026-11-10T00:00:00Z")]
     }), rf, site, "t")
     expect(first.events).toEqual([])
 
     const second = step(first.memory, snapshot({
       releases: [
-        release(40, "mic-lib-v4.45.1", "2026-11-26T00:00:00Z"),
-        release(35, "other-v1", "2026-11-26T00:00:00Z"),
-        release(30, "mic-lib-v4.45.0", "2026-11-26T00:00:00Z"),
-        release(10, "mic-lib-v4.43.0", "2026-11-20T00:00:00Z")
+        release(300, "mic-lib-v4.45.1", "2026-11-26T00:05:00Z"),
+        release(250, "other-v1", "2026-11-26T00:00:00Z"),
+        release(200, "mic-lib-v4.44.1", "2026-11-20T00:00:00Z"),
+        release(100, "mic-lib-v4.45.0", "2026-11-26T00:00:00Z"),
+        release(90, "mic-lib-v4.43.0", "2026-11-01T00:00:00Z")
       ]
     }), rf, site, "t")
-    expect(keys(second)).toEqual(["release.published/30", "release.published/40"])
+    expect(keys(second)).toEqual(["release.published/100", "release.published/300"])
     expect(second.events[0]).toMatchObject({ occurredAt: "2026-11-26T00:00:00Z", payload: { tag: "mic-lib-v4.45.0" } })
+
+    const tie = step(second.memory, snapshot({
+      releases: [release(310, "mic-lib-v4.45.2", "2026-11-26T00:05:00Z"), release(300, "mic-lib-v4.45.1", "2026-11-26T00:05:00Z")]
+    }), rf, site, "t")
+    expect(keys(tie)).toEqual(["release.published/310"])
   })
 
   it("reports a run when it starts and when it completes, once per attempt, and keeps the list GitHub did not change", () => {

@@ -16,13 +16,13 @@ export interface RefMemory {
 }
 
 /**
- * GitHub numbers releases in creation order, so one above `newest` is new. `drafts` are the drafts the last poll saw,
- * which are new when they are published.
+ * `since` is the latest publish time the last poll saw and `ids` the releases published at that instant. A release
+ * published later is new; one published earlier that shows up now was pushed into the list by a deletion.
  */
 export interface ReleaseMemory {
   readonly patterns: ReadonlyArray<string>
-  readonly newest: number
-  readonly drafts: ReadonlyArray<number>
+  readonly since: string | null
+  readonly ids: ReadonlyArray<number>
 }
 
 export interface RunMark {
@@ -92,7 +92,7 @@ const diffRefs = (
         summary: `${label} ${name} moved from ${short(before)} to ${short(sha)}`,
         payload: { name, sha, previous: before },
         link: `${root}/compare/${before}...${sha}`,
-        dedupeKey: `${kind}.moved/${name}/${before}/${sha}`
+        dedupeKey: `${kind}.moved/${name}/${sha}`
       })
     }
   }
@@ -121,18 +121,23 @@ const diffReleases = (
 ): { readonly events: ReadonlyArray<Emitted>; readonly memory: ReleaseMemory | null } => {
   if (current === null) return { events: [], memory: null }
   const patterns = globs.map((glob) => glob.source)
-  const memory = {
-    patterns,
-    newest: newestOf(current.map((r) => r.id), previous?.newest ?? 0),
-    drafts: current.filter((r) => r.draft).map((r) => r.id)
-  }
+  const published = current.filter((r): r is Release & { publishedAt: string } => !r.draft && r.publishedAt !== null)
+  const latest = published.reduce<string | null>(
+    (at, r) => (at === null || r.publishedAt > at ? r.publishedAt : at),
+    previous?.since ?? null
+  )
+  const ids = [
+    ...(latest === previous?.since ? previous.ids : []),
+    ...published.filter((r) => r.publishedAt === latest).map((r) => r.id)
+  ]
+  const memory = { patterns, since: latest, ids: [...new Set(ids)] }
   if (previous === null || !samePatterns(previous.patterns, patterns)) return { events: [], memory }
-  const events: Array<Emitted> = current
-    .filter((r): r is Release & { publishedAt: string } =>
-      !r.draft && r.publishedAt !== null && matchesAny(globs, r.tag) &&
-      (r.id > previous.newest || previous.drafts.includes(r.id))
-    )
-    .reverse()
+  const isNew = (r: Release & { publishedAt: string }) =>
+    previous.since === null || r.publishedAt > previous.since ||
+    (r.publishedAt === previous.since && !previous.ids.includes(r.id))
+  const events: Array<Emitted> = published
+    .filter((r) => matchesAny(globs, r.tag) && isNew(r))
+    .sort((a, b) => (a.publishedAt < b.publishedAt ? -1 : a.publishedAt > b.publishedAt ? 1 : a.id - b.id))
     .map((r) => ({
       type: "release.published",
       occurredAt: r.publishedAt,

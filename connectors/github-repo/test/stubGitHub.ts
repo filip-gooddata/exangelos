@@ -28,6 +28,12 @@ export const secondaryLimit: Answer = {
   body: { message: "You have exceeded a secondary rate limit. Please wait a few minutes before you try again." }
 }
 
+export const restSecondaryLimit: Answer = {
+  status: 403,
+  headers: { "retry-after": "30" },
+  body: { message: "You have exceeded a secondary rate limit." }
+}
+
 export const actionsForbidden: Answer = {
   status: 403,
   headers: quota,

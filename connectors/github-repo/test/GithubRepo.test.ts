@@ -93,7 +93,7 @@ describe("github-repo connector", () => {
       expect(dedupeKeys(items)).toEqual([
         "Cursor",
         `tag.created/mic-lib-v4.45.0/${sha("3")}`,
-        `branch.moved/release/mic/4.45/${sha("2")}/${sha("4")}`
+        `branch.moved/release/mic/4.45/${sha("4")}`
       ])
       const requests = yield* sent
       expect(requests[1]).toMatchObject({
@@ -176,6 +176,26 @@ describe("github-repo connector", () => {
       expect(yield* sent).toHaveLength(3)
       yield* TestClock.adjust("1 minute")
       expect(dedupeKeys(yield* Fiber.join(fiber))).toEqual(["Cursor", `tag.created/v1/${sha("1")}`])
+    }).pipe(Effect.scoped))
+
+  it.effect("waits out a rate limit on the workflow runs too", () =>
+    Effect.gen(function*() {
+      const { client: connector, sent } = yield* client([
+        Stub.viewer,
+        Stub.restSecondaryLimit,
+        Stub.runs([{ id: 10, conclusion: "success", updatedAt: "2026-11-25T00:00:00Z" }]),
+        Stub.runs([
+          { id: 11, conclusion: "success", updatedAt: "2026-11-26T00:00:00Z" },
+          { id: 10, conclusion: "success", updatedAt: "2026-11-25T00:00:00Z" }
+        ])
+      ])
+      yield* connector.Configure({ values: { token } })
+      const fiber = yield* connector.Watch({ parameters: { repository: "acme/api", workflows: "a.yaml" }, eventTypes: [] })
+        .pipe(Stream.take(2), Stream.runCollect, Effect.forkChild)
+      yield* TestClock.adjust("29 seconds")
+      expect(yield* sent).toHaveLength(2)
+      yield* TestClock.adjust("2 minutes")
+      expect(dedupeKeys(yield* Fiber.join(fiber))).toEqual(["Cursor", "workflow.completed/11/1"])
     }).pipe(Effect.scoped))
 
   it.effect("fails only the watch, without retrying, when a pattern lists too many refs or Actions are off limits", () =>
