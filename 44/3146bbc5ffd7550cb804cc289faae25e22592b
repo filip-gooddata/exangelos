@@ -1,0 +1,43 @@
+connectors/shared/pendingSubject.ts
+  s_73de08cfde11bd::t_8032e0de6f3aae 1-19
+connectors/teams/README.md
+  s_73de08cfde11bd::t_998d2525d2c9ef 21-27,41,47
+connectors/teams/connector.json
+  s_73de08cfde11bd::t_e7067a6ae6f953 3
+connectors/teams/runtime/bridge.py
+  s_73de08cfde11bd::t_fd5720ed5d462c 161,169-171,173-180,182-185,188-196,202-232,243,245-280,332-333,335-376,384-386,388-390,393-394
+connectors/teams/runtime/ledger.py
+  s_73de08cfde11bd::t_474fe9bfc89346 185-188,192-193,196-199
+connectors/teams/runtime/test_bridge.py
+  s_73de08cfde11bd::t_efdc6bf0562f18 42
+connectors/teams/runtime/test_portable.py
+  s_73de08cfde11bd::t_6c3d6d72972a5b 103,106-193,255-256,326-327
+connectors/teams/scripts/validate-release.py
+  s_73de08cfde11bd::t_54f02887cc1b18 62
+connectors/teams/src/Reconcile.ts
+  s_73de08cfde11bd::t_2ad1b959d405c4 22-24,34
+connectors/teams/src/Source.ts
+  s_73de08cfde11bd::t_beb165885fa9d4 20-22,27-33,35
+connectors/teams/src/Teams.ts
+  s_73de08cfde11bd::t_dd2c7221ba9a5a 4,75,81-85,91-98,100,104-113,119-121
+connectors/teams/test/Teams.test.ts
+  s_73de08cfde11bd::t_83d294a13548c7 3-4,6,10,230-279
+connectors/teams/validation/native_cache.py
+  s_73de08cfde11bd::t_12dbbf008d8127 2,183,186-192,200,206-207,211,324,354
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "443146bbc5ffd7550cb804cc289faae25e22592b",
+  "prompts": {},
+  "sessions": {
+    "s_73de08cfde11bd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a217a3-bc47-7b63-89dc-0b75ebaa0e01",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
