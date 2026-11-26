@@ -106,6 +106,21 @@ describe("github-repo connector", () => {
       expect(requests).toHaveLength(3)
     }).pipe(Effect.scoped))
 
+  it.effect("keeps GitHub's time of the poll from the date header as the release boundary", () =>
+    Effect.gen(function*() {
+      const { client: connector } = yield* client([
+        Stub.viewer,
+        Stub.repository({ releases: Stub.releases([]) }, "Thu, 26 Nov 2026 08:00:00 GMT")
+      ])
+      yield* connector.Configure({ values: { token } })
+      const items = yield* connector.Watch({ parameters: { repository: "acme/api", releases: "*" }, eventTypes: [] }).pipe(
+        Stream.take(1),
+        Stream.runCollect
+      )
+      const cursor = (items[0] as unknown as { cursor: string }).cursor
+      expect(JSON.parse(cursor).releases).toMatchObject({ since: "2026-11-26T08:00:00.000Z", ids: [], drafts: [] })
+    }).pipe(Effect.scoped))
+
   it.effect("reads further pages of a long ref list", () =>
     Effect.gen(function*() {
       const { client: connector, sent } = yield* client([

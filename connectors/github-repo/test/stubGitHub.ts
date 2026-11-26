@@ -84,7 +84,10 @@ export const releases = (list: ReadonlyArray<ReleaseFields>) => ({
 })
 
 /** A Snapshot query answer: aliases such as `t0` and `b0` to ref pages, and `releases`. */
-export const repository = (parts: Record<string, unknown>) => ok({ repository: parts })
+export const repository = (parts: Record<string, unknown>, date?: string): Answer => {
+  const answer = ok({ repository: parts })
+  return date === undefined ? answer : { ...answer, headers: { ...answer.headers, date } }
+}
 
 export const refsPage = (page: unknown) => ok({ repository: { refs: page } })
 

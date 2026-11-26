@@ -147,10 +147,20 @@ describe("step", () => {
     expect(keys(second)).toEqual(["release.published/100", "release.published/300"])
     expect(second.events[0]).toMatchObject({ occurredAt: "2026-11-26T00:00:00Z", payload: { tag: "mic-lib-v4.45.0" } })
 
-    const sameSecond = step(second.memory, snapshot({
-      releases: [release(310, "mic-lib-v4.45.2", "2026-11-26T00:06:00Z"), release(300, "mic-lib-v4.45.1", "2026-11-26T00:05:00Z")]
-    }), rf, site, "2026-11-26T00:07:00.000Z")
-    expect(keys(sameSecond)).toEqual(["release.published/310"])
+    const third = step(second.memory, snapshot({
+      releases: [
+        release(330, "mic-lib-v4.45.3", null),
+        release(310, "mic-lib-v4.45.2", "2026-11-26T00:06:01Z"),
+        release(300, "mic-lib-v4.45.1", "2026-11-26T00:05:00Z"),
+        release(5, "mic-lib-v4.40.0", "2026-11-26T00:06:00Z")
+      ]
+    }), rf, site, "2026-11-26T00:07:00.400Z")
+    expect(keys(third)).toEqual(["release.published/310"])
+
+    const fourth = step(third.memory, snapshot({
+      releases: [release(330, "mic-lib-v4.45.3", "2026-11-26T00:07:00Z"), release(310, "mic-lib-v4.45.2", "2026-11-26T00:06:01Z")]
+    }), rf, site, "2026-11-26T00:08:00.000Z")
+    expect(keys(fourth)).toEqual(["release.published/330"])
   })
 
   it("reports a run when it starts and when it completes, once per attempt, and keeps the list GitHub did not change", () => {

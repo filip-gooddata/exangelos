@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Clock, Context, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { Transport } from "@exangelos/connector-github-pr"
 import type { Filters } from "./Diff.ts"
@@ -173,9 +173,10 @@ export const layer = Layer.effect(
         if (all.length > 0 || wantReleases) {
           const variables: Record<string, unknown> = { owner: repository.owner, name: repository.name }
           for (const l of all) variables[l.alias] = l.query === "" ? null : l.query
+          const started = yield* Clock.currentTimeMillis
           const first = yield* transport.graphql(connection, SnapshotData, snapshotQuery(all, wantReleases), variables)
           quota = first.quota
-          observedAt = first.date
+          observedAt = Option.orElseSome(first.date, () => started)
           const data = first.data.repository
           if (data === null) return yield* missing
           for (const l of all) {

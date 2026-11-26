@@ -16,14 +16,15 @@ export interface RefMemory {
 }
 
 /**
- * `since` is GitHub's time of the last poll and `ids` the published releases it listed. A release it did not list that
- * was published since is new; one published earlier that shows up now was pushed into the list by a deletion. The
- * margin covers the second the `date` header rounds away.
+ * `since` is GitHub's time of the last poll; `ids` and `drafts` are the published releases and drafts it listed. A
+ * release is new when that poll listed it as a draft, or did not list it and it was published in a later second. One
+ * published in that second or before, which a deletion brings into the list, stays quiet.
  */
 export interface ReleaseMemory {
   readonly patterns: ReadonlyArray<string>
   readonly since: string
   readonly ids: ReadonlyArray<number>
+  readonly drafts: ReadonlyArray<number>
 }
 
 export interface RunMark {
@@ -115,7 +116,7 @@ const diffRefs = (
 
 const newestOf = (ids: ReadonlyArray<number>, floor: number) => ids.reduce((a, b) => (a > b ? a : b), floor)
 
-const margin = 2_000
+const second = (iso: string) => Math.floor(Date.parse(iso) / 1000)
 
 const diffReleases = (
   previous: ReleaseMemory | null,
@@ -126,11 +127,18 @@ const diffReleases = (
   if (current === null) return { events: [], memory: null }
   const patterns = globs.map((glob) => glob.source)
   const published = current.filter((r): r is Release & { publishedAt: string } => !r.draft && r.publishedAt !== null)
-  const memory = { patterns, since: now, ids: published.map((r) => r.id) }
+  const memory = {
+    patterns,
+    since: now,
+    ids: published.map((r) => r.id),
+    drafts: current.filter((r) => r.draft).map((r) => r.id)
+  }
   if (previous === null || !samePatterns(previous.patterns, patterns)) return { events: [], memory }
-  const boundary = Date.parse(previous.since) - margin
+  const isNew = (r: Release & { publishedAt: string }) =>
+    !previous.ids.includes(r.id) &&
+    (previous.drafts.includes(r.id) || second(r.publishedAt) > second(previous.since))
   const events: Array<Emitted> = published
-    .filter((r) => matchesAny(globs, r.tag) && !previous.ids.includes(r.id) && Date.parse(r.publishedAt) >= boundary)
+    .filter((r) => matchesAny(globs, r.tag) && isNew(r))
     .sort((a, b) => Date.parse(a.publishedAt) - Date.parse(b.publishedAt) || a.id - b.id)
     .map((r) => ({
       type: "release.published",

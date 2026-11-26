@@ -14,7 +14,8 @@ const V1 = Schema.Struct({
   releases: Schema.NullOr(Schema.Struct({
     patterns: Schema.Array(Schema.String),
     since: Schema.String,
-    ids: Schema.Array(Schema.Finite)
+    ids: Schema.Array(Schema.Finite),
+    drafts: Schema.Array(Schema.Finite)
   })),
   workflows: Schema.Array(Schema.Tuple([
     Schema.String,
