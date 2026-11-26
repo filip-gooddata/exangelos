@@ -1,6 +1,6 @@
 ---
 name: exangelos
-description: Watch a GitHub pull request, a stack layer, a PR you review, a Jira issue or a Slack or Teams conversation with an Exangelos subscription that wakes this agent session on each event. Use whenever work waits on someone else's change, on CI, or on a reply, and when an Exangelos wake arrives.
+description: Watch a GitHub pull request, a stack layer, a PR you review, a repository's release tags, branches or workflow runs, a Jira issue or a Slack or Teams conversation with an Exangelos subscription that wakes this agent session on each event. Use whenever work waits on someone else's change, on CI, or on a reply, and when an Exangelos wake arrives.
 ---
 
 # Exangelos watches
@@ -34,6 +34,11 @@ exangelos subscribe github-pr 'owner/repo#N' reviewer=LOGIN \
   --types head.changed,reviewer.submitted,review.rerequested,author.activity \
   --intent "Review owner/repo#N when its author asks"
 
+# A release: a tag or branch appears or moves, or the publish workflow finishes
+exangelos subscribe github-repo owner/repo tags='v4.45*' branches='release/4.45' workflows=release.yaml \
+  --types tag.created,tag.moved,branch.created,branch.moved,branch.deleted,workflow.completed \
+  --intent "Act on the 4.45 release before it publishes"
+
 # A Jira issue
 exangelos subscribe jira KEY fields='["resolution","fixVersions"]' \
   --types status.changed,assignee.changed,comment.added,comment.deleted,field.changed,jira.unavailable \
@@ -49,6 +54,7 @@ exangelos subscribe jira KEY githubRepo=owner/repo sha=SHA \
 ```
 
 - Slack and Teams: `exangelos connectors slack` and `exangelos connectors teams` list their subjects and parameters.
+- github-repo patterns are globs: `*` matches any run of characters, `/` included. Its first poll is a silent baseline, so tags and branches that already exist do not wake you. `releases='*'` reports every published release. It shares the github-pr token setup: configure `github-repo` the same way.
 - On a PR into a busy trunk, leave `base.changed` out, or every push to the trunk wakes you.
 - `wakeOnCheckPass='["RE"]'` with `check.passed` wakes when a matching check succeeds. `ignoreChecks`, `ignoreAuthors`, `ignoreComments` (regexes) and `ignoreIds` (thread, comment or review URLs) quiet notifications.
 - `--once` or `--max-events N` ends the subscription after that many events. `--until <ISO time>` ends it earlier than the default expiry.

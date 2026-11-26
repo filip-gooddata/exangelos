@@ -1,29 +1,22 @@
-import { Clock, Context, Duration, Effect, Layer, Option, Redacted, Schema } from "effect"
-import { HttpClient, HttpClientRequest } from "effect/http"
+import { Clock, Context, Duration, Effect, Layer, Option, Schema } from "effect"
+import { HttpClient } from "effect/http"
 import * as Logins from "./Login.ts"
 import type { PullRequestRef } from "./PullRequestRef.ts"
 import * as Query from "./Query.ts"
 import type { Check, CheckOutcome, Snapshot } from "./Snapshot.ts"
+import * as Transport from "./Transport.ts"
+import { type Connection, type GitHubError, NotFound, type Quota } from "./Transport.ts"
 
-export interface Connection {
-  readonly host: string
-  readonly token: Redacted.Redacted<string>
-}
-
-export class Unauthorized extends Schema.TaggedError<Unauthorized>()("Unauthorized", { reason: Schema.String }) {}
-
-export class NotFound extends Schema.TaggedError<NotFound>()("NotFound", { reason: Schema.String }) {}
-
-export class RateLimited extends Schema.TaggedError<RateLimited>()("RateLimited", { retryAfter: Schema.Duration }) {}
-
-export class Unavailable extends Schema.TaggedError<Unavailable>()("Unavailable", { reason: Schema.String }) {}
-
-export type GitHubError = Unauthorized | NotFound | RateLimited | Unavailable
-
-export interface Quota {
-  readonly remaining: number
-  readonly resetAt: number
-}
+export {
+  type Connection,
+  endpoint,
+  type GitHubError,
+  NotFound,
+  type Quota,
+  RateLimited,
+  Unauthorized,
+  Unavailable
+} from "./Transport.ts"
 
 export interface Since {
   readonly reviews: string | null
@@ -40,9 +33,6 @@ export interface ReviewerQuery {
   readonly login: string
   readonly findRequest: boolean
 }
-
-export const endpoint = (host: string) =>
-  host === "github.com" ? "https://api.github.com/graphql" : `https://${host}/api/graphql`
 
 const Login = Schema.NullOr(Schema.Struct({ login: Schema.String }))
 const Backward = Schema.Struct({ hasPreviousPage: Schema.Boolean, startCursor: Schema.NullOr(Schema.String) })
@@ -153,14 +143,6 @@ const PullRequestNode = Schema.Struct({
   ...Connections
 })
 
-const GraphQLError = Schema.Struct({ type: Schema.optionalKey(Schema.String), message: Schema.String })
-
-const answer = <S extends Schema.Codec<any, unknown>>(data: S) =>
-  Schema.Struct({
-    data: Schema.optionalKey(Schema.NullOr(data)),
-    errors: Schema.optionalKey(Schema.Array(GraphQLError))
-  })
-
 const PullRequestData = Schema.Struct({
   repository: Schema.NullOr(Schema.Struct({ pullRequest: Schema.NullOr(PullRequestNode) }))
 })
@@ -172,27 +154,6 @@ const ThreadRepliesData = Schema.Struct({
   node: Schema.NullOr(Schema.Struct({ comments: Schema.optionalKey(backward(ThreadCommentNode)) }))
 })
 const Viewer = Schema.Struct({ viewer: Schema.Struct({ login: Schema.String }) })
-
-const ErrorMessage = Schema.Struct({ message: Schema.String })
-
-const header = (headers: Readonly<Record<string, string | undefined>>, name: string) => {
-  const value = Number(headers[name])
-  return headers[name] === undefined || !Number.isFinite(value) ? undefined : value
-}
-
-const quotaOf = (headers: Readonly<Record<string, string | undefined>>): Option.Option<Quota> => {
-  const remaining = header(headers, "x-ratelimit-remaining")
-  const reset = header(headers, "x-ratelimit-reset")
-  return remaining === undefined || reset === undefined ? Option.none() : Option.some({ remaining, resetAt: reset * 1000 })
-}
-
-const waitOf = (headers: Readonly<Record<string, string | undefined>>, now: number) => {
-  const retryAfter = header(headers, "retry-after")
-  if (retryAfter !== undefined) return Duration.seconds(retryAfter)
-  const quota = quotaOf(headers)
-  if (Option.isSome(quota) && quota.value.remaining === 0) return Duration.millis(Math.max(quota.value.resetAt - now, 1000))
-  return Duration.minutes(1)
-}
 
 const outcome = (node: typeof ContextNode.Type): CheckOutcome => {
   if (node.__typename === "CheckRun") {
@@ -263,59 +224,7 @@ export const layer = Layer.effect(
   Effect.gen(function*() {
     const client = yield* HttpClient.HttpClient
 
-    const post = <S extends Schema.Codec<any, unknown>>(
-      connection: Connection,
-      data: S,
-      query: string,
-      variables: Record<string, unknown>
-    ): Effect.Effect<{ readonly data: S["Type"]; readonly quota: Option.Option<Quota> }, GitHubError> =>
-      Effect.gen(function*() {
-        const request = HttpClientRequest.post(endpoint(connection.host)).pipe(
-          HttpClientRequest.bearerToken(Redacted.value(connection.token)),
-          HttpClientRequest.acceptJson,
-          HttpClientRequest.setHeader("user-agent", "exangelos-github-pr"),
-          HttpClientRequest.bodyJsonUnsafe({ query, variables })
-        )
-        const response = yield* client.execute(request).pipe(
-          Effect.mapError(() => new Unavailable({ reason: `Could not reach ${connection.host}` }))
-        )
-        const now = yield* Clock.currentTimeMillis
-        const secret = Redacted.value(connection.token)
-        const scrub = (text: string) => secret === "" ? text : text.replaceAll(secret, "[token]")
-        const message = response.json.pipe(
-          Effect.flatMap(Schema.decodeUnknownEffect(ErrorMessage)),
-          Effect.map((body) => scrub(body.message)),
-          Effect.orElseSucceed(() => `HTTP ${response.status}`)
-        )
-        if (response.status === 401) {
-          return yield* new Unauthorized({ reason: `GitHub refused the token: ${yield* message}` })
-        }
-        if (response.status === 429 || (response.status === 403 && /rate limit/i.test(yield* message))) {
-          return yield* new RateLimited({ retryAfter: waitOf(response.headers, now) })
-        }
-        if (response.status === 403) {
-          return yield* new Unauthorized({ reason: `GitHub refused access: ${yield* message}` })
-        }
-        if (response.status !== 200) {
-          return yield* new Unavailable({ reason: `GitHub answered ${response.status}: ${yield* message}` })
-        }
-        const body = yield* response.json.pipe(
-          Effect.flatMap(Schema.decodeUnknownEffect(answer(data))),
-          Effect.mapError(() => new Unavailable({ reason: "GitHub sent an answer this connector cannot read" }))
-        )
-        const first = body.errors?.[0]
-        const error = first === undefined ? undefined : { ...first, message: scrub(first.message) }
-        if (error !== undefined) {
-          if (error.type === "RATE_LIMITED") return yield* new RateLimited({ retryAfter: waitOf(response.headers, now) })
-          if (error.type === "NOT_FOUND") return yield* new NotFound({ reason: error.message })
-          if (error.type === "FORBIDDEN" || error.type === "INSUFFICIENT_SCOPES") {
-            return yield* new Unauthorized({ reason: error.message })
-          }
-          return yield* new Unavailable({ reason: error.message })
-        }
-        if (body.data == null) return yield* new Unavailable({ reason: "GitHub sent no data" })
-        return { data: body.data, quota: quotaOf(response.headers) }
-      })
+    const post = Transport.make(client, "exangelos-github-pr").graphql
 
     const viewer = (connection: Connection) =>
       post(connection, Viewer, Query.viewer, {}).pipe(Effect.map(({ data }) => data.viewer.login))
