@@ -8,7 +8,7 @@ import { run } from "./command.ts"
 import { clearReleaseFiles, connectorArchiveName, writeChecksums } from "./release-files.ts"
 import { createTarGz } from "./tar.ts"
 
-export const officialConnectorNames: ReadonlyArray<string> = ["github-pr", "jira", "file-watch", "slack", "teams"]
+export const officialConnectorNames: ReadonlyArray<string> = ["github-pr", "github-repo", "jira", "file-watch", "slack", "teams"]
 
 export const officialConnectorsFileName = "official-connectors.json"
 

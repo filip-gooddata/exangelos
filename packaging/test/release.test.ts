@@ -83,9 +83,10 @@ describe("official release for this machine (contract test with the real CLI bui
     release = await buildInto(work, "9.9.9", officialConnectorDirectories(), defaultBuildScript)
   }, 300_000)
 
-  it("ships github-pr, jira, file-watch, slack and teams", () => {
+  it("ships github-pr, github-repo, jira, file-watch, slack and teams", () => {
     expect(release.officialConnectors.map((connector) => connector.name)).toEqual([
       "github-pr",
+      "github-repo",
       "jira",
       "file-watch",
       "slack",

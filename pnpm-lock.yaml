@@ -824,6 +824,25 @@ importers:
         specifier: workspace:*
         version: link:../../packages/contracts
 
+  connectors/github-repo:
+    dependencies:
+      '@effect/platform-bun':
+        specifier: 'catalog:'
+        version: 4.1.4(effect@4.1.4)
+      '@exangelos/connector-github-pr':
+        specifier: workspace:*
+        version: link:../github-pr
+      '@exangelos/connector-sdk':
+        specifier: workspace:*
+        version: link:../../packages/connector-sdk
+      effect:
+        specifier: 'catalog:'
+        version: 4.1.4
+    devDependencies:
+      '@exangelos/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+
   connectors/jira:
     dependencies:
       '@effect/platform-bun':

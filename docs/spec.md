@@ -16,7 +16,7 @@ Agents reach the daemon through the `exangelos` command (alias `xng`) and throug
 
 Subscriptions cannot pile up unnoticed. Each one expires after at most 7 days unless resumed, pauses when its backlog grows past 20 events or 24 hours, and tells its session once when it stops for any reason the session did not cause.
 
-Version 1 ships five official connectors (github-pr, jira, file-watch, slack, teams) and a connector template, and it replaces pr-watch for you.
+Version 1 ships six official connectors (github-pr, github-repo, jira, file-watch, slack, teams) and a connector template, and it replaces pr-watch for you.
 
 ## User stories
 
