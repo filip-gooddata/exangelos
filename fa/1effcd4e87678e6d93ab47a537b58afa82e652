@@ -1,0 +1,53 @@
+connectors/teams/README.md
+  s_792cf20ed3ffee::t_f5cee9e9c7a82a 49-50
+connectors/teams/connector.json
+  s_792cf20ed3ffee::t_e1707a0f588808 3
+connectors/teams/runtime/bridge.py
+  s_9a3e2e4e612942::t_1a391f0b0a76c0 18,20-24,287,290,294-306
+connectors/teams/runtime/test_portable.py
+  s_792cf20ed3ffee::t_bc6d2dc9c75632 204-218
+connectors/teams/src/LastError.ts
+  s_73de08cfde11bd::t_5047a7c67d1364 1-83
+connectors/teams/src/Source.ts
+  s_73de08cfde11bd::t_233ac330f159d1 2-5,38-50,53,58,62-64,66-69,71-99,102-103
+connectors/teams/test/BridgeDiagnostics.test.ts
+  s_792cf20ed3ffee::t_e9d4121056ff30 1-77
+connectors/teams/test/ReleaseValidation.ts
+  s_792cf20ed3ffee::t_adb07b9dd326fa 283-287
+connectors/teams/test/Teams.test.ts
+  s_792cf20ed3ffee::t_b89c0fa9cdce6b 1-4,153-174
+connectors/teams/validation/current_store.py
+  s_9a3e2e4e612942::t_f60d4bedca9bf4 25,28-51,493-494,497,511-515
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa1effcd4e87678e6d93ab47a537b58afa82e652",
+  "prompts": {},
+  "sessions": {
+    "s_73de08cfde11bd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a217a3-bc47-7b63-89dc-0b75ebaa0e01",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_792cf20ed3ffee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21764-0a1a-7de2-9106-46f5bf64da74",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_9a3e2e4e612942": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a217fc-1305-7273-af55-0864479ea0f4",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
