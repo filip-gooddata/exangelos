@@ -128,7 +128,7 @@ const quiet = (connector: Connector, selection: string, cursor: string) => Effec
     Stream.tap((item) => Effect.sync(() => { items.push(item) })), Stream.runDrain, Effect.forkChild)
   yield* Effect.sleep("2200 millis")
   assert.equal(fiber.pollUnsafe(), undefined)
-  assert.deepEqual(items, [])
+  assert.deepEqual(items, [{ _tag: "Cursor", cursor }])
   yield* Fiber.interrupt(fiber)
 })
 try {
