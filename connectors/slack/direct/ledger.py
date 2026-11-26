@@ -288,8 +288,14 @@ def reconcile(request, path=None):
                     if notice is not None or int(snapshot['generation']) > int(generation) or db.execute(
                             'SELECT 1 FROM pending_details WHERE lineage=? LIMIT 1', (lineage,)).fetchone():
                         result['retryObservation'] = True
+                if snapshot.get('missing'):
+                    result['replayedVisible'] = True
                 db.commit()
                 return result
+            if snapshot.get('missing'):
+                require(snapshot['missing'] is True and snapshot['messages'] == [] and notice is None)
+                db.commit()
+                return {'cursor': cursor, 'events': []}
             row = db.execute('SELECT millis FROM watch_starts WHERE lineage=?', (lineage,)).fetchone()
             if row is None:
                 raise LegacyCursor()
@@ -446,12 +452,16 @@ def reconcile(request, path=None):
 
 
 def pending_status(cursor, path):
+    waiting = re.fullmatch(r'waiting:([a-f0-9]{64}):[0-9]{1,7}:(4:[a-f0-9]{32}:[a-f0-9]{32})', cursor)
+    if waiting:
+        cursor = waiting[2]
     match = CURSOR.fullmatch(cursor)
     require(match is not None and not path.is_symlink())
     db = sqlite3.connect(path.resolve().as_uri() + '?mode=ro', uri=True)
     try:
         db.execute('BEGIN')
-        require(db.execute('SELECT 1 FROM commits WHERE lineage=? AND id=?', match.groups()).fetchone())
+        scope = db.execute('SELECT scope FROM commits WHERE lineage=? AND id=?', match.groups()).fetchone()
+        require(scope and (not waiting or waiting[1] == scope[0]))
         version, = db.execute('PRAGMA user_version').fetchone()
         require(version in (4, 5, 6, 7, 8))
         if version < 6:
@@ -478,7 +488,7 @@ def main():
     os.umask(0o077)
     try:
         if sys.argv[1:] == ['--pending']:
-            print(json.dumps(pending_status(sys.stdin.readline(128).strip(), ledger_path())))
+            print(json.dumps(pending_status(sys.stdin.readline(513).strip(), ledger_path())))
             return 0
         text = sys.stdin.buffer.read(5_000_001)
         require(len(text) <= 5_000_000)

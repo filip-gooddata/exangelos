@@ -21,6 +21,13 @@ LIMIT = 65536
 def project(record, request, label, floor):
     selected = request['selection']
     team, account = selected['workspace'], selected['owner']
+    bound_thread = selected.get('thread')
+    if selected.get('message'):
+        verified = source.optional(source.private_directory() / ('thread-'+request['expectedScope']+'.json'))
+        if not verified:
+            return
+        if bound_thread:
+            bound_thread = verified
     identifier = record.get('id')
     if not isinstance(identifier, str):
         return
@@ -34,7 +41,7 @@ def project(record, request, label, floor):
             or record.get('channel') != channel or record.get('msg') != ts
             or not STAMP.fullmatch(ts) or not floor <= int(ts.replace('.', '')) <= time.time_ns() // 1000
             or record.get('thread_ts') != thread or (thread and (not STAMP.fullmatch(thread) or thread >= ts))
-            or (selected.get('thread') and selected['thread'] != thread)):
+            or (bound_thread and bound_thread != thread)):
         return
     return dict(id=observation.token(bytes.fromhex(request['key']), 'message', team, account, channel, ts),
                 reply=bool(thread), messageTs=ts, conversationLabel=label,

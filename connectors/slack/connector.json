@@ -1,6 +1,6 @@
 {
   "name": "slack",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "entry": {
     "_tag": "Bundle",
     "path": "dist/main.js"
@@ -10,6 +10,7 @@
     "dist/local-app-icon.js",
     "direct/source.py",
     "direct/setup.py",
+    "direct/pin_store.py",
     "direct/state_directory.py",
     "direct/observation.py",
     "direct/scan.py",

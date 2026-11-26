@@ -171,6 +171,78 @@ class SetupTests(unittest.TestCase):
         self.reject(23, TIME)
         self.assertEqual(self.resolve(f'{CHANNEL}:{TIME}', scope='replies')['selection']['thread'], TIME)
 
+    def test_unseen_thread_can_be_pinned_and_observed_without_root(self):
+        channel = 'C9000001'
+        archive = f'https://fixture.slack.com/archives/{channel}/p' + TIME.replace('.', '')
+        first = self.resolve(archive, scope='replies')
+        handle = first['expectedScope']
+        self.assertEqual(self.resolve(f'{channel}:{TIME}', scope='replies')['expectedScope'], handle)
+        self.assertEqual(self.resolve('scope-' + handle), first)
+        request = {k:v for k,v in first.items() if k != 'label'}
+        self.assertTrue(source.acquire(request)['missing'])
+        add_message(self.state, REPLY, TIME, channel)
+        database(self.root, self.state, sequence=30)
+        snapshot = source.acquire(request)
+        self.assertNotIn('missing', snapshot)
+        self.assertEqual([row['messageTs'] for row in snapshot['messages']], [REPLY])
+        self.reject(22, archive.replace('fixture.slack.com', 'elsewhere.slack.com'), scope='replies')
+
+    def test_missing_message_later_resolves_to_its_containing_thread(self):
+        channel = 'C9000001'
+        def snapshot(resolved):
+            return source.acquire({k:v for k,v in resolved.items() if k != 'label'})
+        saved = self.resolve(f'{channel}:{REPLY}', scope='replies')
+        conflict = self.resolve(f'https://fixture.slack.com/archives/{channel}/p'+REPLY.replace('.', '')+
+                                '?thread_ts='+OTHER, scope='replies')
+        self.assertTrue(snapshot(saved)['missing'])
+        add_message(self.state, '1700000002.000001', OTHER, channel)
+        database(self.root, self.state, sequence=20)
+        self.assertTrue(snapshot(conflict)['missing'])
+        add_message(self.state, REPLY, TIME, channel)
+        add_message(self.state, OTHER, TIME, channel)
+        database(self.root, self.state, sequence=30)
+        result = snapshot(saved)
+        self.assertEqual(result['resolvedThread'], TIME)
+        self.assertEqual({row['messageTs'] for row in result['messages']}, {REPLY, OTHER})
+        self.assertTrue(snapshot(conflict)['threadMismatch'])
+        self.assertEqual(self.resolve(f'{channel}:{TIME}', scope='replies')['expectedScope'], saved['expectedScope'])
+        del self.state['messages'][channel][REPLY]
+        database(self.root, self.state, sequence=40)
+        self.assertEqual(snapshot(self.resolve('scope-'+saved['expectedScope']))['resolvedThread'], TIME)
+
+    def test_verified_reply_and_root_aliases_survive_complete_eviction(self):
+        saved = self.resolve(f'{CHANNEL}:{REPLY}', scope='replies')
+        self.state['messages'][CHANNEL].clear()
+        database(self.root, self.state, sequence=30)
+        for ts in (REPLY, TIME):
+            self.assertEqual(self.resolve(f'{CHANNEL}:{ts}', scope='replies'), saved)
+        self.reject(22, f'https://fixture.slack.com/archives/{CHANNEL}/p'+REPLY.replace('.', '')+
+                    '?thread_ts='+OTHER, scope='replies')
+        for record in setup.private_directory().glob('reference-*.json'):
+            record.unlink()
+        self.assertEqual(self.resolve(f'{CHANNEL}:{TIME}', scope='replies'), saved)
+
+    def test_conversation_link_verifies_parent_before_releasing_unrelated_rows(self):
+        ref = '1700000010.000001'
+        link = f'https://fixture.slack.com/archives/{CHANNEL}/p'+ref.replace('.', '')
+        def read(saved):
+            return source.acquire({k:v for k,v in saved.items() if k != 'label'})
+        ordinary = self.resolve(CHANNEL)
+        good = self.resolve(link+'?thread_ts='+TIME, scope='conversation')
+        bad = self.resolve(link+'?thread_ts='+OTHER, scope='conversation')
+        self.assertEqual(read(good)['messages'], [])
+        self.assertTrue(read(bad)['missing'])
+        add_message(self.state, ref, TIME)
+        database(self.root, self.state, sequence=30)
+        self.assertIn(OTHER, {r['messageTs'] for r in read(good)['messages']})
+        self.assertEqual(self.resolve(CHANNEL)['expectedScope'], ordinary['expectedScope'])
+        self.assertTrue(read(bad)['threadMismatch'])
+        self.assertEqual(read(bad)['messages'], [])
+        self.assertEqual(self.resolve(link+'?thread_ts='+TIME, scope='conversation')['expectedScope'], good['expectedScope'])
+        del self.state['messages'][CHANNEL][ref]
+        database(self.root, self.state, sequence=40)
+        self.assertEqual(self.resolve(link+'?thread_ts='+TIME, scope='conversation')['expectedScope'], good['expectedScope'])
+
     def test_filtered_observations_and_ledger_cursor_binding(self):
         def snapshot(subject):
             request = self.resolve(subject)
@@ -234,6 +306,8 @@ class SetupTests(unittest.TestCase):
         self.reject(23, TIME, scope='conversation')
         first = self.resolve(REPLY)
         second = self.resolve(unique)
+        self.assertEqual(self.resolve(f'{CHANNEL}:{REPLY}', scope='replies'), first)
+        self.reject(23, f'{CHANNEL}:1700000009.000009', scope='replies')
         self.assertEqual(first['selection']['owner'], SELECTION[1])
         self.assertEqual(second['selection']['owner'], owner)
         self.assertEqual(second['selection']['workspace'], workspace)
@@ -241,6 +315,46 @@ class SetupTests(unittest.TestCase):
         self.assertEqual(self.resolve('scope-' + second['expectedScope']), second)
         url = f'https://second.slack.com/archives/{CHANNEL}/p' + TIME.replace('.', '')
         self.assertEqual(self.resolve(url, scope='replies'), second)
+
+    def test_volume_upgrade_preserves_both_channel_and_constrained_permalink(self):
+        mid = '1700000020.000001'
+        link = f'https://fixture.slack.com/archives/{CHANNEL}/p'+mid.replace('.', '')+'?thread_ts='+TIME
+        with mock.patch.object(setup.sys, 'platform', 'linux'):
+            channel = self.resolve(CHANNEL)
+            original_reply = self.resolve(f'{CHANNEL}:{REPLY}', scope='replies')
+        del self.state['messages'][CHANNEL][REPLY]
+        database(self.root, self.state, sequence=20)
+        with mock.patch.object(setup.sys, 'platform', 'darwin'), mock.patch.object(source, 'volume_uuid', return_value='b'*32):
+            self.assertEqual(self.resolve(f'{CHANNEL}:{REPLY}', scope='replies')['expectedScope'], original_reply['expectedScope'])
+            guarded = self.resolve(link, scope='conversation')
+            self.assertNotEqual(guarded['expectedScope'], channel['expectedScope'])
+            add_message(self.state, mid, TIME)
+            database(self.root, self.state, sequence=30)
+            read = source.acquire({k:v for k,v in guarded.items() if k != 'label'})
+            self.assertEqual(read['resolvedThread'], TIME)
+            self.assertEqual(self.resolve(CHANNEL)['expectedScope'], channel['expectedScope'])
+            self.assertEqual(self.resolve(link, scope='conversation')['expectedScope'], guarded['expectedScope'])
+
+    def test_migrated_pending_reply_keeps_its_root_alias_after_renumber_and_eviction(self):
+        channel = 'C9000001'
+        with mock.patch.object(setup.sys, 'platform', 'linux'):
+            waiting = self.resolve(f'{channel}:{REPLY}', scope='replies')
+            add_message(self.state, REPLY, TIME, channel)
+            database(self.root, self.state, sequence=25)
+            self.assertEqual(source.acquire({k:v for k,v in waiting.items() if k != 'label'})['resolvedThread'],TIME)
+        with mock.patch.object(setup.sys, 'platform', 'darwin'), mock.patch.object(source, 'volume_uuid', return_value='b'*32):
+            self.resolve('scope-'+waiting['expectedScope'])
+            self.state['messages'][channel].clear()
+            database(self.root, self.state, sequence=30)
+            stat_fd = os.fstat
+            class Renumbered:
+                def __init__(self, fd):
+                    self.info = stat_fd(fd)
+                    self.st_dev = self.info.st_dev + 1
+                def __getattr__(self, name):
+                    return getattr(self.info, name)
+            with mock.patch.object(os, 'fstat', Renumbered):
+                self.assertEqual(self.resolve(f'{channel}:{TIME}', scope='replies')['expectedScope'], waiting['expectedScope'])
 
     def test_restart_after_device_renumbering_preserves_verified_volume_and_cursor(self):
         # Run on POSIX CI with synthetic volume identities and a changed mount device number.

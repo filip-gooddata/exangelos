@@ -19,6 +19,7 @@ export const EventPayload = Schema.Union([
   })
 ])
 const Result = Schema.Struct({
+  replayedVisible: Schema.optionalKey(Schema.Literal(true)),
   refreshCache: Schema.optionalKey(Schema.Literal(true)),
   retryObservation: Schema.optionalKey(Schema.Literal(true)),
   events: Schema.Array(Schema.Struct({ type: EventType, summary: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(2048))), payload: Schema.optionalKey(EventPayload), occurredAt: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 8640000000000000 })), dedupeKey: Schema.String.check(Schema.isMaxLength(512)) }))

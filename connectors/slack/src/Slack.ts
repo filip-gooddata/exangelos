@@ -1,6 +1,7 @@
 import { Clock, Deferred, DateTime, Duration, Effect, Option, Ref, Schema, Stream } from "effect"
 import { localAppIcon } from "../../shared/localAppIcon.ts"
 import { Catalogue, Connector } from "@exangelos/connector-sdk"
+import { observationBudget, observedMillis, resumeWaiting, waitingCursor } from "../../shared/pendingSubject.ts"
 import { EventPayload, reconcile, type EventType } from "./Reconcile.ts"
 import { localSource, notifications, type Source } from "./Source.ts"
 
@@ -13,7 +14,7 @@ const events = {
   "message.edited": declare("message.edited"), "reaction.added": declare("reaction.added"),
   "reaction.removed": declare("reaction.removed")
 }
-const reason = "Slack private configuration or persisted snapshot is unavailable or inconsistent"
+const reason = "Could not read Slack. Check the selected desktop profile and try again."
 const authorize = "Configure Slack with exangelos connector configure slack subscriptionAccess=persisted-cache, then subscribe with a conversation ID or message reference"
 const retired = "This Slack selection is retired. Configure subscriptionAccess=persisted-cache and create a new subscription with a conversation ID or message reference"
 const pin = /^scope-[a-f0-9]{64}$/
@@ -87,61 +88,81 @@ export const make = <R>(source: Source<R>) => Connector.make({
         )
         return { subject: `slack:${request.expectedScope}`, label, parameters: { selection: `scope-${request.expectedScope}` } }
       }),
-      watch: ({ parameters, cursor, eventTypes }) => Stream.unwrap(Effect.gen(function*() {
+      watch: ({ parameters, cursor, eventTypes, createdAt }) => Stream.unwrap(Effect.gen(function*() {
         const configuration = yield* Ref.get(configured)
         if (!configuration) return yield* new Connector.SourceFailed({ reason: authorize })
         if (!pin.test(parameters.selection) || parameters.scope !== undefined) return yield* new Connector.SourceFailed({ reason: retired })
-        const { request, label } = yield* resolve(configuration, parameters.selection, undefined, configuration.notificationLog).pipe(
+        const { request, label } = yield* resolve(configuration, parameters.selection, undefined, true).pipe(
           Effect.mapError((error) => new Connector.SourceFailed({ reason: error.reason, category: error._tag === "SourceUnavailable" ? error.category ?? "unavailable" : "scope-changed" }))
         )
         const active = Effect.gen(function*() {
           if ((yield* Ref.get(configured)) !== configuration) return yield* new Connector.SourceFailed({ reason: authorize })
         })
-        const startedAt = cursor === undefined ? yield* Clock.currentTimeMillis : undefined
+        const waiting = resumeWaiting(request.expectedScope, cursor)
+        if (cursor?.startsWith("waiting:") && !waiting) return yield* new Connector.SourceFailed({ reason: "This watch belongs to a different Slack selection or cannot be resumed" })
+        const startedAt = createdAt ? DateTime.toEpochMillis(createdAt) : yield* Clock.currentTimeMillis
         const read = Effect.gen(function*() {
           yield* active
           const snapshot = yield* source.read(configuration.includePreview ? { ...request, includePreview: true } : request)
           if (snapshot.scope !== request.expectedScope) return yield* new Connector.SourceFailed({ reason, category: "scope-changed" })
           return snapshot
         })
+        const progress = yield* Ref.make({ cursor: waiting?.ledger ?? cursor, first: true, acquiring: !!waiting || cursor === undefined,
+          elapsed: waiting?.elapsed ?? 0, lastRead: undefined as number | undefined })
         const tick = { kind: "cache" } as const
         const cache = Stream.make(tick).pipe(Stream.concat(
-          Stream.fromEffectRepeat(Effect.sleep(configuration.interval).pipe(Effect.as(tick)))
+          Stream.fromEffectRepeat(Effect.suspend(() => Ref.get(progress).pipe(Effect.flatMap((state) => Effect.sleep(state.acquiring ? Duration.min(configuration.interval, Duration.seconds(30)) : configuration.interval)), Effect.as(tick))))
         ))
         const selectedTypes: ReadonlyArray<string> = eventTypes
         const accepts = (type: string) => !selectedTypes.length || selectedTypes.includes(type)
         const arrivals = ["message.new", "thread.reply"].filter(accepts)
         const useLog = configuration.notificationLog && (accepts("thread.reply") || (!request.selection.thread && accepts("message.new")))
+        const emptyCheckpoint = reconcile(undefined, {
+          scope: request.expectedScope, complete: true, generation: "0", snapshot: "0".repeat(64), messages: []
+        }, startedAt)
         if (useLog && cursor === undefined) {
           // The daemon reopens a finished Watch with its durably ingested cursor.
-          const checkpoint = yield* reconcile(undefined, {
-            scope: request.expectedScope, complete: true, generation: "0", snapshot: "0".repeat(64), messages: []
-          }, startedAt).pipe(Effect.mapError(() => new Connector.SourceFailed({ reason, category: "invalid-data" })))
-          return Stream.make(Connector.cursor(checkpoint.cursor))
+          const checkpoint = yield* emptyCheckpoint.pipe(Effect.mapError(() => new Connector.SourceFailed({ reason, category: "invalid-data" })))
+          return Stream.make(Connector.cursor(waitingCursor(request.expectedScope, 0, checkpoint.cursor)))
         }
         const updates = useLog ? Stream.merge(cache, notifications(request, label).pipe(
           Stream.filter((notification) => accepts(notification.reply ? "thread.reply" : "message.new")),
           Stream.map((notification) => ({ kind: "notice", notification } as const))
         ), { haltStrategy: "left" }) : cache
-        const progress = yield* Ref.make({ cursor, first: true })
         return updates.pipe(Stream.flatMap((update) => Stream.paginate(false, (refresh) => Effect.gen(function*() {
           const state = yield* Ref.get(progress)
           yield* active
-          const result = refresh || update.kind === "cache" ? yield* reconcile(state.cursor, yield* read, startedAt, undefined, configuration.includePreview, arrivals)
-            : yield* reconcile(state.cursor, { scope: request.expectedScope }, undefined, update.notification, configuration.includePreview)
+          if (state.acquiring && update.kind === "notice") return [[], Option.none()] as const
+          const snapshot = refresh || update.kind === "cache" ? yield* read : undefined
+          if (snapshot?.threadMismatch) return [[Connector.end("This message belongs to a different Slack thread. Please check the thread link.")], Option.none()] as const
+          const now = yield* Clock.currentTimeMillis
+          let input = state.cursor
+          if (!input && (snapshot?.missing || createdAt)) input = (yield* emptyCheckpoint).cursor
+          const result = snapshot ? yield* reconcile(input, snapshot, startedAt, undefined, configuration.includePreview, arrivals)
+            : yield* reconcile(input, { scope: request.expectedScope }, undefined, update.kind === "notice" ? update.notification : undefined, configuration.includePreview)
+          if (state.acquiring && snapshot?.missing && !result.replayedVisible) {
+            yield* active
+            const elapsed = observedMillis(state.elapsed, state.lastRead, now, Math.min(Duration.toMillis(configuration.interval), 30000))
+            const subject = request.selection.thread ? "thread" : "conversation"
+            if (elapsed >= observationBudget) return [[Connector.end(`Couldn't find this ${subject}. Please check the ${subject} ID or link.`)], Option.none()] as const
+            const next = waitingCursor(request.expectedScope, elapsed, result.cursor)
+            yield* Ref.set(progress, { cursor: result.cursor, first: false, acquiring: true, elapsed, lastRead: now })
+            return [[Connector.pending(`Waiting for this ${subject} to appear.`, next)], Option.none()] as const
+          }
           yield* active
           const items = result.events.map((event, index) => events[event.type].item({
             occurredAt: DateTime.makeUnsafe(event.occurredAt), summary: event.summary ?? "Selected Slack conversation changed in a persisted snapshot",
             payload: event.payload ?? { count: 1 }, dedupeKey: event.dedupeKey,
             ...(index === result.events.length - 1 ? { cursor: result.cursor } : {})
           }))
-          if (items.length === 0 && (state.first || state.cursor !== result.cursor)) items.push(Connector.cursor(result.cursor))
-          yield* Ref.set(progress, { cursor: result.cursor, first: false })
+          if (!state.cursor && input && items.length) items.unshift(Connector.cursor(input))
+          if (items.length === 0 && (state.acquiring || state.first || state.cursor !== result.cursor)) items.push(Connector.cursor(result.cursor))
+          yield* Ref.set(progress, { ...state, cursor: result.cursor, first: false, acquiring: false })
           return [items, result.refreshCache || result.retryObservation ? Option.some(refresh || !!result.refreshCache) : Option.none()] as const
         }))),
           Stream.interruptWhen(Deferred.await(configuration.revoked).pipe(Effect.andThen(Effect.fail(new Connector.SourceFailed({ reason: authorize }))))),
           Stream.catchTag("LegacyCursor", () => Stream.make(Connector.end(
-            "This Slack cursor predates message freshness tracking. Create a new subscription for the same selection to establish a baseline."
+            "This Slack watch uses an older format. Create a new subscription with the original ID or link."
           ))),
           Stream.mapError((error) => error._tag === "SourceFailed" ? error : new Connector.SourceFailed({
             reason, category: error._tag === "SourceUnavailable" ? error.category ?? "unavailable" : "invalid-data"
