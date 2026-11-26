@@ -1,0 +1,21 @@
+connectors/teams/runtime/test_portable.py
+  s_15df9727f30113::t_4cf30941da1eb6 16,204-231
+connectors/teams/validation/current_store.py
+  s_15df9727f30113::t_35654064ff41d8 381,386
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f718d3df4d42172435d720767a4dd847919c4f5c",
+  "prompts": {},
+  "sessions": {
+    "s_15df9727f30113": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "3a34e000-e2ab-47db-af22-df1377ef79f6",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
