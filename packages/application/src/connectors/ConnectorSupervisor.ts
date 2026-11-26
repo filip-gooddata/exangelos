@@ -1,5 +1,6 @@
 import { Cause, Context, DateTime, Deferred, Duration, Effect, Fiber, FiberMap, Layer, Option, Redacted, Ref, Semaphore, Stream } from "effect"
 import { Catalogue, Ids, Connector, ConnectorRules, Refusal, Settings } from "@exangelos/domain"
+import type { Event } from "@exangelos/domain"
 import { AlertSink } from "../ports/AlertSink.ts"
 import { ConnectorDirectory } from "../ports/ConnectorDirectory.ts"
 import { ConnectorRepository, type ConnectorChange } from "../ports/ConnectorRepository.ts"
@@ -339,6 +340,16 @@ export const layerConnectorSupervisor: Layer.Layer<
       const configured = yield* generation(name)
       let failures = 0
       let firstItemOfAttempt = false
+      let lastReason: { readonly raw: string; readonly reason: string } | undefined
+      /** A Pending or End item with its reason scrubbed and bounded like a failure's; a repeat reuses the last. */
+      const scrubbedItem = (item: Event.WatchItem): Effect.Effect<Event.WatchItem> => {
+        if (item._tag !== "Pending" && item._tag !== "End") return Effect.succeed(item)
+        if (lastReason?.raw === item.reason) return Effect.succeed({ ...item, reason: lastReason.reason })
+        return Effect.map(observationReason(name, process, item.reason), (reason) => {
+          lastReason = { raw: item.reason, reason }
+          return { ...item, reason }
+        })
+      }
       const recover = Effect.suspend(() => {
         observationFailures.delete(id)
         readSince.add(id)
@@ -360,13 +371,15 @@ export const layerConnectorSupervisor: Layer.Layer<
           parameters: subscription.parameters,
           eventTypes: subscription.eventTypes ?? process.catalogue.eventTypes.map((spec) => spec.type),
           ...(subscription.cursor === undefined ? {} : { cursor: subscription.cursor }),
-          wakeWindow
+          wakeWindow,
+          acceptsPending: true,
+          createdAt: subscription.createdAt
         }).pipe(
           Stream.runForEachWhile((item) =>
             // Interrupting the stream waits until an item is fully ingested.
             Effect.map(
               Effect.uninterruptible(Effect.gen(function*() {
-                const verdict = yield* intake.ingest(id, item)
+                const verdict = yield* intake.ingest(id, yield* scrubbedItem(item))
                 failures = 0
                 yield* recover
                 return verdict

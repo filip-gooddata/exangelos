@@ -1,7 +1,7 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
 import { describe, expect, it } from "@effect/vitest"
-import { Duration, Effect } from "effect"
+import { DateTime, Duration, Effect } from "effect"
 import { digestDirectory } from "@exangelos/connector-directory"
 import { Ids } from "@exangelos/domain"
 import { layerCommand } from "@exangelos/wake-targets"
@@ -86,6 +86,47 @@ describe("Daemon", () => {
       expect(shown.subscription.id).toBe(subscription.id)
       expect(shown.events).toEqual(before)
       expect(yield* client.Events({ id: subscription.id })).toEqual(before)
+    }).pipe(Effect.scoped), 60_000)
+
+  it.live("keeps a watch waiting for its subject across a restart, without events or wakes, and its creation time", () =>
+    Effect.gen(function*() {
+      const dir = yield* home
+      const wakes = Path.join(dir, "wakes.log")
+      const calls = Path.join(dir, "watch-calls.log")
+      const first = yield* start(dir, { wakeTarget: layerCommand(wakeLog(wakes)) })
+      yield* quickWakes(first.client)
+      const probe = yield* bundledConnector(
+        Path.join(import.meta.dirname, "fixtures/pendingProbe.ts"),
+        Path.join(dir, "sources"),
+        "pending-probe"
+      )
+      const imported = yield* install(first.client, probe, {})
+      const subscription = yield* first.client.Subscribe({
+        connector: imported.name,
+        parameters: { log: calls },
+        intent: "Wait for a subject to appear",
+        target: { _tag: "Session", session },
+        maxEvents: 1,
+        similarOk: []
+      })
+      const waiting = yield* eventually(first.client.Show({ id: subscription.id }).pipe(
+        Effect.filterOrFail(({ subscription }) => subscription.waiting !== undefined)
+      ))
+      expect(waiting.subscription).toMatchObject({ waiting: "Not in the local cache yet", cursor: "c1", state: { _tag: "Active" } })
+      yield* first.stop
+
+      const { client } = yield* start(dir, { wakeTarget: layerCommand(wakeLog(wakes)) })
+      const reopened = yield* eventually(Effect.tryPromise(async () => {
+        const lines = (await Fs.readFile(calls, "utf8")).trim().split("\n").map((line) => JSON.parse(line))
+        if (lines.length < 2) throw new Error("not reopened yet")
+        return lines
+      }))
+      const created = DateTime.formatIso(subscription.createdAt)
+      expect(reopened).toEqual([{ cursor: null, createdAt: created }, { cursor: "c1", createdAt: created }])
+      const shown = yield* client.Show({ id: subscription.id })
+      expect(shown.subscription).toMatchObject({ waiting: "Not in the local cache yet", state: { _tag: "Active" }, lastNumber: 0 })
+      expect(shown.events).toEqual([])
+      expect(yield* Effect.promise(() => Fs.access(wakes).then(() => true, () => false))).toBe(false)
     }).pipe(Effect.scoped), 60_000)
 
   it.live("reopens an open watch with the wake window a settings change sets", () =>

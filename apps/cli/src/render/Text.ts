@@ -64,13 +64,19 @@ const observationReasons: Record<Connector.ObservationCategory, string> = {
 const observationText = (observation: NonNullable<Subscription.Listed["observation"]>): string =>
   `failing since ${time(observation.since)}: ${observationReasons[observation.category]}`
 
+/** Why an active watch waits for its subject to appear; a failure in the meantime speaks instead. */
+const waiting = (subscription: Subscription.Listed | Subscription.Shown): string | undefined =>
+  subscription.state._tag === "Active" && subscription.observation === undefined ? subscription.waiting : undefined
+
 const subscriptionRow = (subscription: Subscription.Listed): Array<string> => [
   subscription.id,
   subscription.connector,
   subscription.subject,
-  subscription.observation === undefined
-    ? stateText(subscription.state)
-    : `${stateText(subscription.state)}, failing (${subscription.observation.category})`,
+  subscription.observation !== undefined
+    ? `${stateText(subscription.state)}, failing (${subscription.observation.category})`
+    : waiting(subscription) !== undefined
+    ? `${stateText(subscription.state)}, waiting`
+    : stateText(subscription.state),
   `${pending(subscription)} pending`
 ]
 
@@ -84,6 +90,7 @@ export const subscription = (subscription: Subscription.Listed | Subscription.Sh
     ["Event types", subscription.eventTypes?.join(", ") ?? "all"],
     ["State", `${stateText(subscription.state)} since ${time(subscription.stateSince)}`],
     ["Observation", subscription.observation === undefined ? undefined : observationText(subscription.observation)],
+    ["Waiting", waiting(subscription)],
     [
       "Failure",
       subscription.observation !== undefined && "reason" in subscription.observation ? subscription.observation.reason : undefined

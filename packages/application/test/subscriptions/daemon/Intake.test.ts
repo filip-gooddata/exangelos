@@ -96,6 +96,30 @@ describe("SubscriptionIntake", () => {
       }
     }).pipe(Effect.provide(layer)))
 
+  it.effect("waits on a Pending item without an event or wake, once, until a Cursor or Event clears it", () =>
+    Effect.gen(function*() {
+      const intake = yield* SubscriptionIntake
+      const once = yield* seed({ maxEvents: 1 })
+      const waiting = { _tag: "Pending", reason: "Not in the local cache yet", cursor: "c1" } as const
+
+      expect(yield* intake.ingest(once.id, waiting)).toBe("continue")
+      const stored = yield* reload(once)
+      expect(stored).toMatchObject({ state: { _tag: "Active" }, cursor: "c1", waiting: "Not in the local cache yet", lastNumber: 0 })
+      expect(yield* intake.ingest(once.id, waiting)).toBe("continue")
+      expect(yield* reload(once)).toBe(stored)
+      yield* TestClock.adjust("5 seconds")
+      yield* deliverDue
+      expect(yield* eventsOf(once)).toEqual([])
+      expect(yield* wakesOf(once)).toEqual([])
+
+      yield* intake.ingest(once.id, { _tag: "Cursor", cursor: "c1" })
+      expect((yield* reload(once)).waiting).toBeUndefined()
+      yield* intake.ingest(once.id, waiting)
+      expect(yield* intake.ingest(once.id, { _tag: "Event", event: reported("a") })).toBe("stop")
+      expect(yield* reload(once)).toMatchObject({ state: { _tag: "Ended" }, cursor: "c1", lastNumber: 1 })
+      expect((yield* reload(once)).waiting).toBeUndefined()
+    }).pipe(Effect.provide(layer)))
+
   it.effect("sends one suspended wake once the connector has been unavailable an hour, and drops it on return", () =>
     Effect.gen(function*() {
       const intake = yield* SubscriptionIntake

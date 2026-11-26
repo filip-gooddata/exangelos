@@ -52,7 +52,14 @@ export class Watch extends Rpc.make("Watch", {
     eventTypes: Schema.Array(Ids.EventType),
     cursor: Schema.optionalKey(Schema.String),
     /** The daemon's wake window. Daemons before this field send none. */
-    wakeWindow: Schema.optionalKey(Schema.DurationFromMillis)
+    wakeWindow: Schema.optionalKey(Schema.DurationFromMillis),
+    /**
+     * The daemon reads Pending items. Daemons before this field send none and would fail the stream on an
+     * item they cannot decode, so the SDK turns Pending into a Cursor for them.
+     */
+    acceptsPending: Schema.optionalKey(Schema.Boolean),
+    /** When the subscription was created, the same on every Watch call. Daemons before this field send none. */
+    createdAt: Schema.optionalKey(Schema.DateTimeUtc)
   },
   success: Event.WatchItem,
   error: WatchError,

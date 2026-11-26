@@ -148,7 +148,9 @@ export const stateSentence = (
   switch (state._tag) {
     case "Active":
       return suspended === undefined
-        ? `Active. ${expires}`
+        ? subscription.waiting === undefined
+          ? `Active. ${expires}`
+          : `Active. Waiting: ${subscription.waiting.replace(/\.+$/, "")}. ${expires}`
         : `Active and suspended: ${suspended.name} is unavailable${
           suspended.unavailableSince === undefined ? "" : ` since ${ago(now, suspended.unavailableSince)}`
         }. It continues by itself when the connector returns. ${expires}`

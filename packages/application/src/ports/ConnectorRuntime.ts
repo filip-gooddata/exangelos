@@ -32,7 +32,11 @@ export const WatchRequest = Schema.Struct({
   parameters: Catalogue.Parameters,
   eventTypes: Schema.Array(Ids.EventType),
   cursor: Schema.optionalKey(Schema.String),
-  wakeWindow: Schema.DurationFromMillis
+  wakeWindow: Schema.DurationFromMillis,
+  /** Tells the connector this daemon reads Pending items. */
+  acceptsPending: Schema.optionalKey(Schema.Boolean),
+  /** When the subscription was created. */
+  createdAt: Schema.optionalKey(Schema.DateTimeUtc)
 })
 export type WatchRequest = typeof WatchRequest.Type
 

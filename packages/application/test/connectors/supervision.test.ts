@@ -164,6 +164,34 @@ describe("connector supervision", () => {
       expect(yield* access.reading(one)).toBe(false)
     })))
 
+  it.effect("hands on a Pending item's reason bounded, as a recovery from failing, and an End's likewise", () =>
+    withConnectors(Effect.gen(function*() {
+      yield* running
+      const runtime = yield* ConnectorRuntimeFake
+      const intake = yield* SubscriptionIntakeFake
+      const access = yield* ConnectorAccess.ConnectorAccess
+      const one = yield* activeSubscription("acme", "sub_one")
+      yield* access.watch(one)
+      yield* settle
+      expect((yield* runtime.watches(acme))[0]).toMatchObject({ acceptsPending: true })
+      expect((yield* runtime.watches(acme))[0]?.createdAt).toBeDefined()
+
+      yield* runtime.fail(acme, new SourceFailed({ connector: acme, category: "unavailable", reason: "down" }))
+      yield* settle
+      yield* TestClock.adjust("1 second")
+      yield* settle
+      yield* runtime.emit(acme, { _tag: "Pending", reason: "w".repeat(500), cursor: "c1" })
+      yield* runtime.emit(acme, { _tag: "End", reason: "e".repeat(500) })
+      yield* settle
+
+      const [pending, end] = yield* intake.ingested(one)
+      expect(pending).toMatchObject({ _tag: "Pending", cursor: "c1" })
+      expect(pending?._tag === "Pending" && pending.reason).toHaveLength(300)
+      expect(end?._tag === "End" && end.reason).toHaveLength(300)
+      expect((yield* intake.observations).map((report) => report.failure === undefined)).toEqual([false, true])
+      expect(yield* access.observation(one)).toEqual(Option.none())
+    })))
+
   it.effect("restarts a crashed connector and reopens its streams", () =>
     withConnectors(Effect.gen(function*() {
       yield* running

@@ -60,7 +60,7 @@ const admitEvent = (
     const duplicate = Option.isSome(yield* events.findByDedupeKey(before.id, reported.dedupeKey))
     const id = yield* NewId.eventId
     const now = yield* DateTime.now
-    const admission = Intake.admit({ subscription: before, reported, cursor, duplicate, id, now })
+    const admission = Intake.admit({ subscription: settled(before), reported, cursor, duplicate, id, now })
     if (Option.isNone(admission.event)) {
       yield* Effect.logDebug(duplicate ? "event dropped as duplicate" : "event not admitted").pipe(
         Effect.annotateLogs({ type: reported.type, payload: { dedupeKey: reported.dedupeKey } })
@@ -90,6 +90,13 @@ const admitEvent = (
 
 const unchanged = (subscription: Subscription.Subscription) => ({ subscription, stored: Option.none<Event.Event>() })
 
+/** The subscription without its waiting reason, which any item but Pending clears; itself when it has none. */
+const settled = (subscription: Subscription.Subscription): Subscription.Subscription => {
+  if (subscription.waiting === undefined) return subscription
+  const { waiting: _, ...rest } = subscription
+  return rest
+}
+
 const apply = (before: Subscription.Subscription, item: Event.WatchItem) =>
   Effect.gen(function*() {
     if (before.state._tag !== "Active") {
@@ -100,15 +107,23 @@ const apply = (before: Subscription.Subscription, item: Event.WatchItem) =>
       case "Event":
         return yield* admitEvent(before, item.event, Option.fromUndefinedOr(item.cursor))
       case "Cursor": {
-        if (item.cursor === before.cursor) return unchanged(before)
-        const subscription = { ...before, cursor: item.cursor }
+        if (item.cursor === before.cursor && before.waiting === undefined) return unchanged(before)
+        const subscription = { ...settled(before), cursor: item.cursor }
         yield* commit(Option.some(before), { subscription, wake: Option.none() })
-        yield* Effect.logDebug("cursor advanced")
+        yield* Effect.logDebug(before.waiting === undefined ? "cursor advanced" : "subject appeared")
+        return unchanged(subscription)
+      }
+      case "Pending": {
+        if (item.cursor === before.cursor && item.reason === before.waiting) return unchanged(before)
+        const subscription = { ...before, cursor: item.cursor, waiting: item.reason }
+        yield* commit(Option.some(before), { subscription, wake: Option.none() })
+        // The reason is the connector's own text, so it stays out of the log like a failure's.
+        if (before.waiting === undefined) yield* Effect.logInfo("watch waiting for its subject")
         return unchanged(subscription)
       }
       case "End": {
         const now = yield* DateTime.now
-        const ended = Lifecycle.end(before, { _tag: "Connector", reason: item.reason }, now)
+        const ended = Lifecycle.end(settled(before), { _tag: "Connector", reason: item.reason }, now)
         if (Result.isFailure(ended)) {
           yield* Effect.logDebug("end ignored")
           return unchanged(before)

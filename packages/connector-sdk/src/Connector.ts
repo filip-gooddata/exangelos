@@ -1,6 +1,6 @@
 import * as Fs from "node:fs/promises"
 import * as Path from "node:path"
-import { Data, Duration, Effect, Layer, Logger, Schema, Stream } from "effect"
+import { Data, type DateTime, Duration, Effect, Layer, Logger, Schema, Stream } from "effect"
 import { Base64 } from "effect/encoding"
 import { type Rpc, type RpcGroup, RpcSerialization, RpcServer } from "effect/rpc"
 import { ConnectorProtocol } from "@exangelos/contracts"
@@ -21,6 +21,11 @@ export interface WatchRequest<P> {
   readonly cursor: string | undefined
   /** The daemon's wake window, or its 5 s default when the daemon sends none. */
   readonly wakeWindow: Duration.Duration
+  /**
+   * When the subscription was created, the same on every call for it, including after a daemon restart.
+   * Absent from daemons before this field.
+   */
+  readonly createdAt?: DateTime.Utc
 }
 
 /** A logo the connector serves: PNG or SVG bytes. The daemon refuses one over 32 KiB or whose bytes are not its type. */
@@ -102,6 +107,17 @@ export const end = (reason: string): Event.WatchItem => ({ _tag: "End", reason }
 
 export const cursor = (cursor: string): Event.WatchItem => ({ _tag: "Cursor", cursor })
 
+/**
+ * Reports that the subject is not readable yet and the stream waits for it, such as a conversation not
+ * yet in a local cache. The daemon stores the cursor and shows the reason ("Waiting: …") without an event,
+ * a wake or a failure. Repeating the same item changes nothing; a later `cursor` or event clears it.
+ */
+export const pending = (reason: string, cursor: string): Event.WatchItem => ({ _tag: "Pending", reason, cursor })
+
+/** For a daemon that cannot read Pending, the cursor it carries. */
+const forDaemon = (acceptsPending: boolean) => (item: Event.WatchItem): Event.WatchItem =>
+  item._tag === "Pending" && !acceptsPending ? cursor(item.cursor) : item
+
 const missingRequired = (fields: ReadonlyArray<ConfigurationField>, values: Wire.ConfigurationValues) =>
   fields.find((field) => field.required && (values[field.key] ?? "") === "")
 
@@ -178,7 +194,7 @@ export const make = <Params extends Parameters<any>, R = never, E = never, RB = 
               Effect.as(Effect.logWarning("Serving no icon", cause), { _tag: "None" } as const)
             )
           ),
-        Watch: ({ parameters, eventTypes, cursor, wakeWindow }) =>
+        Watch: ({ parameters, eventTypes, cursor, wakeWindow, acceptsPending, createdAt }) =>
           decode(parameters).pipe(
             Effect.mapError((error) => new SourceFailed({ reason: `Invalid parameters: ${error.message}` })),
             Effect.map((decoded) =>
@@ -186,10 +202,12 @@ export const make = <Params extends Parameters<any>, R = never, E = never, RB = 
                 parameters: decoded,
                 eventTypes,
                 cursor,
-                wakeWindow: wakeWindow ?? Limits.defaults.wakeWindow
+                wakeWindow: wakeWindow ?? Limits.defaults.wakeWindow,
+                ...(createdAt === undefined ? {} : { createdAt })
               }).pipe(
                 Stream.map(selectTypes(eventTypes)),
                 Stream.filter((item) => item !== undefined),
+                Stream.map(forDaemon(acceptsPending === true)),
                 Stream.takeUntil((item) => item._tag === "End")
               )
             ),
