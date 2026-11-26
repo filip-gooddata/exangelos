@@ -1,5 +1,5 @@
 """Decode allowlisted Teams manager stores. All inputs, including names, are untrusted."""
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 import hashlib
 import hmac
 from html.parser import HTMLParser
@@ -180,9 +180,16 @@ def messages(records, chat, root_filter=None, lookup=None):
                 continue
         entries = chain.get('messageMap')
         check(type(entries) is dict and entries)
+        valid_identity = False
         for mid, node in entries.items():
             identity = mapped_identity(mid, node, chat)
-            if identity is None or (lookup and identity != lookup):
+            if identity is None:
+                wanted = lookup or root_filter
+                if wanted and (mid == wanted or (type(node) is dict and node.get('id') == wanted)):
+                    raise Refusal(22)
+                continue
+            valid_identity = True
+            if lookup and identity != lookup:
                 continue
             explicit = node.get('parentMessageId')
             if explicit not in (None, ''):
@@ -190,15 +197,18 @@ def messages(records, chat, root_filter=None, lookup=None):
             parent = None
             if is_channel(chat):
                 check(explicit or root, 28)
-                check(not explicit or not root or explicit == root)
+                check(not explicit or not root or explicit == root, 36 if lookup == identity else 21)
                 parent = explicit or root
                 if parent == identity:
                     parent = None
             if root_filter and (parent or identity) != root_filter:
                 continue
+            if lookup == identity and identity in rows:
+                check(rows[identity][0] == parent, 36)
             check(identity not in rows or rows[identity] == (parent, node))
             rows[identity] = parent, node
             check(len(rows) <= 500)
+        check(valid_identity, 22)
     return rows
 
 
@@ -311,7 +321,7 @@ def original_time(value):
     if not ser._timestamp(value):
         return None
     if isinstance(value, str):
-        return int(datetime.fromisoformat(value.replace('Z','+00:00')).timestamp() * 1000)
+        return (datetime.fromisoformat(value.replace('Z','+00:00')) - datetime(1970, 1, 1, tzinfo=timezone.utc)) // timedelta(milliseconds=1)
     if isinstance(value, tuple):
         value = value[1]
     return int(value)
@@ -341,7 +351,7 @@ def conversation_metadata(tables, partition, chat):
             group = row.get('groupId') or thread.get('groupId') or row.get('teamId')
             metadata.append((name, group.lower() if type(group) is str and re.fullmatch(GUID,group) else None))
     check(len(set(metadata)) <= 1, 23)
-    return metadata[0] if metadata else (None, None)
+    return (*metadata[0], True) if metadata else (None, None, False)
 
 
 def snapshot_rows(key, pin, rows, name, group, consent):

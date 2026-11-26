@@ -1,6 +1,7 @@
 import { Clock, DateTime, Duration, Effect, Option, Ref, Schema, Stream } from "effect"
 import { localAppIcon } from "../../shared/localAppIcon.ts"
 import { Catalogue, Connector } from "@exangelos/connector-sdk"
+import { observationBudget, observedMillis, resumeWaiting, waitingCursor } from "../../shared/pendingSubject.ts"
 import { EventPayload, reconcile, type EventType } from "./Reconcile.ts"
 import { localSource, type Source } from "./Source.ts"
 
@@ -52,7 +53,7 @@ export const make = <R>(source: Source<R>) => Connector.make({
         }
         const cachePath = values.cachePath
         if (cachePath && (!cachePath.startsWith("/") || cachePath.length > 4096 || cachePath.includes("\0"))) {
-          return yield* new Connector.ConfigurationRejected({ reason: "Use an absolute Teams IndexedDB directory for cachePath" })
+          return yield* new Connector.ConfigurationRejected({ reason: "Choose an absolute path to the Teams data folder for cachePath" })
         }
         yield* Ref.set(configured, { includeMessagePreview: values.messagePreviews === "enabled", ...(account && { account }), ...(cachePath && { cachePath }) })
       }),
@@ -71,33 +72,54 @@ export const make = <R>(source: Source<R>) => Connector.make({
         if ((yield* Ref.get(configured)) !== config) return yield* new Connector.ParametersInvalid({ reason: authorize })
         return { subject: `teams:${resolved.scope}`, label: resolved.label, parameters: { selection: saved } }
       }),
-      watch: ({ parameters, cursor, wakeWindow }) => Stream.unwrap(Effect.gen(function*() {
+      watch: ({ parameters, cursor, wakeWindow, createdAt }) => Stream.unwrap(Effect.gen(function*() {
         const config = yield* Ref.get(configured)
         if (!config) return yield* new Connector.SourceFailed({ reason: authorize })
         if (!pin.test(parameters.selection) || parameters.scope !== undefined) return yield* new Connector.SourceFailed({ reason: retired })
         const scope = parameters.selection.slice(6)
         const delay = Duration.max(Duration.seconds(1), Duration.min(Duration.seconds(5), wakeWindow))
-        return Stream.paginate({ cursor, first: true }, (state) => Effect.gen(function*() {
+        const waiting = resumeWaiting(scope, cursor)
+        if (cursor?.startsWith("waiting:") && !waiting) return yield* new Connector.SourceFailed({ reason: "This watch belongs to a different Teams selection or cannot be resumed" })
+        const startedAt = createdAt ? DateTime.toEpochMillis(createdAt) : yield* Clock.currentTimeMillis
+        return Stream.paginate({ cursor: waiting?.ledger ?? cursor, first: true, acquiring: !!waiting || cursor === undefined,
+          elapsed: waiting?.elapsed ?? 0, lastRead: undefined as number | undefined }, (state) => Effect.gen(function*() {
           if (!state.first) yield* Effect.sleep(delay)
           if ((yield* Ref.get(configured)) !== config) return yield* new Connector.SourceFailed({ reason: authorize })
-          const startedAt = state.cursor === undefined ? yield* Clock.currentTimeMillis : undefined
           const snapshot = yield* source.read({ scope, ...config },
             Ref.get(configured).pipe(Effect.map(current => current === config)))
           if (snapshot.scope !== scope || snapshot.includeMessagePreview !== config.includeMessagePreview ||
             (yield* Ref.get(configured)) !== config) return yield* new Connector.SourceFailed({ reason: "Teams selection or consent changed" })
-          const result = yield* reconcile(scope, state.cursor, snapshot, startedAt).pipe(
+          if (snapshot.threadMismatch) return [[Connector.end("Could not identify one Teams thread for this message. Please check the thread link.")], Option.none()] as const
+          if (snapshot.groupMismatch) return [[Connector.end("This link points to a different Teams group. Please check the group and channel link.")], Option.none()] as const
+          let input = state.cursor
+          if (!input && createdAt && !snapshot.missing) {
+            const baseline = yield* reconcile(scope, undefined, { ...snapshot, messages: [] }, startedAt)
+            input = baseline.cursor
+          }
+          const result = yield* reconcile(scope, input, snapshot, startedAt).pipe(
             Effect.mapError(() => new Connector.SourceFailed({
-              reason: "Unable to reconcile the Teams snapshot and cursor. Check private state, account and preview policy. A retired cursor or changed policy requires a new subscription"
+              reason: "Could not resume this Teams watch. Check the selected account and preview setting, then try again."
             }))
           )
           if ((yield* Ref.get(configured)) !== config) return yield* new Connector.SourceFailed({ reason: authorize })
+          if (snapshot.missing && (state.acquiring || snapshot.awaitingGroup) && !result.replayedVisible) {
+            const now = yield* Clock.currentTimeMillis
+            const elapsed = observedMillis(state.elapsed, state.lastRead, now, Duration.toMillis(delay))
+            const subject = snapshot.missing
+            if (elapsed >= observationBudget) return [[Connector.end(`Couldn't find this ${subject}. Please check the ${subject} ID or link.`)], Option.none()] as const
+            const next = waitingCursor(scope, elapsed, result.cursor)
+            return [[Connector.pending(`Waiting for this ${subject} to appear.`, next)], Option.some({
+              cursor: result.cursor, first: false, acquiring: true, elapsed, lastRead: now
+            })] as const
+          }
           const items = result.events.map((event, i) => events[event.type].item({
             occurredAt: DateTime.makeUnsafe(event.occurredAt), summary: event.summary,
             payload: event.payload, dedupeKey: event.dedupeKey,
             ...(i === result.events.length - 1 ? { cursor: result.cursor } : {})
           }))
-          if (items.length === 0 && (state.first || state.cursor !== result.cursor)) items.push(Connector.cursor(result.cursor))
-          return [items, Option.some({ cursor: result.cursor as string | undefined, first: false })] as const
+          if (!state.cursor && input && items.length) items.unshift(Connector.cursor(input))
+          if (items.length === 0 && (state.acquiring || state.first || state.cursor !== result.cursor)) items.push(Connector.cursor(result.cursor))
+          return [items, Option.some({ ...state, cursor: result.cursor, first: false, acquiring: false })] as const
         }).pipe(Effect.mapError((error) => new Connector.SourceFailed({ reason: error.reason }))))
       }))
     }

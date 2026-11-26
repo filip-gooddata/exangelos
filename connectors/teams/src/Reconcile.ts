@@ -19,7 +19,9 @@ const fields = { ...context, id: Token, body: Token, parent: Schema.NullOr(Token
   reactions: Schema.NullOr(Schema.Array(Token).check(Schema.isMaxLength(500))) }
 const Message = Schema.Struct(fields)
 export const Snapshot = Schema.Struct({
-  scope: Token, includeMessagePreview: Schema.Boolean,
+  scope: Token, includeMessagePreview: Schema.Boolean, threadMismatch: Schema.optionalKey(Schema.Literal(true)), groupMismatch: Schema.optionalKey(Schema.Literal(true)),
+  awaitingGroup: Schema.optionalKey(Schema.Literal(true)),
+  missing: Schema.optionalKey(Schema.Literals(["thread", "conversation"])),
   messages: Schema.Array(Message).check(Schema.isMaxLength(500))
 })
 export class ObservationGap extends Schema.TaggedError<ObservationGap>()("ObservationGap", {
@@ -29,6 +31,7 @@ export const gap = () => new ObservationGap({ reason: "Teams observation or resu
 const EventType = Schema.Literals(["message.new", "message.reply", "message.edited", "reaction.added", "reaction.removed"])
 export type EventType = typeof EventType.Type
 const Result = Schema.Struct({
+  replayedVisible: Schema.optionalKey(Schema.Literal(true)),
   events: Schema.Array(Schema.Struct({ type: EventType, summary: Schema.String.check(Schema.isMaxLength(2048)), payload: EventPayload, occurredAt: Millis, dedupeKey: Schema.String.check(Schema.isMaxLength(512)) }))
     .check(Schema.isMaxLength(500500)),
   cursor: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(512))

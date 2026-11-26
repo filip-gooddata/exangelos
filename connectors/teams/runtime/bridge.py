@@ -158,9 +158,10 @@ def choices(cache):
     return candidates
 
 
-def resolve(key, reference, cache, account):
+def resolve(fd, key, reference, cache, account):
     chat, mid, replies, tenant, group_hint, parent_hint = reference
     matches = []
+    present = []
     for path in choices(cache):
         physical, tables = acquire(path)
         for table, partition, records in tables:
@@ -168,34 +169,93 @@ def resolve(key, reference, cache, account):
                 continue
             if account and partition[:2] != account:
                 continue
-            if replies and not parent_hint:
+            root = parent_hint or mid
+            found = {}
+            if mid:
                 found = native.messages(records, chat, lookup=mid)
-                if mid not in found:
-                    continue
-                root_filter = found[mid][0] or mid
-            else:
-                root_filter = parent_hint if replies else None
-            rows = native.messages(records, chat, root_filter=root_filter)
-            if not rows or (mid and mid not in rows):
-                continue
-            name, group = native.conversation_metadata(tables, partition, chat)
-            if group_hint:
-                native.check(group and group == group_hint.lower(), 23)
-            root = (rows[mid][0] or mid) if mid else None
-            native.check(not parent_hint or parent_hint == root, 20)
-            if replies:
-                native.check(root in rows and rows[root][0] is None, 28)
+                if mid in found:
+                    root = found[mid][0] or mid
+                    native.check(not parent_hint or parent_hint == root, 36)
+            unresolved = replies and mid not in found
+            rows = native.messages(records, chat, root_filter=root if replies else None)
+            name, group, visible = native.conversation_metadata(tables, partition, chat)
+            if group_hint and group:
+                native.check(group == group_hint.lower(), 35)
             pin = {'cache':str(path), 'physical':physical, 'partition':partition,
-                   'chat':chat, 'group':group, 'root':root if replies else None}
+                   'chat':chat, 'group':group or (group_hint and group_hint.lower()), 'root':root if replies else None}
+            if (unresolved and not (rows and parent_hint in (None, mid))) or (not replies and parent_hint and mid not in found):
+                pin['message'] = mid
+                pin['parentHint'] = parent_hint
             name = name or ('Teams channel' if native.is_channel(chat) else 'Teams chat')
             native.snapshot_rows(key, pin, rows, name, group, False)
-            matches.append((pin,name))
+            verified_parent = root if mid and (mid in found or (replies and root == mid and rows)) else None
+            candidate = pin, name, group, verified_parent
+            matches.append(candidate)
+            if mid:
+                seen = mid in found or (replies and root == mid and bool(rows))
+            else:
+                seen = bool(rows) or visible
+            if seen and (not group_hint or group):
+                present.append(candidate)
+    matches = present or matches
     native.check(matches, 22)
     native.check(len(matches) == 1, 23)
-    return matches[0]
+    pin, name, group, observed = matches[0]
+    if mid:
+        known = message_parent(fd, key, pin, mid, observed)
+        if known:
+            native.check((not parent_hint or parent_hint == known) and (not observed or observed == known), 36)
+            pin.pop('message', None)
+            pin.pop('parentHint', None)
+            pin['root'] = known if replies else None
+    return pin, name, group
 
 
-def pinned(key, pin, cache, account, consent):
+def binding(fd, key, kind, scope, value=None):
+    name = kind+'-'+scope+'.json'
+    try:
+        bound, signature = read_config(fd, name)
+        native.check(signature == native.token(key, kind+'-v1', scope, bound), 24)
+        return bound
+    except FileNotFoundError:
+        if value:
+            save_config(fd, name, [value, native.token(key, kind+'-v1', scope, value)])
+        return value
+
+
+def message_parent(fd, key, pin, message, parent=None):
+    def reference(mid):
+        return native.token(key, 'reference-v1', pin['cache'], pin['physical'], pin['partition'], pin['chat'], mid)
+    saved = binding(fd, key, 'message-parent', reference(message), parent)
+    if parent and parent != message:
+        native.check(binding(fd, key, 'message-parent', reference(parent), parent) == parent, 36)
+    return saved
+
+
+def group_constraint(fd, key, pin, verified_group, explicit_group):
+    if not explicit_group:
+        original = saved_scope(fd, key, dict(pin, group=None))
+        if original:
+            required = binding(fd, key, 'group', original)
+            native.check(not required or not verified_group or required == verified_group, 35)
+            return None
+    channel = native.token(key, 'channel-v1', pin['cache'], pin['physical'], pin['partition'], pin['chat'])
+    requested = pin['group']
+    first = binding(fd, key, 'channel-group', channel, requested)
+    if first and requested and first != requested:
+        native.check(explicit_group or not verified_group, 35)
+        binding(fd, key, 'multiple-groups', channel, True)
+    if not requested:
+        native.check(not binding(fd, key, 'multiple-groups', channel), 23)
+    return verified_group or requested or first
+
+
+def check_description(status):
+    native.check(not status.get('groupMismatch'), 35)
+    native.check(not status.get('threadMismatch'), 36)
+
+
+def pinned(fd, key, scope, pin, cache, account, consent):
     native.check(not account or account == pin['partition'][:2], 24)
     native.check(cache is None or str(absolute(cache)) == pin['cache'], 24)
     try:
@@ -206,13 +266,103 @@ def pinned(key, pin, cache, account, consent):
     records = [records for table, binding, records in tables
                if table == 'replychains-2' and binding == pin['partition']]
     native.check(len(records) == 1, 24)
-    rows = native.messages(records[0], pin['chat'], root_filter=pin['root'])
-    native.check(rows and (not pin['root'] or
-                 (pin['root'] in rows and rows[pin['root']][0] is None)), 24)
-    name, group = native.conversation_metadata(tables, pin['partition'], pin['chat'])
-    native.check(group == pin['group'], 24)
+    name, group, visible_metadata = native.conversation_metadata(tables, pin['partition'], pin['chat'])
     name = name or ('Teams channel' if native.is_channel(pin['chat']) else 'Teams chat')
-    return name, native.snapshot_rows(key,pin,rows,name,group,consent)
+    subject = 'thread' if pin['root'] else 'conversation'
+    bound = pin['group'] or binding(fd, key, 'group', scope, group)
+    if bound and group != bound:
+        status = {'groupMismatch': True} if group else {'missing': subject, 'awaitingGroup': True}
+        return name, [], status
+    if 'message' in pin:
+        mid = pin['message']
+        try:
+            found = native.messages(records[0], pin['chat'], lookup=mid)
+        except native.Refusal as error:
+            if error.code != 36:
+                raise
+            return name, [], {'threadMismatch': True}
+        known = message_parent(fd, key, pin, mid)
+        observed = (found[mid][0] or mid) if mid in found else known
+        if observed and known and observed != known:
+            return name, [], {'threadMismatch': True}
+        hint = pin['parentHint']
+        if hint and observed and hint != observed:
+            return name, [], {'threadMismatch': True}
+        proposed = hint or observed or pin['root']
+        root = binding(fd, key, 'thread', scope)
+        if root and observed and root != observed:
+            return name, [], {'threadMismatch': True}
+        if not root and not observed and (not pin['root'] or (hint and hint != mid)):
+            return name, [], {'missing': subject}
+        root_filter = (root or proposed) if pin['root'] else None
+        rows = native.messages(records[0], pin['chat'], root_filter=root_filter)
+        if root is None and rows:
+            if message_parent(fd, key, pin, mid, proposed) != proposed:
+                return name, [], {'threadMismatch': True}
+            root = binding(fd, key, 'thread', scope, proposed)
+        if root is None:
+            return name, [], {'missing': 'thread'}
+        canonical = {k:v for k,v in pin.items() if k not in ('message','parentHint')}
+        pin = dict(canonical, root=root if pin['root'] else None, group=group)
+        if pin['root']:
+            binding(fd, key, 'alias', native.token(key, 'pin-v1', pin), scope)
+    else:
+        rows = native.messages(records[0], pin['chat'], root_filter=pin['root'])
+    missing = not rows and (pin['root'] is not None or not visible_metadata)
+    return name, native.snapshot_rows(key,pin,rows,name,group,consent), {'missing': subject} if missing else {}
+
+
+
+def saved_scope(fd, key, pin):
+    scope = native.token(key, 'pin-v1', pin)
+    try:
+        saved = read_config(fd, 'pin-'+scope+'.json')
+    except FileNotFoundError:
+        return None
+    native.check(saved == pin, 24)
+    return scope
+
+
+def selection_handle(fd, key, pin, reference, cache, account):
+    _, mid, replies, _, _, hint = reference
+    if replies and 'message' in pin:
+        old = {k:v for k,v in pin.items() if k not in ('message','parentHint')}
+        old['root'] = mid
+        if saved_scope(fd, key, old):
+            native.check(not hint or hint == mid, 36)
+            pin = old
+
+    if mid and (replies or hint) and 'message' not in pin:
+        early = dict(pin, root=(hint or mid) if replies else None, message=mid, parentHint=hint)
+        for candidate in (early, dict(early, group=None)) if pin['group'] else (early,):
+            scope = saved_scope(fd, key, candidate)
+            if not scope:
+                continue
+            if not candidate['group'] and pin['group'] and binding(fd, key, 'group', scope, pin['group']) != pin['group']:
+                continue
+            _, _, status = pinned(fd, key, scope, candidate, cache, account, False)
+            check_description(status)
+            return scope, candidate
+
+    exact = saved_scope(fd, key, pin)
+    if exact:
+        return exact, pin
+    scope = native.token(key, 'pin-v1', pin)
+    if pin['group']:
+        early = dict(pin, group=None)
+        previous = saved_scope(fd, key, early)
+        if previous and binding(fd, key, 'group', previous, pin['group']) == pin['group']:
+            return previous, early
+    if pin['root'] and 'message' not in pin:
+        alias = binding(fd, key, 'alias', scope)
+        if alias:
+            saved = read_config(fd, 'pin-'+alias+'.json')
+            native.check(native.token(key, 'pin-v1', saved) == alias, 24)
+            _, _, status = pinned(fd, key, alias, saved, cache, account, False)
+            check_description(status)
+            return alias, saved
+    save_config(fd, 'pin-'+scope+'.json', pin)
+    return scope, pin
 
 
 def run(command):
@@ -264,21 +414,26 @@ def run(command):
             key = secrets.token_bytes(32)
             save_config(fd,state.name,key.hex())
         if reference:
-            pin, name = resolve(key, reference, cache, account)
-            scope = native.token(key, 'pin-v1', pin)
-            save_config(fd,'pin-'+scope+'.json',pin)
+            pin, name, verified_group = resolve(fd, key, reference, cache, account)
+            pin['group'] = group_constraint(fd, key, pin, verified_group, reference[4])
+            scope, pin = selection_handle(fd, key, pin, reference, cache, account)
         else:
             try:
                 pin = read_config(fd,'pin-'+scope+'.json')
             except FileNotFoundError:
                 raise native.Refusal(24) from None
             native.check(native.token(key,'pin-v1',pin) == scope,24)
-            name, rows = pinned(key,pin,cache,account,consent)
+            name, rows, status = pinned(fd,key,scope,pin,cache,account,consent)
+            if command == 'resolve':
+                check_description(status)
         if command == 'resolve':
-            if pin['root']:
+            if 'message' in pin and pin['root']:
+                name = f"Thread for message {pin['message']} in {name}"
+            elif pin['root']:
                 name = f"Replies in {name} (root {pin['root']})"
             return {'scope':scope,'label':name}
-        return {'scope':scope,'includeMessagePreview':consent,'messages':rows}
+        return {'scope':scope,'includeMessagePreview':consent,'messages':rows,
+                **status}
     finally:
         os.close(fd)
 
