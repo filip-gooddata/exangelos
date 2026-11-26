@@ -1,0 +1,23 @@
+connectors/teams/connector.json
+  s_aab10bf0dec36a::t_d73cc5873c1d02 3
+connectors/teams/src/Teams.ts
+  s_aab10bf0dec36a::t_6a7bcba29e7c0e 98
+connectors/teams/test/ReleaseValidation.ts
+  s_aab10bf0dec36a::t_27f93afaf99906 131
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "17589b3a8ec5e00630194a4845524b74c525acd8",
+  "prompts": {},
+  "sessions": {
+    "s_aab10bf0dec36a": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21537-9c16-7722-b3f8-8d49baefc219",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
