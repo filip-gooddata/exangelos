@@ -378,11 +378,12 @@ class Snapshot:
 
 
 def _current_view(path, expected_directory=None):
-    stage = 'manifest'
+    stage = 'stability'
     snap = Snapshot(path)
     try:
         require(expected_directory is None or snap.start[:2] == expected_directory)
         names = snap.names()
+        stage = 'manifest'
         current = snap.read('CURRENT')
         require(re.fullmatch(rb'MANIFEST-[0-9]+\n', current) is not None)
         require(len(current) <= 64)

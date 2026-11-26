@@ -13,7 +13,7 @@ import bridge as b
 import ledger
 from test_serialization import key, val
 from test_bridge import CHAT, CHANNEL, TENANT, USER, chain, message, view
-from test_current_store import batch, edit, log
+from test_current_store import batch, edit, ik, log, table
 
 
 class PortableTests(unittest.TestCase):
@@ -200,6 +200,34 @@ class PortableTests(unittest.TestCase):
                 self.call('configured-snapshot', scope=pin, includeMessagePreview=False, code=code)
                 self.install()
         self.call('configured-snapshot', scope=pin, includeMessagePreview=False)
+
+    def test_corrupt_table_exit(self):
+        pin = self.call(selection=CHAT)['scope']
+        pairs = [(ik(b'k', 1), b'value')]
+        data = table(pairs)
+        (self.cache/'MANIFEST-000001').write_bytes(log(edit(data, pairs)))
+        (self.cache/'000002.ldb').write_bytes(data[:-1] + b'x')
+        self.call('configured-snapshot', scope=pin, includeMessagePreview=False, code=31)
+
+    def assert_acquire_failure(self, code):
+        with patch.object(b, 'limits'), patch.object(sys, 'argv', ['bridge.py', 'configured-snapshot']), \
+             patch.object(b, 'run', lambda _: b.acquire(self.cache)), \
+             patch.object(sys, 'stdout', io.StringIO()) as out, patch.object(sys, 'stderr', io.StringIO()) as err:
+            self.assertEqual(b.main(), code)
+            self.assertEqual((out.getvalue(), err.getvalue()), ('', ''))
+
+    def test_directory_replaced_between_opens(self):
+        read = b.current_store.current_view
+        def swap(path, expected_directory):
+            path.rename(self.root/'old')
+            self.install()
+            return read(path, expected_directory)
+        with patch.object(b.current_store, 'current_view', swap):
+            self.assert_acquire_failure(33)
+
+    def test_deadline_during_manifest_read(self):
+        with patch.object(b.current_store, 'manifest', side_effect=b.read_deadline):
+            self.assert_acquire_failure(34)
 
     def test_legacy_and_invalid_state(self):
         self.call('setup',code=20)
