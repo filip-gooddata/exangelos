@@ -172,6 +172,8 @@ export const connector = Connector.make({
                     reason: `${error.reason}. ${Repository.format(repository)} does not exist, or the token cannot see it`
                   })
                 case "Unavailable":
+                case "Forbidden":
+                case "TooManyRefs":
                   return new Connector.SourceFailed({ reason: error.reason })
               }
             }),

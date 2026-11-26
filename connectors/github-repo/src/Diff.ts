@@ -52,8 +52,11 @@ export interface Site {
 
 const short = (sha: string) => sha.slice(0, 7)
 
-const samePatterns = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) =>
-  a.length === b.length && a.every((pattern, i) => pattern === b[i])
+const samePatterns = (a: ReadonlyArray<string>, b: ReadonlyArray<string>) => {
+  const left = [...new Set(a)].sort()
+  const right = [...new Set(b)].sort()
+  return left.length === right.length && left.every((pattern, i) => pattern === right[i])
+}
 
 const diffRefs = (
   kind: "tag" | "branch",

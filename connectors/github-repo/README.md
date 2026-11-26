@@ -6,7 +6,7 @@ Watches one GitHub repository for release activity: tags and branches that appea
 
 The same as [github-pr](../github-pr/README.md#configuration), configured on its own:
 
-- `token`: a GitHub token that can read the repository, and its Actions when you watch workflows. It is a secret.
+- `token`: a GitHub token that can read the repository, and its Actions when you watch workflows. It is a secret. A token GitHub refuses (401) is rejected for every subscription; a token that may not read one repository's Actions (403) fails only that subscription.
 - `host`: a GitHub Enterprise Server host name. Leave it empty for github.com.
 
 ```sh
@@ -63,7 +63,7 @@ exangelos subscribe github-repo owner/repo releases='*' --types release.publishe
 | `workflow.started` | A run of a workflow in `workflows`, or a new attempt of one, is queued or running | `workflow.started/<run id>/<attempt>` |
 | `workflow.completed` | A run of a workflow in `workflows` completes; the payload has its `conclusion` | `workflow.completed/<run id>/<attempt>` |
 
-The first poll is a silent baseline: tags, branches, releases and runs that exist then are not reported. An annotated tag is reported at the commit it points to, so recreating it on the same commit is not a move. Tag deletions are not reported. A draft release the token can see is reported when it is published, while it is among the 20 newest releases. A run that starts and finishes between two polls is reported only as completed. A re-run is a new attempt and is reported again, while the run is among the 20 newest. Releases and runs are new when GitHub numbered them after the newest one the last poll saw, so an older one that a deletion brings into the list is not reported.
+The first poll is a silent baseline: tags, branches, releases and runs that exist then are not reported. A move is keyed by both commits, so each distinct transition wakes once: a branch that goes A to B, then to C, then back to B wakes three times, but a second A to B after B to A does not. An annotated tag is reported at the commit it points to, so recreating it on the same commit is not a move. Tag deletions are not reported. A draft release the token can see is reported when it is published, while it is among the 20 newest releases. A run that starts and finishes between two polls is reported only as completed. A re-run is a new attempt and is reported again, while the run is among the 20 newest. Releases and runs are new when GitHub numbered them after the newest one the last poll saw, so an older one that a deletion brings into the list is not reported.
 
 ## Polling
 

@@ -118,6 +118,14 @@ describe("step", () => {
     const changed = step(first.memory, snapshot({ tags: { "v1": sha("1"), "v2": sha("2") } }), filters({ tags: ["v*"] }), site, "t")
     expect(changed.events).toEqual([])
     expect(changed.memory.tags?.patterns).toEqual(["v*"])
+    const reordered = step(
+      step(undefined, snapshot({ tags: { "v1": sha("1") } }), filters({ tags: ["v*", "w*"] }), site, "t").memory,
+      snapshot({ tags: { "v1": sha("1"), "w1": sha("2") } }),
+      filters({ tags: ["w*", "v*"] }),
+      site,
+      "t"
+    )
+    expect(keys(reordered)).toEqual([`tag.created/w1/${sha("2")}`])
   })
 
   it("reports a new or newly published release once, and not an older one a deletion brings into the list", () => {

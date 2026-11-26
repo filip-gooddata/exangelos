@@ -9,6 +9,10 @@ export type Connection = Transport.Connection
 export type GitHubError = Transport.GitHubError
 export type Quota = Transport.Quota
 
+export class TooManyRefs extends Schema.TaggedError<TooManyRefs>()("TooManyRefs", { reason: Schema.String }) {}
+
+export type SnapshotError = GitHubError | Transport.Forbidden | TooManyRefs
+
 /** The most pages of 100 refs one listing may read in a poll. */
 export const maxRefPages = 10
 
@@ -133,7 +137,7 @@ export class GitHub extends Context.Service<GitHub, {
     repository: Repository,
     filters: Filters,
     etags: Etags
-  ) => Effect.Effect<Fetched, GitHubError>
+  ) => Effect.Effect<Fetched, SnapshotError>
 }>()("@exangelos/connector-github-repo/GitHub") {}
 
 export const layer = Layer.effect(
@@ -175,7 +179,7 @@ export const layer = Layer.effect(
             take(l.kind, page)
             for (let pages = 1; page.pageInfo.hasNextPage; pages++) {
               if (pages >= maxRefPages) {
-                return yield* new Transport.Unavailable({
+                return yield* new TooManyRefs({
                   reason: `More than ${maxRefPages * 100} ${l.kind} of ${repo} match "${l.query}"; ` +
                     "give a pattern with a longer literal start"
                 })

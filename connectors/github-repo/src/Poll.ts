@@ -3,10 +3,12 @@ import type { Transport } from "@exangelos/connector-github-pr"
 import * as Cursor from "./Cursor.ts"
 import { type Filters, type Memory, type Site, step } from "./Diff.ts"
 import type { Emitted } from "./Events.ts"
-import { type Connection, type Etags, type Fetched, GitHub, type Quota } from "./GitHub.ts"
+import { type Connection, type Etags, type Fetched, GitHub, type Quota, type TooManyRefs } from "./GitHub.ts"
 import type { Repository } from "./Repository.ts"
 
 export const interval = Duration.minutes(1)
+
+export type Failure = Transport.Unauthorized | Transport.NotFound | Transport.Unavailable | Transport.Forbidden | TooManyRefs
 
 const attempts = 4
 
@@ -39,7 +41,7 @@ export const watch = (
   filters: Filters,
   site: Site,
   cursor: string | undefined
-): Stream.Stream<Polled, Transport.Unauthorized | Transport.NotFound | Transport.Unavailable, GitHub> =>
+): Stream.Stream<Polled, Failure, GitHub> =>
   Stream.unwrap(Effect.gen(function*() {
     const github = yield* GitHub
 
@@ -47,7 +49,7 @@ export const watch = (
       etags: Etags,
       failures: number,
       refusals: number
-    ): Effect.Effect<Fetched, Transport.Unauthorized | Transport.NotFound | Transport.Unavailable> =>
+    ): Effect.Effect<Fetched, Failure> =>
       github.snapshot(connection, repository, filters, etags).pipe(
         Effect.catchTags({
           RateLimited: ({ retryAfter }) =>

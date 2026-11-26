@@ -28,6 +28,12 @@ export const secondaryLimit: Answer = {
   body: { message: "You have exceeded a secondary rate limit. Please wait a few minutes before you try again." }
 }
 
+export const actionsForbidden: Answer = {
+  status: 403,
+  headers: quota,
+  body: { message: "Resource not accessible by personal access token" }
+}
+
 export const badCredentials: Answer = { status: 401, body: { message: "Bad credentials" } }
 
 export const notFound: Answer = {

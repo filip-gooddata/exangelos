@@ -178,6 +178,28 @@ describe("github-repo connector", () => {
       expect(dedupeKeys(yield* Fiber.join(fiber))).toEqual(["Cursor", `tag.created/v1/${sha("1")}`])
     }).pipe(Effect.scoped))
 
+  it.effect("fails only the watch, without retrying, when a pattern lists too many refs or Actions are off limits", () =>
+    Effect.gen(function*() {
+      const many = yield* client([
+        Stub.viewer,
+        Stub.repository({ t0: Stub.refs({ "v1": sha("1") }, { next: "c" }) }),
+        Stub.refsPage(Stub.refs({ "v2": sha("2") }, { next: "c" }))
+      ])
+      yield* many.client.Configure({ values: { token } })
+      const tooMany = yield* many.client.Watch({ parameters: { repository: "acme/api", tags: "v*" }, eventTypes: [] }).pipe(
+        Stream.runCollect,
+        Effect.flip
+      )
+      expect(tooMany).toMatchObject({ _tag: "SourceFailed", reason: expect.stringContaining("More than 1000 tags") })
+      expect(yield* many.sent).toHaveLength(11)
+
+      const forbidden = yield* client([Stub.viewer, Stub.actionsForbidden])
+      yield* forbidden.client.Configure({ values: { token } })
+      const refused = yield* forbidden.client.Watch({ parameters: { repository: "acme/api", workflows: "a.yaml" }, eventTypes: [] })
+        .pipe(Stream.runCollect, Effect.flip)
+      expect(refused).toMatchObject({ _tag: "SourceFailed", reason: expect.stringContaining("not accessible") })
+    }).pipe(Effect.scoped))
+
   it.effect("fails the watch with the repository named when GitHub cannot find it", () =>
     Effect.gen(function*() {
       const { client: connector } = yield* client([Stub.viewer, Stub.notFound])

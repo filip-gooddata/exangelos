@@ -14,6 +14,9 @@ export class RateLimited extends Schema.TaggedError<RateLimited>()("RateLimited"
 
 export class Unavailable extends Schema.TaggedError<Unavailable>()("Unavailable", { reason: Schema.String }) {}
 
+/** A REST request the token is valid for but may not make, such as reading Actions without that permission. */
+export class Forbidden extends Schema.TaggedError<Forbidden>()("Forbidden", { reason: Schema.String }) {}
+
 export type GitHubError = Unauthorized | NotFound | RateLimited | Unavailable
 
 export interface Quota {
@@ -74,13 +77,13 @@ export interface Transport {
     query: string,
     variables: Record<string, unknown>
   ) => Effect.Effect<Answered<S["Type"]>, GitHubError>
-  /** A GET of `path` under the REST API root. 404 is `NotFound`. */
+  /** A GET of `path` under the REST API root. 404 is `NotFound`; a 403 that is not a rate limit is `Forbidden`. */
   readonly rest: <S extends Schema.Codec<any, unknown>>(
     connection: Connection,
     data: S,
     path: string,
     etag: string | null
-  ) => Effect.Effect<RestAnswered<S["Type"]>, GitHubError>
+  ) => Effect.Effect<RestAnswered<S["Type"]>, GitHubError | Forbidden>
 }
 
 /** The HTTP side GitHub connectors share: authentication, token scrubbing, and status and rate limit handling. */
@@ -159,6 +162,9 @@ export const make = (client: HttpClient.HttpClient, userAgent: string): Transpor
       const { message, now, response } = yield* send(connection, request)
       const quota = quotaOf(response.headers)
       if (response.status === 304) return { data: null, etag, quota }
+      if (response.status === 403 && !/rate limit/i.test(yield* message)) {
+        return yield* new Forbidden({ reason: `GitHub refused access: ${yield* message}` })
+      }
       yield* refused(response, now, message)
       if (response.status === 404) return yield* new NotFound({ reason: yield* message })
       if (response.status !== 200) {
