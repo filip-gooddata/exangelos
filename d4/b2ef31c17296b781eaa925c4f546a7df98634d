@@ -1,0 +1,29 @@
+connectors/github-repo/README.md
+  s_1e9f776e0415b4::t_af1ea94d55b176 58,60,66,80
+connectors/github-repo/src/Cursor.ts
+  s_1e9f776e0415b4::t_081d0e28827338 16-17
+connectors/github-repo/src/Diff.ts
+  s_1e9f776e0415b4::t_1924ddff900ed5 19-20,24-25,95,124-133,135-140
+connectors/github-repo/test/Diff.test.ts
+  s_1e9f776e0415b4::t_c49e1315ace84d 86,88,131,134,140-144,147,149-153
+connectors/github-repo/test/GithubRepo.test.ts
+  s_1e9f776e0415b4::t_3855de42139e69 96,181-200
+connectors/github-repo/test/stubGitHub.ts
+  s_1e9f776e0415b4::t_4e6ee100e065c3 31-36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d4b2ef31c17296b781eaa925c4f546a7df98634d",
+  "prompts": {},
+  "sessions": {
+    "s_1e9f776e0415b4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ccd77d56-ba94-4181-ac48-0f5c6a34d95a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
