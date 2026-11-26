@@ -1,7 +1,7 @@
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { createHash } from "node:crypto"
-import { appendFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { deliver as deliverToAgent } from "./InstalledWake.ts"
 import { digestDirectory } from "../../../adapters/connector-directory/src/Digest.ts"
 import type { Event } from "../../../packages/domain/src/index.ts"
@@ -179,6 +179,23 @@ try {
     previewCursor = yield* baseline(c, conversation)
   }))
   assert.equal(readFileSync(legacy, "utf8"), oldState)
+  const legacyEnv = { ...baseEnv, EXANGELOS_HOME: join(scratch, "legacy-root") }
+  const legacyState = join(legacyEnv.EXANGELOS_HOME, "connectors/teams")
+  mkdirSync(legacyState, { mode: 0o700, recursive: true })
+  cpSync(join(baseEnv.EXANGELOS_HOME, "connector-state/teams"), legacyState, { recursive: true })
+  await run("legacy-source-failure", { ...legacyEnv, PATH: join(scratch, "empty-path") }, c => Effect.gen(function*() {
+    yield* consent(c)
+    yield* take(c, conversation, channelCursor).pipe(Effect.flip)
+  }))
+  const diagnostic = join(legacyEnv.EXANGELOS_HOME, "diagnostics/teams/last-error.json")
+  const retained = readFileSync(diagnostic, "utf8")
+  assert.equal(JSON.parse(retained).errno, "ENOENT")
+  assert(!existsSync(join(legacyEnv.EXANGELOS_HOME, "connector-state/teams")))
+  await run("legacy-cursor-recovery", legacyEnv, c => Effect.gen(function*() {
+    yield* consent(c)
+    assert.deepEqual(yield* take(c, conversation, channelCursor), [{ _tag: "Cursor", cursor: channelCursor }])
+  }))
+  assert.equal(readFileSync(diagnostic, "utf8"), retained)
   const now = Date.now()
   const first = String(now), reply = String(now + 1)
   const fresh = new Date(now).toISOString()
@@ -280,6 +297,11 @@ try {
     yield* consent(c)
     assert.equal((yield* c.describe({ selection: channel }))._tag, "Invalid")
   }))
+  const lastError = join(baseEnv.EXANGELOS_HOME, "diagnostics/teams/last-error.json")
+  const spawnFailure = JSON.parse(readFileSync(lastError, "utf8"))
+  assert.equal(spawnFailure.stage, "spawn")
+  assert.equal(spawnFailure.errno, "ENOENT")
+  assert.equal(lstatSync(lastError).mode & 0o777, 0o600)
   await run("portable-and-stale-pin", { ...baseEnv, HOME: join(scratch, "other user"), EXANGELOS_HOME: join(scratch, "other state") }, (c) => Effect.gen(function*() {
     yield* consent(c, false, moved)
     assert.equal((yield* c.describe({ selection: conversation }))._tag, "Invalid")

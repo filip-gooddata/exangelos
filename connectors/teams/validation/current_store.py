@@ -22,9 +22,33 @@ class Invalid(Exception):
 
 
 class ReadFailure(Invalid):
-    def __init__(self, stage):
+    def __init__(self, stage, detail):
         super().__init__('unavailable')
         self.stage = stage
+        self.detail = detail
+
+
+def structural_detail(exc):
+    # Values and exception messages can contain cached data. Only source
+    # coordinates in our modules and known exception types cross the bridge.
+    modules = {'bridge', 'current_store', 'native_cache', 'serialization',
+               'probe', 'idb_comparator', 'reactions', 'state_directory', 'excerpt'}
+    types = {'Invalid', 'Refusal', 'ReadDeadline', 'ValueError', 'TypeError',
+             'KeyError', 'IndexError', 'AttributeError', 'UnicodeDecodeError',
+             'FileNotFoundError', 'PermissionError', 'NotADirectoryError',
+             'OSError', 'MemoryError', 'OverflowError', 'RecursionError',
+             'ImportError', 'ModuleNotFoundError', 'JSONDecodeError'}
+    frames = []
+    tb = exc.__traceback__
+    while tb:
+        module = Path(tb.tb_frame.f_code.co_filename).stem
+        if module in modules:
+            frames.append([module, tb.tb_lineno])
+        tb = tb.tb_next
+    name = type(exc).__name__
+    return {'exception': name if name in types else 'Other', 'frames': frames[-3:],
+            'errno': exc.errno if isinstance(exc, OSError) else None}
+
 
 def require(ok):
     if not ok:
@@ -466,11 +490,11 @@ def _current_view(path, expected_directory=None):
                         'tables': len(files), 'logs': len(logs), 'manifest_edits': edits,
                         'batches': batches, 'records': count, 'current_keys': len(result),
                         'tombstones': len(latest) - len(result), 'bytes_read': snap.total}
-    except Exception:
-        pass
+    except Exception as exc:
+        detail = structural_detail(exc)
     finally:
         os.close(snap.fd)
-    raise ReadFailure(stage) from None
+    raise ReadFailure(stage, detail) from None
 
 
 def current_view(path, expected_directory=None):
@@ -484,9 +508,11 @@ def current_view(path, expected_directory=None):
         return _current_view(path, expected_directory)
     except ReadFailure:
         raise
-    except Exception:
-        pass
-    raise Invalid('unavailable') from None
+    except Exception as exc:
+        detail = structural_detail(exc)
+    failure = Invalid('unavailable')
+    failure.detail = detail
+    raise failure from None
 
 
 def discover():

@@ -201,6 +201,21 @@ class PortableTests(unittest.TestCase):
                 self.install()
         self.call('configured-snapshot', scope=pin, includeMessagePreview=False)
 
+    def test_diagnostic_contains_original_structure_without_values(self):
+        pin = self.call(selection=CHAT)['scope']
+        (self.cache/'MANIFEST-000001').write_bytes(b'synthetic confidential marker')
+        request = dict(scope=pin, includeMessagePreview=False)
+        proc = subprocess.run([sys.executable, b.__file__, 'configured-snapshot', '--diagnostic'],
+                              input=json.dumps(request).encode(), capture_output=True, env=self.env, timeout=15)
+        self.assertEqual(proc.returncode, 30)
+        self.assertEqual(proc.stderr, b'')
+        self.assertNotIn(b'confidential', proc.stdout)
+        detail = json.loads(proc.stdout)
+        self.assertEqual(set(detail), {'exception', 'errno', 'frames'})
+        self.assertEqual(detail['exception'], 'Invalid')
+        self.assertTrue(detail['frames'])
+        self.assertTrue(all(module == 'current_store' and line > 0 for module, line in detail['frames']))
+
     def test_corrupt_table_exit(self):
         pin = self.call(selection=CHAT)['scope']
         pairs = [(ik(b'k', 1), b'value')]

@@ -14,11 +14,14 @@ try:
 
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'validation'))
-    import native_cache as native
     import current_store
+    import native_cache as native
     from state_directory import state_directory
-except BaseException:
-    sys.stderr.write('teams_bridge_unavailable\n')
+except BaseException as exc:
+    if sys.argv[2:] == ['--diagnostic'] and 'current_store' in globals():
+        sys.stdout.write(json.dumps(current_store.structural_detail(exc)) + '\n')
+    else:
+        sys.stderr.write('teams_bridge_unavailable\n')
     sys.exit(1)
 
 HEX = re.compile(r'[0-9a-f]{64}\Z')
@@ -281,20 +284,26 @@ def run(command):
 
 
 def main():
+    diagnostics = sys.argv[2:] == ['--diagnostic']
     try:
         limits()
-        native.check(len(sys.argv) == 2, 20)
+        native.check(len(sys.argv) == 2 or diagnostics, 20)
         result = run(sys.argv[1])
         sys.stdout.write(json.dumps(result,separators=(',',':'))+'\n')
         return 0
-    except native.Refusal as exc:
-        return exc.code
-    except ReadDeadline:
-        return 34
-    except current_store.ReadFailure as exc:
-        return {'manifest': 30, 'tables': 31, 'wal': 32, 'stability': 33}[exc.stage]
-    except BaseException:
-        return 21
+    except BaseException as exc:
+        if isinstance(exc, native.Refusal):
+            code = exc.code
+        elif isinstance(exc, ReadDeadline):
+            code = 34
+        elif isinstance(exc, current_store.ReadFailure):
+            code = {'manifest': 30, 'tables': 31, 'wal': 32, 'stability': 33}[exc.stage]
+        else:
+            code = 21
+        if diagnostics:
+            detail = getattr(exc, 'detail', None) or current_store.structural_detail(exc)
+            sys.stdout.write(json.dumps(detail, separators=(',', ':')) + '\n')
+        return code
 
 
 if __name__ == '__main__':
