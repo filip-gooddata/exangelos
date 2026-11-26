@@ -166,7 +166,7 @@ it.effect("real Python ledger: process failures and oversized output remain sani
       expect(["ObservationGap", "SourceUnavailable"]).toContain(error._tag)
       expect(JSON.stringify(error)).not.toContain(text)
     }
-    const path = join(home, "connector-state/teams/last-error.json")
+    const path = join(home, "diagnostics/teams/last-error.json")
     expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({ operation: "configured-snapshot", stage: "output-limit" })
     expect(statSync(path).mode & 0o777).toBe(0o600)
   } finally {

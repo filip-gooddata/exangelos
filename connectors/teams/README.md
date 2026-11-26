@@ -46,7 +46,7 @@ See the [installed validation instructions](https://github.com/filip-gooddata/ex
 
 ## Connector icon
 
-On macOS and Linux, a failed cache inspection saves the latest failure in `connector-state/teams/last-error.json` under the Exangelos data directory. The service default is `~/.local/share/exangelos`. The owner-only file survives successful polls and connector updates. It records the operation, time, process outcome and, when available, the exception class and source coordinates. The connector keeps these details local. When the adapter handles an expired 45-second deadline at least 90 seconds after a read-only poll began, it makes one fresh attempt with the saved selection before reporting failure.
+On macOS and Linux, a failed cache inspection saves the latest failure in `diagnostics/teams/last-error.json` under the Exangelos data directory. The service default is `~/.local/share/exangelos`. The owner-only file survives successful polls and connector updates. It records the operation, time, process outcome and, when available, the exception class and source coordinates. The connector keeps these details local. When the adapter receives a bridge or process deadline at least 90 seconds after a read-only poll began, it checks that the original authorization still applies before making one fresh attempt.
 
 On macOS the connector reads the icon from the installed Microsoft Teams app bundle without opening the app. It looks for the current Teams app first, then classic Teams. It converts the icon in memory and serves a 128 × 128 PNG to the panel. If the icon is unavailable, the panel shows initials.
 

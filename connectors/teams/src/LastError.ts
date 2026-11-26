@@ -35,12 +35,11 @@ export interface Outcome {
 
 const flags = constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW
 
-// Keep each directory open while descending, including across mkdir and the final rename.
 const writePrivate = (root: string, record: string) => {
   if (!isAbsolute(root) || root.split("/").includes("..") || !["darwin", "linux"].includes(process.platform)) return
   const installed = statSync(fileURLToPath(new URL("..", import.meta.url)), { bigint: true })
   const uid = BigInt(process.getuid!())
-  const parts = [...root.split("/").filter(Boolean), "connector-state", "teams"]
+  const parts = [...root.split("/").filter(Boolean), "diagnostics", "teams"]
   let fd = openSync("/", flags)
   try {
     for (let index = 0; ; index++) {

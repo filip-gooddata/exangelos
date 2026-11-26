@@ -81,7 +81,8 @@ export const make = <R>(source: Source<R>) => Connector.make({
           if (!state.first) yield* Effect.sleep(delay)
           if ((yield* Ref.get(configured)) !== config) return yield* new Connector.SourceFailed({ reason: authorize })
           const startedAt = state.cursor === undefined ? yield* Clock.currentTimeMillis : undefined
-          const snapshot = yield* source.read({ scope, ...config })
+          const snapshot = yield* source.read({ scope, ...config },
+            Ref.get(configured).pipe(Effect.map(current => current === config)))
           if (snapshot.scope !== scope || snapshot.includeMessagePreview !== config.includeMessagePreview ||
             (yield* Ref.get(configured)) !== config) return yield* new Connector.SourceFailed({ reason: "Teams selection or consent changed" })
           const result = yield* reconcile(scope, state.cursor, snapshot, startedAt).pipe(

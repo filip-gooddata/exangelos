@@ -15,7 +15,7 @@ export class SourceUnavailable extends Schema.TaggedError<SourceUnavailable>()("
 export interface Source<R = never> {
   readonly resolve: (request: { selection: string; scope?: string; cachePath?: string; account?: string }) =>
     Effect.Effect<typeof Resolved.Type, SourceUnavailable, R>
-  readonly read: (request: { scope: string; includeMessagePreview: boolean; cachePath?: string; account?: string }) =>
+  readonly read: (request: { scope: string; includeMessagePreview: boolean; cachePath?: string; account?: string }, canRetry?: Effect.Effect<boolean>) =>
     Effect.Effect<typeof Snapshot.Type, ObservationGap | SourceUnavailable, R>
 }
 const reasons: Readonly<Record<number, string>> = {
@@ -74,7 +74,8 @@ const runBridge = (command: Operation, request: unknown) => Effect.gen(function*
 }).pipe(Effect.scoped, Effect.timeout(deadlineMs), Effect.mapError((error): Outcome =>
   Cause.isTimeoutError(error) ? { stage: "deadline", exception: "TimeoutError" } : error))
 
-const bridge = <A, E>(command: Operation, request: unknown, decode: (input: unknown) => Effect.Effect<A, E>) =>
+const bridge = <A, E>(command: Operation, request: unknown, decode: (input: unknown) => Effect.Effect<A, E>,
+  canRetry = Effect.succeed(false)) =>
   Effect.gen(function*() {
     const attempt = Effect.suspend(() => {
       const started = { wall: Date.now(), monotonic: performance.now() }
@@ -85,10 +86,9 @@ const bridge = <A, E>(command: Operation, request: unknown, decode: (input: unkn
     })
     const wallStart = Date.now()
     const { input, started } = yield* attempt.pipe(
-      // A suspended process can service an expired timer long after its deadline.
-      // Retry only a read-only poll, once, after an entire additional deadline elapsed.
-      Effect.catchIf(outcome => command === "configured-snapshot" && outcome.stage === "deadline" &&
-        Date.now() - wallStart >= 2 * deadlineMs, () => attempt),
+      Effect.catchIf(outcome => command === "configured-snapshot" &&
+        (outcome.stage === "deadline" || outcome.exitCode === 34) && Date.now() - wallStart >= 2 * deadlineMs,
+        outcome => Effect.flatMap(canRetry, allowed => allowed ? attempt : Effect.fail(outcome))),
       Effect.mapError(outcome => {
         const reason = outcome.exitCode === undefined ? undefined : reasons[outcome.exitCode]
         return reason ? new SourceUnavailable({ reason }) : unavailable()
@@ -100,5 +100,5 @@ const bridge = <A, E>(command: Operation, request: unknown, decode: (input: unkn
 
 export const localSource: Source<ChildProcessSpawner.ChildProcessSpawner> = {
   resolve: values => bridge("resolve", values, input => Schema.decodeUnknownEffect(Resolved)(input).pipe(Effect.mapError(unavailable))),
-  read: values => bridge("configured-snapshot", values, decodeSnapshot)
+  read: (values, canRetry) => bridge("configured-snapshot", values, decodeSnapshot, canRetry)
 }
