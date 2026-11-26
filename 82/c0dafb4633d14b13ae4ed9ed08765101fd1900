@@ -1,0 +1,73 @@
+connectors/github-pr/connector.json
+  s_1e9f776e0415b4::t_88ded55ddc0f8d 3
+connectors/github-pr/src/GitHub.ts
+  s_1e9f776e0415b4::t_70d23c7e200851 1-2,7-19,227
+connectors/github-pr/src/index.ts
+  s_1e9f776e0415b4::t_4a5f7cca6f6e36 5
+connectors/github-repo/README.md
+  s_1e9f776e0415b4::t_9ed94f44c9fa81 1-88
+connectors/github-repo/connector.json
+  s_1e9f776e0415b4::t_253d374b0accb7 1-6
+connectors/github-repo/icon.svg
+  s_1e9f776e0415b4::t_9cc40878118bbc 1
+connectors/github-repo/package.json
+  s_1e9f776e0415b4::t_0d55ca645f0333 1-23
+connectors/github-repo/src/Cursor.ts
+  s_1e9f776e0415b4::t_c491c24b5e7cb9 1-26
+connectors/github-repo/src/Diff.ts
+  s_1e9f776e0415b4::t_8626db5fab02da 1-205
+connectors/github-repo/src/Events.ts
+  s_1e9f776e0415b4::t_2bd6258d12239b 1-51
+connectors/github-repo/src/GitHub.ts
+  s_1e9f776e0415b4::t_d0c536404d7add 1-242
+connectors/github-repo/src/GithubRepo.ts
+  s_1e9f776e0415b4::t_ef3738e478ea3a 1-190
+connectors/github-repo/src/Glob.ts
+  s_1e9f776e0415b4::t_29e46f1fb3fd37 1-20
+connectors/github-repo/src/Repository.ts
+  s_1e9f776e0415b4::t_18c01c85ea6d75 1-14
+connectors/github-repo/src/Snapshot.ts
+  s_1e9f776e0415b4::t_3630cc5f625e64 1-33
+connectors/github-repo/src/index.ts
+  s_1e9f776e0415b4::t_c9481fc07b8fba 1-4
+connectors/github-repo/src/main.ts
+  s_1e9f776e0415b4::t_866e9cbf0a3308 1-12
+connectors/github-repo/test/GithubRepo.test.ts
+  s_1e9f776e0415b4::t_1b77d4a4717b26 1-175
+connectors/github-repo/tsconfig.json
+  s_1e9f776e0415b4::t_37dc8c04c466bb 1-10
+docs/spec.md
+  s_1e9f776e0415b4::t_49d23c209f37c6 19
+packaging/src/connector-archives.ts
+  s_1e9f776e0415b4::t_31d84060dcad6c 11
+packaging/test/release.test.ts
+  s_1e9f776e0415b4::t_9713a12fd7e85c 86,89
+pnpm-lock.yaml
+  s_1e9f776e0415b4::t_9427b1d7bd3129 827-845
+skills/exangelos/SKILL.md
+  s_1e9f776e0415b4::t_8389927c9d0e8b 3,37-41,57
+connectors/github-pr/src/Transport.ts
+  s_1e9f776e0415b4::t_3166eb6034e304 1-172
+connectors/github-repo/src/Poll.ts
+  s_1e9f776e0415b4::t_b7ce9e03aa4796 1-74
+connectors/github-repo/test/Diff.test.ts
+  s_1e9f776e0415b4::t_6f39c841872677 1-143
+connectors/github-repo/test/stubGitHub.ts
+  s_1e9f776e0415b4::t_e669f00129424e 1-139
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "82c0dafb4633d14b13ae4ed9ed08765101fd1900",
+  "prompts": {},
+  "sessions": {
+    "s_1e9f776e0415b4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ccd77d56-ba94-4181-ac48-0f5c6a34d95a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
