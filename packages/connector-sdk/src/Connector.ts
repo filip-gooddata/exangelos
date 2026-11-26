@@ -121,12 +121,20 @@ const forDaemon = (acceptsPending: boolean) => (item: Event.WatchItem): Event.Wa
 const missingRequired = (fields: ReadonlyArray<ConfigurationField>, values: Wire.ConfigurationValues) =>
   fields.find((field) => field.required && (values[field.key] ?? "") === "")
 
+/**
+ * Keeps the selected event types. An unselected event passes on its cursor, and while the stream waits
+ * after a Pending item, the waiting cursor even when the event has none, since the subject is now readable.
+ */
 const selectTypes = (eventTypes: ReadonlyArray<Ids.EventType>) => {
   if (eventTypes.length === 0) return (item: Event.WatchItem): Event.WatchItem | undefined => item
   const selected = new Set<string>(eventTypes)
+  let waitingAt: string | undefined
   return (item: Event.WatchItem): Event.WatchItem | undefined => {
+    const waited = waitingAt
+    waitingAt = item._tag === "Pending" ? item.cursor : undefined
     if (item._tag !== "Event" || selected.has(item.event.type)) return item
-    return item.cursor === undefined ? undefined : cursor(item.cursor)
+    const at = item.cursor ?? waited
+    return at === undefined ? undefined : cursor(at)
   }
 }
 

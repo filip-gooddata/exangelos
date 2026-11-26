@@ -4,7 +4,7 @@
 
 ## Waiting for a subject
 
-When the subject is not readable yet, such as a conversation not yet in a local cache, stream `Connector.pending(reason, cursor)` instead of failing. The daemon keeps the cursor and shows `Waiting: <reason>` without an event, a wake or a failure; repeating the same item changes nothing, and the next `Connector.cursor` or event clears it. Keep secrets out of the reason anyway; the daemon also scrubs configured secrets and cuts it to 300 characters. To give up, end the stream with `Connector.end(reason)`: the subscribing session gets one ended wake with that reason.
+When the subject is not readable yet, such as a conversation not yet in a local cache, stream `Connector.pending(reason, cursor)` instead of failing. The daemon keeps the cursor and shows `Waiting: <reason>` without an event, a wake or a failure; repeating the same item changes nothing, and the next `Connector.cursor` or event clears it, including an event of a type the subscription did not select, which the SDK passes on as a Cursor. Keep secrets out of the reason anyway; the daemon also scrubs configured secrets and cuts it to 300 characters. To give up, end the stream with `Connector.end(reason)`: the subscribing session gets one ended wake with that reason.
 
 The Watch request's `createdAt` is when the subscription was created, the same on every call including after a daemon restart, so it can serve as the cutoff for a subject that appears later. A daemon before Pending sends neither `createdAt` nor `acceptsPending`; the SDK then hands it each Pending item as a plain Cursor.
 

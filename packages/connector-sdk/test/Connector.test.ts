@@ -39,6 +39,8 @@ const waiting = Connector.make({
     watch: ({ createdAt }) =>
       Stream.make(
         Connector.pending(`created ${createdAt === undefined ? "unknown" : DateTime.formatIso(createdAt)}`, "c0"),
+        closed.item({ occurredAt, summary: "Closed", payload: { title: "x" }, dedupeKey: "1" }),
+        closed.item({ occurredAt, summary: "Closed", payload: { title: "y" }, dedupeKey: "2" }),
         Connector.end("gone")
       )
   })
@@ -144,7 +146,7 @@ describe("Connector", () => {
       ])
     }).pipe(Effect.scoped))
 
-  it.effect("streams Pending with the subscription's creation time to a daemon that reads it, and a Cursor to one that does not", () =>
+  it.effect("streams Pending with the creation time to a daemon that reads it, a Cursor to one that does not, and clears it on an unselected event", () =>
     Effect.gen(function*() {
       const client = yield* ConnectorTest.makeClient(waiting)
       const createdAt = DateTime.makeUnsafe("2026-11-20T08:00:00Z")
@@ -153,11 +155,18 @@ describe("Connector", () => {
       )
       const older = yield* client.Watch({ parameters: { repo: "a/b" }, eventTypes: [] }).pipe(Stream.runCollect)
 
-      expect(newer).toEqual([
-        { _tag: "Pending", reason: "created 2026-11-20T08:00:00.000Z", cursor: "c0" },
-        { _tag: "End", reason: "gone" }
+      expect(newer.map((item) => item._tag)).toEqual(["Pending", "Event", "Event", "End"])
+      expect(newer[0]).toEqual({ _tag: "Pending", reason: "created 2026-11-20T08:00:00.000Z", cursor: "c0" })
+      expect(older.map((item) => item._tag)).toEqual(["Cursor", "Event", "Event", "End"])
+
+      const unselected = yield* client.Watch({ parameters: { repo: "a/b" }, eventTypes: [opened.type], acceptsPending: true }).pipe(
+        Stream.runCollect
+      )
+      expect(unselected.map((item) => item._tag === "Cursor" ? `Cursor ${item.cursor}` : item._tag)).toEqual([
+        "Pending",
+        "Cursor c0",
+        "End"
       ])
-      expect(older).toEqual([{ _tag: "Cursor", cursor: "c0" }, { _tag: "End", reason: "gone" }])
     }).pipe(Effect.scoped))
 
   it("round-trips a Pending item and the Watch request's creation time through the wire's JSON", () => {

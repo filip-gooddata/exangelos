@@ -19,7 +19,7 @@ export type PanelState = Data.TaggedEnum<{
   Loading: {}
   DaemonNotRunning: { readonly message: string }
   Ready: {
-    readonly subscriptions: Section<ReadonlyArray<Subscription.Subscription>>
+    readonly subscriptions: Section<ReadonlyArray<Subscription.Listed>>
     readonly details: Section<ReadonlyArray<Detail>>
     readonly titles: Section<ReadonlyArray<SessionTitle>>
     readonly connectors: Section<ReadonlyArray<Connector.Status>>

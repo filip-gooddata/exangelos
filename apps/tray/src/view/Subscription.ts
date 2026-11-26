@@ -26,7 +26,7 @@ const wakeTarget = (h: H, target: Session.Target | undefined, titles: Facts.Titl
     ? h.span([], ["Pull-only"])
     : h.span([h.Title(Facts.sessionHover(target))], [wakeTargetText(target, titles)])
 
-const factsSection = (h: H, model: Model, subscription: Subscription.Subscription, state: Ready): Html => {
+const factsSection = (h: H, model: Model, subscription: Subscription.Listed, state: Ready): Html => {
   const connectors = Result.getOrElse(state.connectors, () => [])
   const suspended = Facts.suspendedOn(subscription, connectors)
   const titles = titlesOf(state)

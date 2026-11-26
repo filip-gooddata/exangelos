@@ -139,7 +139,7 @@ export const stateFact = (
 /** The state in whole sentences, for the top of one subscription. */
 export const stateSentence = (
   now: number,
-  subscription: Subscription.Subscription,
+  subscription: Subscription.Listed,
   suspended?: Connector.Connector,
   titles: Titles = noTitles
 ): string => {
@@ -148,7 +148,9 @@ export const stateSentence = (
   switch (state._tag) {
     case "Active":
       return suspended === undefined
-        ? subscription.waiting === undefined
+        ? subscription.observation !== undefined
+          ? `Active, but its source has been failing since ${ago(now, subscription.observation.since)}. ${expires}`
+          : subscription.waiting === undefined
           ? `Active. ${expires}`
           : `Active. Waiting: ${subscription.waiting.replace(/\.+$/, "")}. ${expires}`
         : `Active and suspended: ${suspended.name} is unavailable${

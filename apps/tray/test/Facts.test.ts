@@ -20,6 +20,14 @@ describe("Facts", () => {
     expect(Facts.changeTitle(change("eventAlerts", "on"))).toBe("Event alerts turned on")
   })
 
+  it("says why an active watch waits, unless its source is failing", () => {
+    const waiting = { ...subscription(), waiting: "Not in the local cache yet." }
+    expect(Facts.stateSentence(0, waiting)).toMatch(/^Active\. Waiting: Not in the local cache yet\. Expires/)
+    const failing = { ...waiting, observation: { category: "unavailable", since: DateTime.makeUnsafe(0) } } as const
+    expect(Facts.stateSentence(0, failing)).toMatch(/^Active, but its source has been failing since/)
+    expect(Facts.stateSentence(0, failing)).not.toContain("Waiting")
+  })
+
   it("acknowledges through the chosen pending event, else the newest", () => {
     const s = subscription({ ackedThrough: 3, lastNumber: 7 })
     expect(Facts.ackThroughNumber(s, null)).toBe(7)
