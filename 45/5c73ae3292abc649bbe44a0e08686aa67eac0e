@@ -1,0 +1,21 @@
+connectors/teams/runtime/bridge.py
+  s_73de08cfde11bd::t_b647247cabbef5 236-241
+connectors/teams/runtime/test_portable.py
+  s_73de08cfde11bd::t_4ddf0469edf0c3 230-240
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "455c73ae3292abc649bbe44a0e08686aa67eac0e",
+  "prompts": {},
+  "sessions": {
+    "s_73de08cfde11bd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a217a3-bc47-7b63-89dc-0b75ebaa0e01",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
