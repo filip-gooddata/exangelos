@@ -39,7 +39,7 @@ def view(chains=None, tenant=TENANT, user=USER):
 def select(chat, rows, consent=True):
     tables = n.stores(view([chain(chat, rows=rows)]))
     _, partition, records = tables[0]
-    name, group = n.conversation_metadata(tables,partition,chat)
+    name, group, _ = n.conversation_metadata(tables,partition,chat)
     return n.snapshot_rows(b'k'*32,{'chat':chat,'root':None,'partition':partition},
                            n.messages(records,chat),name,group,consent)
 

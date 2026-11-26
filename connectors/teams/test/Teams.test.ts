@@ -4,13 +4,14 @@ import { join } from "node:path"
 import { vi } from "vitest"
 import { ledgerProcess, ledgerTestTimeout } from "./LedgerProcess.ts"
 import { ChildProcessSpawner } from "effect/process"
-import { localSource } from "../src/Source.ts"
+import { localSource, SourceUnavailable } from "../src/Source.ts"
+import { observationBudget, resumeWaiting, waitingCursor } from "../../shared/pendingSubject.ts"
 import { expect, it } from "@effect/vitest"
-import { Deferred, Effect, Fiber, Layer, Sink, Stream } from "effect"
+import { DateTime, Deferred, Effect, Fiber, Layer, Sink, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { Ids } from "@exangelos/domain"
 import { ConnectorTest } from "@exangelos/connector-sdk"
-import { gap, reconcile } from "../src/Reconcile.ts"
+import { gap, reconcile, type Snapshot } from "../src/Reconcile.ts"
 import { make } from "../src/Teams.ts"
 
 const token = (n: number) => n.toString(16).padStart(64, "0")
@@ -240,3 +241,70 @@ it.effect("real Python ledger: large metadata baselines retain a bounded opaque 
     reactions: Array.from({ length: 40 }, (_, j) => token(j + 1000)) }))
   expect((yield* reconcile(scope, undefined, { scope, includeMessagePreview: false, messages })).cursor.length).toBeLessThan(512)
 }).pipe(Effect.provide(ledgerProcess)), ledgerTestTimeout)
+
+it.effect("waits through restart, then replays only eligible first-snapshot replies", () => Effect.gen(function*() {
+  yield* TestClock.adjust("10 seconds")
+  let current: typeof Snapshot.Type = { ...snapshot, missing: "thread", messages: [] }
+  let unavailable = false
+  const client = yield* ConnectorTest.makeClient(make({ resolve, read: () => Effect.suspend(() =>
+    unavailable ? Effect.fail(new SourceUnavailable({ reason: "Could not read the fixture." })) : Effect.succeed(current)) }))
+  yield* client.Configure({ values: configuration })
+  const request = { parameters: { selection: pin }, eventTypes: [], acceptsPending: true, createdAt: DateTime.makeUnsafe(1000) }
+  const [pending] = yield* client.Watch(request).pipe(Stream.take(1), Stream.runCollect)
+  expect(pending).toMatchObject({ _tag: "Pending", reason: "Waiting for this thread to appear." })
+  if (pending?._tag !== "Pending") throw new Error("Expected waiting watch")
+  const resume = { ...request, cursor: pending.cursor }
+  unavailable = true
+  expect((yield* client.Watch(resume).pipe(Stream.runDrain, Effect.flip))._tag).toBe("SourceFailed")
+  yield* TestClock.adjust("4 hours")
+  unavailable = false
+  expect(yield* client.Watch(resume).pipe(Stream.take(1), Stream.runCollect)).toEqual([pending])
+  current = { ...snapshot, messages: [
+        { ...message, id: token(7), messageTime: 999, parent: token(5) },
+        { ...message, id: token(8), messageTime: 1000, parent: token(5) },
+        { ...message, id: token(9), messageTime: 1001, parent: token(5) }
+      ] }
+  const batch = yield* client.Watch(resume).pipe(Stream.take(2), Stream.runCollect)
+  expect(batch.map((item) => item._tag)).toEqual(["Event", "Event"])
+  expect(yield* client.Watch(resume).pipe(Stream.take(2), Stream.runCollect)).toEqual(batch)
+  const last = batch[1]
+  if (last?._tag !== "Event" || !last.cursor) throw new Error("Expected committed batch")
+  expect(yield* client.Watch({ ...request, cursor: last.cursor }).pipe(Stream.take(1), Stream.runCollect))
+    .toEqual([{ _tag: "Cursor", cursor: last.cursor }])
+  const saved = resumeWaiting(scope, pending.cursor)!
+  expect(resumeWaiting(token(90), pending.cursor)).toBeUndefined()
+  const nearExpiry = { ...request, cursor: waitingCursor(scope, observationBudget - 1, saved.ledger) }
+  expect((yield* client.Watch(nearExpiry).pipe(Stream.take(1), Stream.runCollect))[0]?._tag).toBe("Event")
+  current = { ...snapshot, missing: "thread", messages: [] }
+  expect(yield* client.Watch(resume).pipe(Stream.take(2), Stream.runCollect)).toEqual(batch)
+  const [fresh] = yield* client.Watch(request).pipe(Stream.take(1), Stream.runCollect)
+  if (fresh?._tag !== "Pending") throw new Error("Expected new waiting watch")
+  const unobserved = { ...request, cursor: waitingCursor(scope, observationBudget - 1, resumeWaiting(scope, fresh.cursor)!.ledger) }
+  const firstPoll = yield* Deferred.make<void>()
+  const expiry = yield* client.Watch(unobserved).pipe(
+    Stream.tap((item) => item._tag === "Pending" ? Deferred.succeed(firstPoll, undefined) : Effect.void),
+    Stream.runCollect, Effect.forkChild)
+  yield* Deferred.await(firstPoll)
+  yield* TestClock.adjust("5 seconds")
+  const ended = yield* Fiber.join(expiry)
+  expect(ended.map((item) => item._tag)).toEqual(["Pending", "End"])
+  expect(ended[1]).toMatchObject({ reason: "Couldn't find this thread. Please check the thread ID or link." })
+
+}).pipe(Effect.provide(ledgerProcess), Effect.scoped), ledgerTestTimeout)
+
+it.effect("keeps the first successful Watch cutoff when an older daemon reopens its cursor", () => Effect.gen(function*() {
+  yield* TestClock.adjust("10 seconds")
+  let current: typeof Snapshot.Type = { ...snapshot, missing: "thread", messages: [] }
+  const client = yield* ConnectorTest.makeClient(make({ resolve, read: () => Effect.sync(() => current) }))
+  yield* client.Configure({ values: configuration })
+  const request = { parameters: { selection: pin }, eventTypes: [] }
+  const [saved] = yield* client.Watch(request).pipe(Stream.take(1), Stream.runCollect)
+  if (saved?._tag !== "Cursor") throw new Error("Expected an older daemon to receive the waiting cursor")
+  yield* TestClock.adjust("1 minute")
+  current = { ...snapshot, messages: [
+    { ...message, id: token(7), messageTime: 9999, parent: token(5) },
+    { ...message, id: token(8), messageTime: 10000, parent: token(5) }
+  ] }
+  const [arrival] = yield* client.Watch({ ...request, cursor: saved.cursor }).pipe(Stream.take(1), Stream.runCollect)
+  expect(arrival).toMatchObject({ _tag: "Event", event: { payload: { messageTime: 10000 } } })
+}).pipe(Effect.provide(ledgerProcess), Effect.scoped), ledgerTestTimeout)

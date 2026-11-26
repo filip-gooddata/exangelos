@@ -20,20 +20,22 @@ export interface Source<R = never> {
 }
 const reasons: Readonly<Record<number, string>> = {
   20: "Use a supported Teams conversation ID or message reference and check its scope",
-  21: "Teams cache is unreadable or unsupported. Check access and configure cachePath for a compatible cache",
-  22: "Reference was not found in this cache. Verify the conversation, account and locally available message",
-  23: "Multiple cached sources match. Set account=tenantGUID/userGUID, narrow cachePath, or supply a tenant-specific reference",
-  24: "Saved Teams selection no longer matches. Check the account and cachePath, then subscribe again with the original reference",
+  21: "Could not open the selected Teams profile. Check the folder and access.",
+  22: "Could not verify the reference for the selected Teams account. Check the ID or link and account.",
+  23: "Could not identify one matching Teams account and group. Check the link and select the intended account.",
+  24: "The saved Teams account or profile changed. Check the selected account and profile folder, then subscribe again using the original ID or link.",
   27: "Choose scope=conversation for the whole conversation or scope=replies for its thread",
   28: "A reply thread cannot be verified for this reference. Use a supported channel thread or explicitly choose scope=conversation",
   29: "Copy a Teams message link containing its conversation ID and choose scope=conversation or scope=replies",
-  30: "Teams cache manifest could not be read or validated",
-  31: "Teams cache table files could not be read or validated",
-  32: "Teams cache write-ahead log could not be read or validated",
-  33: "Teams cache changed or became inaccessible during snapshot verification",
-  34: "Teams cache inspection exceeded its time limit"
+  30: "Could not read the Teams profile. Check access and try again.",
+  31: "Could not read conversation data from the Teams profile. Try again.",
+  32: "Could not read recent Teams changes. Try again.",
+  33: "The Teams profile changed during this read. Try again.",
+  34: "Reading Teams took too long. Try again.",
+  35: "This link names a different Teams group. Check the group and channel link.",
+  36: "Could not identify one Teams thread for this message. Please check the thread link."
 }
-const unavailable = () => new SourceUnavailable({ reason: "Unable to verify Teams cache or private state. Check cachePath, access and Python 3 availability" })
+const unavailable = () => new SourceUnavailable({ reason: "Could not read Teams. Check profile access and Python 3 availability." })
 
 const processOutcome = (stage: "spawn" | "stdout" | "exit", error: PlatformError): Outcome => {
   const cause = error.cause

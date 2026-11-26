@@ -182,11 +182,21 @@ def reconcile(request, path=None):
             watch = db.execute('SELECT started_at,previews FROM watches WHERE lineage=?', (lineage,)).fetchone()
             require(watch is not None and watch[1] == previews)
             started_at = watch[0]
+            if snapshot.get('awaitingGroup'):
+                require(snapshot.get('missing') in ('conversation', 'thread') and snapshot['messages'] == [])
+                db.commit()
+                return {'events': [], 'cursor': cursor}
             edge = db.execute('SELECT result FROM edges WHERE lineage=? AND source=?', (lineage, source)).fetchone()
             if edge:
                 result = json.loads(edge[0])
+                if snapshot.get('missing'):
+                    result['replayedVisible'] = True
                 db.commit()
                 return result
+            if snapshot.get('missing'):
+                require(snapshot['missing'] in ('conversation', 'thread') and snapshot['messages'] == [])
+                db.commit()
+                return {'events': [], 'cursor': cursor}
         else:
             lineage, source = uuid.uuid4().hex, None
             started_at = request.get('startedAt', observed_at)
