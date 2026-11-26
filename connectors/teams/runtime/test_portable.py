@@ -192,6 +192,15 @@ class PortableTests(unittest.TestCase):
                 self.install(view([record]))
                 self.call(selection=CHAT,code=22)
 
+    def test_storage_failure_reports_only_the_file_class(self):
+        pin = self.call(selection=CHAT)['scope']
+        for name, code in [('000003.log', 32), ('MANIFEST-000001', 30)]:
+            with self.subTest(name=name):
+                (self.cache / name).write_bytes(b'synthetic invalid data')
+                self.call('configured-snapshot', scope=pin, includeMessagePreview=False, code=code)
+                self.install()
+        self.call('configured-snapshot', scope=pin, includeMessagePreview=False)
+
     def test_legacy_and_invalid_state(self):
         self.call('setup',code=20)
         self.call('snapshot',code=20)
