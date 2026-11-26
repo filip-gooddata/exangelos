@@ -1,0 +1,31 @@
+connectors/teams/README.md
+  s_792cf20ed3ffee::t_e51944bd846725 49
+connectors/teams/src/LastError.ts
+  s_792cf20ed3ffee::t_9c9cfd3deb0743 42
+connectors/teams/src/Source.ts
+  s_792cf20ed3ffee::t_a1accd1cc22a0f 18,77-78,89-91,103
+connectors/teams/src/Teams.ts
+  s_792cf20ed3ffee::t_d0342ae73d4e41 84-85
+connectors/teams/test/BridgeDiagnostics.test.ts
+  s_792cf20ed3ffee::t_c1bdd694240267 10-11,29,38-39,45,52-53,57,63,69-70,73-74,83-112
+connectors/teams/test/ReleaseValidation.ts
+  s_792cf20ed3ffee::t_9060fbfa5c2ca2 4,182-198,300
+connectors/teams/test/Teams.test.ts
+  s_792cf20ed3ffee::t_2ad3c2ba009dc5 169
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1f79e8fb11b449ec74d33d3a2bee0c7bd24fb463",
+  "prompts": {},
+  "sessions": {
+    "s_792cf20ed3ffee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21764-0a1a-7de2-9106-46f5bf64da74",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
