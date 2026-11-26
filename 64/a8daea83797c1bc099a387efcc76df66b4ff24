@@ -1,0 +1,59 @@
+connectors/slack/README.md
+  s_73de08cfde11bd::t_311793b7db3e5c 55-58,247
+connectors/slack/connector.json
+  s_a17edfc4d99502::t_e601f8eaf29bd5 13
+connectors/slack/direct/notifications.py
+  s_73de08cfde11bd::t_b1166686598ce5 24-28,42
+connectors/slack/direct/observation.py
+  s_73de08cfde11bd::t_5e6aac1026cbaf 268-279
+connectors/slack/direct/pin_store.py
+  s_a17edfc4d99502::t_2637ac9cc71a14 1-93
+connectors/slack/direct/setup.py
+  s_73de08cfde11bd::t_bf00717aec25eb 15,94,100-104,106,108,144,151-155,228,245,292-308,324
+connectors/slack/direct/source.py
+  s_73de08cfde11bd::t_f54dee7a8b4a2f 12,30-37,45-46,62-68,101-117,137-151,159
+connectors/slack/direct/test_setup.py
+  s_73de08cfde11bd::t_b362a5fb1a9bd1 190-209
+connectors/slack/src/Slack.ts
+  s_a17edfc4d99502::t_023b26c18e0e32 95,137
+connectors/slack/src/Source.ts
+  s_a17edfc4d99502::t_e7e5b03b09a1a6 13-14,39-40
+connectors/teams/README.md
+  s_73de08cfde11bd::t_3f8988f8915886 23
+connectors/teams/runtime/bridge.py
+  s_73de08cfde11bd::t_25df7f2a865454 174,176,181-183,192-193,196,199-201,215,218,222-242,306-327,337,348
+connectors/teams/runtime/test_bridge.py
+  s_73de08cfde11bd::t_006e56b36ca1cd 42
+connectors/teams/runtime/test_portable.py
+  s_73de08cfde11bd::t_30f7366f99e3fb 133-148
+connectors/teams/src/Reconcile.ts
+  s_a17edfc4d99502::t_d60f90460e705d 22
+connectors/teams/src/Teams.ts
+  s_a17edfc4d99502::t_f978a8fce81202 91
+connectors/teams/validation/native_cache.py
+  s_73de08cfde11bd::t_6fa601e83b7ea4 352
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "64a8daea83797c1bc099a387efcc76df66b4ff24",
+  "prompts": {},
+  "sessions": {
+    "s_73de08cfde11bd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a217a3-bc47-7b63-89dc-0b75ebaa0e01",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_a17edfc4d99502": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a217ab-295b-7973-b8fa-596431c5a4ed",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
