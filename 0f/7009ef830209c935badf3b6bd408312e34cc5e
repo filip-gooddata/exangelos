@@ -1,0 +1,69 @@
+connectors/shared/pendingSubject.ts
+  s_73de08cfde11bd::t_acc9ce7fb27670 1-19
+connectors/slack/README.md
+  s_73de08cfde11bd::t_2c4658403669aa 52-71
+connectors/slack/connector.json
+  s_73de08cfde11bd::t_fdc3abc7b68861 3
+connectors/slack/direct/ledger.py
+  s_73de08cfde11bd::t_0b73a3b9c67306 276-279,453-455,461-462
+connectors/slack/direct/setup.py
+  s_7ff6c083203273::t_88dbf2ef1f5432 134-136,144-145
+connectors/slack/direct/source.py
+  s_7ff6c083203273::t_1c50576369c031 80-84,87-94,100,110
+connectors/slack/direct/test_setup.py
+  s_7ff6c083203273::t_f67a41775ab960 174-189
+connectors/slack/direct/test_source.py
+  s_7ff6c083203273::t_d39b91ceab697a 219
+connectors/slack/src/Slack.ts
+  s_73de08cfde11bd::t_544ae573d64a8d 4,17,91,101-103,110-111,114,120-122,125-126,135-150,157-159,164
+connectors/slack/src/Source.ts
+  s_73de08cfde11bd::t_d55d8eebe9fee3 37,75,77,79-82,85
+connectors/slack/test/Slack.test.ts
+  s_73de08cfde11bd::t_cf802b4442d775 2,4,131-180
+connectors/teams/README.md
+  s_73de08cfde11bd::t_fbd6f7833582b6 21-27,47
+connectors/teams/connector.json
+  s_73de08cfde11bd::t_32009b2b24e946 3
+connectors/teams/runtime/bridge.py
+  s_73de08cfde11bd::t_f0ca2b1734e2e4 168-169,171-174,176-177,179,182,188-200,212,214-222,274,276-293,301-303,308-309
+connectors/teams/runtime/ledger.py
+  s_73de08cfde11bd::t_6499f744323b46 185-188
+connectors/teams/runtime/test_portable.py
+  s_73de08cfde11bd::t_f8c97cbbe5665f 106-132,194-195,265-266
+connectors/teams/scripts/validate-release.py
+  s_73de08cfde11bd::t_9d1f9f22d1ec12 62
+connectors/teams/src/Reconcile.ts
+  s_73de08cfde11bd::t_545042bd5fc5db 22-23
+connectors/teams/src/Source.ts
+  s_73de08cfde11bd::t_b28cd5fbbaa586 20-22,27-31,33
+connectors/teams/src/Teams.ts
+  s_73de08cfde11bd::t_ea83e550f4c1b7 4,75,81-85,91-97,99,103-112,118-120
+connectors/teams/test/Teams.test.ts
+  s_73de08cfde11bd::t_0457d98dd0ed1c 4,6,10,230-270
+connectors/teams/validation/native_cache.py
+  s_73de08cfde11bd::t_71d6f806f9b68f 2,183,186-192,209,322
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0f7009ef830209c935badf3b6bd408312e34cc5e",
+  "prompts": {},
+  "sessions": {
+    "s_73de08cfde11bd": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a217a3-bc47-7b63-89dc-0b75ebaa0e01",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    },
+    "s_7ff6c083203273": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21768-a73d-7401-9a3e-ac7667fee049",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
