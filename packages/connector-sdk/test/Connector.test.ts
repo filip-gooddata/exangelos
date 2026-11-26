@@ -4,6 +4,8 @@ import * as Os from "node:os"
 import * as Path from "node:path"
 import { DateTime, Duration, Effect, Schema, Stream } from "effect"
 import { Catalogue, Connector, ConnectorTest } from "@exangelos/connector-sdk"
+import { ConnectorProtocol } from "@exangelos/contracts"
+import { Event } from "@exangelos/domain"
 
 const opened = Catalogue.event("issue.opened", {
   description: "An issue was opened",
@@ -24,6 +26,23 @@ const windowed = Connector.make({
     configure: () => Effect.void,
     describe: (parameters) => Effect.succeed({ subject: parameters.repo, label: parameters.repo }),
     watch: ({ wakeWindow }) => Stream.make(Connector.end(`${Duration.toMillis(wakeWindow)}`))
+  })
+})
+
+const waiting = Connector.make({
+  events: [closed],
+  parameters: Catalogue.parameters({ main: "repo", schema: Schema.Struct({ repo: Schema.String }) }),
+  configuration: [],
+  handlers: Effect.succeed({
+    configure: () => Effect.void,
+    describe: (parameters) => Effect.succeed({ subject: parameters.repo, label: parameters.repo }),
+    watch: ({ createdAt }) =>
+      Stream.make(
+        Connector.pending(`created ${createdAt === undefined ? "unknown" : DateTime.formatIso(createdAt)}`, "c0"),
+        closed.item({ occurredAt, summary: "Closed", payload: { title: "x" }, dedupeKey: "1" }),
+        closed.item({ occurredAt, summary: "Closed", payload: { title: "y" }, dedupeKey: "2" }),
+        Connector.end("gone")
+      )
   })
 })
 
@@ -126,6 +145,43 @@ describe("Connector", () => {
         { _tag: "End", reason: "Repository archived" }
       ])
     }).pipe(Effect.scoped))
+
+  it.effect("streams Pending with the creation time to a daemon that reads it, a Cursor to one that does not, and clears it on an unselected event", () =>
+    Effect.gen(function*() {
+      const client = yield* ConnectorTest.makeClient(waiting)
+      const createdAt = DateTime.makeUnsafe("2026-11-20T08:00:00Z")
+      const newer = yield* client.Watch({ parameters: { repo: "a/b" }, eventTypes: [], acceptsPending: true, createdAt }).pipe(
+        Stream.runCollect
+      )
+      const older = yield* client.Watch({ parameters: { repo: "a/b" }, eventTypes: [] }).pipe(Stream.runCollect)
+
+      expect(newer.map((item) => item._tag)).toEqual(["Pending", "Event", "Event", "End"])
+      expect(newer[0]).toEqual({ _tag: "Pending", reason: "created 2026-11-20T08:00:00.000Z", cursor: "c0" })
+      expect(older.map((item) => item._tag)).toEqual(["Cursor", "Event", "Event", "End"])
+
+      const unselected = yield* client.Watch({ parameters: { repo: "a/b" }, eventTypes: [opened.type], acceptsPending: true }).pipe(
+        Stream.runCollect
+      )
+      expect(unselected.map((item) => item._tag === "Cursor" ? `Cursor ${item.cursor}` : item._tag)).toEqual([
+        "Pending",
+        "Cursor c0",
+        "End"
+      ])
+    }).pipe(Effect.scoped))
+
+  it("round-trips a Pending item and the Watch request's creation time through the wire's JSON", () => {
+    const item = Schema.toCodecJson(Event.WatchItem)
+    const pending = Connector.pending("Not in the local cache yet", "c1")
+    const wire = JSON.parse(JSON.stringify(Schema.encodeUnknownSync(item)(pending)))
+    expect(wire).toEqual({ _tag: "Pending", reason: "Not in the local cache yet", cursor: "c1" })
+    expect(Schema.decodeUnknownSync(item)(wire)).toEqual(pending)
+
+    const payload = Schema.toCodecJson(ConnectorProtocol.Watch.payloadSchema)
+    const request = { parameters: {}, eventTypes: [], acceptsPending: true, createdAt: DateTime.makeUnsafe("2026-11-20T08:00:00Z") }
+    const encoded = JSON.parse(JSON.stringify(Schema.encodeUnknownSync(payload)(request)))
+    expect(encoded).toMatchObject({ acceptsPending: true, createdAt: "2026-11-20T08:00:00.000Z" })
+    expect(Schema.decodeUnknownSync(payload)(encoded)).toEqual(request)
+  })
 
   it.effect("hands the daemon's wake window to the Watch handler, 5 s when the daemon sends none", () =>
     Effect.gen(function*() {

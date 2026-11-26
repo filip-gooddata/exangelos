@@ -72,6 +72,10 @@ _Avoid_: Running, live
 An active subscription whose connector is unavailable; it continues by itself when the connector returns.
 _Avoid_: Paused, stalled, blocked
 
+**Waiting**:
+An active subscription whose subject is not readable yet, such as a conversation not yet in a local cache; the connector reports it with a Pending watch item. Healthy, unlike failing.
+_Avoid_: Pending (pending means events not yet acknowledged)
+
 **Failing**:
 An active subscription whose connector runs but cannot read its subject, retrying until a read succeeds again. Its session gets one wake once it has failed for five minutes, at most one an hour, and one more when it recovers.
 _Avoid_: Suspended, degraded, broken, erroring

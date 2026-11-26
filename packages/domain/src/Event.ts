@@ -28,6 +28,11 @@ export type ReportedEvent = typeof ReportedEvent.Type
 export const WatchItem = Schema.TaggedUnion({
   Event: { event: ReportedEvent, cursor: Schema.optionalKey(Schema.String) },
   Cursor: { cursor: Schema.String },
+  /**
+   * The subject is not readable yet, such as a conversation not yet in a local cache, and the stream waits
+   * for it to appear. Not an event and not a failure; a later Cursor or Event clears it.
+   */
+  Pending: { reason: Schema.String, cursor: Schema.String },
   End: { reason: Schema.String }
 })
 export type WatchItem = typeof WatchItem.Type

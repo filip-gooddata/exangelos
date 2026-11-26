@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Duration, Effect, Layer } from "effect"
+import { DateTime, Duration, Effect, Layer } from "effect"
 import { enableConnector, importConnector, ConnectorAccess } from "@exangelos/application"
 import { ConnectorFilesFake, ConnectorRuntimeFake } from "@exangelos/application/testing"
 import { layerSubscriptionLocks } from "../../src/subscriptions/Locks.ts"
@@ -30,7 +30,9 @@ describe("update of an active subscription", () => {
         parameters: { name: "sub_one", branch: "dev" },
         eventTypes: [tick],
         cursor: "c1",
-        wakeWindow: Duration.seconds(5)
+        wakeWindow: Duration.seconds(5),
+        acceptsPending: true,
+        createdAt: DateTime.makeUnsafe(0)
       })
     })))
 })

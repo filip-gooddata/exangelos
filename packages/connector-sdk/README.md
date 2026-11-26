@@ -2,6 +2,30 @@
 
 `Connector.make` turns a catalogue and handlers into a connector, `Connector.serve` serves it over stdio, and `ConnectorTest.makeClient` drives it in memory. The `template` connector shows a complete one.
 
+## Waiting for a subject
+
+When a lookup succeeds and finds the subject absent, such as a conversation not yet in a local cache, stream `Connector.pending(reason, cursor)` and keep the stream open, checking again from time to time. A lookup that fails still fails the stream with `SourceFailed`. The daemon keeps the cursor and shows `Waiting: <reason>` without an event, a wake or a failure; repeating the same item changes nothing. Pending is healthy: after failures it counts as recovery, like any item.
+
+The stored waiting state outlives the stream, so every Watch call, including the one after a daemon restart, should say where the subject stands: `Connector.pending` while it is absent, and `Connector.cursor` once it is there, even when nothing new happened and the cursor is unchanged. A `Connector.cursor` or an event clears waiting, including an event of a type the subscription did not select, which the SDK passes on as a Cursor. Pending needs a cursor: pass the one the request gave, or your own starting value when it gave none, and read that value back as "from the start".
+
+Keep secrets out of the reason anyway; the daemon also scrubs configured secrets and cuts it to 300 characters, as it does for an End reason. To give up, end the stream with `Connector.end(reason)`: the subscribing session gets one ended wake with that reason.
+
+The Watch request's `createdAt` is when the subscription was created, the same on every call including after a daemon restart, so it can serve as the cutoff for a subject that appears later. A daemon before Pending sends neither `createdAt` nor `acceptsPending`; the SDK then hands it each Pending item as a plain Cursor.
+
+```ts
+const start = "start"
+
+watch: ({ parameters, cursor = start, createdAt }) =>
+  Stream.unwrap(Effect.map(cache.find(parameters.thread), (found) =>
+    found !== undefined
+      ? Stream.concat(Stream.make(Connector.cursor(cursor)), replies(found, cursor, createdAt))
+      : Stream.concat(
+        Stream.make(Connector.pending("Not in the local cache yet", cursor)),
+        // Look again every minute; emit Cursor and the replies once it is there.
+        untilFound(parameters.thread, cursor, createdAt)
+      )))
+```
+
 ## Icon
 
 The daemon asks a running connector for its logo and relays what it serves to the panel. By default the SDK serves the file the manifest `icon` names, as the template's `"icon": "icon.svg"` does, with no code. That file must stay inside the connector folder after links are resolved. Serve at most 32 KiB (`Connector.maxIconBytes`) of PNG or SVG; the daemon refuses anything else.

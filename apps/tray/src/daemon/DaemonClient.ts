@@ -45,7 +45,7 @@ export type ServiceStatus = Rpc.Success<typeof DaemonContract.ServiceStatus>
 export type SessionTitle = DaemonContract.SessionTitle
 
 export interface Snapshot {
-  readonly subscriptions: Section<ReadonlyArray<Subscription.Subscription>>
+  readonly subscriptions: Section<ReadonlyArray<Subscription.Listed>>
   readonly details: Section<ReadonlyArray<Detail>>
   readonly titles: Section<ReadonlyArray<SessionTitle>>
   readonly connectors: Section<ReadonlyArray<Connector.Status>>

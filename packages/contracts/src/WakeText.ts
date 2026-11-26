@@ -87,7 +87,7 @@ export const render = (content: Wake.WakeContent): string => {
       commands = through === undefined ? [] : [read, ...ack]
       break
     case "Recovered":
-      lines.push(`${id} is watched again ${where}`, `${content.connector} reads it again and continues from its cursor.`)
+      lines.push(`${id} is watched again ${where}`, `${content.connector} reaches its source again and continues from its cursor.`)
       if (through !== undefined) lines.push(...eventLines())
       commands = through === undefined ? [] : [read, ...ack]
       break

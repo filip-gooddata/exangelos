@@ -47,6 +47,17 @@ describe("template connector", () => {
       expect(items[2]).toEqual({ _tag: "End", reason: "Emitted 2 ticks; wake window 5000 ms" })
     }).pipe(Effect.scoped))
 
+  it.effect("waits without ending when no ticks are requested", () =>
+    Effect.gen(function*() {
+      const client = yield* configured
+      const items = yield* client.Watch({ parameters: { ticks: 0 }, eventTypes: [], acceptsPending: true }).pipe(
+        Stream.take(1),
+        Stream.runCollect
+      )
+
+      expect(items).toEqual([{ _tag: "Pending", reason: "No ticks requested yet", cursor: "0" }])
+    }).pipe(Effect.scoped))
+
   it.effect("resumes after the cursor it was given", () =>
     Effect.gen(function*() {
       const items = yield* watch({ ticks: 3 }, "2")

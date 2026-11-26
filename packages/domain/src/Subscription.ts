@@ -41,6 +41,11 @@ export const Subscription = Schema.Struct({
   state: State,
   stateSince: Schema.DateTimeUtc,
   cursor: Schema.optionalKey(Schema.String),
+  /**
+   * Why the connector waits for the subject to appear, from its latest Pending item, scrubbed of secrets
+   * and bounded. Absent once a Cursor or Event follows. Never logged.
+   */
+  waiting: Schema.optionalKey(Schema.String),
   lastNumber: AckedThrough,
   ackedThrough: AckedThrough,
   eventAlerts: Schema.Boolean
