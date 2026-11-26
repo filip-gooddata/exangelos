@@ -1,0 +1,16 @@
+connectors/slack/direct/setup.py
+  h_a04b70fbb6cbfb 126-129,171-176,274-276
+connectors/slack/direct/test_setup.py
+  h_a04b70fbb6cbfb 324-326,328
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2bc9b7ab9532ffb0db78047764c81b2f935b57ef",
+  "prompts": {},
+  "humans": {
+    "h_a04b70fbb6cbfb": {
+      "author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
