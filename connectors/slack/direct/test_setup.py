@@ -321,7 +321,11 @@ class SetupTests(unittest.TestCase):
         link = f'https://fixture.slack.com/archives/{CHANNEL}/p'+mid.replace('.', '')+'?thread_ts='+TIME
         with mock.patch.object(setup.sys, 'platform', 'linux'):
             channel = self.resolve(CHANNEL)
+            original_reply = self.resolve(f'{CHANNEL}:{REPLY}', scope='replies')
+        del self.state['messages'][CHANNEL][REPLY]
+        database(self.root, self.state, sequence=20)
         with mock.patch.object(setup.sys, 'platform', 'darwin'), mock.patch.object(source, 'volume_uuid', return_value='b'*32):
+            self.assertEqual(self.resolve(f'{CHANNEL}:{REPLY}', scope='replies')['expectedScope'], original_reply['expectedScope'])
             guarded = self.resolve(link, scope='conversation')
             self.assertNotEqual(guarded['expectedScope'], channel['expectedScope'])
             add_message(self.state, mid, TIME)

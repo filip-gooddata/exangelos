@@ -123,6 +123,10 @@ def candidates(state, target):
         yield Candidate(workspace, owner, channel, parent, False, True, verified, label)
 
 
+def previous_epoch_path(directory, secret, portable):
+    return directory / ('profile-epoch-' + observation.token(secret, 'profile-epoch-v1', portable) + '.json')
+
+
 def discover(roots, secret, target, scope, directory):
     matches = []
     inventories = {}
@@ -164,6 +168,12 @@ def discover(roots, secret, target, scope, directory):
     if parent:
         with locked(directory):
             known = source.reference_binding(directory, secret, epoch, selection, target.timestamp)
+            if not known and candidate.unresolved and binding == {'kind': 'volume'}:
+                # A verified profile can change from a device number to a volume UUID.
+                old = optional(previous_epoch_path(directory, secret, epoch)) or source.directory_epoch(root)
+                known = source.reference_binding(directory, secret, old, selection, target.timestamp)
+                if known:
+                    source.reference_binding(directory, secret, epoch, selection, target.timestamp, known)
             if not known and candidate.unresolved:
                 # A pre-upgrade canonical pin is also proof that this ID was a root.
                 canonical = dict(selection, thread=target.timestamp)
@@ -261,6 +271,9 @@ def reopen(directory, roots, handle, *, pin_only=False):
             except FileNotFoundError:
                 secret = None
             if secret is not None:
+                previous = previous_epoch_path(directory, secret, portable)
+                if not previous.exists():
+                    save_json(previous, epoch)
                 _, canonical = source.subscription_identity(secret, portable, request['selection'])
                 save_json(directory / ('alias-' + canonical + '.json'), handle)
             save_json(path, dict(saved, request=request))
