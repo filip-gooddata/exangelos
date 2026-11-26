@@ -1,0 +1,31 @@
+connectors/github-pr/src/Transport.ts
+  s_1e9f776e0415b4::t_8d9707aa35bec5 64-65,155-156
+connectors/github-repo/README.md
+  s_1e9f776e0415b4::t_5e16446012b8d1 66,80
+connectors/github-repo/src/Cursor.ts
+  s_1e9f776e0415b4::t_63aff9aa71d021 16
+connectors/github-repo/src/Diff.ts
+  s_1e9f776e0415b4::t_f6f1db5f75e21a 19-21,25,118-119,123-124,129,131,133-134,217
+connectors/github-repo/src/GitHub.ts
+  s_1e9f776e0415b4::t_ec2144542eeb57 127-128,161,178,246
+connectors/github-repo/src/Poll.ts
+  s_1e9f776e0415b4::t_e33881ee6a3e63 70-71
+connectors/github-repo/test/Diff.test.ts
+  s_1e9f776e0415b4::t_d283c3b88c0129 131,135,144,146,150-153,183
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a717d80a31475dca462495401ac6e51b2b636d2e",
+  "prompts": {},
+  "sessions": {
+    "s_1e9f776e0415b4": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ccd77d56-ba94-4181-ac48-0f5c6a34d95a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
