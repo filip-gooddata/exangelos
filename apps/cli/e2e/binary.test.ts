@@ -724,7 +724,7 @@ describe("official connectors from a release address", () => {
     expect(requests.some((line) => /^GET \/rest\/api\/3\/search\/jql\?.*maxResults=1(&|$)/.test(line))).toBe(true)
   }, 60_000)
 
-  it("subscribes to two Slack IDs after consent without a selector file", async () => {
+  it("subscribes to known Slack IDs and waits for an unseen DM after consent", async () => {
     const cache = join(root, "positional-slack")
     await mkdir(cache)
     const fixture = Bun.spawnSync(["python3", "-B", "-c", [
@@ -739,7 +739,20 @@ describe("official connectors from a release address", () => {
     const subscribe = (id: string, ...options: Array<string>) => run(exangelos, "--json", "subscribe", "slack", id, ...options, "--intent", "Observe cached messages", "--pull-only")
     expect(subscribe("C0000001").status).toBe(1)
     json("connector", "configure", "slack", `cacheRoot=${cache}`, "subscriptionAccess=persisted-cache")
-    expect(subscribe("D9999999").status).toBe(1)
+    const malformed = subscribe("D999-9999")
+    expect(malformed.status).toBe(1)
+    expect(malformed.stderr + malformed.stdout).toContain("conversation ID")
+    const unseen = subscribe("D9999999")
+    expect(unseen.status, unseen.stdout + unseen.stderr).toBe(0)
+    const pendingId = JSON.parse(unseen.stdout).id
+    await eventually(() => {
+      const shown = json("show", pendingId)
+      expect(shown.subscription).toMatchObject({ state: { _tag: "Active" }, waiting: "Waiting for this conversation to appear." })
+      expect(shown.subscription.observation).toBeUndefined()
+      expect(shown.events).toEqual([])
+      expect(shown.wakes).toEqual([])
+    })
+    json("cancel", pendingId)
     const subscriptions = ["C0000001", "D0000002"].map((id) => {
       const result = subscribe(id)
       expect(result.status, result.stdout + result.stderr).toBe(0)
