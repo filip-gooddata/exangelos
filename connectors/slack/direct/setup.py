@@ -123,7 +123,7 @@ def candidates(state, target):
         yield Candidate(workspace, owner, channel, parent, False, True, verified, label)
 
 
-def discover(roots, secret, target, scope):
+def discover(roots, secret, target, scope, directory):
     matches = []
     inventories = {}
     for path in roots.values():
@@ -162,14 +162,28 @@ def discover(roots, secret, target, scope):
     parent = candidate.parent
     selection = dict(workspace=candidate.workspace, owner=candidate.owner, conversations=[candidate.channel])
     if parent:
+        with locked(directory):
+            known = source.reference_binding(directory, secret, epoch, selection, target.timestamp)
+            if not known and candidate.unresolved:
+                # A pre-upgrade canonical pin is also proof that this ID was a root.
+                canonical = dict(selection, thread=target.timestamp)
+                _, old_handle = source.subscription_identity(secret, epoch, canonical)
+                old = optional(directory / ('scope-' + old_handle + '.json'))
+                if old is not None:
+                    require(old['epoch'] == epoch and old['request']['selection'] == canonical
+                            and old['request']['expectedScope'] == old_handle)
+                    known = target.timestamp
+        if known and ((target.parent and known != target.parent) or (candidate.present and known != parent)):
+            raise SetupRejected(22)
+        parent = known or parent
         if scope is None and parent == target.timestamp:
             raise SetupRejected(27)
         if scope != 'conversation':
             selection['thread'] = parent
-            if candidate.unresolved:
-                selection['message'] = target.timestamp
-                if target.parent:
-                    selection['parentHint'] = target.parent
+        if candidate.unresolved and not known and (scope != 'conversation' or target.parent):
+            selection['message'] = target.timestamp
+            if target.parent:
+                selection['parentHint'] = target.parent
     key, handle = source.subscription_identity(secret, epoch, selection)
     request = dict(selection=selection, key=key, root=str(root), expectedScope=handle)
     if binding:
@@ -181,6 +195,10 @@ def discover(roots, secret, target, scope):
         else:
             previous, mode = expected
             require(source.inventory(inspected, mode) == previous)
+    if target.timestamp and candidate.present:
+        with locked(directory):
+            require(source.reference_binding(directory, secret, epoch, selection, target.timestamp, parent) == parent)
+            require(source.reference_binding(directory, secret, epoch, selection, parent, parent) == parent)
     return epoch, request, candidate.label
 
 
@@ -305,23 +323,31 @@ def setup(values):
                 with os.fdopen(fd) as stream:
                     secret = json.loads(stream.read(128))
             require(isinstance(secret, str) and re.fullmatch(r'[a-f0-9]{64}', secret))
-        epoch, request, label = discover(roots, bytes.fromhex(secret), target, scope)
+        epoch, request, label = discover(roots, bytes.fromhex(secret), target, scope, directory)
         existing = None
         exact_path = directory / ('scope-' + request['expectedScope'] + '.json')
-        if request['selection'].get('thread') and 'message' not in request['selection'] and not exact_path.exists():
+        selected_thread = request['selection'].get('thread')
+        if 'message' not in request['selection']:
             # A previous watch can have verified the containing thread already.
-            alias = optional(directory / ('thread-alias-' + request['expectedScope'] + '.json'))
-            pending_selection = dict(request['selection'], thread=target.parent or target.timestamp, message=target.timestamp)
-            if target.parent:
-                pending_selection['parentHint'] = target.parent
-            _, pending_handle = source.subscription_identity(bytes.fromhex(secret), epoch, pending_selection)
-            if alias is None and (directory / ('scope-' + pending_handle + '.json')).exists():
-                alias = pending_handle
+            alias = None
+            if target.timestamp and (selected_thread or target.parent):
+                pending_selection = dict(request['selection'], message=target.timestamp)
+                if selected_thread:
+                    pending_selection['thread'] = target.parent or target.timestamp
+                if target.parent:
+                    pending_selection['parentHint'] = target.parent
+                _, pending_handle = source.subscription_identity(bytes.fromhex(secret), epoch, pending_selection)
+                if (directory / ('scope-' + pending_handle + '.json')).exists():
+                    alias = pending_handle
+            if not alias and not exact_path.exists():
+                alias = optional(directory / ('thread-alias-' + request['expectedScope'] + '.json'))
             if alias:
                 require(isinstance(alias, str) and re.fullmatch('[a-f0-9]{64}', alias))
                 candidate, _ = reopen(directory, roots, alias)
                 resolved = source.acquire(candidate)
-                if (resolved.get('resolvedThread') == request['selection']['thread']
+                parent = resolved.get('resolvedThread')
+                if (parent and bool(candidate['selection'].get('thread')) == bool(selected_thread)
+                        and (not selected_thread or parent == selected_thread)
                         and all(candidate['selection'][k] == request['selection'][k] for k in ('workspace','owner','conversations'))):
                     existing = candidate
         if existing is None and request.get('volumeIdentity') == {'kind': 'volume'}:
@@ -333,7 +359,7 @@ def setup(values):
             request = existing
     selection = request['selection']
     require(isinstance(label, str) and len(label) <= 128 and label.isprintable())
-    if 'message' in selection:
+    if 'message' in selection and selection.get('thread'):
         label = f"{label} · thread for message {selection['message']}"
     elif 'thread' in selection:
         label = f"{label} · replies to {selection['thread']}"

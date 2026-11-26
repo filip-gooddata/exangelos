@@ -25,7 +25,7 @@ class PinnedScopeChanged(ValueError):
 def scope_token(key, selection, epoch):
     if 'message' in selection:
         return observation.token(key, 'selected-message-scope-v1', selection['workspace'], selection['owner'],
-                                 sorted(selection['conversations']), selection['thread'], selection['message'],
+                                 sorted(selection['conversations']), selection.get('thread'), selection['message'],
                                  selection.get('parentHint'), epoch)
     return observation.token(key, 'selected-scope-v2', selection['workspace'], selection['owner'],
                              sorted(selection['conversations']), selection.get('thread'), epoch)
@@ -37,6 +37,19 @@ def subscription_identity(secret, epoch, selection):
     if 'message' in selection:
         key = observation.token(secret, 'message-selection-v1', key, selection['message'], selection.get('parentHint'))
     return key, scope_token(bytes.fromhex(key), selection, epoch)
+
+
+def reference_binding(directory, secret, epoch, selection, timestamp, parent=None):
+    name = observation.token(secret, 'message-parent-v1', epoch, selection['workspace'],
+                             selection['owner'], selection['conversations'][0], timestamp)
+    path = directory / ('reference-' + name + '.json')
+    saved = optional(path)
+    if saved is not None and (not isinstance(saved, str) or not re.fullmatch(observation.TIMESTAMP, saved)):
+        raise ValueError('saved message parent')
+    if saved is None and parent:
+        save_json(path, parent)
+        return parent
+    return saved
 
 
 def acquire(request):
@@ -65,10 +78,12 @@ def acquire(request):
         raise ValueError('selection')
     message_ref = selection.get('message')
     hint = selection.get('parentHint')
-    if 'message' in selection and (not thread or not isinstance(message_ref,str) or not re.fullmatch(observation.TIMESTAMP,message_ref)
-                                   or thread != (hint or message_ref) or not request.get('expectedScope')):
+    if 'message' in selection and (len(conversations) != 1 or not isinstance(message_ref,str)
+                                   or not re.fullmatch(observation.TIMESTAMP,message_ref)
+                                   or (thread and thread != (hint or message_ref))
+                                   or not (thread or hint) or not request.get('expectedScope')):
         raise ValueError('message selection')
-    if 'parentHint' in selection and not (message_ref and hint == thread):
+    if 'parentHint' in selection and not (message_ref and isinstance(hint, str) and re.fullmatch(observation.TIMESTAMP, hint)):
         raise ValueError('parent hint')
     if len(set(conversations)) != len(conversations):
         raise ValueError('selection')
@@ -113,15 +128,20 @@ def acquire(request):
         observed = None
         if message_ref in rows:
             observed = observation.containing_thread(rows[message_ref], message_ref, workspace, conversations[0])
+        if not observed and not resolved:
+            secret = bytes.fromhex(read_json(directory / 'subscriptions-key.json'))
+            observed = reference_binding(directory, secret, epoch, selection, message_ref)
         if resolved is not None and not (isinstance(resolved,str) and re.fullmatch(observation.TIMESTAMP,resolved)):
             raise ValueError('saved thread')
         if observed and ((resolved and resolved != observed) or (hint and observed != hint)):
             return {'scope':scope, 'threadMismatch':True, 'complete':True, 'messages':[],
                     'generation':str(generation), 'snapshot':observation.token(key,'thread-mismatch')}
-        if hint and hint != message_ref and not (resolved or observed):
+        if (not thread or (hint and hint != message_ref)) and not (resolved or observed):
             return {'scope':scope, 'missing':True, 'complete':True, 'messages':[],
                     'generation':str(generation), 'snapshot':observation.token(key,'missing-thread')}
-        thread = resolved or observed or hint or message_ref
+        parent = resolved or observed or hint or message_ref
+        if thread:
+            thread = parent
     visible = False
     messages = []
     for conversation in sorted(conversations):
@@ -144,18 +164,23 @@ def acquire(request):
     if message_ref and visible:
         with locked(directory):
             saved = optional(binding_path)
-            if saved and saved != thread:
+            if saved and saved != parent:
                 raise ValueError('thread changed')
-            if not saved:
-                save_json(binding_path, thread)
             canonical = {k:v for k,v in selection.items() if k not in ('message','parentHint')}
-            canonical['thread'] = thread
+            if thread:
+                canonical['thread'] = thread
             secret = bytes.fromhex(read_json(directory / 'subscriptions-key.json'))
+            if not saved:
+                if (reference_binding(directory, secret, epoch, selection, message_ref, parent) != parent
+                        or reference_binding(directory, secret, epoch, selection, parent, parent) != parent):
+                    return {'scope':scope, 'threadMismatch':True, 'complete':True, 'messages':[],
+                            'generation':str(generation), 'snapshot':observation.token(key,'thread-mismatch')}
+                save_json(binding_path, parent)
             _, handle = subscription_identity(secret, epoch, canonical)
             alias = directory / ('thread-alias-'+handle+'.json')
             if not alias.exists():
                 save_json(alias, scope)
-        resolved = thread
+        resolved = parent
     messages.sort(key=lambda message: message['id'])
     marker_rows = []
     for message in messages:

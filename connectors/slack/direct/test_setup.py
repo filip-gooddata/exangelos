@@ -210,6 +210,39 @@ class SetupTests(unittest.TestCase):
         database(self.root, self.state, sequence=40)
         self.assertEqual(snapshot(self.resolve('scope-'+saved['expectedScope']))['resolvedThread'], TIME)
 
+    def test_verified_reply_and_root_aliases_survive_complete_eviction(self):
+        saved = self.resolve(f'{CHANNEL}:{REPLY}', scope='replies')
+        self.state['messages'][CHANNEL].clear()
+        database(self.root, self.state, sequence=30)
+        for ts in (REPLY, TIME):
+            self.assertEqual(self.resolve(f'{CHANNEL}:{ts}', scope='replies'), saved)
+        self.reject(22, f'https://fixture.slack.com/archives/{CHANNEL}/p'+REPLY.replace('.', '')+
+                    '?thread_ts='+OTHER, scope='replies')
+        for record in setup.private_directory().glob('reference-*.json'):
+            record.unlink()
+        self.assertEqual(self.resolve(f'{CHANNEL}:{TIME}', scope='replies'), saved)
+
+    def test_conversation_link_verifies_parent_before_releasing_unrelated_rows(self):
+        ref = '1700000010.000001'
+        link = f'https://fixture.slack.com/archives/{CHANNEL}/p'+ref.replace('.', '')
+        def read(saved):
+            return source.acquire({k:v for k,v in saved.items() if k != 'label'})
+        ordinary = self.resolve(CHANNEL)
+        good = self.resolve(link+'?thread_ts='+TIME, scope='conversation')
+        bad = self.resolve(link+'?thread_ts='+OTHER, scope='conversation')
+        self.assertEqual(read(good)['messages'], [])
+        self.assertTrue(read(bad)['missing'])
+        add_message(self.state, ref, TIME)
+        database(self.root, self.state, sequence=30)
+        self.assertIn(OTHER, {r['messageTs'] for r in read(good)['messages']})
+        self.assertEqual(self.resolve(CHANNEL)['expectedScope'], ordinary['expectedScope'])
+        self.assertTrue(read(bad)['threadMismatch'])
+        self.assertEqual(read(bad)['messages'], [])
+        self.assertEqual(self.resolve(link+'?thread_ts='+TIME, scope='conversation')['expectedScope'], good['expectedScope'])
+        del self.state['messages'][CHANNEL][ref]
+        database(self.root, self.state, sequence=40)
+        self.assertEqual(self.resolve(link+'?thread_ts='+TIME, scope='conversation')['expectedScope'], good['expectedScope'])
+
     def test_filtered_observations_and_ledger_cursor_binding(self):
         def snapshot(subject):
             request = self.resolve(subject)

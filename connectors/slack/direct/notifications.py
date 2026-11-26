@@ -23,9 +23,11 @@ def project(record, request, label, floor):
     team, account = selected['workspace'], selected['owner']
     bound_thread = selected.get('thread')
     if selected.get('message'):
-        bound_thread = source.optional(source.private_directory() / ('thread-'+request['expectedScope']+'.json'))
-        if not bound_thread:
+        verified = source.optional(source.private_directory() / ('thread-'+request['expectedScope']+'.json'))
+        if not verified:
             return
+        if bound_thread:
+            bound_thread = verified
     identifier = record.get('id')
     if not isinstance(identifier, str):
         return

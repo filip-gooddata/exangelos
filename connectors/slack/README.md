@@ -55,7 +55,10 @@ its channel. For an unseen message, choose the conversation or its replies expli
 A qualified message ID can start waiting before its parent is known. Once the
 exact message identifies its containing thread, the watch retains that binding across
 restarts and message eviction. When a permalink names a different message as the parent, the watch waits for
-the selected message to confirm that relationship. If the message contradicts that parent, the watch ends and asks for the thread link. Show and List mark the watch as waiting.
+the selected message to confirm that relationship, including when the watch covers the whole conversation. If the message contradicts that parent, the watch ends and asks for the thread link. Show and List mark the watch as waiting.
+
+A saved watch keeps its handle after an upgrade. If an older release saved only the thread root,
+a link to an evicted reply needs a fresh observation to identify the same thread again.
 
 The first matching snapshot can deliver replies even if the root is absent. Slack's original
 message timestamp is compared as decimal seconds, retaining up to ten fractional digits.
