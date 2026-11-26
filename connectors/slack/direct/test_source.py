@@ -216,7 +216,7 @@ class SourceTests(unittest.TestCase):
     def test_failure_is_fixed_and_never_partial_output(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
-            for fault in ('selection', 'key', 'hidden', 'body', 'thread', 'timestamp', 'checksum', 'missing_log', 'symlink'):
+            for fault in ('key', 'hidden', 'body', 'thread', 'timestamp', 'checksum', 'missing_log', 'symlink'):
                 with self.subTest(fault=fault):
                     state = fixture()
                     message = next(iter(state['messages'][SELECTION[2]].values()))
@@ -227,7 +227,6 @@ class SourceTests(unittest.TestCase):
                         state['messages'][SELECTION[2]] = {'invalid-timestamp': message}
                     database(root, state)
                     value = request(root)
-                    if fault == 'selection': value['selection']['conversations'] = ['C9999999']
                     if fault == 'key': value['key'] = 'private-invalid-value'
                     log = root / 'https_app.slack.com_0.indexeddb.leveldb/000002.log'
                     if fault == 'checksum': log.write_bytes(log.read_bytes()[:-1] + b'x')

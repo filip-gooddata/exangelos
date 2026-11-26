@@ -2,21 +2,17 @@
 from __future__ import annotations
 from dataclasses import dataclass
 import contextlib
-import fcntl
 import json
 import logging
 import os
 from pathlib import Path
 import re
 import secrets
-import stat
 import sys
-import tempfile
-import time
 
 import observation
 import source
-from state_directory import state_directory
+from pin_store import locked, private_file, private_directory, read_json, save_json, safe_path, optional
 
 
 def require(value):
@@ -82,45 +78,16 @@ def locations(custom):
     }
 
 
-def safe_path(path):
-    require(path.is_absolute())
-    for parent in (path, *path.parents):
-        require(not parent.is_symlink())
-    return path.resolve()
-
-
-def private_file(path, flags):
-    fd = os.open(path, flags | os.O_NOFOLLOW, 0o600)
-    info = os.fstat(fd)
-    if not (stat.S_ISREG(info.st_mode) and info.st_uid == os.getuid()
-            and info.st_nlink == 1 and info.st_mode & 0o077 == 0):
-        os.close(fd)
-        raise ValueError('private file')
-    return fd
-
-
-def private_directory():
-    directory = safe_path(state_directory())
-    require(not directory.is_relative_to(Path(__file__).resolve().parent.parent))
-    directory.mkdir(parents=True, exist_ok=True, mode=0o700)
-    info = directory.stat()
-    require(info.st_uid == os.getuid() and info.st_mode & 0o077 == 0)
-    return directory
-
-
-@contextlib.contextmanager
-def locked(directory):
-    with os.fdopen(private_file(directory / 'setup.lock', os.O_RDWR | os.O_CREAT), 'r+') as lock:
-        deadline = time.monotonic() + 1.0
-        while True:
-            try:
-                fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                break
-            except BlockingIOError:
-                if time.monotonic() >= deadline:
-                    raise
-                time.sleep(0.02)
-        yield
+@dataclass(frozen=True)
+class Candidate:
+    workspace: str
+    owner: str
+    channel: str
+    parent: str | None
+    unresolved: bool
+    present: bool
+    verified: bool
+    label: str
 
 
 def candidates(state, target):
@@ -131,34 +98,29 @@ def candidates(state, target):
     if domain is not None and target.domain != domain:
         return
     verified = not target.domain or domain is not None
-    messages = state.get('messages') or {}
-    channels = state.get('channels') or {}
+    messages = state.get('messages')
+    channels = state.get('channels', {})
+    require(isinstance(messages, dict) and isinstance(channels, dict))
     for channel in ([target.channel] if target.channel else messages):
-        if channel not in messages and channel not in channels:
+        if not target.channel and target.timestamp not in messages[channel]:
             continue
+        label = observation.conversation_label(state, workspace, channel, include_members=True)
         if target.timestamp is None:
-            yield workspace, owner, channel, None, verified, observation.conversation_label(state, workspace, channel, include_members=True)
+            present = channel in messages or channel in channels
+            yield Candidate(workspace, owner, channel, None, False, present, verified, label)
             continue
         rows = messages.get(channel, {})
         require(isinstance(rows, dict))
         if target.timestamp not in rows:
+            if target.channel:
+                known_root = target.parent in (None, target.timestamp) and any(
+                    isinstance(row, dict) and row.get('thread_ts') == target.timestamp
+                    and observation.containing_thread(row, ts, workspace, channel) == target.timestamp
+                    for ts, row in rows.items())
+                yield Candidate(workspace, owner, channel, target.parent or target.timestamp, not known_root, known_root, verified, label)
             continue
-        message = rows[target.timestamp]
-        require(isinstance(message, dict) and message.get('ts') == target.timestamp)
-        require(not message.get('_hidden_stub') and not message.get('no_display'))
-        require(all(message.get(field) in (None, channel) for field in ('channel', 'channel_id')))
-        require(message.get('team', workspace) == workspace)
-        parent = message.get('thread_ts')
-        require(parent is None or isinstance(parent, str) and re.fullmatch(TS, parent))
-        parent = parent or target.timestamp
-        if target.parent is None or parent == target.parent:
-            yield workspace, owner, channel, parent, verified, observation.conversation_label(state, workspace, channel, include_members=True)
-
-
-def subscription_identity(secret, epoch, selection):
-    key = observation.token(secret, 'subscription-key-v2', epoch['root'], selection['workspace'],
-                            selection['owner'], selection['conversations'][0], selection.get('thread'))
-    return key, source.scope_token(bytes.fromhex(key), selection, epoch)
+        parent = observation.containing_thread(rows[target.timestamp], target.timestamp, workspace, channel)
+        yield Candidate(workspace, owner, channel, parent, False, True, verified, label)
 
 
 def discover(roots, secret, target, scope):
@@ -184,24 +146,31 @@ def discover(roots, secret, target, scope):
             nonlocal observed
             observed = True
             for candidate in candidates(state, target):
-                matches.append((root, epoch, binding, *candidate))
+                matches.append((candidate, root, epoch, binding))
 
         result = source.scan.run(root, observe=collect)
         require(observed and not result['external_rejections'] and not result['files_changed'] and result['current_unchanged'])
     if not any(value is not None for value in inventories.values()):
         raise SetupRejected(21)
-    if not any(match[-2] for match in matches):
+    matches = [match for match in matches if match[0].present] or matches
+    matches = [match for match in matches if not target.parent or match[0].parent == target.parent]
+    if not any(match[0].verified for match in matches):
         raise SetupRejected(22)
     if len(matches) != 1:
         raise SetupRejected(23)
-    root, epoch, binding, workspace, owner, channel, parent, _, label = matches[0]
-    selection = dict(workspace=workspace, owner=owner, conversations=[channel])
+    candidate, root, epoch, binding = matches[0]
+    parent = candidate.parent
+    selection = dict(workspace=candidate.workspace, owner=candidate.owner, conversations=[candidate.channel])
     if parent:
         if scope is None and parent == target.timestamp:
             raise SetupRejected(27)
         if scope != 'conversation':
             selection['thread'] = parent
-    key, handle = subscription_identity(secret, epoch, selection)
+            if candidate.unresolved:
+                selection['message'] = target.timestamp
+                if target.parent:
+                    selection['parentHint'] = target.parent
+    key, handle = source.subscription_identity(secret, epoch, selection)
     request = dict(selection=selection, key=key, root=str(root), expectedScope=handle)
     if binding:
         request['volumeIdentity'] = binding
@@ -212,27 +181,7 @@ def discover(roots, secret, target, scope):
         else:
             previous, mode = expected
             require(source.inventory(inspected, mode) == previous)
-    return epoch, request, label
-
-
-def save_json(path, saved):
-    fd, temporary = tempfile.mkstemp(prefix='.setup-', dir=path.parent)
-    try:
-        with os.fdopen(fd, 'w') as handle:
-            json.dump(saved, handle, separators=(',', ':'))
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary, path)
-    finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
-
-
-def read_json(path):
-    with os.fdopen(private_file(path, os.O_RDONLY)) as stream:
-        raw = stream.read(source.MAX_INPUT + 1)
-    require(len(raw) <= source.MAX_INPUT)
-    return json.loads(raw, object_pairs_hook=source.unique_object)
+    return epoch, request, candidate.label
 
 
 def reopen(directory, roots, handle, *, pin_only=False):
@@ -294,7 +243,7 @@ def reopen(directory, roots, handle, *, pin_only=False):
             except FileNotFoundError:
                 secret = None
             if secret is not None:
-                _, canonical = subscription_identity(secret, portable, request['selection'])
+                _, canonical = source.subscription_identity(secret, portable, request['selection'])
                 save_json(directory / ('alias-' + canonical + '.json'), handle)
             save_json(path, dict(saved, request=request))
     return request, label
@@ -311,7 +260,7 @@ def equivalent_pin(directory, root, secret, request):
             'root': source.directory_identity(root),
             'database': source.directory_identity(root / 'https_app.slack.com_0.indexeddb.leveldb')
         }
-        _, handle = subscription_identity(secret, legacy_epoch, request['selection'])
+        _, handle = source.subscription_identity(secret, legacy_epoch, request['selection'])
         if not (directory / ('scope-' + handle + '.json')).exists():
             return None
     try:
@@ -358,7 +307,24 @@ def setup(values):
             require(isinstance(secret, str) and re.fullmatch(r'[a-f0-9]{64}', secret))
         epoch, request, label = discover(roots, bytes.fromhex(secret), target, scope)
         existing = None
-        if request.get('volumeIdentity') == {'kind': 'volume'}:
+        exact_path = directory / ('scope-' + request['expectedScope'] + '.json')
+        if request['selection'].get('thread') and 'message' not in request['selection'] and not exact_path.exists():
+            # A previous watch can have verified the containing thread already.
+            alias = optional(directory / ('thread-alias-' + request['expectedScope'] + '.json'))
+            pending_selection = dict(request['selection'], thread=target.parent or target.timestamp, message=target.timestamp)
+            if target.parent:
+                pending_selection['parentHint'] = target.parent
+            _, pending_handle = source.subscription_identity(bytes.fromhex(secret), epoch, pending_selection)
+            if alias is None and (directory / ('scope-' + pending_handle + '.json')).exists():
+                alias = pending_handle
+            if alias:
+                require(isinstance(alias, str) and re.fullmatch('[a-f0-9]{64}', alias))
+                candidate, _ = reopen(directory, roots, alias)
+                resolved = source.acquire(candidate)
+                if (resolved.get('resolvedThread') == request['selection']['thread']
+                        and all(candidate['selection'][k] == request['selection'][k] for k in ('workspace','owner','conversations'))):
+                    existing = candidate
+        if existing is None and request.get('volumeIdentity') == {'kind': 'volume'}:
             existing = equivalent_pin(directory, Path(request['root']), bytes.fromhex(secret), request)
         if existing is None:
             path = directory / ('scope-' + request['expectedScope'] + '.json')
@@ -367,13 +333,16 @@ def setup(values):
             request = existing
     selection = request['selection']
     require(isinstance(label, str) and len(label) <= 128 and label.isprintable())
-    if 'thread' in selection:
+    if 'message' in selection:
+        label = f"{label} · thread for message {selection['message']}"
+    elif 'thread' in selection:
         label = f"{label} · replies to {selection['thread']}"
     return dict(request, label=label)
 
 
 def validate(request):
     snapshot = source.acquire(request)
+    require(not snapshot.get('threadMismatch'))
     require(len(snapshot['messages']) <= 500)
     require(all(len(message['reactions']) <= 100 for message in snapshot['messages']))
 

@@ -10,6 +10,8 @@ export const Request = Schema.Struct({
     workspace: Identifier,
     owner: Identifier,
     thread: Schema.optional(Identifier),
+    message: Schema.optionalKey(Identifier),
+    parentHint: Schema.optionalKey(Identifier),
     conversations: Schema.Array(Identifier).check(Schema.isMinLength(1), Schema.isMaxLength(500))
   }),
   key: Token,
@@ -34,6 +36,9 @@ export const MessageContext = Schema.Struct({
   sender: Schema.optionalKey(Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(160)))
 })
 export const Snapshot = Schema.Struct({
+  threadMismatch: Schema.optionalKey(Schema.Literal(true)),
+  resolvedThread: Schema.optionalKey(Identifier),
+  missing: Schema.optionalKey(Schema.Literal(true)),
   emptyBody: Schema.optionalKey(Token),
   scope: Token,
   complete: Schema.Literal(true),
@@ -71,17 +76,17 @@ export const notifications = (request: typeof Request.Type, label: string) =>
       Stream.mapEffect((line) => Schema.decodeEffect(Schema.fromJsonString(Notice))(line)))
   })).pipe(Stream.catch(() => Stream.empty))
 
-const snapshotReason = "Slack persisted snapshot is unavailable or unsupported"
+const snapshotReason = "Could not read Slack. Check that the desktop profile is accessible and try again."
 const setupReasons: Readonly<Record<number, string>> = {
-  1: "Slack setup could not validate private state or a stable, supported persisted snapshot",
+  1: "Could not read the selected Slack profile. Check access and try again.",
   20: "Use a D/C/G conversation ID, Slack message permalink, timestamp, or CHANNEL:TIMESTAMP. For a message use scope=conversation or scope=replies",
-  21: "Slack cache or private setup files are missing or unreadable. Check the cache root and access",
-  22: "No matching conversation or message in this persisted cache. Check the reference and cache root. For an unverified permalink domain, use CHANNEL:TIMESTAMP",
-  23: "Multiple cached sources matched. Specify CHANNEL:TIMESTAMP or narrow cacheRoot to one source",
-  24: "The saved Slack scope or cache changed. Check cacheRoot and subscribe again using the original conversation ID or message reference",
+  21: "Could not open the selected Slack profile. Check the folder and access.",
+  22: "Could not verify this Slack reference for the selected workspace. Check the workspace and use a conversation ID or a message link.",
+  23: "More than one Slack selection matches. Specify the workspace and channel, or choose one desktop profile.",
+  24: "The saved Slack account or profile changed. Check the selected account and subscribe again using the original ID or link.",
   25: "Another Slack setup is running. Retry Subscribe",
   26: "Configure subscriptionAccess=persisted-cache and retry with a Slack conversation ID or message reference",
-  27: 'Top-level message. For the whole conversation retry exangelos subscribe slack "<reference>" scope=conversation --intent "<intent>" --pull-only. For its replies use scope=replies. In MCP subscribe, set parameters to {"selection":"<reference>","scope":"conversation"} or {"selection":"<reference>","scope":"replies"}'
+  27: 'Choose what to watch. For the whole conversation retry exangelos subscribe slack "<reference>" scope=conversation --intent "<intent>" --pull-only. For its replies use scope=replies. In MCP subscribe, set parameters to {"selection":"<reference>","scope":"conversation"} or {"selection":"<reference>","scope":"replies"}'
 }
 export class SourceUnavailable extends Schema.TaggedError<SourceUnavailable>()("SourceUnavailable", {
   reason: Schema.String,

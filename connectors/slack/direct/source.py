@@ -9,6 +9,7 @@ import stat
 import struct
 import sys
 
+from pin_store import locked, optional, private_directory, read_json, save_json, unique_object
 import observation
 import scan
 
@@ -22,8 +23,20 @@ class PinnedScopeChanged(ValueError):
 
 
 def scope_token(key, selection, epoch):
+    if 'message' in selection:
+        return observation.token(key, 'selected-message-scope-v1', selection['workspace'], selection['owner'],
+                                 sorted(selection['conversations']), selection['thread'], selection['message'],
+                                 selection.get('parentHint'), epoch)
     return observation.token(key, 'selected-scope-v2', selection['workspace'], selection['owner'],
                              sorted(selection['conversations']), selection.get('thread'), epoch)
+
+
+def subscription_identity(secret, epoch, selection):
+    key = observation.token(secret, 'subscription-key-v2', epoch['root'], selection['workspace'],
+                            selection['owner'], selection['conversations'][0], selection.get('thread'))
+    if 'message' in selection:
+        key = observation.token(secret, 'message-selection-v1', key, selection['message'], selection.get('parentHint'))
+    return key, scope_token(bytes.fromhex(key), selection, epoch)
 
 
 def acquire(request):
@@ -33,7 +46,8 @@ def acquire(request):
     if type(include_preview) is not bool:
         raise ValueError('request')
     selection = request.get('selection')
-    if not isinstance(selection, dict) or set(selection) not in ({'workspace', 'owner', 'conversations'}, {'workspace', 'owner', 'conversations', 'thread'}):
+    if not isinstance(selection, dict) or not {'workspace','owner','conversations'} <= selection.keys() or selection.keys() - {
+            'workspace','owner','conversations','thread','message','parentHint'}:
         raise ValueError('selection')
     workspace, owner = selection['workspace'], selection['owner']
     conversations = selection['conversations']
@@ -49,6 +63,13 @@ def acquire(request):
     if 'thread' in selection and (len(conversations) != 1 or not isinstance(thread, str)
                                    or not re.fullmatch(observation.TIMESTAMP, thread)):
         raise ValueError('selection')
+    message_ref = selection.get('message')
+    hint = selection.get('parentHint')
+    if 'message' in selection and (not thread or not isinstance(message_ref,str) or not re.fullmatch(observation.TIMESTAMP,message_ref)
+                                   or thread != (hint or message_ref) or not request.get('expectedScope')):
+        raise ValueError('message selection')
+    if 'parentHint' in selection and not (message_ref and hint == thread):
+        raise ValueError('parent hint')
     if len(set(conversations)) != len(conversations):
         raise ValueError('selection')
     key = request.get('key')
@@ -77,15 +98,64 @@ def acquire(request):
     state, generation = candidates[0]
     if type(generation) is not int or not 0 < generation < 2**56:
         raise ValueError('generation')
+    containers = state.get('messages')
+    channels = state.get('channels', {})
+    if not isinstance(containers, dict) or not isinstance(channels, dict):
+        raise ValueError('incomplete')
+    resolved = None
+    if message_ref:
+        directory = private_directory()
+        binding_path = directory / ('thread-'+scope+'.json')
+        resolved = optional(binding_path)
+        rows = containers.get(conversations[0], {})
+        if not isinstance(rows, dict):
+            raise ValueError('messages')
+        observed = None
+        if message_ref in rows:
+            observed = observation.containing_thread(rows[message_ref], message_ref, workspace, conversations[0])
+        if resolved is not None and not (isinstance(resolved,str) and re.fullmatch(observation.TIMESTAMP,resolved)):
+            raise ValueError('saved thread')
+        if observed and ((resolved and resolved != observed) or (hint and observed != hint)):
+            return {'scope':scope, 'threadMismatch':True, 'complete':True, 'messages':[],
+                    'generation':str(generation), 'snapshot':observation.token(key,'thread-mismatch')}
+        if hint and hint != message_ref and not (resolved or observed):
+            return {'scope':scope, 'missing':True, 'complete':True, 'messages':[],
+                    'generation':str(generation), 'snapshot':observation.token(key,'missing-thread')}
+        thread = resolved or observed or hint or message_ref
+    visible = False
     messages = []
     for conversation in sorted(conversations):
+        observation.conversation_label(state, workspace, conversation)
+        if conversation not in containers:
+            visible |= thread is None and conversation in channels
+            continue
+        rows = containers[conversation]
+        if not isinstance(rows, dict):
+            raise ValueError('incomplete')
+        visible |= thread is None or thread in rows
         selected = observation.snapshot(state, (workspace, owner, conversation), key, require_reactions=False, thread_root=thread,
                                         include_preview=include_preview)
         if not selected['complete']:
             raise ValueError('incomplete')
         messages.extend(selected['messages'])
+        visible |= bool(selected['messages'])
         if len(messages) > MAX_MESSAGES:
             raise ValueError('limit')
+    if message_ref and visible:
+        with locked(directory):
+            saved = optional(binding_path)
+            if saved and saved != thread:
+                raise ValueError('thread changed')
+            if not saved:
+                save_json(binding_path, thread)
+            canonical = {k:v for k,v in selection.items() if k not in ('message','parentHint')}
+            canonical['thread'] = thread
+            secret = bytes.fromhex(read_json(directory / 'subscriptions-key.json'))
+            _, handle = subscription_identity(secret, epoch, canonical)
+            alias = directory / ('thread-alias-'+handle+'.json')
+            if not alias.exists():
+                save_json(alias, scope)
+        resolved = thread
     messages.sort(key=lambda message: message['id'])
     marker_rows = []
     for message in messages:
@@ -93,7 +163,7 @@ def acquire(request):
             'preview', 'memberSender', 'memberPeer', 'edited', 'fileShare', 'fileUnavailable', 'legacyBody', 'legacySpaceBody')}
         marker['body'] = message.get('legacyBody', message['body'])
         marker_rows.append(marker)
-    return {'scope': scope, 'complete': True, 'messages': messages, 'generation': str(generation),
+    return {'scope': scope, **({'resolvedThread':resolved} if resolved else {}), **({} if visible else {'missing': True}), 'complete': True, 'messages': messages, 'generation': str(generation),
             'emptyBody': observation.token(key, 'body', '', None),
             'snapshot': observation.token(key, 'selected-snapshot-v1', scope, marker_rows)}
 
@@ -196,15 +266,6 @@ def validate_log(path):
                 offset = end
             if any(block[offset:]) and len(block) - offset < 7:
                 raise ValueError('log')
-
-
-def unique_object(pairs):
-    value = {}
-    for key, item in pairs:
-        if key in value:
-            raise ValueError('duplicate')
-        value[key] = item
-    return value
 
 
 def main():

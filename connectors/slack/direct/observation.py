@@ -265,6 +265,18 @@ def same_team(row, workspace):
     return all(row.get(field, workspace) == workspace for field in ('team', 'team_id', 'context_team_id'))
 
 
+def containing_thread(row, timestamp, workspace, channel):
+    if (not isinstance(row, dict) or row.get('ts') != timestamp or not re.fullmatch(TIMESTAMP, timestamp)
+            or not same_team(row, workspace)
+            or any(row.get(field) not in (None, channel) for field in ('channel', 'channel_id'))
+            or any(row.get(field) for field in ('_hidden_stub', 'no_display', 'hidden'))):
+        raise ValueError('message identity')
+    parent = row.get('thread_ts')
+    if parent is not None and (not isinstance(parent, str) or not re.fullmatch(TIMESTAMP, parent)):
+        raise ValueError('thread identity')
+    return parent or timestamp
+
+
 def safe_name(value):
     return (isinstance(value, str) and value == value.strip() and 0 < len(value) <= 80
             and safe_text(value))

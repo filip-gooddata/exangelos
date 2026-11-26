@@ -49,6 +49,28 @@ exangelos subscribe slack C0000001:1700000000.000001 scope=conversation --intent
 exangelos subscribe slack C0000001:1700000000.000001 scope=replies --intent 'Watch replies to this message' --pull-only
 ```
 
+An unseen conversation ID or channel-qualified message can be selected when one verified
+local workspace and account match. A bare timestamp needs a matching message to identify
+its channel. For an unseen message, choose the conversation or its replies explicitly.
+A qualified message ID can start waiting before its parent is known. Once the
+exact message identifies its containing thread, the watch retains that binding across
+restarts and message eviction. When a permalink names a different message as the parent, the watch waits for
+the selected message to confirm that relationship. If the message contradicts that parent, the watch ends and asks for the thread link. Show and List mark the watch as waiting.
+
+The first matching snapshot can deliver replies even if the root is absent. Slack's original
+message timestamp is compared as decimal seconds, retaining up to ten fractional digits.
+A timestamp equal to or later than the daemon's subscription creation time (milliseconds)
+is eligible. Earlier messages establish history silently. The usual filters, author, link
+and opted-in excerpt requirements still apply. Messages that never appear in a readable
+snapshot can be missed. Older daemons supply no creation time. In that case the cutoff is
+the start of the first Watch that successfully saves a checkpoint. Earlier arrivals can be missed.
+
+A missing selection expires after two hours of successful observation. While waiting, each
+interval between consecutive successful reads contributes up to one poll interval (at most
+30 seconds). Gaps more than five seconds over that interval contribute nothing. Reopening
+starts a new pair of observations and retains accumulated time. A read error is reported
+separately. A selection visible on the expiry poll is processed normally.
+
 For the MCP `subscribe` tool, pass the same reference as `parameters.selection`.
 For example, use the following arguments, changing `replies` to `conversation`
 to receive events across the conversation:
@@ -199,7 +221,7 @@ sanitized reasons. No external requests, authentication extraction or app mutati
 Ship `direct/source.py`, `direct/ledger.py` and the vendored/runtime files alongside the entry point;
 the compiled JS build alone does not bundle Python files.
 
-The first Watch snapshot establishes a silent baseline. Only the last event in a
+The first Watch snapshot establishes history for older messages and reports eligible arrivals. Only the last event in a
 batch carries its cursor; an empty changed batch emits a cursor item. Creation, edit and reaction payloads
 carry `version: 1`, `count: 1`, the exact Slack timestamp string (`messageTs`),
 a `conversationLabel` and a `permalink`. Replies include their parent timestamp
@@ -222,7 +244,7 @@ unsupported and fail explicitly; starting without a cursor establishes a new sil
 baseline, even when another subscription already watches the same scope.
 
 Slack 0.3.0 stores the local clock time just before the first snapshot read for
-each new Watch lineage. A previously unseen message or reply qualifies as an
+each new Watch lineage. On a daemon that supplies subscription creation time, that time is the floor. A previously unseen message or reply qualifies as an
 arrival when its Slack timestamp is at or after that start. Older rows entering
 the cache are remembered silently. A later poll can deliver several qualifying
 messages, including a message that only became visible after a newer one. This

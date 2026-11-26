@@ -171,6 +171,45 @@ class SetupTests(unittest.TestCase):
         self.reject(23, TIME)
         self.assertEqual(self.resolve(f'{CHANNEL}:{TIME}', scope='replies')['selection']['thread'], TIME)
 
+    def test_unseen_thread_can_be_pinned_and_observed_without_root(self):
+        channel = 'C9000001'
+        archive = f'https://fixture.slack.com/archives/{channel}/p' + TIME.replace('.', '')
+        first = self.resolve(archive, scope='replies')
+        handle = first['expectedScope']
+        self.assertEqual(self.resolve(f'{channel}:{TIME}', scope='replies')['expectedScope'], handle)
+        self.assertEqual(self.resolve('scope-' + handle), first)
+        request = {k:v for k,v in first.items() if k != 'label'}
+        self.assertTrue(source.acquire(request)['missing'])
+        add_message(self.state, REPLY, TIME, channel)
+        database(self.root, self.state, sequence=30)
+        snapshot = source.acquire(request)
+        self.assertNotIn('missing', snapshot)
+        self.assertEqual([row['messageTs'] for row in snapshot['messages']], [REPLY])
+        self.reject(22, archive.replace('fixture.slack.com', 'elsewhere.slack.com'), scope='replies')
+
+    def test_missing_message_later_resolves_to_its_containing_thread(self):
+        channel = 'C9000001'
+        def snapshot(resolved):
+            return source.acquire({k:v for k,v in resolved.items() if k != 'label'})
+        saved = self.resolve(f'{channel}:{REPLY}', scope='replies')
+        conflict = self.resolve(f'https://fixture.slack.com/archives/{channel}/p'+REPLY.replace('.', '')+
+                                '?thread_ts='+OTHER, scope='replies')
+        self.assertTrue(snapshot(saved)['missing'])
+        add_message(self.state, '1700000002.000001', OTHER, channel)
+        database(self.root, self.state, sequence=20)
+        self.assertTrue(snapshot(conflict)['missing'])
+        add_message(self.state, REPLY, TIME, channel)
+        add_message(self.state, OTHER, TIME, channel)
+        database(self.root, self.state, sequence=30)
+        result = snapshot(saved)
+        self.assertEqual(result['resolvedThread'], TIME)
+        self.assertEqual({row['messageTs'] for row in result['messages']}, {REPLY, OTHER})
+        self.assertTrue(snapshot(conflict)['threadMismatch'])
+        self.assertEqual(self.resolve(f'{channel}:{TIME}', scope='replies')['expectedScope'], saved['expectedScope'])
+        del self.state['messages'][channel][REPLY]
+        database(self.root, self.state, sequence=40)
+        self.assertEqual(snapshot(self.resolve('scope-'+saved['expectedScope']))['resolvedThread'], TIME)
+
     def test_filtered_observations_and_ledger_cursor_binding(self):
         def snapshot(subject):
             request = self.resolve(subject)
@@ -234,6 +273,8 @@ class SetupTests(unittest.TestCase):
         self.reject(23, TIME, scope='conversation')
         first = self.resolve(REPLY)
         second = self.resolve(unique)
+        self.assertEqual(self.resolve(f'{CHANNEL}:{REPLY}', scope='replies'), first)
+        self.reject(23, f'{CHANNEL}:1700000009.000009', scope='replies')
         self.assertEqual(first['selection']['owner'], SELECTION[1])
         self.assertEqual(second['selection']['owner'], owner)
         self.assertEqual(second['selection']['workspace'], workspace)

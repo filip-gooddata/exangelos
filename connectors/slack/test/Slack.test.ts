@@ -1,9 +1,10 @@
 import { ledgerProcess, ledgerTestTimeout } from "./LedgerProcess.ts"
+import { observationBudget, observedMillis, resumeWaiting, waitingCursor } from "../../shared/pendingSubject.ts"
 import { expect, it } from "@effect/vitest"
-import { Deferred, Effect, Fiber, Stream } from "effect"
+import { DateTime, Deferred, Effect, Fiber, Stream } from "effect"
 import { ConnectorTest } from "@exangelos/connector-sdk"
 import { TestClock } from "effect/testing"
-import { type Snapshot } from "../src/Source.ts"
+import { SourceUnavailable, type Snapshot } from "../src/Source.ts"
 import { make } from "../src/Slack.ts"
 
 const token = (n: number) => n.toString(16).padStart(64, "0")
@@ -127,3 +128,62 @@ it.effect("real Python ledger SDK recovers every partial batch boundary after so
   expect(fresh[0]?._tag).toBe("Cursor")
   expect(fresh[0]).not.toMatchObject({ cursor: saved })
 }).pipe(Effect.provide(ledgerProcess), Effect.scoped), ledgerTestTimeout)
+
+it.effect("waits through restart, then replays only eligible first-snapshot replies", () => Effect.gen(function*() {
+  yield* TestClock.adjust("10 seconds")
+  let current: typeof Snapshot.Type = { ...baseline, missing: true, messages: [] }
+  let unavailable = false
+  const client = yield* ConnectorTest.makeClient(make({ setup, read: () => Effect.suspend(() =>
+    unavailable ? Effect.fail(new SourceUnavailable({ reason: "Could not read the fixture." })) : Effect.succeed(current)) }))
+  yield* client.Configure({ values: consent })
+  const request = { parameters, eventTypes: [], acceptsPending: true, createdAt: DateTime.makeUnsafe(1000) }
+  const [pending] = yield* client.Watch(request).pipe(Stream.take(1), Stream.runCollect)
+  expect(pending).toMatchObject({ _tag: "Pending", reason: "Waiting for this conversation to appear." })
+  if (pending?._tag !== "Pending") throw new Error("Expected waiting watch")
+  const resume = { ...request, cursor: pending.cursor }
+  unavailable = true
+  expect((yield* client.Watch(resume).pipe(Stream.runDrain, Effect.flip))._tag).toBe("SourceFailed")
+  yield* TestClock.adjust("4 hours")
+  unavailable = false
+  expect(yield* client.Watch(resume).pipe(Stream.take(1), Stream.runCollect)).toEqual([pending])
+  current = { ...baseline, generation: "2", snapshot: token(20), messages: [
+        { ...message, id: token(7), messageTs: "0.999999", permalink: "https://fixture.slack.com/archives/C0000001/p0999999", reply: true },
+        { ...message, id: token(8), messageTs: "1.000000", permalink: "https://fixture.slack.com/archives/C0000001/p1000000", reply: true },
+        { ...message, id: token(9), messageTs: "1.000001", permalink: "https://fixture.slack.com/archives/C0000001/p1000001", reply: true }
+      ] }
+  const batch = yield* client.Watch(resume).pipe(Stream.take(2), Stream.runCollect)
+  expect(batch.map((item) => item._tag)).toEqual(["Event", "Event"])
+  expect(yield* client.Watch(resume).pipe(Stream.take(2), Stream.runCollect)).toEqual(batch)
+  const last = batch[1]
+  if (last?._tag !== "Event" || !last.cursor) throw new Error("Expected committed batch")
+  expect(yield* client.Watch({ ...request, cursor: last.cursor }).pipe(Stream.take(1), Stream.runCollect))
+    .toEqual([{ _tag: "Cursor", cursor: last.cursor }])
+  const saved = resumeWaiting(token(1), pending.cursor)!
+  expect(resumeWaiting(token(90), pending.cursor)).toBeUndefined()
+  const nearExpiry = { ...request, cursor: waitingCursor(token(1), observationBudget - 1, saved.ledger) }
+  expect((yield* client.Watch(nearExpiry).pipe(Stream.take(1), Stream.runCollect))[0]?._tag).toBe("Event")
+  current = { ...baseline, missing: true, messages: [] }
+  expect(yield* client.Watch(resume).pipe(Stream.take(2), Stream.runCollect)).toEqual(batch)
+  const [fresh] = yield* client.Watch(request).pipe(Stream.take(1), Stream.runCollect)
+  if (fresh?._tag !== "Pending") throw new Error("Expected new waiting watch")
+  const unobserved = { ...request, cursor: waitingCursor(token(1), observationBudget - 1, resumeWaiting(token(1), fresh.cursor)!.ledger) }
+  const firstPoll = yield* Deferred.make<void>()
+  const expiry = yield* client.Watch(unobserved).pipe(
+    Stream.tap((item) => item._tag === "Pending" ? Deferred.succeed(firstPoll, undefined) : Effect.void),
+    Stream.runCollect, Effect.forkChild)
+  yield* Deferred.await(firstPoll)
+  yield* TestClock.adjust("30 seconds")
+  const ended = yield* Fiber.join(expiry)
+  expect(ended.map((item) => item._tag)).toEqual(["Pending", "End"])
+  expect(ended[1]).toMatchObject({ reason: "Couldn't find this conversation. Please check the conversation ID or link." })
+
+}).pipe(Effect.provide(ledgerProcess), Effect.scoped), ledgerTestTimeout)
+
+it("credits only adjacent successful polls up to the configured interval", () => {
+  const before = observationBudget - 1000
+  expect(observedMillis(before, undefined, 100000, 1000)).toBe(before)
+  expect(observedMillis(before, 100000, 99999, 1000)).toBe(before)
+  expect(observedMillis(before, 100000, 100999, 1000)).toBe(observationBudget - 1)
+  expect(observedMillis(before, 100000, 101000, 1000)).toBe(observationBudget)
+  expect(observedMillis(before, 100000, 300000, 1000)).toBe(before)
+})
