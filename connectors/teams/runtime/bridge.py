@@ -11,6 +11,7 @@ try:
     import secrets
     import signal
     import stat
+    import time
 
     sys.dont_write_bytecode = True
     sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'validation'))
@@ -42,6 +43,19 @@ def read_deadline(*_):
     raise ReadDeadline()
 
 
+def arm_read_deadline(seconds):
+    expires = time.monotonic() + seconds
+
+    def check(*_):
+        remaining = expires - time.monotonic()
+        if remaining <= 0:
+            read_deadline()
+        signal.setitimer(signal.ITIMER_REAL, remaining)
+
+    signal.signal(signal.SIGALRM, check)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+
+
 def limits():
     resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
     caps = [(resource.RLIMIT_CPU, 30), (resource.RLIMIT_NOFILE, 128)]
@@ -53,8 +67,7 @@ def limits():
         soft, hard = resource.getrlimit(kind)
         ceiling = cap if hard == resource.RLIM_INFINITY else min(cap, hard)
         resource.setrlimit(kind, (ceiling, ceiling))
-    signal.signal(signal.SIGALRM, read_deadline)
-    signal.alarm(40)
+    arm_read_deadline(40)
 
 
 def absolute(value):

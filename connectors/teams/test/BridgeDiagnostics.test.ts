@@ -40,6 +40,7 @@ for (const [delayed, pythonDeadline] of [[false, false], [true, false], [true, t
     const home = realpathSync(mkdtempSync(join(tmpdir(), "teams-deadline-")))
     vi.stubEnv("EXANGELOS_HOME", home)
     const now = vi.spyOn(Date, "now")
+    const monotonic = vi.spyOn(performance, "now").mockReturnValue(0)
     try {
       const started = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
@@ -66,6 +67,7 @@ for (const [delayed, pythonDeadline] of [[false, false], [true, false], [true, t
       )
       yield* Deferred.await(started)
       now.mockReturnValue(Date.now() + (delayed ? 95_000 : 45_000))
+      monotonic.mockReturnValue(45_000)
       if (pythonDeadline) yield* Deferred.succeed(release, undefined)
       else yield* TestClock.adjust("45 seconds")
       expect((yield* Fiber.join(fiber))._tag).toBe(delayed ? "Success" : "Failure")
@@ -74,6 +76,7 @@ for (const [delayed, pythonDeadline] of [[false, false], [true, false], [true, t
       expect(record).toMatchObject({ operation: "configured-snapshot", stage: pythonDeadline ? "exit" : "deadline" })
       expect(record.wallMs).toBeGreaterThanOrEqual(delayed ? 95_000 : 45_000)
     } finally {
+      monotonic.mockRestore()
       now.mockRestore()
       vi.unstubAllEnvs()
       rmSync(home, { recursive: true, force: true })
@@ -81,10 +84,45 @@ for (const [delayed, pythonDeadline] of [[false, false], [true, false], [true, t
   }).pipe(Effect.scoped))
 }
 
+it.effect("continues the original read through repeated wakes within its awake budget", () => Effect.gen(function*() {
+  const started = yield* Deferred.make<void>()
+  const done = yield* Deferred.make<void>()
+  const monotonic = vi.spyOn(performance, "now").mockReturnValue(0)
+  let attempts = 0
+  try {
+    const scope = "a".repeat(64)
+    const request = { scope, includeMessagePreview: false }
+    const spawner = ChildProcessSpawner.make(() => Effect.gen(function*() {
+      attempts++
+      yield* Deferred.succeed(started, undefined)
+      yield* Deferred.await(done)
+      const output = Stream.make(new TextEncoder().encode(JSON.stringify({ ...request, messages: [] })))
+      return ChildProcessSpawner.makeHandle({
+        pid: ChildProcessSpawner.ProcessId(1), exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(0)),
+        isRunning: Effect.succeed(false), kill: () => Effect.void, stdin: Sink.drain,
+        stdout: output, stderr: Stream.empty, all: output, getInputFd: () => Sink.drain,
+        getOutputFd: () => Stream.empty, unref: Effect.succeed(Effect.void)
+      })
+    }))
+    const fiber = yield* localSource.read(request, Effect.succeed(true)).pipe(
+      Effect.provideService(ChildProcessSpawner.ChildProcessSpawner, spawner), Effect.forkScoped
+    )
+    yield* Deferred.await(started)
+    for (const awake of [7_181, 14_362]) {
+      monotonic.mockReturnValue(awake)
+      yield* TestClock.adjust("313 seconds")
+    }
+    yield* Deferred.succeed(done, undefined)
+    expect((yield* Fiber.join(fiber)).scope).toBe(scope)
+    expect(attempts).toBe(1)
+  } finally { monotonic.mockRestore() }
+}).pipe(Effect.scoped))
+
 it.effect("does not spawn a retry after cache authorization is revoked", () => Effect.gen(function*() {
   const home = realpathSync(mkdtempSync(join(tmpdir(), "teams-revoked-")))
   vi.stubEnv("EXANGELOS_HOME", home)
   const now = vi.spyOn(Date, "now")
+  const monotonic = vi.spyOn(performance, "now").mockReturnValue(0)
   try {
     const started = yield* Deferred.make<void>()
     let attempts = 0
@@ -101,10 +139,12 @@ it.effect("does not spawn a retry after cache authorization is revoked", () => E
     yield* Deferred.await(started)
     yield* client.Configure({ values: { subscriptionAccess: "disabled" } })
     now.mockReturnValue(Date.now() + 95_000)
+    monotonic.mockReturnValue(45_000)
     yield* TestClock.adjust("45 seconds")
     expect((yield* Fiber.join(fiber))._tag).toBe("Failure")
     expect(attempts).toBe(1)
   } finally {
+    monotonic.mockRestore()
     now.mockRestore()
     vi.unstubAllEnvs()
     rmSync(home, { recursive: true, force: true })

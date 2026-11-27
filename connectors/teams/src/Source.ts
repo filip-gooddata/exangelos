@@ -1,5 +1,5 @@
 import { fileURLToPath } from "node:url"
-import { Cause, Effect, Schema, Stream } from "effect"
+import { Effect, Schema, Stream } from "effect"
 import { constants } from "node:os"
 import type { PlatformError } from "effect/PlatformError"
 import { childDetail, recordFailure, type Operation, type Outcome } from "./LastError.ts"
@@ -49,6 +49,14 @@ const processOutcome = (stage: "spawn" | "stdout" | "exit", error: PlatformError
 
 const deadlineMs = 45_000
 
+const awakeDeadline = (expires: number) => Effect.gen(function*() {
+  let remaining
+  while ((remaining = expires - performance.now()) > 0) {
+    yield* Effect.sleep(Math.ceil(remaining))
+  }
+  return yield* Effect.fail<Outcome>({ stage: "deadline", exception: "TimeoutError" })
+})
+
 const runBridge = (command: Operation, request: unknown) => Effect.gen(function*() {
   const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
   const child = yield* spawner.spawn(ChildProcess.make("python3", [
@@ -73,8 +81,7 @@ const runBridge = (command: Operation, request: unknown) => Effect.gen(function*
   if (code !== 0) return yield* Effect.fail<Outcome>({ stage: "exit", exitCode: code, child: childDetail(output) })
   const tail = yield* Effect.try({ try: () => decoder.decode(), catch: (): Outcome => ({ stage: "utf8", exception: "TypeError" }) })
   return yield* Effect.try({ try: () => JSON.parse(output + tail) as unknown, catch: (): Outcome => ({ stage: "json", exception: "SyntaxError", exitCode: 0 }) })
-}).pipe(Effect.scoped, Effect.timeout(deadlineMs), Effect.mapError((error): Outcome =>
-  Cause.isTimeoutError(error) ? { stage: "deadline", exception: "TimeoutError" } : error))
+}).pipe(Effect.scoped)
 
 const bridge = <A, E>(command: Operation, request: unknown, decode: (input: unknown) => Effect.Effect<A, E>,
   canRetry = Effect.succeed(false)) =>
@@ -82,6 +89,7 @@ const bridge = <A, E>(command: Operation, request: unknown, decode: (input: unkn
     const attempt = Effect.suspend(() => {
       const started = { wall: Date.now(), monotonic: performance.now() }
       return runBridge(command, request).pipe(
+        Effect.raceFirst(awakeDeadline(started.monotonic + deadlineMs)),
         Effect.tapError(outcome => Effect.sync(() => recordFailure(command, started, outcome))),
         Effect.map(input => ({ input, started }))
       )
@@ -92,7 +100,7 @@ const bridge = <A, E>(command: Operation, request: unknown, decode: (input: unkn
         (outcome.stage === "deadline" || outcome.exitCode === 34) && Date.now() - wallStart >= 2 * deadlineMs,
         outcome => Effect.flatMap(canRetry, allowed => allowed ? attempt : Effect.fail(outcome))),
       Effect.mapError(outcome => {
-        const reason = outcome.exitCode === undefined ? undefined : reasons[outcome.exitCode]
+        const reason = outcome.stage === "deadline" ? reasons[34] : outcome.exitCode === undefined ? undefined : reasons[outcome.exitCode]
         return reason ? new SourceUnavailable({ reason }) : unavailable()
       })
     )
