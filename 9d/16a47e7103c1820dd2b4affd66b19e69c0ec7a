@@ -1,0 +1,29 @@
+connectors/teams/README.md
+  s_792cf20ed3ffee::t_884c6d71fd86c0 55
+connectors/teams/connector.json
+  s_792cf20ed3ffee::t_c7ef846c807b64 3
+connectors/teams/runtime/bridge.py
+  s_792cf20ed3ffee::t_88aac79ae4f475 14,46-58,70
+connectors/teams/runtime/test_portable.py
+  s_792cf20ed3ffee::t_b73b47fd9aeae0 28-38
+connectors/teams/src/Source.ts
+  s_792cf20ed3ffee::t_95acf300ace9fa 2,52-59,84,92,103
+connectors/teams/test/BridgeDiagnostics.test.ts
+  s_792cf20ed3ffee::t_c27874bf0a159c 43,70,79,87-120,125,142,147
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9d16a47e7103c1820dd2b4affd66b19e69c0ec7a",
+  "prompts": {},
+  "sessions": {
+    "s_792cf20ed3ffee": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a21764-0a1a-7de2-9106-46f5bf64da74",
+        "model": "gpt-6.2-astra"
+      },
+      "human_author": "Filip Kalný <filip.kalny@gooddata.com>"
+    }
+  }
+}
