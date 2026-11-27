@@ -87,7 +87,7 @@ def snappy(data):
             out.extend(data[p:p + n])
             p += n
         else:
-            width = {1: 1, 2: 2, 3: 4}[kind]
+            width = 1 << (kind - 1)
             require(p + width <= len(data))
             offset = int.from_bytes(data[p:p + width], "little")
             p += width
@@ -97,8 +97,12 @@ def snappy(data):
             else:
                 n = 1 + (tag >> 2)
             require(0 < offset <= len(out) and len(out) + n <= size)
-            for _ in range(n):
-                out.append(out[-offset])
+            start = len(out) - offset
+            if n <= offset:
+                out.extend(out[start:start + n])
+            else:
+                pattern = out[start:]
+                out.extend((pattern * ((n + offset - 1) // offset))[:n])
     require(len(out) == size)
     return bytes(out)
 
@@ -178,14 +182,15 @@ def table_entries(data, budget=None, user_order=None):
     prior_end = 0
     prior_index = None
     for index_key, value in entries(block_at(data, index, budget)):
-        require(prior_index is None or key_order(prior_index) < key_order(index_key))
-        prior_index = index_key
+        index_order = key_order(index_key)
+        require(prior_index is None or prior_index < index_order)
+        prior_index = index_order
         location, used = handle(value)
         require(used == len(value) and location[0] >= prior_end)
         prior_end = location[0] + location[1] + 5
         require(prior_end <= meta[0] and meta[0] + meta[1] + 5 <= index[0])
         for key, value in entries(block_at(data, location, budget)):
-            require(key_order(key) <= key_order(index_key))
+            require(key_order(key) <= index_order)
             yield key, value
 
 
