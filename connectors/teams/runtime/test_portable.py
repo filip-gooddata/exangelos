@@ -25,6 +25,17 @@ class PortableTests(unittest.TestCase):
         self.env = {'HOME':str(self.root),'EXANGELOS_HOME':str(self.root/'state')}
         self.install()
 
+    def test_alarm_counts_only_monotonic_time_across_wakes(self):
+        with patch.object(b.time, 'monotonic', side_effect=[100, 107, 114, 140]), \
+             patch.object(b.signal, 'signal') as install, patch.object(b.signal, 'setitimer') as timer:
+            b.arm_read_deadline(40)
+            callback = install.call_args.args[1]
+            for remaining in (33, 26):
+                callback()
+                timer.assert_called_with(b.signal.ITIMER_REAL, remaining)
+            with self.assertRaises(b.ReadDeadline):
+                callback()
+
     def install(self, data=None, path=None):
         path = path or self.cache
         path.mkdir(parents=True,exist_ok=True)
