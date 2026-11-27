@@ -97,7 +97,7 @@ const bridge = <A, E>(command: Operation, request: unknown, decode: (input: unkn
     const wallStart = Date.now()
     const { input, started } = yield* attempt.pipe(
       Effect.catchIf(outcome => command === "configured-snapshot" &&
-        (outcome.stage === "deadline" || outcome.exitCode === 34) && Date.now() - wallStart >= 2 * deadlineMs,
+        (outcome.exitCode === 34 || (outcome.stage === "deadline" && Date.now() - wallStart >= 2 * deadlineMs)),
         outcome => Effect.flatMap(canRetry, allowed => allowed ? attempt : Effect.fail(outcome))),
       Effect.mapError(outcome => {
         const reason = outcome.stage === "deadline" ? reasons[34] : outcome.exitCode === undefined ? undefined : reasons[outcome.exitCode]

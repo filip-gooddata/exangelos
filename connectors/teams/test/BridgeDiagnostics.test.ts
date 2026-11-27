@@ -35,8 +35,10 @@ it("refuses a symlinked private state directory", () => {
   }
 })
 
-for (const [delayed, pythonDeadline] of [[false, false], [true, false], [true, true]] as const) {
-  it.effect(`${pythonDeadline ? "bridge" : "outer"} deadline with ${delayed ? "late" : "on-time"} timer handling`, () => Effect.gen(function*() {
+for (const [delayed, pythonDeadline, persistent] of [
+  [false, false, false], [true, false, false], [false, true, false], [true, true, false], [false, true, true]
+] as const) {
+  it.effect(`${pythonDeadline ? "bridge" : "outer"} deadline with ${delayed ? "late" : "on-time"} timer handling${persistent ? " and repeated expiry" : ""}`, () => Effect.gen(function*() {
     const home = realpathSync(mkdtempSync(join(tmpdir(), "teams-deadline-")))
     vi.stubEnv("EXANGELOS_HOME", home)
     const now = vi.spyOn(Date, "now")
@@ -55,7 +57,7 @@ for (const [delayed, pythonDeadline] of [[false, false], [true, false], [true, t
         }
         const output = Stream.make(new TextEncoder().encode(JSON.stringify({ ...request, messages: [] })))
         return ChildProcessSpawner.makeHandle({
-          pid: ChildProcessSpawner.ProcessId(1), exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(pythonDeadline && attempts === 1 ? 34 : 0)),
+          pid: ChildProcessSpawner.ProcessId(1), exitCode: Effect.succeed(ChildProcessSpawner.ExitCode(pythonDeadline && (attempts === 1 || persistent) ? 34 : 0)),
           isRunning: Effect.succeed(false), kill: () => Effect.void, stdin: Sink.drain,
           stdout: output, stderr: Stream.empty, all: output, getInputFd: () => Sink.drain,
           getOutputFd: () => Stream.empty, unref: Effect.succeed(Effect.void)
@@ -70,11 +72,11 @@ for (const [delayed, pythonDeadline] of [[false, false], [true, false], [true, t
       monotonic.mockReturnValue(45_000)
       if (pythonDeadline) yield* Deferred.succeed(release, undefined)
       else yield* TestClock.adjust("45 seconds")
-      expect((yield* Fiber.join(fiber))._tag).toBe(delayed ? "Success" : "Failure")
-      expect(attempts).toBe(delayed ? 2 : 1)
+      expect((yield* Fiber.join(fiber))._tag).toBe((delayed || pythonDeadline) && !persistent ? "Success" : "Failure")
+      expect(attempts).toBe(delayed || pythonDeadline ? 2 : 1)
       const record = JSON.parse(readFileSync(join(home, "diagnostics/teams/last-error.json"), "utf8"))
       expect(record).toMatchObject({ operation: "configured-snapshot", stage: pythonDeadline ? "exit" : "deadline" })
-      expect(record.wallMs).toBeGreaterThanOrEqual(delayed ? 95_000 : 45_000)
+      if (!persistent) expect(record.wallMs).toBeGreaterThanOrEqual(delayed ? 95_000 : 45_000)
     } finally {
       monotonic.mockRestore()
       now.mockRestore()

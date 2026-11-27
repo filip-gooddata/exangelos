@@ -193,6 +193,20 @@ class StoreTests(unittest.TestCase):
         self.assertEqual(s.snappy(b'\x05\x00a\x01\x01'), b'aaaaa')
         with self.assertRaises(s.Invalid): s.snappy(b'\x05\x01\x00')
 
+    def test_snappy_copy_boundaries(self):
+        seed = bytes(range(100))
+        for kind, width in ((1, 1), (2, 2), (3, 4)):
+            for length in ((4, 11) if kind == 1 else (1, 4, 63, 64)):
+                for offset in (1, 3, length, len(seed)):
+                    tag = ((length - (4 if kind == 1 else 1)) << 2) | kind
+                    literal = bytes([240, len(seed) - 1]) + seed
+                    copy = bytes([tag]) + offset.to_bytes(width, 'little')
+                    encoded = vi(len(seed) + length) + literal + copy
+                    expected = seed + (seed[-offset:] * length)[:length]
+                    self.assertEqual(s.snappy(encoded), expected)
+                    with self.assertRaises(s.Invalid):
+                        s.snappy(vi(len(expected) - 1) + literal + copy)
+
     def test_current_path_escape(self):
         self.fixture(); (self.path / 'CURRENT').write_bytes(b'../MANIFEST-000001\n'); self.reject()
 
